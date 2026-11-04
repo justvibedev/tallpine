@@ -8,6 +8,7 @@
 A hard fork of [Agent Orchestrator](https://github.com/OrchestratorInc/agent-orchestrator) that installs and runs **side by side** with the official app.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/justvibedev/tallpine/total)](https://github.com/justvibedev/tallpine/releases/latest)
 </div>
 
 ## What it is
