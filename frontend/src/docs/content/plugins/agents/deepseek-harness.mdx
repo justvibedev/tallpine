@@ -1,0 +1,28 @@
+---
+title: DeepSeek
+description: Run workers on DeepSeek through the dsh CLI.
+---
+
+DeepSeek runs through the DeepSeek Harness CLI, `dsh`. Install it with `npm install -g @deepseek-ai/dsh`, then sign in from **Settings → Harness** and pick **DeepSeek** as a project's worker or orchestrator agent, or as the default harness. The harness name for the CLI is `deepseek-harness`.
+
+```bash
+tallpine agent ls --refresh
+tallpine spawn --project my-app --name ds-task --agent deepseek-harness --mode chat
+```
+
+## Interfaces
+
+- **Terminal UI:** a one-shot task. Tallpine runs `dsh --profile headless "<task>"`, which answers the task, prints the result and exits. The task must be non-empty. Use Chat for an ongoing conversation.
+- **Chat:** Tallpine binds to `dsh`'s `acp` profile, an Agent Client Protocol server. Session activity comes from this Chat stream, because `dsh` has no workspace hook file for Tallpine to install.
+
+## Models and reasoning effort
+
+The terminal profile exposes no model or reasoning-effort flag, so it uses the profile's own configured route. Per-session model and reasoning-effort selection are available in Chat only.
+
+## Privacy
+
+Every shipped `dsh` profile mounts a session-log plugin that uploads the session log, including prompts and tool output, with official-API requests. Tallpine launches `dsh` with a profile overlay that turns that upload off, so session logs stay local.
+
+## Limits
+
+DeepSeek is a worker and orchestrator harness only. It is not offered as a code reviewer; reviewers are Claude Code, Codex and Kiro.

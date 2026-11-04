@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# scripts/size-ratchet: keeps source files from growing past a line cap.
+#
+#   scripts/size-ratchet                 # check (a scripts/verify job)
+#   scripts/size-ratchet --write         # tighten scripts/size-ratchet.allow (shrink/remove only)
+#   scripts/size-ratchet --write --add   # also list new over-cap files (needs a written reason in review)
+#
+# A tracked source file over MAX lines (default 500) must be listed in the
+# allow file, and a listed file may only shrink: growth fails, a new file over
+# the cap fails, a shrink passes. Generated files (a "Code generated",
+# "@generated" or "DO NOT EDIT" marker in the first lines) and vendored or
+# fixture paths are not counted.
+# Raise check: each allowance is also compared with the allow file at the merge-base
+# with --base <ref> (default: origin/main, else main; skipped when neither resolves).
+# A raised entry, or a new entry for a file that already existed at the base, fails
+# (RAISED / ADDED) unless the allow file carries a reviewed marker line
+# "# raise-approved: <path> <reason>" for that path (it must be new in the PR diff; a marker already at the base is spent).
+# --changed: count only files that differ from the merge-base with --base (plus untracked ones); a fast
+# pre-push check for workers. The allow-file raise check still runs; "under the cap" notes are skipped.
+# Options: --root <dir> (default: the repo), --allow <file>, --max <lines>, --base <ref>.
+# Allow file format: "<max-lines> <path>" per line, '#' comments.
+set -uo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)" allow="" max=500 write=0 add=0 base="" only=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--root) root="$(cd "$2" && pwd)"; shift ;;
+	--allow) allow="$2"; shift ;;
+	--max) max="$2"; shift ;;
+	--base) base="$2"; shift ;;
+	--changed) only=1 ;;
+	--write) write=1 ;;
+	--add) add=1 ;;
+	-h | --help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
+	*) echo "size-ratchet: unknown argument $1" >&2; exit 2 ;;
+	esac
+	shift
+done
+[ "$only" = 1 ] && [ "$write" = 1 ] && { echo "size-ratchet: --changed cannot be combined with --write (it would drop allow entries for unchanged files)" >&2; exit 2; }
+[ -n "$allow" ] || allow="$root/scripts/size-ratchet.allow"
+
+changed_base() {
+	local b="$base"
+	if [ -z "$b" ]; then
+		for b in origin/main main; do git -C "$root" rev-parse -q --verify "$b^{commit}" >/dev/null 2>&1 && break; done
+	fi
+	git -C "$root" merge-base "$b" HEAD 2>/dev/null || echo "$b"
+}
+
+# sizes: "<lines> <path>" for every counted source file over $max lines.
+sizes() {
+	# One awk per batch of files instead of head|grep|wc forks per tracked file (7000+ files took ~2 min).
+	{
+		if [ "$only" = 1 ]; then
+			{
+				git -C "$root" diff --name-only -z "$(changed_base)" -- 2>/dev/null
+				git -C "$root" ls-files -z --others --exclude-standard
+			}
+		else
+			git -C "$root" ls-files -z
+		fi
+	} |
+		while IFS= read -r -d '' f; do
+			case "$f" in
+			*.go | *.ts | *.tsx | *.mjs | *.js | *.py | *.sh) ;;
+			scripts/*) case "$f" in *.*) continue ;; esac ;;
+			*) continue ;;
+			esac
+			case "$f" in
+			*node_modules/* | */testdata/* | */gen/* | */vendor/* | *.d.ts | *.pb.go | */schema.ts) continue ;;
+			esac
+			[ -f "$root/$f" ] || continue
+			printf '%s\0' "$f"
+		done |
+		(cd "$root" && xargs -0 awk -v MAX="$max" '
+			function flush() { if (name != "" && !gen && n > MAX) printf "%d %s\n", n, name }
+			FNR == 1 { flush(); name = FILENAME; n = 0; gen = 0 }
+			{ n++ }
+			FNR <= 5 && /Code generated|@generated|DO NOT EDIT/ { gen = 1 }
+			END { flush() }')
+}
+
+now="$(sizes | LC_ALL=C sort -k2)"
+listed="$(grep -vE '^[[:space:]]*(#|$)' "$allow" 2>/dev/null | LC_ALL=C sort -k2)"
+
+if [ "$write" = 1 ]; then
+	{
+		sed -n '/^#/p;/^$/p' "$allow" 2>/dev/null
+		printf '%s\n' "$now" | while read -r n f; do
+			[ -n "$f" ] || continue
+			old="$(printf '%s\n' "$listed" | awk -v f="$f" '$2 == f { print $1 }')"
+			if [ -n "$old" ]; then
+				[ "$n" -lt "$old" ] && old="$n"
+				printf '%s %s\n' "$old" "$f"
+			elif [ "$add" = 1 ]; then
+				printf '%s %s\n' "$n" "$f"
+			fi
+		done
+	} >"$allow.tmp" && mv "$allow.tmp" "$allow"
+	echo "size-ratchet: wrote $allow"
+	exit 0
+fi
+
+fail=0
+while read -r n f; do
+	[ -n "$f" ] || continue
+	old="$(printf '%s\n' "$listed" | awk -v f="$f" '$2 == f { print $1 }')"
+	if [ -z "$old" ]; then
+		echo "NEW   $f: $n lines, over the $max-line cap and not in $(basename "$allow"); split it"
+		fail=1
+	elif [ "$n" -gt "$old" ]; then
+		echo "GREW  $f: $n lines, allowed $old; listed files may only shrink"
+		fail=1
+	elif [ "$n" -lt "$old" ]; then
+		echo "note  $f shrank to $n (allowed $old); run scripts/size-ratchet --write to lock it in"
+	fi
+done < <(printf '%s\n' "$now")
+[ "$only" = 1 ] || printf '%s\n' "$listed" | while read -r old f; do
+	[ -n "$f" ] || continue
+	printf '%s\n' "$now" | awk -v f="$f" '$2 == f { found = 1 } END { exit !found }' ||
+		echo "note  $f is under the cap or gone; run scripts/size-ratchet --write to drop it"
+done
+
+# Raise check against the merge-base's allow file.
+if [ -z "$base" ]; then
+	for b in origin/main main; do git -C "$root" rev-parse -q --verify "$b^{commit}" >/dev/null 2>&1 && { base="$b"; break; }; done
+fi
+mb=""
+[ -n "$base" ] && mb="$(git -C "$root" merge-base "$base" HEAD 2>/dev/null)"
+allowrel="${allow#"$root"/}"
+if [ -n "$mb" ] && baseallow="$(git -C "$root" show "$mb:$allowrel" 2>/dev/null)"; then
+	baselisted="$(printf '%s\n' "$baseallow" | grep -vE '^[[:space:]]*(#|$)')"
+	while read -r n f; do
+		[ -n "$f" ] || continue
+		# A marker counts only when this change adds it: one already in the base allow file
+		# was spent by an earlier approved raise.
+		mk="^#[[:space:]]*raise-approved:[[:space:]]+$f([[:space:]]|$)"
+		if grep -qE "$mk" "$allow" && ! printf '%s\n' "$baseallow" | grep -qE "$mk"; then continue; fi
+		old="$(printf '%s\n' "$baselisted" | awk -v f="$f" '$2 == f { print $1 }')"
+		if [ -n "$old" ]; then
+			[ "$n" -gt "$old" ] && { echo "RAISED $f: allowance $n, was $old at the merge-base; entries only shrink (reviewed override: '# raise-approved: $f <reason>')"; fail=1; }
+		elif git -C "$root" cat-file -e "$mb:$f" 2>/dev/null; then
+			echo "ADDED $f: new allow entry ($n) for a file that existed at the merge-base; split it instead (reviewed override: '# raise-approved: $f <reason>')"
+			fail=1
+		fi
+	done < <(printf '%s\n' "$listed")
+fi
+[ "$fail" = 0 ] && echo "size-ratchet: ok ($(printf '%s\n' "$now" | grep -c .) files over $max, all within their allowance)"
+exit "$fail"

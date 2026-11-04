@@ -1,0 +1,140 @@
+---
+title: Backlog
+description: Keep deferred work in a per-project backlog and let an orchestrator run it with tallpine backlog.
+---
+
+The backlog is a per-project list of deferred work. Humans, orchestrators, workers and reviewers file items; the orchestrator picks them up in order. Open it from the desktop **Backlog** page, or use `tallpine backlog` from a terminal or an agent session. Every command takes `--project <id>` and defaults to `TALLPINE_PROJECT_ID`, the current session's project, or the current registered repository. Most commands accept `--json`.
+
+For every flag, see the generated [command reference](/cli-commands). The commands are also listed in the [CLI reference](/cli#tallpine-backlog).
+
+## Items
+
+Each item has a short ref such as `B12`, numbered per project. Refs are never reused. `tallpine backlog` accepts `B12`, `b12` or `12`.
+
+| Field | Meaning |
+| --- | --- |
+| Title and `--note` | The task and a Markdown description. |
+| `--done-when` | Acceptance criteria. |
+| `--agent-notes` | Notes written for the orchestrator. |
+| `--scope` | Publishing scope override: `local`, `pr` or `pr-merge`. Empty means the orchestrator asks. |
+| `--parent` | A parent item. Nesting is one level deep. |
+| Custom fields | Free-form `key=value` pairs set with `tallpine backlog set` (up to 32 fields, values up to 500 characters; keys are lowercase letters, digits, `.`, `_` or `-`). `key=` clears a field. |
+
+### States
+
+| State | Meaning |
+| --- | --- |
+| `inbox` | Filed by an agent and waiting for triage. Each project holds at most 50 inbox items. |
+| `open` | Accepted and queued in drag order. |
+| `done` | Finished. |
+| `dropped` | Abandoned; kept in the archive. |
+
+Progress such as "active" or "in review" is not stored. It is derived from the item's links.
+
+An item can also be **held** with a reason. `tallpine backlog next` and run mode skip held items.
+
+## File and triage
+
+```bash
+tallpine backlog add "Rename the settings route"
+tallpine backlog add - <<'NOTE'
+Title on the first line
+Everything after it becomes the note, so backticks and quotes stay literal.
+NOTE
+```
+
+Agents file into the inbox. Humans always create open items, and an orchestrator can skip the inbox with `--open`. Workers can also file follow-ups they will not do now with `tallpine report --defer "<line>"` (repeatable, at most three lines per report, 1 to 200 characters each).
+
+| Task | Command |
+| --- | --- |
+| Accept an inbox item | `tallpine backlog accept <ref>` |
+| List items | `tallpine backlog ls [--state inbox\|open\|done\|dropped\|all] [--held\|--unheld] [--parent <ref>] [--q <text>]` |
+| Show one item with its links | `tallpine backlog show <ref>` |
+| Edit | `tallpine backlog edit <ref> [--title ...] [--note ...] [--done-when ...] [--scope ...] [--parent <ref>\|--no-parent]` |
+| Reorder | `tallpine backlog move <ref> --before <ref>` or `--after <ref>` |
+| Hold and release | `tallpine backlog hold <ref> <reason...>`, `tallpine backlog unhold <ref>` |
+| Close | `tallpine backlog done <ref>`, `tallpine backlog drop <ref>` (both take `--reason`) |
+| Reopen | `tallpine backlog reopen <ref>` |
+
+`tallpine backlog next` prints the topmost open, unheld, unblocked item that is not a parent. Add `--parent <ref>` to look only at one parent's children.
+
+### Links
+
+`tallpine backlog link <ref> <kind:value>` attaches something to an item, and `unlink` removes it. The kinds are `session`, `pr`, `issue`, `artifact`, `memory`, `item` and `blocked-by`. An item with an unfinished `blocked-by` item is not returned by `next`.
+
+```bash
+tallpine backlog link B12 pr:https://github.com/acme/app/pull/42
+tallpine backlog link B14 blocked-by:B12
+```
+
+### Delete
+
+`tallpine backlog delete <ref>` permanently removes a done or dropped item together with its links and closed children. It refuses open and inbox items, and a parent that still has an open child. `tallpine backlog purge --done --dropped --older-than 30d` removes closed items in bulk; use `--dry-run` first.
+
+## Start a worker from an item
+
+```bash
+tallpine spawn --name rename-route --backlog B12
+```
+
+The item's title, note, done-when and agent notes join the worker's task, and the new session is linked to the item. If the item is held, the spawn is refused unless you add `--force`. `--backlog` is for project worker sessions, not orchestrators or standalone workers.
+
+## Run mode
+
+Run mode lets an orchestrator work through the backlog ("finish the backlog"). A project has at most one open run. The orchestrator writes the plan and records progress with `tallpine backlog run`; the Backlog page shows the run card, and adds cost and elapsed time per item from the usage records.
+
+```bash
+tallpine backlog run start --scope pr --all          # or --parent B3, or B12 B14 ...
+tallpine backlog run plan R1 --file plan.json
+tallpine backlog run item R1 B12 --status active
+tallpine backlog run status
+tallpine backlog run finish R1 --summary-file summary.md
+```
+
+`--scope` names the publishing scope the owner chose for the run:
+
+| Scope | The work is finished when |
+| --- | --- |
+| `local` | The change is committed in the worktree. |
+| `pr` | A pull request is green and reviewed. |
+| `pr-merge` | The pull request is merged. |
+
+### Plan
+
+The plan is JSON. Lanes run in parallel; items inside a lane run in order, each with a model:
+
+```json
+{"lanes":[[{"ref":"B12","model":"opus"},{"ref":"B14","model":"sonnet"}],[{"ref":"B13","model":"haiku"}]]}
+```
+
+A blocked item must follow its blocker in the same lane. Parents are not planned; plan their children. The first plan starts the run. These plan lanes belong to run mode; they are not the orchestrator lanes started with `tallpine orchestrator new --lane`.
+
+### Item progress
+
+`tallpine backlog run item <run> <item> --status <status>` records one of:
+
+| Status | Notes |
+| --- | --- |
+| `queued` | Planned, not started. |
+| `active` | Needs a running run and a free slot. At most 3 items are active per project. |
+| `in_review` | A pull request is under review. |
+| `needs_you` | Requires `--question`: one specific question for the owner. |
+| `landed` | Finished at the run's scope. |
+| `held` | Requires `--reason`. |
+| `failed` | A second failure holds the item. |
+
+### Control and finish
+
+| Command | Effect |
+| --- | --- |
+| `tallpine backlog run status [<run>]` | Show the run, its lanes, each item's status, cost and elapsed time. Defaults to the open run. |
+| `tallpine backlog run pause <run> [--reason ...] [--resume-at <RFC 3339>]` | Pause, for example at a usage limit. The reset time appears on the run card. |
+| `tallpine backlog run resume <run>` | Continue a paused run. |
+| `tallpine backlog run stop <run>` | Finish the work in flight and start nothing new. |
+| `tallpine backlog run finish <run> (--summary <text> \| --summary-file <file\|->)` | End the run with a narrative summary. Refused while an item is active or in review. |
+
+Run statuses are `planning`, `running`, `paused`, `stopping` and `done`.
+
+### Turn it off
+
+Run mode is on by default. Set `TALLPINE_BACKLOG_RUN=off` on the daemon to hide the Run button and run card and to refuse `tallpine backlog run`. See [Configuration](/configuration#daemon-environment).

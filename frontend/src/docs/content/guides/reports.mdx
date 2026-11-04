@@ -1,0 +1,63 @@
+---
+title: Reports
+description: How workers tell their orchestrator they are done, stuck or need input with tallpine report.
+---
+
+A report is a short message from a worker session to its orchestrator. Workers file reports with `tallpine report`; the orchestrator reads them as they arrive and decides what to do. A report does not change the session's state, create an orchestrator, or claim a PR.
+
+`tallpine report` must run inside a worker session, because it needs `TALLPINE_SESSION_ID`.
+
+## States
+
+Pick one state flag and always add `--note`:
+
+| Flag | Use it when |
+| --- | --- |
+| `--checkpoint` | A meaningful milestone is done and work continues. |
+| `--needs-input` | A decision or missing input blocks progress. This is the report an orchestrator must act on. |
+| `--stuck` | Work cannot proceed for another reason. |
+| `--done` | The assigned work is complete. |
+
+```bash
+tallpine report --checkpoint --note "Parser rewritten; tests next"
+tallpine report --needs-input --note "Which of the two migration orders do you want?"
+tallpine report --done --note "Focused tests pass" --pr-created https://github.com/acme/app/pull/42
+```
+
+A plain `tallpine report "free-form text"` also works. Do not combine free-form text with a state or output flag. Text and notes are limited to 1000 characters.
+
+## Attach outputs
+
+| Flag | Attaches |
+| --- | --- |
+| `--pr-created <url>` | A GitHub pull request or GitLab merge request you opened. Use a full URL. |
+| `--pr-reviewed <url>` | A pull request you reviewed. Use a full URL. |
+| `--artifact <reference>` | A deliverable such as a document. Repeatable. |
+
+The state and the outputs are independent. Attaching a PR does not mean the work is done.
+
+## File follow-ups
+
+`--defer "<line>"` files a follow-up you will not do now as an inbox item in the project [backlog](/backlog). It is repeatable, with at most three lines per report and 1 to 200 characters each.
+
+## Delivery
+
+Every report is eligible for delivery as soon as it is filed, including checkpoints and done reports. An idle orchestrator wakes. A busy Chat orchestrator keeps the report in a durable outbox until it can take it, without being forced to run concurrently. A stuck report may interrupt or combine with other reports.
+
+A done report with no pushed PR behind it is marked unverified when it is delivered. The five-minute settlement window only gives the SCM observer time to see the PR before that mark is applied; it does not delay delivery.
+
+In a project with [lanes](/cli#tallpine-orchestrator), a worker's reports go to the orchestrator that owns its lane.
+
+## Automatic reports
+
+Lines marked `[auto]` were written by the daemon, not by the worker, and are not framed as worker text. Examples:
+
+- `[auto] review_approved` and `[auto] review_failed` after a [review pass](/guides/review-loop).
+- Notices when a worker's turn ends, its agent exits or fails to start, needs authentication, or is waiting for input.
+- An idle check sent to a worker whose turn ended and who filed no `tallpine report`. It waits `TALLPINE_WORKER_IDLE_NUDGE` (a Go duration, default `10m`, minimum `1m`, or `off`) and reminds the worker to run `tallpine report`.
+
+## Related
+
+- [CLI reference: `tallpine report`](/cli#tallpine-report)
+- [Review loop](/guides/review-loop)
+- [Parallel work](/guides/parallel-issues)

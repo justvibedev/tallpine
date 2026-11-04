@@ -1,0 +1,13 @@
+# Helper binaries packaged under <app>/Contents/Resources on macOS, one path
+# per line. scripts/release-local (require_helper_identities) reads this list;
+# frontend/bundled-helpers-manifest.test.ts pins it to forge.config.ts
+# (extraResource + postPackage checks) and adopt-signature.ts so it can't drift.
+# Policy: forge packages every entry on darwin, so each must be present and
+# signed by our Team ID with the hardened runtime. A helper forge stops
+# packaging must be removed here in the same change.
+daemon/tallpine
+agent-browser/agent-browser
+wake-helper/tallpine-wake
+cloudflared/cloudflared
+tmux/bin/tmux
+acp-runtime/node/bin/node

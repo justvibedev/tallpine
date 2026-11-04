@@ -1,0 +1,15 @@
+{
+	"name": "@tallpine/shared",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Pure TypeScript shared by the desktop and phone apps: plan model, API paths, pairing codec, wire frames. No React, DOM or React Native.",
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		"./*": "./*.ts"
+	},
+	"scripts": {
+		"test": "../../scripts/test-slot --fixed 2 -- ../../frontend/node_modules/.bin/vitest run",
+		"typecheck": "../../frontend/node_modules/.bin/tsc --noEmit"
+	}
+}

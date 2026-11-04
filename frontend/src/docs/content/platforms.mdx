@@ -1,0 +1,80 @@
+---
+title: Platforms
+description: Install and use Tallpine on macOS, Windows, Linux, and mobile.
+---
+
+Tallpine has a desktop app for macOS, Windows, and Linux. The basic workflow is the same on each platform: add a repository, start an isolated worker, and follow its pull request in Chat or Terminal UI.
+
+<PlatformSupport
+	macos="full"
+	linux="full"
+	windows="full"
+	note={<>New Terminal UI sessions use Tallpine's native terminal hosts on macOS/Linux and ConPTY on Windows. Older sessions and fallback launches can use tmux. Available agents vary by platform.</>}
+/>
+
+## Desktop downloads
+
+| Platform | Available packages |
+| --- | --- |
+| macOS Apple silicon | Application zip and disk image |
+| macOS Intel | Application zip and disk image |
+| Windows x64 | Desktop installer |
+| Linux x64 | AppImage, Debian/Ubuntu package, and Fedora/RHEL package |
+
+Use the download selector on [Installation](/installation) for the current release. Installed builds check for updates on launch and periodically while running.
+
+## macOS
+
+Both Chat and Terminal UI are supported when the selected agent allows them. New terminal sessions use Tallpine's native pseudo-terminal (PTY) host. Packaged builds include tmux for older sessions and fallback launches. macOS still checks that tmux is available when starting a session. Source builds can install it with:
+
+```bash
+brew install tmux
+```
+
+macOS packages include both a `.dmg` for first installation and a `.zip` used by the updater. Keep both release artifacts available.
+
+If macOS says the developer cannot be verified, follow [Common Installation Problems](/installation#common-installation-problems).
+
+## Linux
+
+Linux supports the desktop app, Chat, Tallpine's native terminal host, and the browser inspector. Older sessions and fallback launches still use tmux; desktop packages include it. Source builds can install tmux with the distribution package manager, for example `sudo apt install tmux`.
+
+Choose the AppImage for a portable launch, or the `.deb`/`.rpm` package that matches your distribution. `tallpine doctor` still probes tmux even though new Linux sessions normally use the native host.
+
+## Windows
+
+Windows supports the desktop workflow, structured Chat, and native Terminal UI through Tallpine's conpty host. It does not require tmux, and iTerm2-specific helpers do not apply.
+
+Use PowerShell, Command Prompt, or Git Bash for optional CLI commands. Tallpine suppresses transient console windows for tools launched by the desktop daemon.
+
+## Mobile companion
+
+Tallpine's Expo mobile app is a second interface to the desktop daemon. In desktop settings, choose **Connections → Phones** to enable a separate LAN listener and pair the phone.
+
+Security properties:
+
+- The phone listener is off by default and exists only while the phone connection is on.
+- It serves HTTPS only, with a certificate the phone pins when it pairs.
+- Scanning the pairing QR fills in the address, port and a one-time pairing code. Do not share it.
+- It works on the same Wi-Fi or over Tailscale; an optional Cloudflare quick tunnel is off by default, and Cloudflare can read its traffic. See [Connections](/configuration/remote-access).
+- Daemon control and browser-control routes are served only to local clients, never on the phone listener.
+
+Mobile defaults new workers and orchestrators to Chat when the selected harness supports it. Terminal UI remains available as a compatibility choice.
+
+## Remote and server use
+
+Local clients use a Unix socket only your user can open; on Windows, and Unix systems without a peer-credential check, they use loopback `127.0.0.1:3101`, which is protected by a per-install token. Do not expose either with a public bind or reverse proxy. Connections provides a separate authenticated listener for local or secure remote connections. Never publish the local daemon connection.
+
+For unattended work, keep the desktop host awake and reachable on its local network. Tallpine does not turn the local desktop product into a hosted multi-user service.
+
+When Cloud is enabled for your build and account, its remote sessions use a separate control plane. Availability and provider choices are gated; local desktop installation alone does not grant Cloud access.
+
+<span id="next" />
+
+## Next steps
+
+<Cards>
+	<Card title="Installation" href="/installation" description="Download Tallpine and connect GitHub and an agent harness." />
+	<Card title="Dashboard" href="/dashboard" description="Learn the desktop and mobile control surfaces." />
+	<Card title="Troubleshooting" href="/troubleshooting" description="Resolve platform-specific startup and terminal issues." />
+</Cards>

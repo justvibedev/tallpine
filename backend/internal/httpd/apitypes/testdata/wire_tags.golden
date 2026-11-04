@@ -1,0 +1,134 @@
+AOImportRequest: dryRun includeSettings,omitempty projectIds,omitempty sourceDataDir,omitempty
+AgentPolicyCondition: equals field
+AgentPolicyField: advanced,omitempty default descriptionKey enum,omitempty kind labelKey locked name optionLabelKeys,omitempty optionSource,omitempty projectOverride source sourceField,omitempty value visibleWhen,omitempty
+AgentPolicyResponse: managedPath profile,omitempty project,omitempty rules schemaVersion securityMode warnings
+AgentPolicyRule: fields name titleKey
+AgentPolicySecurityMode: enabled locked source
+AttachmentInput: data mimeType,omitempty
+AutomationResponse: createdAt displayName enabled harness,omitempty id kind lastRunAt,omitempty latestRun,omitempty nextRunAt projectId prompt rrule timezone updatedAt
+AutomationRunResponse: attemptCount automationId claimedAt,omitempty createdAt errorMessage,omitempty finishedAt,omitempty id leaseExpiresAt,omitempty scheduledFor sessionId,omitempty startedAt,omitempty status updatedAt
+AutomationRunSummaryResponse: errorMessage,omitempty finishedAt,omitempty id scheduledFor sessionId,omitempty startedAt,omitempty status
+BackgroundTaskPayload: id name
+BacklogBadgesResponse: active inReview landed
+BacklogDeleteResponse: deleted skipped
+BacklogItemPlan: id itemChanged stale status
+BacklogItemResponse: agentNotes autoClose,omitempty badges childClosedCount childCount closedAt,omitempty closedReason,omitempty createdAt doneWhen fields hold id linkCounts links note origin parentId,omitempty parentRef,omitempty plan,omitempty position projectId ref scope,omitempty state title updatedAt
+BacklogLinkRequest: kind ref
+BacklogLinkResponse: createdAt createdBy,omitempty display kind ref
+BacklogOriginResponse: excerpt,omitempty kind sessionId,omitempty
+BacklogPurgeRequest: dryRun,omitempty olderThanDays,omitempty states
+BacklogReorderRequest: after,omitempty before,omitempty ref
+BacklogRunItemRequest: question,omitempty reason,omitempty status
+BacklogRunItemResponse: attempts displayStatus itemId lane model planStatus,omitempty position question,omitempty reason,omitempty ref status title updatedAt usage
+BacklogRunPauseRequest: reason,omitempty resumeAt,omitempty
+BacklogRunResponse: counts createdAt endedAt,omitempty id items pauseReason,omitempty projectId ref refs requestedBy resumeAt,omitempty scope selection startedAt,omitempty status summary,omitempty updatedAt usage
+BacklogStateRequest: reason,omitempty state
+BacklogUsageResponse: costComplete costNanos,omitempty elapsedSeconds,omitempty
+BrowserCommandRequest: action args,omitempty sessionId
+BrowserCommandResponse: action requestId result sessionId
+BrowserStatusResponse: connected connectedAt,omitempty sessionId transport
+ClaimPRRequest: allowTakeover,omitempty pr
+ClaimPRResponse: branchChanged ok prs sessionId takenOverFrom
+CleanupArtifactsPolicy: autoDeliverables autoPrune deliverableAction enabled retentionDays
+CleanupBacklogPolicy: enabled inboxExpiryDays
+CleanupBranchesPolicy: deleteRemote enabled mergedRetentionDays staleRetentionDays
+CleanupCategoryReport: category error,omitempty failed freed freedBytes items itemsTruncated,omitempty kept pending pendingBytes skipped,omitempty wouldFree wouldFreeBytes
+CleanupContainersPolicy: enabled volumeRetentionDays
+CleanupGoBuildCachePolicy: enabled
+CleanupHarnessCachesPolicy: enabled retentionDays
+CleanupItem: bytes path,omitempty projectId,omitempty reason,omitempty sessionId,omitempty status what
+CleanupPolicy: artifacts automatic backlog branches containers goBuildCache harnessCaches sessionTemp systemTemp worktrees
+CleanupRunReport: categories dryRun error,omitempty finishedAt freedBytes id pass startedAt trigger
+CleanupRunRequest: confirmArtifacts,omitempty dryRun,omitempty only,omitempty pass,omitempty
+CleanupSessionTempPolicy: enabled
+CleanupSessionsResponse: alreadyGone cleaned ok skipped
+CleanupSkippedSession: reason sessionId
+CleanupStatusResponse: firstPassPending lastDryRun,omitempty lastFullRunAt,omitempty lastRun,omitempty nextFullRunAt,omitempty nextLightRunAt,omitempty policy policyError,omitempty policyUpdatedAt,omitempty running
+CleanupSystemTempPolicy: enabled minAgeDays patterns
+CleanupWorktreePolicy: enabled requireMerged retentionDays
+ConversationImageContentRequest: data mimeType
+CreateAutomationRequest: cron,omitempty displayName enabled,omitempty harness,omitempty kind projectId prompt rrule,omitempty timezone
+CreateBacklogRequest: agentNotes,omitempty doneWhen,omitempty excerpt,omitempty hold,omitempty note,omitempty open,omitempty parent,omitempty scope,omitempty title
+CreateReportRequest: defer,omitempty message,omitempty note,omitempty outputs,omitempty sessionId state,omitempty
+CueDefinitionRequest: command,omitempty name prompt,omitempty type
+CueResponse: command,omitempty createdAt id name projectId prompt,omitempty type updatedAt
+DevImportProjectsRequest: dryRun sourceDataDir
+EndLaneRequest: dryRun,omitempty lane,omitempty projectId,omitempty sessionId,omitempty
+EndLaneResponse: notifyFailed orchestrator removed workers
+EnsureAgentReadinessRequest: agentIds,omitempty purpose
+ExitAgentResponse: ok session sessionId
+GitHubCredentialRequest: host path,omitempty protocol,omitempty
+GitHubCredentialResponse: source token username
+KillSessionResponse: artifactsDeleted,omitempty cleanupPending,omitempty freed,omitempty ok sessionId
+ListAutomationRunsResponse: nextCursor,omitempty runs
+ListAutomationsResponse: automations nextCursor,omitempty
+ListReviewsResponse: activeReviewers reviewerActivityState,omitempty reviewerHandleId reviewerHarness,omitempty reviewerSurface,omitempty reviews runs
+ListSessionPRsResponse: linkedPrs prs sessionId
+ListSessionsResponse: archived,omitempty nextCursor,omitempty sessions
+MergePRRequest: expectedHeadSha prUrl
+MergePRResponse: method ok prNumber state stateChangedAt
+ModelUsagePayload: cacheCreationTokens cacheReadTokens credits inputTokens model outputTokens turns
+PendingApproval: createdAt decisions detail,omitempty requestId summary
+PendingApprovalDecision: id kind,omitempty label
+PendingApprovalsResponse: approvals inputs sessionId
+PendingInput: createdAt detail,omitempty requestId summary
+PlanAnswerDTO: option,omitempty other,omitempty
+PlanAnswersDTO: at by corrections,omitempty defaults,omitempty questions relayed,omitempty
+PlanAssumptionDTO: id scopeCut,omitempty text
+PlanOptionDTO: id label
+PlanPRDTO: consumes,omitempty files,omitempty produces,omitempty summary,omitempty tests,omitempty title
+PlanQuestionDTO: id options reason,omitempty recommended text
+PlanView: answers,omitempty approvedAt,omitempty approvedBy,omitempty assumptions baseBranch,omitempty baseCommit,omitempty buildAnyway,omitempty decisionsMarkdown,omitempty failure,omitempty id itemChanged,omitempty itemId pausedUntil,omitempty planMarkdown,omitempty plannerSessionId,omitempty prSplit questions reviewFocus stale,omitempty startedAt status updatedAt
+PreviewServerStatusResponse: configuration,omitempty error,omitempty logs port,omitempty sessionId startedAt,omitempty state targetKind,omitempty url,omitempty
+PublishRenderRequest: artifact,omitempty height,omitempty html title
+PublishRenderResponse: activityId artifactError,omitempty artifactPath,omitempty path renderId
+RenameSessionRequest: displayName
+RenameSessionResponse: displayName ok sessionId
+RenderCheckRequest: html width,omitempty
+ReportOutputRequest: kind label,omitempty reference
+ResolveCommentsResponse: ok resolved
+RestoreSessionResponse: ok restoreMode session sessionId
+ResumeAgentResponse: ok resumeMode session sessionId
+ReviewRunResponse: review reviewerHandleId reviews
+RollbackSessionResponse: deleted,omitempty killed,omitempty ok sessionId
+SendSessionMessageRequest: attachment,omitempty message senderSessionId,omitempty userAuthored,omitempty
+SendSessionMessageResponse: deliveryId,omitempty message ok outcome,omitempty sessionId waitingOnInput,omitempty
+SessionActivityResponse: current,omitempty recent
+SessionArchiveSummary: byProject total
+SessionArtifactView: inlineUrl,omitempty kind name path previewUrl,omitempty rawUrl,omitempty size updatedAt
+SessionHistoryResponse: offset total turns
+SessionLastAssistantMessage: at text
+SessionMemoryProcessResponse: command cpuPercent pid ppid rssBytes
+SessionMemoryResponse: activity,omitempty cpuPercent processCount processes rssBytes sampledAt sessionId
+SessionPRCISummary: autoInjectCI failingChecks state
+SessionPRConflictFile: path url,omitempty
+SessionPRFacts: ci mergeability number review reviewComments state updatedAt url
+SessionPRFailingCheck: conclusion name status url,omitempty
+SessionPRMergeabilitySummary: conflictFiles,omitempty prUrl reasons state
+SessionPRReference: host number provider repo url
+SessionPRReviewCommentLink: autoInjectReview body,omitempty file,omitempty line,omitempty reviewId,omitempty url,omitempty
+SessionPRReviewEntry: autoInjectReview body,omitempty isBot,omitempty reviewUrl,omitempty reviewerId submittedAt verdict
+SessionPRReviewSummary: decision hasUnresolvedHumanComments resolvedBy,omitempty reviews,omitempty unresolvedBy unresolvedThreadCount,omitempty
+SessionPRSummary: additions author authorAvatarUrl,omitempty changedFiles ci ciObservedAt,omitempty createdAt,omitempty deletions headSha htmlUrl,omitempty mergeability number observedAt,omitempty provider repo review reviewObservedAt,omitempty sourceBranch state stateChangedAt,omitempty targetBranch title updatedAt url
+SessionPRUnresolvedReviewer: count isBot,omitempty links reviewUrl,omitempty reviewerId
+SessionResponse: lastAssistantMessage,omitempty session workerInstructions,omitempty
+SessionStepResponse: endedAt,omitempty failed startedAt tool
+SessionView: artifactFiles,omitempty backgroundTasks,omitempty branch,omitempty hasArtifacts,omitempty lastEventAt lastInteractionAt,omitempty lastUserMessageAt,omitempty model,omitempty pausedUntil,omitempty previewRevision,omitempty previewUrl,omitempty prs reauthRequired,omitempty terminalGeneration,omitempty waitingOn,omitempty
+SetActivityRequest: agentSessionId,omitempty conversationCheckpointOrigin,omitempty coordinationId,omitempty entrypoint,omitempty event,omitempty finalAssistantMessage,omitempty harness,omitempty latestAssistantUpdate,omitempty latestUserPrompt,omitempty launchId,omitempty observedAt,omitempty processId,omitempty providerTurnId,omitempty runningSubagentIds,omitempty state,omitempty subagentId,omitempty submissionId,omitempty toolName,omitempty toolUseId,omitempty transcriptPath,omitempty turnUserRequest,omitempty usage,omitempty
+SetReviewActivityRequest: agentSessionId,omitempty event,omitempty launchId,omitempty state,omitempty
+SettingValue: key locked lockedBy,omitempty source value writable
+SettingsChange: actor changedAt id key newValue oldValue projectId,omitempty
+SettingsValuesResponse: project,omitempty values
+SpawnSessionRequest: approvalMode,omitempty attachments,omitempty backlogAllowDuplicate,omitempty backlogForce,omitempty backlogPlan,omitempty backlogRef,omitempty branch,omitempty clientRequestId,omitempty displayName,omitempty effort,omitempty harness,omitempty issueId,omitempty kind,omitempty mode,omitempty model,omitempty parentSessionId,omitempty projectId,omitempty prompt,omitempty requestedOutput,omitempty role,omitempty trackerProvider,omitempty
+StartBacklogRunRequest: refs,omitempty scope selection
+SteerConversationRequest: attachments,omitempty clientMessageId,omitempty recoverOnly,omitempty senderSessionId,omitempty text
+SteerOrSendConversationResponse: activityId,omitempty duplicate outcome providerTurnId,omitempty state,omitempty turnId,omitempty
+SubmitReviewInput: body,omitempty githubReviewId,omitempty reviews,omitempty runId,omitempty verdict,omitempty
+SubmitReviewItem: body,omitempty githubReviewId,omitempty runId verdict
+TriggerReviewRequest: agentConfig,omitempty enableAutoInject,omitempty harness,omitempty head,omitempty interfaceMode,omitempty prUrl,omitempty rejectReviewedHead,omitempty rerun,omitempty source,omitempty
+TriggerReviewResponse: autoInjectEnabled created reviewerHandleId reviewerSurface,omitempty reviews runs
+UpdateAutomationRequest: cron,omitempty displayName,omitempty enabled,omitempty harness,omitempty kind,omitempty prompt,omitempty rrule,omitempty timezone,omitempty
+UpdateResult: commit finishedAt message startedAt state
+UpdateSettingsValuesRequest: project,omitempty set,omitempty unset,omitempty
+UpdateStatusResponse: buildAvailable candidate installedCommit last,omitempty latestCiPassed latestCommit running updateAvailable
+UsageHookMetadata: harness modelId,omitempty providerId,omitempty subagentId,omitempty subagentTranscriptPath,omitempty transcriptPath,omitempty

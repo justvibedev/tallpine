@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# scripts/release-local: build, install, roll back and inspect the Vibe
+# Orchestrator app installed on this Mac. See "Releasing to your own machine" in
+# docs/development.md.
+#
+#   scripts/release-local build [<ref>]      # default origin/main; signed, NOT notarized
+#   scripts/release-local build --notarize [<ref>]   # public releases: notarize+staple+verify
+#   scripts/release-local request-build      # build the next main commit that passes local CI
+#   scripts/release-local install <app>      # app printed by build
+#   scripts/release-local rollback
+#   scripts/release-local status
+#   scripts/release-local publish <app> [--publish-github]  # GitHub Release for the updater
+#   scripts/release-local pppc <app> [--out <file>]  # Jamf PPPC + login-items profile from the signed app
+#
+# Options (anywhere on the command line):
+#   --state-dir <dir>   state root (default ~/.tallpine); running.json, releases/ and
+#                       release-builds/ live here, data in <dir>/data
+#   --data-dir <dir>    data dir (default <state-dir>/data, or $TALLPINE_DATA_DIR);
+#                       without --state-dir the state root is its parent
+#   --app-dir <dir>     directory holding the app (default ~/Applications)
+#   --notarize          build: notarize and staple (needs TALLPINE_NOTARY_PROFILE) and fail
+#                       unless both verify. Default builds skip notarization (faster);
+#                       use it for every build that goes to `publish` (website/updater)
+#   --force             build/install a commit without a local CI pass row, or
+#                       an app without a build commit
+#   --allow-unsigned    build without a signing identity (local test builds only;
+#                       the app is ad hoc signed and not a releasable artifact)
+#   --no-fetch          do not fetch origin first (build, status)
+#   --allow-in-session  allow install/rollback of the live app from inside an
+#                       agent session (that session's daemon will be stopped)
+#   --notify <session>  install: message that session when the install finishes (repeatable):
+#                       "[release] installed <sha10>; daemon healthy ..." or "... FAILED: <reason>".
+#                       Sent with the new CLI as the owner (no session env), retried ~60 s,
+#                       never fails the install. Needed because an idle orchestrator is
+#                       not woken by the restart.
+#   --log <path>        install: log path to name in the --notify message (the file the
+#                       caller redirects the installer's output to; contents never sent)
+#   --yes               do not ask before quitting the app (install, rollback)
+#   --publish-github    publish: actually make the zip/dmg and create the release
+#                       (without it, publish only checks notarization, signing
+#                       and that the version tag is unused)
+#
+# Environment:
+#   TALLPINE_RELEASE_CI_TSV          local CI results (default
+#                              ~/.tallpine/local-ci/results/local-ci.tsv), rows
+#                              "main<TAB><sha><TAB>pass|fail|superseded<TAB><summary>"
+#   TALLPINE_RELEASE_KEEP            rollback points / builds to keep (default 3)
+#   TALLPINE_RELEASE_STOP_TIMEOUT    seconds to wait for the app and daemon to exit
+#   TALLPINE_RELEASE_HEALTH_TIMEOUT  seconds to wait for /healthz and /readyz
+#   TALLPINE_SIGN_IDENTITY           codesign identity for `build` (falls back to
+#                              APPLE_SIGNING_IDENTITY, else ad hoc, whose privacy
+#                              grants do not persist). Either may be set in the
+#                              untracked file ~/.tallpine/release.env, sourced if present
+#   TALLPINE_RELEASE_GITHUB_REPO     GitHub owner/repo that `tallpine start` downloads from;
+#                              stamped into the built binary (also settable in
+#                              ~/.tallpine/release.env, which need not export it)
+#   TALLPINE_RELEASE_TEAM_ID         Developer ID Team ID releases must be signed by (helper and
+#                              publish checks). Default: the "(TEAMID)" suffix of the signing
+#                              identity. Set it in ~/.tallpine/release.env; never commit it.
+#   TALLPINE_NOTARY_PROFILE          notarytool keychain profile. With `build --notarize`, notarizes
+#                              and staples and fails unless both verify (ignored
+#                              for --allow-unsigned). Also settable in
+#                              ~/.tallpine/release.env. Check with `notary-check`;
+#                              `publish` refuses without it.
+# Test-only:
+#   TALLPINE_RELEASE_CODESIGN        codesign command (default codesign)
+#   TALLPINE_RELEASE_BUNDLE_ID       expected bundle id instead of the brand one
+#   TALLPINE_RELEASE_LAUNCHER        command run with the app path instead of `open`
+#   TALLPINE_RELEASE_TEST_INTERRUPT  simulate Ctrl-C at a named step
+#   TALLPINE_RELEASE_TEST_INTERRUPT_UNDO  simulate a second Ctrl-C during the undo
+#   TALLPINE_RELEASE_TEST_SIGNAL     signal for TALLPINE_RELEASE_TEST_INTERRUPT (default INT)
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+brand_file="${repo_root}/backend/internal/brand/brand.go"
+
+last_error=""
+die() { last_error="$*"; printf 'release-local: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'release-local: warning: %s\n' "$*" >&2; }
+say() { printf '%s\n' "$*"; }
+
+brand_const() {
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "${brand_file}" | head -n 1
+}
+
+[[ -f "${brand_file}" ]] || die "brand constants not found at ${brand_file}"
+product_name="$(brand_const ProductName)"
+bundle_id="${TALLPINE_RELEASE_BUNDLE_ID:-$(brand_const BundleID)}"
+home_dir_name="$(brand_const HomeDirName)"
+service_name="$(brand_const DaemonServiceName)"
+cli_name="$(brand_const CLIName)"
+legacy_home_dir_name="$(brand_const LegacyHomeDirName)"
+legacy_product_name="$(brand_const LegacyProductName)"
+legacy_bundle_id="${TALLPINE_RELEASE_LEGACY_BUNDLE_ID:-$(brand_const LegacyBundleID)}"
+legacy_service_name="$(brand_const LegacyDaemonServiceName)"
+legacy_tmux_socket="$(brand_const LegacyTmuxSocketName)"
+[[ -n "${product_name}" && -n "${bundle_id}" && -n "${home_dir_name}" && -n "${service_name}" ]] ||
+  die "could not read the brand constants from ${brand_file}"
+
+# Optional untracked local settings (signing identity); never committed. Only
+# sourced: it is never printed, copied or modified. The new home wins; before the
+# migration it still lives in the legacy home.
+# shellcheck disable=SC1091
+if [[ -f "${HOME}/${home_dir_name}/release.env" ]]; then
+  . "${HOME}/${home_dir_name}/release.env"
+elif [[ -f "${HOME}/${legacy_home_dir_name}/release.env" ]]; then
+  . "${HOME}/${legacy_home_dir_name}/release.env"
+fi
+
+keep="${TALLPINE_RELEASE_KEEP:-3}"
+[[ "${keep}" =~ ^[0-9]+$ && "${keep}" -ge 1 ]] || die "TALLPINE_RELEASE_KEEP must be a positive integer"
+ci_tsv="${TALLPINE_RELEASE_CI_TSV:-${HOME}/.tallpine/local-ci/results/local-ci.tsv}"
+stop_timeout="${TALLPINE_RELEASE_STOP_TIMEOUT:-90}"
+health_timeout="${TALLPINE_RELEASE_HEALTH_TIMEOUT:-180}"
+
+# Excluded from data snapshots: per-session checkouts, scratch space, caches,
+# logs and session deliverables. Nothing in them is touched by a migration.
+snapshot_excludes=" worktrees tmp caches logs artifacts import-staging daemon.lock "
+
+# ---------------------------------------------------------------- arguments
+
+opt_state_dir=""
+opt_data_dir=""
+opt_app_dir=""
+opt_force=0
+opt_notarize=0
+opt_allow_unsigned=0
+opt_fetch=1
+opt_allow_in_session=0
+opt_yes=0
+opt_publish_github=0
+opt_out=""
+opt_notify=()
+release_args=("$@")
+release_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
+opt_log=""
+positional=()
+
+usage() { sed -n '2,55p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --state-dir) opt_state_dir="${2:?--state-dir needs a value}"; shift 2 ;;
+  --state-dir=*) opt_state_dir="${1#*=}"; shift ;;
+  --data-dir) opt_data_dir="${2:?--data-dir needs a value}"; shift 2 ;;
+  --data-dir=*) opt_data_dir="${1#*=}"; shift ;;
+  --app-dir) opt_app_dir="${2:?--app-dir needs a value}"; shift 2 ;;
+  --app-dir=*) opt_app_dir="${1#*=}"; shift ;;
+  --notify) opt_notify+=("${2:?--notify needs a session id}"); shift 2 ;;
+  --notify=*) opt_notify+=("${1#*=}"); shift ;;
+  --log) opt_log="${2:?--log needs a value}"; shift 2 ;;
+  --log=*) opt_log="${1#*=}"; shift ;;
+  --force) opt_force=1; shift ;;
+  --notarize) opt_notarize=1; shift ;;
+  --allow-unsigned) opt_allow_unsigned=1; shift ;;
+  --no-fetch) opt_fetch=0; shift ;;
+  --allow-in-session) opt_allow_in_session=1; shift ;;
+  --yes | -y) opt_yes=1; shift ;;
+  --publish-github) opt_publish_github=1; shift ;;
+  --out) opt_out="${2:?--out needs a value}"; shift 2 ;;
+  --out=*) opt_out="${1#*=}"; shift ;;
+  -h | --help) usage; exit 0 ;;
+  --) shift; while [[ $# -gt 0 ]]; do positional+=("$1"); shift; done ;;
+  -*) die "unknown option $1 (see --help)" ;;
+  *) positional+=("$1"); shift ;;
+  esac
+done
+[[ ${#positional[@]} -gt 0 ]] || { usage >&2; exit 2; }
+command_name="${positional[0]}"
+
+abs_dir() { mkdir -p "$1" && (cd "$1" && pwd -P); }
+
+# Paths follow the daemon's conventions (backend/internal/config): the state
+# root holds running.json and daemon.token, data lives in <state>/data, and
+# TALLPINE_DATA_DIR moves only the data dir. An explicit --state-dir or --data-dir
+# never falls back to the live run file, so a test can not stop the real daemon.
+live_state_dir="${HOME}/${home_dir_name}"
+if [[ -n "${opt_data_dir}" ]]; then
+  data_dir="$(abs_dir "${opt_data_dir}")"
+  state_dir="$(abs_dir "${opt_state_dir:-$(dirname "${data_dir}")}")"
+  run_file="${state_dir}/running.json"
+elif [[ -n "${opt_state_dir}" ]]; then
+  state_dir="$(abs_dir "${opt_state_dir}")"
+  data_dir="${state_dir}/data"
+  run_file="${state_dir}/running.json"
+else
+  state_dir="${live_state_dir}"
+  data_dir="${TALLPINE_DATA_DIR:-${state_dir}/data}"
+  run_file="${TALLPINE_RUN_FILE:-${state_dir}/running.json}"
+fi
+# First install after the rename: the state still lives in the legacy home, and the
+# new home does not exist yet. Work in the legacy paths (snapshot, rollback point)
+# until the migrator has moved the tree, then repoint (see repoint_state).
+legacy_state_dir="${HOME}/${legacy_home_dir_name}"
+migrate_pending=0
+if [[ -z "${opt_state_dir}" && -z "${opt_data_dir}" && -z "${TALLPINE_DATA_DIR:-}" && -z "${TALLPINE_RUN_FILE:-}" &&
+  -f "${legacy_state_dir}/data/ao.db" && ! -f "${live_state_dir}/data/ao.db" ]]; then
+  migrate_pending=1
+  state_dir="${legacy_state_dir}"
+  data_dir="${state_dir}/data"
+  run_file="${state_dir}/running.json"
+fi
+app_dir="${opt_app_dir:-${HOME}/Applications}"
+app_path="${app_dir%/}/${product_name}.app"
+releases_dir="${state_dir}/releases"
+rolled_back_dir="${releases_dir}/rolled-back"
+builds_dir="${state_dir}/release-builds"
+token_file="$(dirname "${run_file}")/daemon.token"
+
+# The command code lives in release-local.d/, sourced in this order (definitions only, no side effects).
+# shellcheck source=/dev/null
+. "${script_dir}/lib/notify.sh"
+for part in common daemons lock notary pppc pkg build install; do
+  # shellcheck source=/dev/null
+  . "${script_dir}/release-local.d/${part}.sh"
+done
+
+# shellcheck source=scripts/release-local-publish.sh
+. "${script_dir}/release-local-publish.sh"
+
+# One compound command ending in exit: bash reads a script as it runs, so this
+# keeps a checkout or edit during a long build from being read mid-run.
+{
+  case "${command_name}" in build|install|rollback|publish) require_fresh_script "${command_name}" "${positional[@]:1}" ;; esac
+  case "${command_name}" in
+  request-build)
+    # A fenced agent shell cannot write release-builds (the daemon installs from it, so it must
+    # not be writable by an agent); the daemon runs the request on its behalf (B461).
+    if [[ -n "${TALLPINE_SESSION_ID:-}" ]] && ! { mkdir -p "${builds_dir}" && [[ -w "${builds_dir}" ]]; } 2>/dev/null; then
+      exec "${cli_name:-tallpine}" release request-build
+    fi
+    cmd_request_build ;;
+  build) cmd_build "${positional[@]:1}" ;;
+  install) cmd_install "${positional[@]:1}" ;;
+  rollback) cmd_rollback ;;
+  status) cmd_status ;;
+  publish) cmd_publish "${positional[@]:1}" ;;
+  pppc) cmd_pppc "${positional[@]:1}" ;;
+  paths) printf 'state_dir=%s\nbuilds_dir=%s\nbuild_cache=%s\n' "${state_dir}" "${builds_dir}" "$(build_env sh -c 'printf %s "${TALLPINE_BUILD_CACHE_DIR}"')" ;; # test hook
+  notary-check) notary_check ;;
+  package-timing-check) package_timing_filter "${positional[1]}" "${positional[2]}"; build_times=""; record_package_phases "${positional[2]}"; say "${build_times}" ;; # test hook
+  record-times-check) releases_dir="${positional[1]}"; build_times="deps=1s"; record_build_times abcdef1234567 9 "${positional[2]:-}" ;; # test hook
+  build-lock-check) acquire_build_lock "${positional[1]}"; sleep "${positional[2]:-0}"; say locked ;; # test hook
+  notary-setup) signing_setup; notary_setup; printf 'profile=%s\n' "$(env | sed -n 's/^TALLPINE_NOTARY_PROFILE=//p')" ;; # test hook
+  notarized-check) require_notarized "${positional[1]}" "${positional[2]:-}" ;; # test hook
+  hardened-check) require_hardened_runtime "${positional[1]}" ;; # test hook
+  helpers-check) require_helper_identities "${positional[1]}" ;; # test hook
+  signing-setup) signing_setup; printf 'identity=%s\n' "${APPLE_SIGNING_IDENTITY:-}"
+    printf 'release_repo=%s\n' "$(env | sed -n 's/^TALLPINE_RELEASE_GITHUB_REPO=//p')" ;; # test hook (child-visible env)
+  *) die "unknown command ${command_name} (build, install, rollback, status, notary-check, publish, pppc)" ;;
+  esac
+  exit
+}

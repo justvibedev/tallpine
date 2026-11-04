@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tallpine Desktop Dev"
+  short_description: "Run the real Tallpine Electron app from a checkout"
+  default_prompt: "Use $tallpine-desktop-dev to launch this checkout’s Electron app against real local Tallpine data and verify the requested UI."

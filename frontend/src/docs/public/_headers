@@ -1,0 +1,4 @@
+# Cloudflare Pages / Netlify. The search index is an extensionless JSON file.
+/api/search
+  Content-Type: application/json; charset=utf-8
+  Cache-Control: public, max-age=300

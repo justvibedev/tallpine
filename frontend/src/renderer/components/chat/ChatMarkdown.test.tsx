@@ -1,0 +1,1003 @@
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useUiStore } from "../../stores/ui-store";
+import { tallpineBridge } from "../../lib/bridge";
+import { setApiBaseUrl } from "../../lib/api-client";
+import { renderMermaidDiagram } from "../../lib/mermaid-diagram";
+import { ActivityTitle, ChatLinkProvider, ChatMarkdown, ChatOpeningRef } from "./ChatMarkdown";
+import { ChatImageSourceProvider } from "./chat-image-source";
+
+const sessionPreview = vi.hoisted(() => vi.fn());
+vi.mock("../SessionLinkPreviewCard", () => ({
+	SessionLinkPreviewCard: (props: unknown) => {
+		sessionPreview(props);
+		return <div data-testid="session-link-preview" />;
+	},
+}));
+
+const linkSource = vi.hoisted(() => ({ workspaces: [] as Array<{ id: string; sessions: Array<{ id: string; artifactFiles?: Array<{ path: string }> }> }> }));
+vi.mock("../../lib/use-session-link-navigation", () => ({
+	useSessionLinkSource: () => ({ ready: true, isLoading: false, isError: false, workspaces: linkSource.workspaces }),
+}));
+
+// Mermaid needs real SVG layout APIs jsdom lacks; pin the routing boundary and
+// let MermaidBlock.test.tsx own the block's states.
+vi.mock("../../lib/mermaid-diagram", () => ({
+	isRenderableDiagram: (code: string) => code.trim().length > 0 && code.length <= 20_000,
+	renderMermaidDiagram: vi.fn(async () => '<svg xmlns="http://www.w3.org/2000/svg"><g>diagram</g></svg>'),
+}));
+
+beforeEach(() => {
+	vi.mocked(renderMermaidDiagram).mockClear();
+});
+
+// The point of these is that the SYNTAX stops being visible. Every case here is a
+// shape agents actually emit, and the assertion is that structure replaced markup.
+
+function renderWithLinkHandler(
+	text: string,
+	onLinkOpen: (url: string) => void,
+	workspacePaths: string[] = [],
+	onFileOpen?: (path: string, line?: number) => void,
+) {
+	return render(
+		<ChatLinkProvider onLinkOpen={onLinkOpen} onFileOpen={onFileOpen} workspacePaths={workspacePaths}>
+			<ChatMarkdown text={text} />
+		</ChatLinkProvider>,
+	);
+}
+
+function renderWithSessionLinkHandler(text: string, onSessionLinkOpen: (url: string) => void) {
+	return render(<ChatLinkProvider onSessionLinkOpen={onSessionLinkOpen}><ChatMarkdown text={text} /></ChatLinkProvider>);
+}
+
+describe("ChatMarkdown", () => {
+	it("renders headings as headings rather than literal hashes", () => {
+		render(<ChatMarkdown text={"## Findings\n\nTwo files changed."} />);
+		expect(screen.getByRole("heading", { name: "Findings" })).toBeInTheDocument();
+		expect(screen.queryByText(/## Findings/)).not.toBeInTheDocument();
+	});
+
+	it("renders bullet and numbered lists as lists", () => {
+		render(<ChatMarkdown text={"- first\n- second\n\n1. one\n2. two"} />);
+		const lists = screen.getAllByRole("list");
+		expect(lists).toHaveLength(2);
+		expect(screen.getAllByRole("listitem")).toHaveLength(4);
+	});
+
+	it("keeps the first number of an ordered list that starts after 1", () => {
+		render(<ChatMarkdown text={"6."} />);
+		expect(screen.getByRole("list")).toHaveAttribute("start", "6");
+	});
+
+	it("renders a task list with read-only checkboxes reflecting the agent's state", () => {
+		render(<ChatMarkdown text={"- [x] done thing\n- [ ] pending thing"} />);
+		const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+		expect(boxes).toHaveLength(2);
+		expect(boxes[0]!.checked).toBe(true);
+		expect(boxes[1]!.checked).toBe(false);
+		// Clicking must not imply Tallpine can rewrite the agent's plan.
+		expect(boxes[0]!.readOnly).toBe(true);
+	});
+
+	it("renders a GFM table, in a container that scrolls instead of widening the column", () => {
+		render(<ChatMarkdown text={"| file | lines |\n| --- | --- |\n| a.ts | 12 |"} />);
+		const table = screen.getByRole("table");
+		expect(table).toBeInTheDocument();
+		expect(screen.getByRole("columnheader", { name: "file" })).toBeInTheDocument();
+		expect(screen.getByRole("cell", { name: "a.ts" })).toBeInTheDocument();
+		const scroller = table.closest("div");
+		expect(scroller?.className).toContain("overflow-x-auto");
+	});
+
+	it("compacts emoji status markers inside markdown tables", () => {
+		render(<ChatMarkdown text={"| status |\n| --- |\n| 🟡 idle |\n| ✅ merged |"} />);
+		const idle = screen.getByRole("cell", { name: "🟡 idle" });
+		const merged = screen.getByRole("cell", { name: "✅ merged" });
+
+		expect(idle.querySelector(".chat-md-emoji")).toHaveTextContent("🟡");
+		expect(merged.querySelector(".chat-md-emoji")).toHaveTextContent("✅");
+	});
+
+	it("keeps skin-tone and ZWJ emoji together as grapheme clusters", () => {
+		render(<ChatMarkdown text={"Ready 👍🏽 with family 👨‍👩‍👧‍👦 and flag 🏳️‍🌈."} />);
+		const emoji = [...document.querySelectorAll(".chat-md-emoji")];
+		expect(emoji.map((node) => node.textContent)).toEqual(["👍🏽", "👨‍👩‍👧‍👦", "🏳️‍🌈"]);
+	});
+
+	it("renders a fenced code block with its language and a copy control, and no stray backticks", () => {
+		render(<ChatMarkdown text={"```go\nfunc main() {}\n```"} />);
+		expect(screen.getByText("go")).toBeInTheDocument();
+		expect(screen.getByText("func main() {}")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /copy code/i })).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain("```");
+	});
+
+	it("keeps inline code inline rather than promoting it to a block", () => {
+		render(<ChatMarkdown text={"run `go test ./...` first"} />);
+		const code = screen.getByText("go test ./...");
+		expect(code.tagName).toBe("CODE");
+		expect(code.closest("pre")).toBeNull();
+		expect(code).toHaveClass("text-markdown-code");
+	});
+
+	it("uses the Tallpine logo colour for file paths and inline notation", () => {
+		render(
+			<ChatMarkdown
+				text={"See `backend/internal/adapters/agent/` and then pass `--resume` to `tallpine`."}
+			/>,
+		);
+
+		expect(screen.getByText("backend/internal/adapters/agent/")).toHaveClass("text-markdown-code");
+		expect(screen.getByText("--resume")).toHaveClass("text-markdown-code");
+		expect(screen.getByText("tallpine")).toHaveClass("text-markdown-code");
+	});
+
+	it("recognizes standalone filenames and paths with line locations", () => {
+		render(<ChatMarkdown text={"Compare `README.md` with `backend/service.go:42`."} />);
+		expect(screen.getByText("README.md")).toHaveClass("text-markdown-code");
+		expect(screen.getByText("backend/service.go:42")).toHaveClass("text-markdown-code");
+	});
+
+	it("opens a known inline-code file path in Files", async () => {
+		const onFileOpen = vi.fn();
+		renderWithLinkHandler(
+			"Open `backend/service.go:42` but keep `--resume` as code.",
+			vi.fn(),
+			["backend/service.go"],
+			onFileOpen,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Open backend/service.go in Files" }), { metaKey: true });
+
+		expect(onFileOpen).toHaveBeenCalledWith("backend/service.go", 42);
+		expect(screen.getByText("--resume").closest("button")).toBeNull();
+	});
+
+	it("opens an absolute markdown file link in Files instead of externally", async () => {
+		const onFileOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler(
+			"See [the component](/Users/me/project/frontend/src/App.tsx:42).",
+			vi.fn(),
+			["frontend/src/App.tsx"],
+			onFileOpen,
+		);
+
+		fireEvent.click(screen.getByRole("link", { name: "the component" }), { metaKey: true });
+
+		// The absolute reference is passed through as written: its tail matching
+		// a workspace file does not make it that file, so the opener asks the daemon.
+		expect(onFileOpen).toHaveBeenCalledWith("/Users/me/project/frontend/src/App.tsx", 42);
+		expect(openExternal).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("does not nest a file-path button inside a markdown file link", () => {
+		renderWithLinkHandler(
+			"See [`frontend/src/App.tsx`](frontend/src/App.tsx).",
+			vi.fn(),
+			["frontend/src/App.tsx"],
+			vi.fn(),
+		);
+
+		const link = screen.getByRole("link", { name: "frontend/src/App.tsx" });
+		expect(link.querySelector("button")).toBeNull();
+	});
+
+	it("does not swap an absolute link or inline path for a same-named workspace file", async () => {
+		const onFileOpen = vi.fn();
+		renderWithLinkHandler(
+			"See [the readme](/other-repo/README.md) and `/other-repo/README.md:3`.",
+			vi.fn(),
+			["README.md"],
+			onFileOpen,
+		);
+
+		fireEvent.click(screen.getByRole("link", { name: "the readme" }), { metaKey: true });
+		fireEvent.click(screen.getByRole("button", { name: "Open README.md in Files" }), { metaKey: true });
+
+		expect(onFileOpen).toHaveBeenNthCalledWith(1, "/other-repo/README.md");
+		expect(onFileOpen).toHaveBeenNthCalledWith(2, "/other-repo/README.md", 3);
+	});
+
+	it("opens an explicit relative file link before the workspace catalog catches up", async () => {
+		const onFileOpen = vi.fn();
+		renderWithLinkHandler(
+			"See [the new file](src/generated/new-file.ts#L8).",
+			vi.fn(),
+			[],
+			onFileOpen,
+		);
+
+		fireEvent.click(screen.getByRole("link", { name: "the new file" }), { metaKey: true });
+
+		expect(onFileOpen).toHaveBeenCalledWith("src/generated/new-file.ts", 8);
+	});
+
+	it("escapes raw HTML instead of rendering it", () => {
+		// Agent output is only as trustworthy as the files it just read, so an
+		// <img onerror> in a README must never become a live element.
+		render(<ChatMarkdown text={'before <img src=x onerror="alert(1)"> after'} />);
+		expect(document.querySelector("img")).toBeNull();
+		expect(document.body.textContent).toContain("onerror");
+	});
+
+	it("marks external links to open outside the app", () => {
+		render(<ChatMarkdown text={"see [the issue](https://example.com/i/1)"} />);
+		const link = screen.getByRole("link", { name: "the issue" });
+		expect(link).toHaveAttribute("href", "https://example.com/i/1");
+		expect(link).toHaveAttribute("target", "_blank");
+		expect(link).toHaveClass("text-markdown-link", "hover:text-markdown-link-hover");
+		// Without noreferrer the opened page gets a handle on the renderer.
+		expect(link.getAttribute("rel")).toContain("noreferrer");
+	});
+
+	it("copies a web link on plain click and opens it in the system browser on Cmd-click", async () => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		const write = vi.spyOn(tallpineBridge.clipboard, "writeText").mockResolvedValue(undefined);
+		const show = vi.spyOn(useUiStore.getState(), "showGlobalToast");
+		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
+		const link = screen.getByRole("link", { name: "the issue" });
+
+		fireEvent.click(link);
+		expect(write).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		expect(openExternal).not.toHaveBeenCalled();
+		await waitFor(() => expect(show).toHaveBeenCalledWith("Copied", undefined, "top-center"));
+
+		fireEvent.click(link, { metaKey: true });
+		expect(write).toHaveBeenCalledTimes(1);
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		openExternal.mockRestore();
+		write.mockRestore();
+	});
+
+	it("copies a workspace file link and inline-code path on plain click, opens on Cmd-click", async () => {
+		const onFileOpen = vi.fn();
+		const write = vi.spyOn(tallpineBridge.clipboard, "writeText").mockResolvedValue(undefined);
+		render(
+			<ChatLinkProvider onFileOpen={onFileOpen} workspacePaths={["backend/service.go"]}>
+				<ChatMarkdown text="see `backend/service.go`" />
+			</ChatLinkProvider>,
+		);
+		const button = screen.getByRole("button", { name: "Open backend/service.go in Files" });
+
+		fireEvent.click(button);
+		expect(write).toHaveBeenCalledWith("backend/service.go");
+		expect(onFileOpen).not.toHaveBeenCalled();
+
+		fireEvent.click(button, { metaKey: true });
+		expect(onFileOpen).toHaveBeenCalledWith("backend/service.go");
+		write.mockRestore();
+	});
+
+	it.each([
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+		"http://[::1]:5173",
+		"http://0.0.0.0:5173",
+		"http://127.0.0.2:5173",
+	])("does not open a remote host-local preview on the client: %s", (href) => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		render(<ChatLinkProvider onLinkOpen={onLinkOpen} remoteHost><ChatMarkdown text={`[preview](${href})`} /></ChatLinkProvider>);
+
+		const preview = screen.getByText("preview");
+		expect(preview.closest("a")).toBeNull();
+		expect(preview.closest("[title]")).toHaveAttribute("title", expect.stringContaining("remote host"));
+		fireEvent.click(preview);
+		fireEvent.click(preview, { altKey: true });
+		fireEvent.contextMenu(preview);
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		expect(openExternal).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("scopes a session preview to the chat source", async () => {
+		sessionPreview.mockClear();
+		render(
+			<ChatLinkProvider
+				onSessionLinkOpen={vi.fn()}
+				sessionLinkHostId="box-a"
+			>
+				<ChatMarkdown text="[Worker](tallpine://sessions/project/session)" />
+			</ChatLinkProvider>,
+		);
+
+		fireEvent.pointerOver(screen.getByRole("link"), { pointerType: "mouse" });
+		await waitFor(() => expect(screen.getByTestId("session-link-preview")).toBeInTheDocument());
+		expect(sessionPreview).toHaveBeenCalledWith({
+			href: "tallpine://sessions/project/session",
+			sourceHostId: "box-a",
+			sourceKind: undefined,
+		});
+	});
+
+	it("renders remote workspace paths as text while keeping external links working", async () => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		render(<ChatLinkProvider onLinkOpen={onLinkOpen} remoteHost>
+			<ChatMarkdown text="[report](reports/new-report.html) and [issue](https://example.com/i/1)" />
+		</ChatLinkProvider>);
+
+		const report = screen.getByText("report");
+		expect(report.closest("a")).toBeNull();
+		expect(report.closest("[title]")).toHaveAttribute("title", expect.stringContaining("remote host"));
+		fireEvent.click(report);
+		fireEvent.click(report, { metaKey: true });
+		fireEvent.contextMenu(report);
+		fireEvent.click(screen.getByRole("link", { name: "issue" }), { metaKey: true });
+		expect(openExternal).toHaveBeenCalledExactlyOnceWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("opens remote source links in Files without opening the client browser", async () => {
+		const onFileOpen = vi.fn();
+		const onLinkOpen = vi.fn();
+		render(<ChatLinkProvider onFileOpen={onFileOpen} onLinkOpen={onLinkOpen} remoteHost workspacePaths={["src/App.tsx", "reports/index.html"]}>
+			<ChatMarkdown text="[source](src/App.tsx) and [new](src/new.ts#L8) and [preview](reports/index.html)" />
+		</ChatLinkProvider>);
+
+		fireEvent.click(screen.getByRole("link", { name: "source" }), { metaKey: true });
+		fireEvent.click(screen.getByRole("link", { name: "new" }), { metaKey: true });
+		expect(onFileOpen).toHaveBeenNthCalledWith(1, "src/App.tsx");
+		expect(onFileOpen).toHaveBeenNthCalledWith(2, "src/new.ts", 8);
+		expect(screen.getByText("preview").closest("a")).toBeNull();
+		expect(onLinkOpen).not.toHaveBeenCalled();
+	});
+
+	it("blocks remote host-local links inside Mermaid diagrams", async () => {
+		vi.mocked(renderMermaidDiagram).mockResolvedValueOnce('<svg xmlns="http://www.w3.org/2000/svg"><a href="http://localhost:5173"><text>preview</text></a></svg>');
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		render(<ChatLinkProvider onLinkOpen={onLinkOpen} remoteHost>
+			<ChatMarkdown text={'```mermaid\ngraph LR\n  A-->B\n```'} />
+		</ChatLinkProvider>);
+
+		const preview = await screen.findByText("preview");
+		fireEvent.click(preview);
+		fireEvent.click(preview, { altKey: true });
+		fireEvent(preview, new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }));
+		fireEvent.contextMenu(preview);
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		expect(openExternal).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("does not load a remote host-local markdown image from the client", () => {
+		render(<ChatLinkProvider remoteHost><ChatMarkdown text="![remote screenshot](http://localhost:5173/screenshot.png)" /></ChatLinkProvider>);
+		expect(screen.queryByRole("img", { name: "remote screenshot" })).not.toBeInTheDocument();
+		expect(screen.getByText("remote screenshot")).toHaveAttribute("title", expect.stringContaining("remote host"));
+	});
+
+	it("routes workspace file clicks to the Tallpine Browser handler", async () => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler("see [test-ui-2.html](test-ui-2.html)", onLinkOpen, ["test-ui-2.html"]);
+
+		fireEvent.click(screen.getByRole("link", { name: "test-ui-2.html" }), { metaKey: true });
+
+		expect(onLinkOpen).toHaveBeenCalledWith("test-ui-2.html");
+		expect(openExternal).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("routes a newly reported local file through Tallpine even before Files has indexed it", async () => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler("see [new report](reports/new-report.html)", onLinkOpen);
+
+		fireEvent.click(screen.getByRole("link", { name: "new report" }), { metaKey: true });
+
+		expect(onLinkOpen).toHaveBeenCalledWith("reports/new-report.html");
+		expect(openExternal).not.toHaveBeenCalled();
+	});
+
+	it("preserves Windows workspace paths and offers the verified file in Files", async () => {
+		const user = userEvent.setup();
+		const onLinkOpen = vi.fn();
+		const onFileOpen = vi.fn();
+		renderWithLinkHandler(
+			"see [final report](C:\\worktree\\reports\\final.html)",
+			onLinkOpen,
+			["reports/final.html"],
+			onFileOpen,
+		);
+		const link = screen.getByRole("link", { name: "final report" });
+
+		fireEvent.contextMenu(link);
+		await user.click(await screen.findByRole("menuitem", { name: "Open in Files" }));
+
+		expect(onFileOpen).toHaveBeenCalledWith("reports/final.html");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"tallpine://sessions/project/session",
+		"[Open session](tallpine://sessions/project/session)",
+	])("renders and activates a canonical session link: %s", async (text) => {
+		const onSessionLinkOpen = vi.fn();
+		renderWithSessionLinkHandler(text, onSessionLinkOpen);
+		const link = screen.getByRole("link");
+		expect(link).toHaveAttribute("href", "tallpine://sessions/project/session");
+		await userEvent.setup().click(link);
+		expect(onSessionLinkOpen).toHaveBeenCalledWith("tallpine://sessions/project/session");
+	});
+
+	it("does not auto-activate a session link while streaming", () => {
+		const onSessionLinkOpen = vi.fn();
+		render(<ChatLinkProvider onSessionLinkOpen={onSessionLinkOpen}><ChatMarkdown streaming text="tallpine://sessions/project/session" /></ChatLinkProvider>);
+		expect(screen.getByRole("link")).toBeInTheDocument();
+		expect(onSessionLinkOpen).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["`worker-1/plan.md`", "tallpine://sessions/project/worker-1/artifacts/plan.md"],
+		["`/tmp/tallpine/artifacts/worker-1/plans/q3.md`", "tallpine://sessions/project/worker-1/artifacts/plans/q3.md"],
+		["`worker-1/plans/my plan.md`", "tallpine://sessions/project/worker-1/artifacts/plans/my%20plan.md"],
+		["`/tmp/tallpine data/artifacts/worker-1/plans/my plan.md`", "tallpine://sessions/project/worker-1/artifacts/plans/my%20plan.md"],
+	])("links inline code naming a listed session artifact: %s", async (text, href) => {
+		linkSource.workspaces = [{ id: "project", sessions: [{ id: "worker-1", artifactFiles: [{ path: "plan.md" }, { path: "plans/q3.md" }, { path: "plans/my plan.md" }] }] }];
+		const onSessionLinkOpen = vi.fn();
+		const perform = vi.spyOn(tallpineBridge.localPath, "perform");
+		renderWithSessionLinkHandler(text, onSessionLinkOpen);
+		const link = screen.getByRole("link");
+		expect(link).toHaveAttribute("href", href);
+		await userEvent.setup().click(link);
+		expect(perform).toHaveBeenCalledWith(href, "reveal");
+		expect(onSessionLinkOpen).not.toHaveBeenCalled();
+	});
+
+	it("reveals a tallpine:// artifact link on click and still navigates a plain session link", async () => {
+		const onSessionLinkOpen = vi.fn();
+		const perform = vi.spyOn(tallpineBridge.localPath, "perform");
+		renderWithSessionLinkHandler("[a](tallpine://sessions/p/s/artifacts/a%20b.html) [s](tallpine://sessions/p/s)", onSessionLinkOpen);
+		await userEvent.click(screen.getByText("a"));
+		expect(perform).toHaveBeenCalledWith("tallpine://sessions/p/s/artifacts/a%20b.html", "reveal");
+		await userEvent.click(screen.getByText("s"));
+		expect(onSessionLinkOpen).toHaveBeenCalledExactlyOnceWith("tallpine://sessions/p/s");
+	});
+
+	it("toasts and does nothing for an unknown tallpine:// form", async () => {
+		vi.restoreAllMocks();
+		const show = vi.spyOn(useUiStore.getState(), "showGlobalToast");
+		const perform = vi.spyOn(tallpineBridge.localPath, "perform");
+		const onSessionLinkOpen = vi.fn();
+		renderWithSessionLinkHandler("[x](tallpine://sessions/p/s/kill)", onSessionLinkOpen);
+		await userEvent.click(screen.getByText("x"));
+		expect(show).toHaveBeenCalledWith("Unsupported tallpine:// link", undefined, "error");
+		expect(perform).not.toHaveBeenCalled();
+		expect(onSessionLinkOpen).not.toHaveBeenCalled();
+	});
+
+	it("offers Reveal / Open / Copy path on an absolute artifact path in chat (B79)", async () => {
+		vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Macintosh");
+		linkSource.workspaces = [{ id: "project", sessions: [{ id: "worker-1", artifactFiles: [{ path: "gallery.html" }] }] }];
+		const perform = vi.spyOn(tallpineBridge.localPath, "perform");
+		renderWithSessionLinkHandler("`/tmp/tallpine/artifacts/worker-1/gallery.html`", vi.fn());
+		fireEvent.contextMenu(screen.getByRole("link"));
+		const reveal = await screen.findByRole("menuitem", { name: "Reveal in Finder" });
+		await waitFor(() => expect(reveal).not.toHaveAttribute("data-disabled"));
+		await userEvent.click(reveal);
+		expect(perform).toHaveBeenCalledWith("/tmp/tallpine/artifacts/worker-1/gallery.html", "reveal");
+	});
+
+	it("offers no local path actions for artifact paths in remote-host chats", () => {
+		linkSource.workspaces = [{ id: "project", sessions: [{ id: "worker-1", artifactFiles: [{ path: "gallery.html" }] }] }];
+		render(<ChatLinkProvider remoteHost onSessionLinkOpen={vi.fn()}><ChatMarkdown text="`/tmp/tallpine/artifacts/worker-1/gallery.html`" /></ChatLinkProvider>);
+		const link = screen.queryByRole("link");
+		if (link) fireEvent.contextMenu(link);
+		expect(screen.queryByRole("menuitem", { name: /Reveal/ })).not.toBeInTheDocument();
+	});
+
+	it("leaves inline code naming an unlisted artifact as plain code", () => {
+		linkSource.workspaces = [{ id: "project", sessions: [{ id: "worker-1", artifactFiles: [{ path: "plan.md" }] }] }];
+		renderWithSessionLinkHandler("`worker-1/other.md` and `/tmp/tallpine/artifacts/worker-2/plan.md`", vi.fn());
+		expect(screen.queryByRole("link")).not.toBeInTheDocument();
+	});
+
+	it("leaves malformed session-like text inert", () => {
+		renderWithSessionLinkHandler("tallpine://sessions/project/session/kill", vi.fn());
+		expect(screen.queryByRole("link")).not.toBeInTheDocument();
+	});
+
+	it("opens a web link in the system browser on Option/Alt-click", () => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
+
+		fireEvent.click(screen.getByRole("link", { name: "the issue" }), { altKey: true });
+
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("opens a web link in the system browser on Cmd-click", () => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
+
+		fireEvent.click(screen.getByRole("link", { name: "the issue" }), { metaKey: true });
+
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("opens a web link in the system browser on Ctrl-click", () => {
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
+
+		fireEvent.click(screen.getByRole("link", { name: "the issue" }), { ctrlKey: true });
+
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("offers 'Open in external browser' on right-click, without opening in the panel", async () => {
+		const user = userEvent.setup();
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler("see [the issue](https://example.com/i/1)", onLinkOpen);
+
+		fireEvent.contextMenu(screen.getByRole("link", { name: "the issue" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Open in external browser" }));
+
+		expect(openExternal).toHaveBeenCalledWith("https://example.com/i/1");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("offers 'Copy link' on right-click", async () => {
+		const user = userEvent.setup();
+		const writeText = vi.spyOn(tallpineBridge.clipboard, "writeText").mockResolvedValue(undefined);
+		renderWithLinkHandler("see [the issue](https://example.com/i/1)", vi.fn());
+
+		fireEvent.contextMenu(screen.getByRole("link", { name: "the issue" }));
+		await user.click(await screen.findByRole("menuitem", { name: "Copy link" }));
+
+		expect(writeText).toHaveBeenCalledWith("https://example.com/i/1");
+		writeText.mockRestore();
+	});
+
+	it("omits the system-browser item for non-web links but still offers copying", async () => {
+		// mailto must never reach shell.openExternal from the menu.
+		renderWithLinkHandler("[Email support](mailto:support@example.com)", vi.fn());
+
+		fireEvent.contextMenu(screen.getByRole("link", { name: "Email support" }));
+
+		expect(await screen.findByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
+		expect(screen.queryByRole("menuitem", { name: "Open in external browser" })).not.toBeInTheDocument();
+	});
+
+	it("opens non-web links in the system browser", async () => {
+		const user = userEvent.setup();
+		const onLinkOpen = vi.fn();
+		const openExternal = vi.spyOn(tallpineBridge.app, "openExternal").mockResolvedValue(undefined);
+		renderWithLinkHandler("[Email support](mailto:support@example.com)", onLinkOpen);
+
+		await user.click(screen.getByRole("link", { name: "Email support" }));
+
+		expect(openExternal).toHaveBeenCalledWith("mailto:support@example.com");
+		expect(onLinkOpen).not.toHaveBeenCalled();
+		openExternal.mockRestore();
+	});
+
+	it("renders bold, strikethrough and blockquotes", () => {
+		render(<ChatMarkdown text={"**bold** and ~~gone~~\n\n> quoted"} />);
+		expect(screen.getByText("bold").tagName).toBe("STRONG");
+		expect(screen.getByText("gone").tagName).toBe("DEL");
+		expect(screen.getByText("quoted").closest("blockquote")).not.toBeNull();
+	});
+
+	it("renders an unterminated fence as a code block, because streaming text arrives mid-fence", () => {
+		render(<ChatMarkdown text={"```ts\nconst x = 1;"} />);
+		expect(document.querySelector("pre code")).toHaveTextContent("const x = 1;");
+		expect(document.body.textContent).not.toContain("```");
+	});
+
+	it("renders a mermaid fence as a diagram rather than source text", async () => {
+		render(<ChatMarkdown text={"```mermaid\nflowchart TD\n    A --> B\n```"} />);
+
+		expect(await screen.findByTestId("mermaid-diagram")).toBeInTheDocument();
+		expect(vi.mocked(renderMermaidDiagram)).toHaveBeenCalledWith(
+			"flowchart TD\n    A --> B",
+			expect.stringMatching(/light|dark/),
+		);
+	});
+
+	it("treats the mermaid label case-insensitively", async () => {
+		render(<ChatMarkdown text={"```Mermaid\nflowchart TD\n    A --> B\n```"} />);
+
+		expect(await screen.findByTestId("mermaid-diagram")).toBeInTheDocument();
+	});
+
+	it("keeps a mermaid fence as source text while streaming", () => {
+		render(<ChatMarkdown text={"```mermaid\nflowchart TD\n    A --> B\n```"} streaming />);
+
+		expect(screen.queryByTestId("mermaid-diagram")).not.toBeInTheDocument();
+		expect(screen.getByText(/A --> B/)).toBeInTheDocument();
+		expect(vi.mocked(renderMermaidDiagram)).not.toHaveBeenCalled();
+	});
+
+	it("renders a fence with no language as a block, not as inline code", () => {
+		// Matching on the `language-*` class alone used to send these down the inline
+		// path, where a whole `go test` transcript rendered as one accent-coloured run.
+		render(<ChatMarkdown text={"```\nok\tgithub.com/justvibedev/tallpine-dev\t0.4s\n```"} />);
+		const code = screen.getByText(/justvibedev/);
+		expect(code.closest("pre")).not.toBeNull();
+		expect(screen.getByRole("button", { name: /copy code/i })).toBeInTheDocument();
+	});
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe("ChatMarkdown images", () => {
+	it("caps a single image's height instead of letting it fill the column", () => {
+		render(<ChatMarkdown text={"![diagram](http://127.0.0.1:3101/a.png)"} />);
+		const image = screen.getByRole("img", { name: "diagram" });
+		expect(image).toHaveClass("max-h-80", "max-w-full", "object-contain");
+		expect(screen.queryByRole("group", { name: "Images" })).not.toBeInTheDocument();
+	});
+
+	it("lays out a paragraph of only images as a gallery of equal-height thumbnails", () => {
+		render(
+			<ChatMarkdown
+				text={"![before](http://127.0.0.1:3101/a.png) ![after](http://127.0.0.1:3101/b.png)\n![diff](http://127.0.0.1:3101/c.png)"}
+			/>,
+		);
+		const gallery = screen.getByRole("group", { name: "Images" });
+		expect(gallery).toHaveClass("flex-wrap");
+		// A gallery is block content; nesting it in a <p> is invalid markup.
+		expect(gallery.closest("p")).toBeNull();
+		const thumbnails = screen.getAllByRole("img");
+		expect(thumbnails).toHaveLength(3);
+		for (const thumbnail of thumbnails) {
+			expect(gallery).toContainElement(thumbnail);
+			// A wide screenshot in a narrow column is clamped by max-w-full; cropping
+			// it would cut the edges off the before/after pair this is for.
+			expect(thumbnail).toHaveClass("h-40", "object-contain");
+			expect(thumbnail).not.toHaveClass("object-cover");
+			// A lazy image has no width until it decodes, so without a floor the row
+			// wraps against zero-width boxes and reflows as each one lands.
+			expect(thumbnail).toHaveClass("min-w-24");
+		}
+	});
+
+	it("keeps images inline with prose when the paragraph also has text", () => {
+		render(
+			<ChatMarkdown text={"Before ![a](http://127.0.0.1:3101/a.png) and after ![b](http://127.0.0.1:3101/b.png)"} />,
+		);
+		expect(screen.queryByRole("group", { name: "Images" })).not.toBeInTheDocument();
+		expect(screen.getByRole("img", { name: "a" }).closest("p")).not.toBeNull();
+	});
+
+	it("opens a clicked image at full size in a dialog that Escape dismisses", async () => {
+		const user = userEvent.setup();
+		render(<ChatMarkdown text={"![diagram](http://127.0.0.1:3101/a.png)"} />);
+
+		await user.click(screen.getByRole("button", { name: "Open image: diagram" }));
+
+		const dialog = await screen.findByRole("dialog", { name: "diagram" });
+		expect(dialog.querySelector("img")).toHaveAttribute("src", "http://127.0.0.1:3101/a.png");
+		expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+
+		await user.keyboard("{Escape}");
+		await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+	});
+
+	it("falls back to the alt text when an image fails to load", () => {
+		render(<ChatMarkdown text={"![build graph](http://127.0.0.1:3101/missing.png)"} />);
+
+		fireEvent.error(screen.getByRole("img", { name: "build graph" }));
+
+		expect(screen.queryByRole("img")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /open image/i })).not.toBeInTheDocument();
+		expect(screen.getByText("build graph")).toBeInTheDocument();
+	});
+
+	it("keeps a failed thumbnail in the gallery and names an image with no alt text", () => {
+		render(
+			<ChatMarkdown
+				text={"![first](http://127.0.0.1:3101/missing.png) ![](http://127.0.0.1:3101/other.png)"}
+			/>,
+		);
+
+		fireEvent.error(screen.getByRole("img", { name: "first" }));
+
+		const gallery = screen.getByRole("group", { name: "Images" });
+		expect(gallery.querySelector("span")).toHaveClass("h-40");
+		expect(screen.getByText("first")).toBeInTheDocument();
+
+		fireEvent.error(document.querySelector('img[alt=""]')!);
+		expect(screen.getByText("http://127.0.0.1:3101/other.png")).toBeInTheDocument();
+	});
+
+	it("leaves a linked image to its link rather than nesting a button inside it", () => {
+		render(<ChatMarkdown text={"[![badge](http://127.0.0.1:3101/badge.svg)](https://example.com/ci)"} />);
+		const link = screen.getByRole("link", { name: "badge" });
+		expect(link.querySelector("button")).toBeNull();
+		expect(link).toContainElement(screen.getByRole("img", { name: "badge" }));
+	});
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe("ChatMarkdown image sources", () => {
+	function renderInSession(text: string) {
+		return render(
+			<ChatImageSourceProvider sessionId="session-1">
+				<ChatMarkdown text={text} />
+			</ChatImageSourceProvider>,
+		);
+	}
+
+	it("resolves relative image paths against the session workspace", () => {
+		renderInSession("![screenshot](docs/screen%20shot.png)");
+		const src = screen.getByRole("img", { name: "screenshot" }).getAttribute("src") ?? "";
+		const url = new URL(src, "http://127.0.0.1");
+		expect(url.pathname).toBe("/api/v1/sessions/session-1/workspace/file/blob");
+		expect(url.searchParams.get("path")).toBe("docs/screen shot.png");
+		expect(url.searchParams.get("side")).toBe("after");
+	});
+
+	it("loads a remote conversation image through that host's proxy", () => {
+		render(
+			<ChatImageSourceProvider sessionId="session-1" assetBaseUrl="http://127.0.0.1:4000/token-a">
+				<ChatMarkdown text="![remote](docs/shot.png)" />
+			</ChatImageSourceProvider>,
+		);
+		expect(screen.getByRole("img", { name: "remote" }).getAttribute("src")).toMatch(
+			/^http:\/\/127\.0\.0\.1:4000\/token-a\/api\/v1\/sessions\/session-1\/workspace\/file\/blob\?/,
+		);
+	});
+
+	it("does not resolve an offline remote image against the laptop daemon", () => {
+		render(
+			<ChatImageSourceProvider sessionId="session-1" remoteHost>
+				<ChatMarkdown text="![remote](docs/shot.png)" />
+			</ChatImageSourceProvider>,
+		);
+		expect(screen.queryByRole("img", { name: "remote" })).not.toBeInTheDocument();
+	});
+
+	it("keeps loopback absolute image sources unchanged", () => {
+		renderInSession("![remote](http://127.0.0.1:3101/a.png)");
+		expect(screen.getByRole("img", { name: "remote" })).toHaveAttribute("src", "http://127.0.0.1:3101/a.png");
+	});
+
+	it("holds a remote https image back until clicked, then shows it as a data URL", async () => {
+		const user = userEvent.setup();
+		const fetchImage = vi.spyOn(tallpineBridge.chatImage, "fetch").mockResolvedValue({ bytes: new Uint8Array([1]), mimeType: "image/png" });
+		renderInSession("![remote](https://example.com/a.png)");
+		expect(screen.queryByRole("img", { name: "remote" })).not.toBeInTheDocument();
+		expect(fetchImage).not.toHaveBeenCalled();
+		await user.click(screen.getByRole("button", { name: "Load image from example.com" }));
+		expect(fetchImage).toHaveBeenCalledWith("https://example.com/a.png");
+		expect((await screen.findByRole("img", { name: "remote" })).getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+		fetchImage.mockRestore();
+	});
+
+	it("rebuilds relative image URLs when the daemon base URL changes", () => {
+		renderInSession("![screenshot](docs/shot.png)");
+		expect(screen.getByRole("img", { name: "screenshot" }).getAttribute("src")).toMatch(
+			/^\/api\/v1\/sessions\/session-1\/workspace\/file\/blob/,
+		);
+
+		try {
+			act(() => setApiBaseUrl("http://127.0.0.1:3111"));
+			expect(screen.getByRole("img", { name: "screenshot" }).getAttribute("src")).toMatch(
+				/^http:\/\/127\.0\.0\.1:3111\/api\/v1\/sessions\/session-1\/workspace\/file\/blob/,
+			);
+		} finally {
+			act(() => setApiBaseUrl(null));
+		}
+	});
+
+	it("leaves relative image sources unchanged without a session provider", () => {
+		render(<ChatMarkdown text={"![screenshot](docs/shot.png)"} />);
+		expect(screen.getByRole("img", { name: "screenshot" })).toHaveAttribute("src", "docs/shot.png");
+	});
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe("ChatMarkdown code highlighting", () => {
+	const block = (language: string, code: string) => `\`\`\`${language}\n${code}\n\`\`\``;
+
+	/** The tokens land as `hljs-*` classes; `code-theme.css` colours them. */
+	function tokens(): Element[] {
+		return [...document.querySelectorAll("pre [class*='hljs-']")];
+	}
+
+	it("highlights a known language, leaving the code itself untouched", async () => {
+		render(<ChatMarkdown text={block("go", "func main() {}")} />);
+		await waitFor(() => expect(tokens().length).toBeGreaterThan(0), { timeout: 5_000 });
+		expect(document.querySelector("pre")?.textContent).toBe("func main() {}");
+	});
+
+	it("leaves an unknown language as plain monospace rather than guessing", async () => {
+		render(<ChatMarkdown text={block("brainfuck", "++++[>++++<-]")} />);
+		// Nothing to wait for — there is no grammar to load — so a flush is enough to
+		// prove no upgrade is coming.
+		await waitFor(() => expect(screen.getByText("++++[>++++<-]")).toBeInTheDocument());
+		expect(tokens()).toHaveLength(0);
+		expect(screen.getByText("brainfuck")).toBeInTheDocument();
+	});
+
+	it("does not tokenize a fence that is still streaming, and does once it settles", async () => {
+		const code = "type Session struct {\n\tID string\n}";
+		const { rerender } = render(<ChatMarkdown text={block("go", code)} streaming />);
+		expect(tokens()).toHaveLength(0);
+		expect(document.querySelector("pre")?.textContent).toBe(code);
+
+		rerender(<ChatMarkdown text={block("go", code)} />);
+		await waitFor(() => expect(tokens().length).toBeGreaterThan(0));
+		expect(document.querySelector("pre")?.textContent).toBe(code);
+	});
+
+	it("shows a settled block highlighted on its first render, from cache", async () => {
+		const code = "SELECT 1 FROM turns;";
+		const first = render(<ChatMarkdown text={block("sql", code)} />);
+		await waitFor(() => expect(tokens().length).toBeGreaterThan(0));
+		first.unmount();
+
+		// A remount is what scrolling does. Without the cache this would flash plain
+		// again; with it the very first commit is already highlighted.
+		render(<ChatMarkdown text={block("sql", code)} />);
+		expect(tokens().length).toBeGreaterThan(0);
+	});
+
+	it("toggles wrapping for long lines without re-tokenizing", async () => {
+		const user = userEvent.setup();
+		render(<ChatMarkdown text={block("sh", "echo one && echo two && echo three")} />);
+		const wrap = screen.getByRole("button", { name: /wrap long lines/i });
+		const wrapper = document.querySelector(".chat-code");
+
+		expect(wrapper).toHaveAttribute("data-wrap", "false");
+		await user.click(wrap);
+		expect(wrapper).toHaveAttribute("data-wrap", "true");
+		expect(wrap).toHaveAttribute("aria-pressed", "true");
+
+		await user.click(wrap);
+		expect(wrapper).toHaveAttribute("data-wrap", "false");
+	});
+});
+
+
+describe("ActivityTitle", () => {
+	it("keeps code delimiters inside multi-backtick code spans", () => {
+		const { container } = render(<ActivityTitle text={"Edit ``file`name.ts``"} />);
+		expect(container.querySelector("code")).toHaveTextContent("file`name.ts");
+	});
+
+	it("keeps disclosure titles inline and non-interactive", () => {
+		const { container } = render(
+			<button><ActivityTitle text={'# **Edit** [file](https://example.com) `path.ts` ![image](https://example.com/image.png) <input autofocus />'} /></button>,
+		);
+		expect(screen.getByRole("button")).toHaveTextContent("Edit file path.ts");
+		expect(container.querySelector("strong")).toHaveTextContent("Edit");
+		expect(container.querySelector("a, img, input, p, h1, pre")).toBeNull();
+	});
+});
+
+describe("ChatMarkdown streaming fade", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+	const fading = (container: HTMLElement) => container.querySelectorAll(".stream-char").length;
+
+	it("never wraps a reply that mounts settled", () => {
+		const { container } = render(<ChatMarkdown text="from history" />);
+		expect(fading(container)).toBe(0);
+	});
+
+	it("does not fade text already on screen when a chat opens mid-stream", () => {
+		const opening = { current: true };
+		const reply = (text: string) => (
+			<ChatOpeningRef.Provider value={opening}>
+				<ChatMarkdown text={text} streaming />
+			</ChatOpeningRef.Provider>
+		);
+		const { container, rerender } = render(reply("already shown"));
+		opening.current = false;
+		expect(fading(container)).toBe(0);
+		expect(container.textContent).toBe("already shown");
+
+		rerender(reply("already shown and more"));
+		expect(fading(container)).toBe(" and more".length);
+		expect(container.textContent).toBe("already shown and more");
+	});
+
+	it("bounds the fade spans to the newest characters of a long reply", () => {
+		const head = "alpha ".repeat(300);
+		const { container, rerender } = render(<ChatMarkdown text={head} streaming />);
+		rerender(<ChatMarkdown text={`${head}beta`} streaming />);
+		expect(fading(container)).toBeLessThanOrEqual(600);
+		expect(fading(container)).toBeGreaterThan(0);
+		expect(container.textContent).toBe(`${head}beta`);
+		// The newest characters are the ones that fade.
+		const spans = [...container.querySelectorAll(".stream-char")].map((node) => node.textContent).join("");
+		expect(spans.endsWith("beta")).toBe(true);
+	});
+
+	it("fades while streaming and sheds the spans shortly after it settles", () => {
+		vi.useFakeTimers();
+		const { container, rerender } = render(<ChatMarkdown text="live text" streaming />);
+		expect(fading(container)).toBeGreaterThan(0);
+		expect(container.textContent).toBe("live text");
+
+		rerender(<ChatMarkdown text="live text" />);
+		expect(fading(container)).toBeGreaterThan(0);
+		act(() => vi.advanceTimersByTime(500));
+		expect(fading(container)).toBe(0);
+		expect(container.textContent).toBe("live text");
+	});
+
+	it("keeps fading across a retry that restarts the stream inside the grace period", () => {
+		vi.useFakeTimers();
+		const { container, rerender } = render(<ChatMarkdown text="one" streaming />);
+		rerender(<ChatMarkdown text="one" />);
+		act(() => vi.advanceTimersByTime(200));
+		rerender(<ChatMarkdown text="one two" streaming />);
+		act(() => vi.advanceTimersByTime(500));
+		expect(fading(container)).toBeGreaterThan(0);
+	});
+
+	it("renders plain text under reduced motion", () => {
+		vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+			matches: query === "(prefers-reduced-motion: reduce)",
+			media: query,
+			onchange: null,
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			dispatchEvent: vi.fn(() => false),
+		}));
+		const { container } = render(<ChatMarkdown text="no motion" streaming />);
+		expect(fading(container)).toBe(0);
+		expect(screen.getByText("no motion")).toBeInTheDocument();
+	});
+
+	it("still compacts emoji while the fade is on", () => {
+		const { container } = render(<ChatMarkdown text="done ✅ now" streaming />);
+		expect(container.querySelector(".chat-md-emoji")).toHaveTextContent("✅");
+		expect(container.textContent).toBe("done ✅ now");
+	});
+
+	it("keeps links working while their text fades", () => {
+		const onLinkOpen = vi.fn();
+		render(
+			<ChatLinkProvider onLinkOpen={onLinkOpen}>
+				<ChatMarkdown text="see [docs](https://example.com/docs)" streaming />
+			</ChatLinkProvider>,
+		);
+		expect(screen.getByRole("link")).toHaveTextContent("docs");
+	});
+});
+
+describe("local paths", () => {
+	it("makes prose and inline-code paths clickable but leaves fences and URLs alone", async () => {
+		const perform = vi.spyOn(tallpineBridge.localPath, "perform");
+		render(<ChatMarkdown text={"See /Users/me/a.txt and `~/b/c.md` or https://x.dev/a/b\n\n```\n/etc/hosts\n```"} />);
+		fireEvent.click(screen.getByText("/Users/me/a.txt"), { metaKey: true });
+		expect(perform).toHaveBeenCalledWith("/Users/me/a.txt", "reveal");
+		fireEvent.click(screen.getByText("~/b/c.md"), { metaKey: true });
+		expect(perform).toHaveBeenCalledWith("~/b/c.md", "reveal");
+		expect(screen.queryAllByRole("button", { name: /etc\/hosts/ })).toHaveLength(0);
+	});
+
+	it("does not offer local actions for remote-host chats", () => {
+		render(<ChatLinkProvider remoteHost><ChatMarkdown text="See /Users/me/a.txt" /></ChatLinkProvider>);
+		expect(screen.getByText("/Users/me/a.txt").closest("[role=button]")).toBeNull();
+	});
+});

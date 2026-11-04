@@ -1,0 +1,471 @@
+#!/usr/bin/env bash
+# scripts/verify: the one local verification entry point (GitHub Actions is
+# disabled for this repo; this is the merge gate).
+#
+#   scripts/verify            # = --changed
+#   scripts/verify --changed  # fast: only what the branch touches vs origin/main  (make verify-fast)
+#   scripts/verify --full     # everything the old CI workflows ran              (make verify)
+#   scripts/verify --lint     # gofmt + golangci-lint only                          (make lint)
+#   scripts/verify --lint-changed  # --lint on what changed vs the base only (make lint-changed): gofmt on changed
+#                             # files, golangci-lint --new-from-rev on changed packages, size-ratchet --changed,
+#                             # frontend typecheck (tsgo) when frontend files changed. Workers use this, never make lint.
+#   scripts/verify --all      # --full plus every job the local CI loop runs: the merge gate
+#                             # (scripts/local-ci/loop.sh runs exactly this)
+#   scripts/verify --all --tsv  # print the job list (name<TAB>mode) without running anything
+#
+#   scripts/verify --all --loop --since <sha>
+#                             # the main loop's run: Go tests use the test cache (no -count=1), go-test,
+#                             # go-lint and fe-vitest run concurrently, and steps the changes since <sha>
+#                             # (the last green commit) cannot affect are skipped. Anything under scripts/,
+#                             # go.mod/go.sum, a lockfile or package.json, or a file outside every known
+#                             # area runs everything. Prints "verify-note: ..." naming skipped/cached steps.
+#
+# Options: --base <ref> (default: merge-base with origin/main), --race (add
+# -race to Go tests), --no-retry (do not re-run failed Go packages / vitest
+# files once). Every step runs even after a failure; the summary at the end
+# lists failures, skips and flakes (failed, then passed on the one retry), and
+# the exit status is non-zero when any step failed. Env: VERIFY_NICE (default
+# 10), VERIFY_GO_TEST_TIMEOUT (per package, default 5m), VERIFY_VITEST_WORKERS
+# (vitest worker cap, default 6).
+#
+# Tools: Go comes from scripts/go (the pinned toolchain, installed once into
+# the user cache). Node steps need the package's node_modules (npm ci, or the
+# .worktreeinclude clone plus npm install --prefer-offline).
+set -uo pipefail
+
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$repo" || exit 1
+# shellcheck source=verify.d/fence.sh
+. "$repo/scripts/verify.d/fence.sh"
+export PATH="$repo/scripts/bin:$PATH"
+export GOTOOLCHAIN=local
+GOLANGCI="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0"
+NICE="${VERIFY_NICE:-10}"
+# golangci-lint's analysis cache: one fixed dir under the real user's ~/.tallpine (never ~/Library), shared by
+# workers and launchd local CI, independent of TALLPINE_DATA_DIR and of a scratch HOME (B379).
+# Override with GOLANGCI_LINT_CACHE.
+# Same real-home resolution as scripts/go.
+_real_home="${TALLPINE_REAL_HOME:-}"
+[ -d "$_real_home" ] || _real_home="$(eval "printf %s ~$(id -un)" 2>/dev/null || true)"
+[ -d "$_real_home" ] || _real_home="$HOME"
+export GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-$_real_home/.tallpine/golangci-cache}"
+# Per-package go test timeout: a hung test should cost minutes, not go test's 10m default.
+GO_TEST_TIMEOUT="${VERIFY_GO_TEST_TIMEOUT:-5m}"
+VITEST_WORKERS="${VERIFY_VITEST_WORKERS:-6}"
+
+narrow=0 mode=changed base="" race="" retry=1 tsv=0 since="" par=0 count_flag="-count=1" cached=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--changed | --fast) mode=changed ;;
+	--full) mode=full ;;
+	--all) mode=all ;;
+	--tsv) tsv=1 ;;
+	--lint) mode=lint ;;
+	--lint-changed) mode=lint narrow=1 ;;
+	--base)
+		base="$2"
+		shift
+		;;
+	--race) race="-race" ;;
+	--loop)
+		export VERIFY_PRIORITY=1
+		par=1
+		count_flag=""
+		cached="go-test"
+		;;
+	--since)
+		since="$2"
+		shift
+		;;
+	--no-retry) retry=0 ;;
+	-h | --help)
+		awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
+		exit 0
+		;;
+	*)
+		echo "verify: unknown argument $1 (see --help)" >&2
+		exit 2
+		;;
+	esac
+	shift
+done
+
+log_dir="$(mktemp -d "${TMPDIR:-/tmp}/vo-verify.XXXXXX")"
+[ "$tsv" = 1 ] && trap 'rm -rf "$log_dir"' EXIT
+failed=() skipped=() flaky=() timings=()
+# shellcheck source=verify.d/signal.sh
+. "$repo/scripts/verify.d/signal.sh"
+
+step() { # step <name> <command...>
+	local name="$1" t0=$SECONDS rc
+	shift
+	echo "=== $name"
+	"$@"
+	rc=$?
+	timings+=("$(printf '%-16s %4ss  %s' "$name" $((SECONDS - t0)) "$([ $rc -eq 0 ] && echo ok || echo FAIL)")")
+	if [ $rc -ne 0 ]; then
+		failed+=("$name")
+		echo "--- $name FAILED ($((SECONDS - t0))s)"
+	else
+		echo "--- $name ok ($((SECONDS - t0))s)"
+	fi
+}
+[ "$tsv" = 1 ] && par=0
+[ "$tsv" = 1 ] && step() { printf '%s\t%s\n' "$1" "$mode"; }
+# shellcheck source=verify.d/par.sh
+. "$repo/scripts/verify.d/par.sh"
+skip() { # skip <name> <reason>
+	skipped+=("$1: $2")
+	echo "=== $1 skipped: $2"
+}
+need_modules() { # need_modules <dir>: node steps fail loudly without deps
+	[ -d "$1/node_modules" ] && return 0
+	echo "missing $1/node_modules: run (cd $1 && npm ci) or npm install --prefer-offline" >&2
+	return 1
+}
+
+# ---- what changed --------------------------------------------------------
+if [ -z "$base" ]; then
+	base="$(git merge-base HEAD origin/main 2>/dev/null || echo origin/main)"
+fi
+changed_files() {
+	{
+		git diff --name-only "$base" -- 2>/dev/null
+		git ls-files --others --exclude-standard
+	} | sort -u
+}
+# broad: the modes that run every job instead of only the touched ones.
+broad=0
+{ [ "$mode" = full ] || [ "$mode" = all ]; } && broad=1
+# --since <sha> (the loop's last green commit): skip what the commits since then cannot affect.
+# Anything that could change every step (scripts/, go.mod/go.sum/go.work, package.json or a lockfile,
+# or a file outside every known area, such as root config) runs everything.
+since_active=0
+if [ -n "$since" ] && [ "$mode" = all ] && git cat-file -e "$since^{commit}" 2>/dev/null; then
+	since_changes="$(git diff --no-renames --name-only "$since" HEAD -- 2>/dev/null)"
+	known='^(backend/|frontend/|packages/|docs/|scripts/golden-eval/|.*\.md$)'
+	force='^scripts/([^/]+$|verify|local-ci/|testdata/)|(^|/)go\.(mod|sum|work)$|(^|/)package(-lock)?\.json$|(^|/)(npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml)$|^\.golangci|^Makefile$'
+	if [ -n "$since_changes" ] && ! printf '%s\n' "$since_changes" | grep -Eq "$force" &&
+		! printf '%s\n' "$since_changes" | grep -Evq "$known"; then
+		since_active=1
+		changes="$since_changes"
+		touched() { printf '%s\n' "$changes" | grep -Eq "$1"; }
+		echo "verify --all --since $(git rev-parse --short "$since"): $(printf '%s\n' "$changes" | grep -c . | tr -d ' ') files, skipping unaffected steps"
+	else
+		echo "verify --all --since: scripts/shared config/lockfile change or no diff, running everything"
+	fi
+fi
+if [ "$mode" = changed ] || [ "$narrow" = 1 ]; then
+	changes="$(changed_files)"
+	touched() { printf '%s\n' "$changes" | grep -Eq "$1"; }
+	[ "$tsv" = 1 ] || echo "verify --changed against $(git rev-parse --short "$base" 2>/dev/null || echo "$base"): $(printf '%s\n' "$changes" | grep -c . | tr -d ' ') files"
+elif [ "$since_active" = 0 ]; then
+	touched() { return 0; }
+fi
+
+# shellcheck source=verify.d/go-lint.sh
+. "$repo/scripts/verify.d/go-lint.sh"
+# shellcheck source=verify.d/lint-extra.sh
+. "$repo/scripts/verify.d/lint-extra.sh"
+
+# ---- steps ---------------------------------------------------------------
+go_version_pin() { # scripts/go and go.mod must name the same toolchain
+	local pinned mod
+	pinned="$(sed -n 's/^GO_VERSION=//p' scripts/go)"
+	mod="$(sed -n 's/^go //p' backend/go.mod)"
+	[ "$pinned" = "$mod" ] || {
+		echo "scripts/go pins Go $pinned but backend/go.mod says go $mod"
+		return 1
+	}
+}
+
+# Packages named on go test's "FAIL<TAB>pkg<TAB>time" lines, whatever the module is called.
+failing_go_packages() { awk '$1 == "FAIL" && NF >= 2 { print $2 }' "$1" | sort -u; }
+
+go_test() {
+	local pkgs out1 out2 rc
+	pkgs="$(go_packages)"
+	[ -z "$pkgs" ] && return 0
+	out1="$log_dir/gotest1.out"
+	# shellcheck disable=SC2086
+	(cd backend && with_slot env GOMAXPROCS="$CORES" nice -n "$NICE" go test -p "$CORES" $race $count_flag -timeout="$GO_TEST_TIMEOUT" $pkgs) >"$out1" 2>&1
+	rc=$?
+	grep -vE '^(ok|\?)[[:space:]]' "$out1"
+	[ $rc -eq 0 ] && return 0
+	local failing
+	failing="$(failing_go_packages "$out1")"
+	# Killed by a signal (rc>128, e.g. SIGTERM from a reaper or pkill) with no
+	# FAIL line: an external kill, not a test failure (B347). Re-run everything once.
+	if [ $rc -gt 128 ] && [ -z "$failing" ] && [ "$retry" = 1 ]; then
+		local when sig=$((rc - 128))
+		when="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+		echo "=== go test killed by signal $sig at $when (external kill, not a test failure); re-running once"
+		# shellcheck disable=SC2086
+		(cd backend && with_slot nice -n "$NICE" go test $race -count=1 -timeout="$GO_TEST_TIMEOUT" $pkgs) >"$out1" 2>&1
+		rc=$?
+		grep -vE '^(ok|\?)[[:space:]]' "$out1"
+		if [ $rc -eq 0 ]; then
+			flaky+=("go-test: killed by signal $sig at $when, passed on retry (sender unknown)")
+			return 0
+		fi
+		failing="$(failing_go_packages "$out1")"
+	fi
+	[ "$retry" = 1 ] && [ -n "$failing" ] || return $rc
+	echo "=== retrying failed packages once: $(echo $failing)"
+	out2="$log_dir/gotest2.out"
+	# shellcheck disable=SC2086
+	(cd backend && with_slot nice -n "$NICE" go test $race -count=1 -timeout="$GO_TEST_TIMEOUT" $failing) >"$out2" 2>&1
+	rc=$?
+	grep -vE '^(ok|\?)[[:space:]]' "$out2"
+	local pkg
+	for pkg in $failing; do
+		grep -qE "^ok[[:space:]]+$pkg([[:space:]]|$)" "$out2" && flaky+=("go-test: $pkg (failed, then passed on retry)")
+	done
+	return $rc
+}
+
+# Go tests that scan the whole repo (TS/JS/docs included). They depend on
+# non-Go files, so the go_re gate would skip them on TS-only changes (B326:
+# #651 moved legacy 'ao' literals into packages/shared and broke main).
+# Always run them in --lint (make lint) and --changed; --full covers them via go-test.
+go_invariants() {
+	(cd backend && nice -n "$NICE" go test -count=1 -timeout="$GO_TEST_TIMEOUT" \
+		./internal/brand/ ./internal/privacyguard/) 2>&1 | grep -vE '^(ok|\?)[[:space:]]'
+	return "${PIPESTATUS[0]}"
+}
+
+# Generated-file drift is judged by content, not by git: hash the outputs
+# before and after regenerating. Comparing with `git diff` would report a
+# correct but unstaged regeneration (normal while iterating) as drift.
+snapshot() { # snapshot <path...>: "sha256  path" for every file, sorted
+	find "$@" -type f -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 shasum -a 256 2>/dev/null
+}
+
+drift_check() { # drift_check <generate-cmd> -- <generated path...>
+	local cmd=()
+	while [ "$1" != "--" ]; do
+		cmd+=("$1")
+		shift
+	done
+	shift
+	local before after
+	before="$(snapshot "$@")"
+	"${cmd[@]}" || return 1
+	after="$(snapshot "$@")"
+	[ "$before" = "$after" ] && return 0
+	echo "generated files were stale and have been regenerated in the working tree; review and commit:"
+	diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | sed -n 's/^[<>] [0-9a-f]*  /  /p' | sort -u
+	return 1
+}
+
+sqlc_drift() {
+	drift_check bash -c 'cd backend && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate' \
+		-- backend/internal/storage/sqlite/gen
+}
+
+api_drift() {
+	need_modules . || return 1
+	drift_check npm run -s api \
+		-- backend/internal/httpd/apispec/openapi.yaml packages/shared/api/schema.ts
+}
+
+# Forge's rebuild compiles better-sqlite3 for Electron in the source tree;
+# vitest runs under Node and then cannot load it.
+node_abi() {
+	(cd frontend && node -e 'new (require("better-sqlite3"))(":memory:").close()') >/dev/null 2>&1 && return 0
+	echo "better-sqlite3 is built for another ABI (Electron); rebuilding it for Node"
+	(cd frontend && npm rebuild better-sqlite3 >/dev/null)
+}
+
+# vitest_failure_details <json> <root> <repo-relative-file>...: each failed test's
+# title, assertion message and stack (ANSI stripped, capped) from a vitest json
+# report, for the files that later passed on retry.
+vitest_failure_details() {
+	node -e '
+		const [json, root, ...files] = process.argv.slice(1);
+		const path = require("path");
+		const r = JSON.parse(require("fs").readFileSync(json));
+		for (const t of r.testResults) {
+			const rel = path.relative(root, t.name);
+			if (!files.includes(rel)) continue;
+			if (t.status === "failed" && !t.assertionResults.some((a) => a.status === "failed")) console.log(`${rel}: ${t.message || "file failed to run"}`);
+			for (const a of t.assertionResults.filter((a) => a.status === "failed")) {
+				console.log(`${rel} > ${a.fullName}`);
+				for (const m of a.failureMessages) console.log(m.replace(/\u001b\[[0-9;]*m/g, "").split("\n").slice(0, 25).join("\n"));
+			}
+		}' "$@" 2>/dev/null
+}
+
+fe_vitest() {
+	need_modules frontend || return 1
+	node_abi || return 1
+	# Vitest defaults to one worker per core; on a shared machine that
+	# oversubscribes the CPU and stalls 1.5s jsdom tests past their 20s timeout.
+	# Cap it like the Go steps (VITEST_CAP); VERIFY_VITEST_WORKERS overrides.
+	local args=(run --config vite.renderer.config.ts --reporter=dot --maxWorkers="$VITEST_CAP")
+	if [ "$mode" = changed ]; then
+		args+=(--changed "$base" --passWithNoTests)
+	fi
+	local json1="$log_dir/vitest1.json" rc
+	(cd frontend && with_slot nice -n "$NICE" npx vitest "${args[@]}" --reporter=json --outputFile.json="$json1") >"$log_dir/vitest1.out" 2>&1
+	rc=$?
+	tail -n 25 "$log_dir/vitest1.out"
+	[ $rc -eq 0 ] && return 0
+	local files
+	files="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1]));console.log(r.testResults.filter(t=>t.status==="failed").map(t=>require("path").relative(process.argv[2],t.name)).join(" "))' "$json1" "$repo/frontend" 2>/dev/null)"
+	[ "$retry" = 1 ] && [ -n "$files" ] || return $rc
+	echo "=== retrying failed files once: $files"
+	local json2="$log_dir/vitest2.json"
+	# shellcheck disable=SC2086
+	(cd frontend && nice -n "$NICE" npx vitest run --config vite.renderer.config.ts --maxWorkers="$VITEST_CAP" --reporter=dot --reporter=json --outputFile.json="$json2" $files) >"$log_dir/vitest2.out" 2>&1
+	rc=$?
+	tail -n 25 "$log_dir/vitest2.out"
+	local still f
+	still="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1]));console.log(r.testResults.filter(t=>t.status==="failed").map(t=>require("path").relative(process.argv[2],t.name)).join(" "))' "$json2" "$repo/frontend" 2>/dev/null)"
+	local recovered=""
+	for f in $files; do
+		case " $still " in *" $f "*) ;; *) flaky+=("fe-vitest: $f (failed, then passed on retry)"); recovered="$recovered $f" ;; esac
+	done
+	# The log dir is deleted when verify exits: keep the first-run evidence.
+	# shellcheck disable=SC2086
+	[ -n "$recovered" ] && vitest_failure_details "$json1" "$repo/frontend" $recovered >>"$log_dir/flaky-detail.txt"
+	return $rc
+}
+
+in_dir() { # in_dir <dir> <command...>
+	local dir="$1"
+	shift
+	need_modules "$dir" || return 1
+	(cd "$dir" && nice -n "$NICE" "$@")
+}
+
+# The frontend program compiles packages/product-ui/src through a path alias,
+# so its imports (react, clsx, ...) resolve from that package's node_modules.
+fe_typecheck() { # fe_typecheck <command...>
+	need_modules packages/product-ui || return 1
+	in_dir frontend "$@"
+}
+
+# The generated CLI reference must match the CLI built from this tree.
+docs_cli() {
+	(cd backend && nice -n "$NICE" go build -o "$log_dir/tallpine-cli" ./cmd/tallpine) || return 1
+	(cd frontend/src/docs && TALLPINE_DATA_DIR="$log_dir/docs-cli-data" node scripts/gen-cli-reference.mjs --bin "$log_dir/tallpine-cli" --check)
+}
+
+# ---- plan ----------------------------------------------------------------
+go_re='^backend/|^go\.work|^scripts/go$'
+fe_re='^frontend/(src/|e2e/|[^/]*\.(ts|json|mjs)$)|^packages/product-ui/src/|^packages/shared/'
+api_re='^backend/internal/httpd/(controllers|apispec)/|^packages/shared/api/schema\.ts$'
+sqlc_re='^backend/internal/storage/sqlite/(queries|migrations|gen)/|^backend/sqlc\.ya?ml$'
+docs_re='^frontend/src/docs/'
+pui_re='^packages/product-ui/'
+shared_re='^packages/shared/'
+
+# Docs-only commits touch none of the Go/frontend areas; the cheap checks still run.
+step go-version go_version_pin
+# Repo-scanning invariants run on every push-time mode (--lint, --changed), even
+# when no Go changed or only other packages did; only --full skips this step
+# because go-test already covers ./....
+if [ "$broad" = 0 ] || { [ "$since_active" = 1 ] && ! touched "$go_re"; }; then
+	step go-invariants go_invariants
+fi
+touched '(^|/)package(-lock)?\.json$' && step lockfile-sync bash scripts/lockfile-sync-check
+if touched "$go_re"; then
+	step go-fmt go_fmt
+	if [ "$mode" != lint ]; then
+		step go-build bash -c 'cd backend && go build ./...'
+		step go-vet bash -c 'cd backend && go vet ./...'
+		pstep go-test go_test
+	fi
+	pstep go-lint go_lint
+fi
+# Cheap, and a worker's push is where a file grows: make lint (--lint) runs it too.
+[ "$mode" = lint ] && lint_extra_steps
+if [ "$mode" != lint ]; then
+	touched "$sqlc_re" && step sqlc-drift sqlc_drift
+	touched "$api_re" && step api-drift api_drift
+	if [ "$broad" = 1 ] && touched "$go_re"; then
+		step cli-e2e bash -c "cd backend && GOMAXPROCS=$MAIN_CORES nice -n $NICE go test -p $MAIN_CORES -tags e2e $count_flag ./internal/cli/..."
+	fi
+	if touched "$fe_re"; then
+		# --changed uses the native TS 7 compiler (tsgo, same program, seconds
+		# instead of minutes); --full keeps tsc 5.9, the authoritative check.
+		# Not incremental: tsgo's build info keeps stale diagnostics (e.g.
+		# unresolved react from a run before npm install), and saves only ~2s.
+		if [ "$mode" = changed ] && [ -x frontend/node_modules/.bin/tsgo ] && grep -q '"typecheck:fast"' frontend/package.json; then
+			step fe-tsgo fe_typecheck npm run -s typecheck:fast -- --incremental false
+			step fe-tsgo-e2e fe_typecheck npx tsgo --noEmit -p tsconfig.e2e.json
+		else
+			step fe-tsc fe_typecheck npm run -s typecheck
+			step fe-tsc-e2e fe_typecheck npm run -s typecheck:e2e
+		fi
+		# --all also runs the fast compiler on the whole tree, as the old loop did.
+		if [ "$mode" = all ]; then
+			step fe-tsgo fe_typecheck npm run -s typecheck:fast -- --incremental false
+			step fe-tsgo-e2e fe_typecheck npx tsgo --noEmit -p tsconfig.e2e.json
+		fi
+		pstep fe-vitest fe_vitest
+	fi
+	touched "$pui_re" && step product-ui in_dir packages/product-ui bash -c 'npm run -s typecheck && npm test --silent && npm pack --dry-run >/dev/null'
+	touched "$shared_re" && step shared bash -c 'cd packages/shared && npm run -s typecheck && npm test --silent'  # uses frontend/node_modules tooling
+	if touched "$docs_re"; then
+		step docs-i18n in_dir frontend/src/docs npm run -s check:i18n
+		step docs-test in_dir frontend/src/docs npm test --silent
+			[ "$broad" = 1 ] && step docs-build in_dir frontend/src/docs npm run -s build
+	fi
+	touched '^backend/internal/cli/|^frontend/src/docs/(content|scripts)/' && step docs-cli docs_cli
+	touched '^packages/mobile/' && step mobile in_dir packages/mobile npm run -s check
+	touched '^scripts/tallpine-e2e-pod-gate' && step e2e-gate node --test scripts/tallpine-e2e-pod-gate.test.mjs
+	touched '^scripts/golden-eval/' && step golden-eval-test node --test scripts/golden-eval/*.test.mjs
+	touched '^scripts/.*\.sh$|^scripts/[^/.]+$' && step heredoc-guard bash scripts/heredoc-guard.test.sh
+	touched '^scripts/release-local' && step release-local-test bash scripts/release-local.test.sh
+	touched '^scripts/(verify|testdata/verify-all)' && step verify-test bash scripts/verify.test.sh
+	touched '^scripts/local-ci/' && step local-ci-test bash -c 'scripts/local-ci/install.test.sh && scripts/local-ci/loop.test.sh'
+	step size-ratchet bash scripts/size-ratchet
+	touched '^scripts/(test-slot|go$|verify\.d/)|package\.json$' && step test-slot-test bash scripts/test-slot.test.sh
+	touched '^scripts/size-ratchet' && step size-ratchet-test bash scripts/size-ratchet.test.sh
+	touched '^scripts/merge-gate' && step merge-gate-test bash scripts/merge-gate.test.sh
+	if [ "$tsv" = 1 ] || command -v gitleaks >/dev/null; then
+		if [ "$broad" = 1 ]; then
+			step gitleaks gitleaks detect --source . --no-banner --redact --log-opts="-n 1"
+		else
+			step gitleaks gitleaks detect --source . --no-banner --redact --log-opts="$base..HEAD"
+		fi
+	else
+		if [ "$mode" = all ]; then
+			step gitleaks bash -c 'echo "gitleaks is not installed (brew install gitleaks); the merge gate requires it" >&2; exit 1'
+		else
+			skip gitleaks "not installed (brew install gitleaks)"
+		fi
+	fi
+fi
+
+wait_p
+[ "$tsv" = 1 ] && exit 0
+
+# Every job --all would run and this run did not: record it (the loop puts it in the result line).
+if [ "$since_active" = 1 ]; then
+	ran="$(printf '%s\n' "${timings[@]}" | awk '{print $1}')"
+	for n in $("$0" --all --tsv | cut -f1); do
+		printf '%s\n' "$ran" | grep -qx "$n" || skipped+=("$n: unaffected by changes since last green")
+	done
+fi
+
+# ---- summary -------------------------------------------------------------
+echo
+echo "verify --$mode summary (logs: $log_dir)"
+printf '  %s\n' "${timings[@]}"
+[ ${#skipped[@]} -gt 0 ] && printf '  skipped  %s\n' "${skipped[@]}"
+[ ${#flaky[@]} -gt 0 ] && printf '  flaky    %s\n' "${flaky[@]}"
+[ -s "$log_dir/flaky-detail.txt" ] && sed 's/^/  flaky-detail | /' "$log_dir/flaky-detail.txt"
+# cached only counts when go-test actually ran this time.
+printf '%s\n' "${timings[@]}" | grep -q '^go-test ' || cached=""
+[ -n "$cached" ] && echo "  cached   $cached uses the Go test cache (no -count=1)"
+if [ "$since_active" = 1 ] || [ -n "$cached" ]; then
+	echo "verify-note: skipped=$(printf '%s\n' "${skipped[@]}" | sed 's/:.*//' | grep -c .) $(printf '%s\n' "${skipped[@]}" | sed 's/:.*//' | grep . | tr '\n' ',' | sed 's/,$//') cached=${cached:-none}"
+fi
+if [ ${#failed[@]} -gt 0 ]; then
+	echo "FAIL: ${failed[*]}"
+	exit 1
+fi
+echo "PASS"

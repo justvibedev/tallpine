@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# scripts/merge-gate: the orchestrator merge gate behind `tallpine merge <pr>`.
+#
+#   scripts/merge-gate <pr> [--tallpine-approved <sha>] [--no-merge]
+#
+# Steps (stdout is ONE line: "MERGED <sha>" | "READY <head>" with --no-merge | "FAILED <step> log=<path>"):
+#   head      resolve the PR head (git ls-remote), fetch it and origin/main
+#   approval  the head (or an identical-patch ancestor, `git patch-id --stable` of the diff vs merge base,
+#             excluding scripts/size-ratchet.allow) must carry a Tallpine approval (--tallpine-approved) or a GitHub APPROVED review
+#   merge     build the merge with origin/main (git merge-tree --write-tree) and check it out in a temp worktree
+#   deps      npm ci in frontend/ and packages/product-ui when the PR touches them (a real install: a symlinked
+#             node_modules gives false TS2742 errors)
+#   verify    `scripts/verify --changed --base origin/main` in the gate tree, using origin/main's scripts/verify(.d)
+#             (a PR cannot weaken its own gate); when the PR edits verify, its version runs too and both must pass.
+#             The first failing job names the step.
+#             MERGE_GATE_VERIFY overrides the command (tests only).
+#   go-e2e    `go test -tags e2e` on the changed Go packages (verify --changed runs them without the tag)
+#   recheck   the PR head and origin/main must still equal what was gated
+#   merge     gh pr merge --squash --subject '<title> (#N) [skip ci]' --match-head-commit <head>
+# Logs: ${TALLPINE_DATA_DIR:-~/.tallpine}/merge-gate/pr<N>-<time>/<step>.log ($TMPDIR/merge-gate-logs/ when that is not writable)
+set -uo pipefail
+repo="$(git rev-parse --show-toplevel)" || exit 2
+# shellcheck source=verify.d/fence.sh
+. "$repo/scripts/verify.d/fence.sh"
+pr="" tallpine_sha="" nomerge=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--tallpine-approved) tallpine_sha="$2"; shift ;;
+	--no-merge) nomerge=1 ;;
+	-*) echo "merge-gate: unknown argument $1" >&2; exit 2 ;;
+	*) pr="$1" ;;
+	esac
+	shift
+done
+case "$pr" in '' | *[!0-9]*) echo "usage: merge-gate <pr-number> [--tallpine-approved <sha>] [--no-merge]" >&2; exit 2 ;; esac
+# A sandboxed session cannot write the data dir's merge-gate/; its own $TMPDIR is writable, so logs go there instead.
+stamp="pr$pr-$(date +%Y%m%d-%H%M%S)"
+logdir="${TALLPINE_DATA_DIR:-$HOME/.tallpine}/merge-gate/$stamp"
+if ! mkdir -p "$logdir" 2>/dev/null; then
+	logdir="${TMPDIR:-/tmp}/merge-gate-logs/$stamp"
+	mkdir -p "$logdir" || exit 2
+fi
+# B492: the gate compiles with its own build cache. The shared per-user GOCACHE is trimmed by other
+# jobs (scripts/go's size cap, housekeeping), which deleted entries under a running gate build.
+if [ -z "${TALLPINE_GATE_SHARED_GOCACHE:-}" ]; then
+	GOCACHE="$(dirname "$logdir")/gocache"
+	mkdir -p "$GOCACHE" 2>/dev/null || { GOCACHE="${TMPDIR:-/tmp}/merge-gate-gocache"; mkdir -p "$GOCACHE"; }
+	export GOCACHE
+fi
+gate="" ghrepo="$(git -C "$repo" remote get-url origin)"
+cleanup() { [ -n "$gate" ] && { git -C "$repo" worktree remove --force "$gate" >/dev/null 2>&1; rm -f "$gate.pid"; }; return 0; }
+trap cleanup EXIT
+fail() { echo "FAILED $1 log=$logdir/$2.log"; exit 1; }
+cd "$repo" || exit 2
+# B537: an interrupted gate (SIGKILL, a killed session) skips the EXIT trap and strands its temp
+# worktree. Prune merge-gate.* worktrees whose gate is gone: its <gate>.pid names a dead process,
+# or (gates from before the pid file) it has none and is over a day old.
+git worktree prune >/dev/null 2>&1
+while IFS= read -r line; do
+	wt="${line#worktree }"
+	case "$(basename "$wt")" in merge-gate.*) ;; *) continue ;; esac
+	if [ -f "$wt.pid" ]; then
+		kill -0 "$(cat "$wt.pid")" 2>/dev/null && continue
+	elif [ -z "$(find "$wt" -maxdepth 0 -mmin +1440 2>/dev/null)" ]; then
+		continue
+	fi
+	git worktree remove --force "$wt" >/dev/null 2>&1 && rm -f "$wt.pid"
+done < <(git worktree list --porcelain | grep '^worktree ')
+
+head="$(git ls-remote origin "refs/pull/$pr/head" 2>"$logdir/head.log" | cut -f1)"
+[ -n "$head" ] || fail head head
+git fetch -q origin main "+refs/pull/$pr/head:refs/remotes/pr/$pr" >>"$logdir/head.log" 2>&1 || fail head head
+[ "$(git rev-parse "refs/remotes/pr/$pr")" = "$head" ] || { echo "pr head moved during fetch" >>"$logdir/head.log"; fail head head; }
+
+# patch_id <sha>: the stable patch id of sha's diff against its merge base with origin/main
+patch_id() {
+	local base
+	base="$(git merge-base origin/main "$1")" || return 1
+	git diff "$base" "$1" -- . ':!scripts/size-ratchet.allow' | git patch-id --stable | cut -d' ' -f1
+}
+approved=()
+[ -z "$tallpine_sha" ] || approved+=("$tallpine_sha")
+gh_sha="$(gh pr view "$pr" -R "$ghrepo" --json reviews --jq '[.reviews[] | select(.state=="APPROVED")] | last | .commit.oid // empty' 2>>"$logdir/approval.log")"
+[ -z "$gh_sha" ] || approved+=("$gh_sha")
+ok=0 headpid=""
+for a in "${approved[@]+"${approved[@]}"}"; do
+	if [ "$a" = "$head" ]; then ok=1; break; fi
+	git cat-file -e "$a^{commit}" 2>/dev/null || git fetch -q origin "$a" >>"$logdir/approval.log" 2>&1 || continue
+	[ -n "$headpid" ] || headpid="$(patch_id "$head")"
+	ap="$(patch_id "$a")"
+	if [ -n "$ap" ] && [ "$ap" = "$headpid" ]; then ok=1; echo "approval of $a carries over (identical patch)" >>"$logdir/approval.log"; break; fi
+done
+[ "$ok" = 1 ] || { echo "no Tallpine or GitHub approval at head $head (approvals seen: ${approved[*]:-none})" >>"$logdir/approval.log"; fail approval approval; }
+
+tree="$(git merge-tree --write-tree origin/main "refs/remotes/pr/$pr" 2>"$logdir/merge.log")" || { git merge-tree --write-tree origin/main "refs/remotes/pr/$pr" >>"$logdir/merge.log" 2>&1; fail merge-conflict merge; }
+tree="$(printf '%s\n' "$tree" | head -n1)"
+commit="$(GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@localhost GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@localhost git commit-tree "$tree" -p origin/main -m "merge gate pr $pr" 2>>"$logdir/merge.log")" || fail merge merge
+gate="$(mktemp -d "${TMPDIR:-/tmp}/merge-gate.XXXXXX")" || fail worktree merge
+echo $$ >"$gate.pid"
+git worktree add -q --detach "$gate" "$commit" >>"$logdir/merge.log" 2>&1 || fail worktree merge
+
+mapfile -t changed < <(git diff --name-only --diff-filter=d origin/main "$commit")
+[ "${#changed[@]}" -gt 0 ] || fail nochange merge
+base_sha="$(git rev-parse origin/main)"
+cd "$gate" || exit 2
+# Node dirs scripts/verify needs, by what the PR touches (mirrors the *_re patterns in scripts/verify). The gate tree
+# is fresh, so each is a real install: a symlinked node_modules gives false TS2742 errors.
+declare -A want=()
+for f in "${changed[@]}"; do
+	case "$f" in
+	frontend/src/docs/*) want[frontend/src/docs]=1 ;;
+	packages/mobile/*) want[packages/mobile]=1 ;;
+	esac
+	case "$f" in
+	frontend/* | packages/product-ui/* | packages/shared/*) want[frontend]=1; want[packages/product-ui]=1 ;;
+	esac
+	case "$f" in
+	backend/internal/httpd/controllers/* | backend/internal/httpd/apispec/* | packages/shared/api/schema.ts) want[.]=1 ;;
+	esac
+done
+for dir in . frontend packages/product-ui frontend/src/docs packages/mobile; do
+	[ -n "${want[$dir]:-}" ] && [ -f "$dir/package-lock.json" ] || continue
+	(cd "$dir" && npm ci --prefer-offline --no-audit --no-fund && { [ "$dir" != frontend ] || npm rebuild; }) >>"$logdir/deps.log" 2>&1 </dev/null || fail deps deps
+done
+# run_verify <log>: stdin is closed so a test that reads it cannot swallow anything; the verify summary names the failing job.
+run_verify() {
+	if [ -n "${MERGE_GATE_VERIFY:-}" ]; then bash -c "$MERGE_GATE_VERIFY" >"$1" 2>&1 </dev/null; else scripts/verify --changed --base origin/main >"$1" 2>&1 </dev/null; fi || {
+		step="$(awk '/ summary \(logs:/ { on = 1 } on && / FAIL$/ && NF >= 3 { print $1; exit }' "$1")"
+		fail "${step:-verify}" "$(basename "$1" .log)"
+	}
+}
+# set_verify <rev>: put that revision's scripts/verify and scripts/verify.d in the gate tree.
+set_verify() { rm -rf scripts/verify scripts/verify.d; local p; for p in scripts/verify scripts/verify.d; do git cat-file -e "$1:$p" 2>/dev/null && git checkout -q "$1" -- "$p"; done; return 0; }
+# The gate never trusts the PR's own verify: run origin/main's, and also the PR's when the PR edits it. Both must pass.
+set_verify origin/main
+run_verify "$logdir/verify.log"
+if git diff --name-only origin/main "$commit" -- scripts/verify scripts/verify.d | grep -q .; then
+	set_verify "$commit"
+	run_verify "$logdir/verify-pr.log"
+fi
+# go-e2e: verify --changed runs plain `go test`, so e2e-tagged files would report "no tests" and pass silently.
+gopkgs=""
+if printf '%s\n' "${changed[@]}" | grep -Eq '^backend/go\.(mod|sum)$'; then gopkgs="./..."; else
+	for d in $(printf '%s\n' "${changed[@]}" | grep -E '^backend/.*\.go$' | xargs -n1 dirname | sort -u); do
+		[ -d "$d" ] && gopkgs="$gopkgs ./${d#backend/}"
+	done
+fi
+if [ -n "$gopkgs" ]; then
+	(cd backend && TALLPINE_SLOT_HELD="" GOMAXPROCS=4 nice -n 19 ../scripts/test-slot -- ../scripts/go test -p 2 -tags e2e $gopkgs) >"$logdir/go-e2e.log" 2>&1 </dev/null || fail go-e2e go-e2e
+fi
+cd "$repo" || exit 2
+
+now="$(git ls-remote origin "refs/pull/$pr/head" | cut -f1)"
+[ "$now" = "$head" ] || { echo "head moved: gated $head, now $now" >"$logdir/recheck.log"; fail recheck recheck; }
+now_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+[ "$now_main" = "$base_sha" ] || { echo "main moved: gated on $base_sha, now $now_main" >"$logdir/recheck.log"; fail recheck recheck; }
+if [ "$nomerge" = 1 ]; then echo "READY $head"; exit 0; fi
+title="$(gh pr view "$pr" -R "$ghrepo" --json title --jq .title 2>"$logdir/merge-pr.log")" || fail title merge-pr
+title="${title% (#$pr)}"
+gh pr merge "$pr" -R "$ghrepo" --squash --subject "$title (#$pr) [skip ci]" --match-head-commit "$head" >>"$logdir/merge-pr.log" 2>&1 || fail gh-merge merge-pr
+sha="$(gh pr view "$pr" -R "$ghrepo" --json mergeCommit --jq '.mergeCommit.oid // empty' 2>>"$logdir/merge-pr.log")"
+echo "MERGED ${sha:-$head}"

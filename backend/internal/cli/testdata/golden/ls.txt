@@ -1,0 +1,4 @@
+mer:
+  SESSION  NAME          ROLE    BRANCH  PR  CI  REVIEW  THREADS  ACTIVITY  AGE
+  mer-7    drift worker  worker  -       -   -   -       0        active    <age>
+1 terminated session hidden. Use --include-terminated to show.

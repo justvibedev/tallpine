@@ -1,0 +1,38 @@
+{
+	// Shared compiler options for the frontend's TypeScript projects. Not a
+	// project itself: tsconfig.json is the solution that references them. See
+	// "TypeScript projects" in AGENTS.md for the layout and the typecheck commands.
+	"compilerOptions": {
+		"target": "ES2022",
+		"useDefineForClassFields": true,
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		// ESNext matches what the single-program check effectively used: a
+		// type-fest reference (via @electron-forge) loaded lib.esnext globally.
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"types": ["node", "vite/client"],
+		"strict": true,
+		"resolveJsonModule": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"isolatedModules": true,
+		"forceConsistentCasingInFileNames": true,
+		"skipLibCheck": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		// Composite projects must emit declarations so dependants read the .d.ts
+		// instead of re-checking the source. Nothing else is emitted (Vite and
+		// esbuild do the real builds), and everything lands in the cache.
+		"composite": true,
+		"emitDeclarationOnly": true,
+		"rootDir": "..",
+		"paths": {
+			"@/*": ["./src/renderer/*"],
+			"@tallpine/product-ui": ["../packages/product-ui/src/index.ts"],
+			"@tallpine/shared/*": ["../packages/shared/*"]
+		}
+	}
+}

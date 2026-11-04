@@ -1,0 +1,190 @@
+---
+title: Agent policy and managed config
+description: Restrict or configure what agents may do, and lock those settings for a fleet with a managed policy file.
+---
+
+Agent policy is a small set of rules that govern how Tallpine launches agents: how much permission they get, which environment variables they inherit, how they obtain GitHub credentials, how sessions are spread over several signed-in accounts, and how long data of ended sessions is kept.
+
+**Every rule is off by default except session retention, which is on.** An install with no policy configured behaves exactly as before: agents inherit the daemon's environment, no permission cap applies, the project's orchestrator cannot answer worker approvals, and sessions stay on the default account. Nothing restricts or changes agents until a user, project, or administrator turns a rule on.
+
+## Layers and precedence
+
+Each setting is resolved from five layers, highest precedence first:
+
+1. **Managed**: a policy file deployed by an administrator (MDM).
+2. **Environment**: `TALLPINE_AGENT_*` variables in the daemon's environment.
+3. **Project**: a per-project override.
+4. **User**: the global setting in Settings, Harness, Agent policy.
+5. **Default**: off.
+
+A setting set by the managed file or the environment is **locked**: Settings shows it as read-only and a write to it is refused. Project overrides never beat managed or environment values, and security settings are **tighten-only** per project: a project may make agents stricter than the user's global value, never looser. A loosening override is ignored with a warning.
+
+See what is in force, and which layer set each value:
+
+```bash
+tallpine policy show                    # global
+tallpine policy show --project <id>     # with that project's overrides
+tallpine policy show --session <id>     # the decision recorded for a launch
+tallpine policy show --json
+```
+
+Output lines look like `permissionCap.max: "auto" (managed, locked)`. Warnings, such as an unknown rule in the managed file, are listed too.
+
+## Rules
+
+| Rule | Settings | Default | Project override |
+| --- | --- | --- | --- |
+| `permissionCap` | `max`: `none`, `auto`, `accept_edits` | `none` (no cap) | tighten-only |
+| `envFilter` | `mode`: `inherit`, `allowlist`; `passthrough`: list of names | `inherit`, empty list | mode tighten-only; passthrough not overridable |
+| `githubCreds` | `mode`: `env`, `helper`, `none` | `env` | tighten-only |
+| `protectState` | `mode`: `off`, `on` | `off` | tighten-only |
+| `orchestratorApprovals` | `enabled`: true/false | `false` | allowed |
+| `crossProjectOrchestration` | `enabled`: true/false | `false` | allowed |
+| `devMode` | `enabled`: true/false | `false` | never (user layer only) |
+| `orchestratorLanes` | `enabled`: true/false | `false` | allowed |
+| `repoAgentConfig` | `enabled`: true/false | `true` | allowed |
+| `accountPool` | `placement`: `default`, `random`, `most-headroom`, `least-used`; `failover`: true/false | `default`, `false` | not overridable |
+| `agentSettings` | `mode`: `allow`, `allowList`, `deny`; `allow`, `deny`: lists of setting keys, groups or globs | `allow`, empty lists | not overridable |
+| `sessionRetention` | `enabled`; `days` (1-3650); `dropProviderEvents` (deprecated, ignored), `dropWorktrees`, `dropTranscripts`, `includeOrchestrators`: true/false | on; 7 days, worktrees dropped, transcripts and orchestrators kept | allowed |
+
+- **`permissionCap`** forbids bypass/full access (`auto`) or anything above accept-edits (`accept_edits`). Strictness rises `none` < `auto` < `accept_edits`. An invalid value is never ignored: it applies the strictest level (`accept_edits`) and warns.
+- **`envFilter`** with `allowlist` starts agents with only a curated base list (what git, gh, ssh, node, go and common toolchains need), the variables of the agent's own harness, your `passthrough` names, and what the daemon sets for the session (`TALLPINE_*`, the project's environment, account variables). Passthrough names may end in `*`. See below.
+- **`githubCreds`** `helper` keeps GitHub tokens out of the agent's environment (git asks `tallpine git-credential`, `gh` runs through `tallpine gh-exec`); `none` refuses every request. See below.
+- **`protectState`** `on` fences agents off Tallpine's own secrets. Claude Code sessions run their shell commands in Claude Code's sandbox with reads of the install token, the session key, the database (`ao.db` and its WAL files), the GitHub PAT, the browser runtime key, the Electron profile and the mobile gateway keys and device tokens (`data/mobile`) and every session's chat host descriptors (`data/chat-hosts`, each holding a provider host's address and bearer token) denied. Claude's Read tool is denied these files whatever this setting says. The agent cannot ask to run a command outside the sandbox, and it refuses to run commands where it is unavailable. The tallpine CLI keeps working: it reaches the daemon over its socket with the session's scoped token. Writes stay allowed in the worktree, the session's temp directory and artifacts, and the usual build and package caches (`~/Library/Caches`, `~/.cache`, `~/go/pkg/mod`, `~/.npm`, `~/.cargo/registry`); git, gh, npm and go builds work. While it is on, Claude Code loads only your own settings (`--setting-sources user`): project and local `.claude` settings and hooks from the repository do not load, because hooks run outside the sandbox and repository sandbox settings would widen it. It is a file fence only, not data-loss prevention: network access is not restricted, so an agent can still send anything it is allowed to read (the worktree, your files outside Tallpine state) to any destination. Where outbound data must be limited, enforce egress controls outside the agent. Kiro sessions (terminal, Chat and the reviewer) are fenced too: Tallpine runs the whole `kiro-cli` process inside a macOS sandbox profile it generates for each launch (`/usr/bin/sandbox-exec`), with the same Tallpine state denied. Kiro's own settings are not changed and repository `.kiro` config still loads. Its writes are confined to the worktree (and its git directory, except the shared `.git/config` and hooks), the session's temp directory and artifacts, the build and package caches, and Kiro's own state: `~/.kiro`, `~/Library/Application Support/kiro-cli` and `~/.aws`, whole and read-write (also under the hardened profile), so Kiro keeps the access it has outside the fence, IAM Identity Center sign-in included. Running Kiro sessions are fenced from their next launch or restore. If `sandbox-exec` is missing, Kiro cannot be fenced and is treated like any other unfenced harness. Codex terminal and Chat sessions that run with no Codex sandbox (full access: bypass or default, Codex's own baseline, in the terminal and in Chat) are fenced the same way, around the whole `codex` process, with Codex's sandbox and approval flags unchanged. Codex's own state stays open, whole and read-write (also under the hardened profile): `~/.codex` or the session's account `CODEX_HOME`, `~/.aws`, `~/.config` and the user caches. Codex in its sandboxed modes (accept edits, auto, workspace-write) and the Codex reviewer (auto) are not fenced, because Codex runs its own macOS sandbox for commands and macOS refuses a sandbox inside another one; they keep the gap and are refused under the hardened profile, which caps Codex at auto. A Chat started fenced keeps its sandbox for the whole host: switching it to a sandboxed mode mid-chat makes Codex's commands fail until the next launch, and one started in a sandboxed mode stays unfenced if switched to full access. DeepSeek Harness (`dsh`) terminal and Chat sessions in bypass, which run with dsh's sandbox off (`danger-full-access`), are fenced the same way, around the whole `dsh` process, with dsh's patches and flags unchanged. A launch whose `DSH_PERMISSION_MODE` environment variable contradicts its mode (a sandboxed value in bypass Chat, or `danger-full-access` in another mode) is refused while the fence applies, since it could not run as shown. dsh's own state stays open, whole and read-write (also under the hardened profile): `~/.dsh` or the session's `DSH_HOME`, `~/.config` and the user caches. dsh in its confined modes (accept edits, auto, default) and the DeepSeek reviewer (read-only) are not fenced, because dsh runs its own macOS sandbox for commands; they keep the gap and are refused under the hardened profile. Claude Code, Kiro, full-access Codex and bypass DeepSeek Harness on macOS only in this version; on Linux and Windows, and for other harnesses, sessions launch unchanged. A project may turn it on but not off.
+- **`orchestratorApprovals`** lets a project's orchestrator answer the permission prompts of that project's workers. A managed `false` forces it off for every project.
+- **`devMode`** is the owner's Dev mode. While it is on, a project's orchestrator token may do anything you can in the app: cross-project orchestrator start and config, and any setting including `protectState`, which is treated as off (unless a managed hardened profile requires it). Workers and reviewers stay scoped to their own session, and no agent token can change `devMode`. Only the user layer sets it, never a project; a managed `false` locks it off. Every write is written to the daemon log. Credential and device-control routes (mobile pairing, desktop, system, shutdown) stay closed to the scoped token even in Dev mode, but with `protectState` off an orchestrator can read the install token, so its access can outlast Dev mode: rotate the install token after turning it off. Use it only on a machine you trust.
+- **`crossProjectOrchestration`** lets a project's orchestrator coordinate with other projects. Its orchestrator may then list and message the orchestrators of other projects (never their workers or reviewers; the recipient sees the text as untrusted `<<orchestrator:ID>>` data), register a new local git repository as a project, and configure that project and start its orchestrator, but only for projects it created. The new project gets the same setting on, so its orchestrator can reply; switch it in Settings. Agents may only set a short allowlist of that project's config (default branch, session prefix, rules, noCI, agent harness, model, effort, and permissions no higher than their own project's), may not register paths inside the Tallpine data directory or inside any registered project, and never claim an id that existed before. The sender's project setting decides, it is read on every request, and workers and reviewers never gain anything. Every cross-project action is written to the daemon log. A managed `false` forces it off for every project.
+- **`orchestratorLanes`** lets a project's main (non-lane) orchestrator start and end lane orchestrators itself: `tallpine orchestrator new --lane <ref> --prompt <brief> [--model <id>]` for a top-level backlog item (the brief is required), and `tallpine orchestrator end --lane <ref>` when the lane's items are done. It applies to the agent's own project only; lane orchestrators, workers and reviewers never gain it, and `clean` and approval overrides stay with you. An agent cannot end a lane while any of its workers (live or terminated) has an open PR. The starting orchestrator is stored as the lane orchestrator's parent session. Off by default; a project opts in, and a managed `false` forces it off for every project.
+- **`repoAgentConfig`** decides whether Claude Code workers load agent config committed to the repository they work in (project settings and hooks, `.mcp.json` servers). On by default; `false` launches the agent with your own settings only (`--setting-sources user`). A managed `false` forces it off for every project. Tallpine's own hooks and permission mode are passed on the launch command line, so they apply either way. Reviewers never load repository agent config. While a permission cap, `protectState`, or any managed policy value is active, Claude Code workers load only your own settings (`--setting-sources user`), whatever `repoAgentConfig` says: capped sessions do not get the repository's `.claude` settings, hooks or MCP servers, and "don't ask again" approvals do not persist.
+- **`agentSettings`** decides which settings agents may change. An orchestrator changes settings of its own project with `tallpine settings set` (and its rules with `tallpine project rules`); it may tighten agent policy but never loosen it, app-wide settings stay yours, and workers never change settings. `allow` (the default) permits what the settings registry lets an orchestrator write, minus the `deny` list; `allowList` permits only keys the `allow` list names (minus `deny`); `deny` turns every agent setting change off. A list entry is a key (`project.env`), a group (`project.orchestrator` covers `project.orchestrator.idleCompactAt`), a glob (`project.*`) or `*`; `deny` always wins. It applies to every agent path: `PATCH /api/v1/settings/values`, the project rules route and a creating orchestrator's project config. Agents cannot change this rule. Recommended for managed installs: deny the settings that run code or widen trust:
+
+  ```json
+  { "schemaVersion": 2, "rules": { "agentSettings": { "deny": ["project.postCreate", "project.preRemove", "project.verifyCommand", "project.env", "project.symlinks", "project.reviewers"] } } }
+  ```
+
+  or `{ "mode": "deny" }` to keep every setting change with people.
+- **`accountPool`** is not a restriction; it switches on account spreading. See below.
+- **`sessionRetention`** deletes data of sessions that ended more than `days` ago: raw provider events, worktrees and, if `dropTranscripts` is on, transcripts. A dirty worktree's work is saved first (a patch, an archive of untracked files and a bundle of commits no other branch keeps); a session with an open pull request keeps its worktree. Session rows, conversations, usage, reviews and pull requests are never deleted, live sessions are never touched, and orchestrator sessions only with `includeOrchestrators`. See what it would remove with `tallpine retention preview`; `tallpine retention run` asks before it deletes.
+
+## Managed config for administrators
+
+The managed layer is read from a fixed location per platform:
+
+| Platform | File |
+| --- | --- |
+| macOS | `/Library/Managed Preferences/ee.justdev.tallpine.plist` |
+| Linux | `/etc/tallpine-daemon/policy.json` |
+| Windows | `%ProgramData%\Tallpine\policy.json` |
+
+On macOS push it as a custom-settings configuration profile for the preference domain `ee.justdev.tallpine` (Jamf "Application & Custom Settings", or any MDM that writes to Managed Preferences). A plain JSON file at the same path is also accepted. On macOS the plist is converted with the system `plutil`.
+
+`TALLPINE_MANAGED_POLICY_FILE` overrides the path, but **only in development builds**. A release binary ignores it, so a user who controls the daemon's environment cannot point it at a weaker file.
+
+### Format
+
+Version 2 nests settings by rule. This minimal file caps agents below bypass mode, switches the environment to an allowlist, and keeps GitHub tokens out of agent environments:
+
+```json
+{
+  "schemaVersion": 2,
+  "rules": {
+    "permissionCap": { "max": "auto" },
+    "envFilter": { "mode": "allowlist", "passthrough": ["CORP_PROXY_*", "NPM_TOKEN"] },
+    "githubCreds": { "mode": "helper" },
+    "protectState": { "mode": "on" },
+    "orchestratorApprovals": { "enabled": false },
+    "crossProjectOrchestration": { "enabled": false },
+    "orchestratorLanes": { "enabled": false },
+    "repoAgentConfig": { "enabled": false },
+    "accountPool": { "placement": "least-used", "failover": true },
+    "sessionRetention": { "enabled": true, "days": 14 }
+  }
+}
+```
+
+The same policy as a macOS plist:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>schemaVersion</key><integer>2</integer>
+  <key>rules</key>
+  <dict>
+    <key>permissionCap</key><dict><key>max</key><string>auto</string></dict>
+    <key>envFilter</key>
+    <dict>
+      <key>mode</key><string>allowlist</string>
+      <key>passthrough</key><array><string>CORP_PROXY_*</string><string>NPM_TOKEN</string></array>
+    </dict>
+    <key>githubCreds</key><dict><key>mode</key><string>helper</string></dict>
+    <key>protectState</key><dict><key>mode</key><string>on</string></dict>
+    <key>orchestratorApprovals</key><dict><key>enabled</key><false/></dict>
+    <key>crossProjectOrchestration</key><dict><key>enabled</key><false/></dict>
+    <key>repoAgentConfig</key><dict><key>enabled</key><false/></dict>
+    <key>accountPool</key>
+    <dict><key>placement</key><string>least-used</string><key>failover</key><true/></dict>
+  </dict>
+</dict>
+</plist>
+```
+
+Include only the rules you want to manage; anything omitted stays under user, project, and default control. Check the result with `tallpine policy show`: every managed value reports `(managed, locked)`.
+
+### Failure behavior
+
+- **Missing or unreadable file**: no managed layer.
+- **Malformed file, or an invalid value in a field that declares a strictest value** (the permission cap): the strictest value is applied, locked, with a warning. An admin who wrote a file clearly meant to restrict, so failing open would void the lock.
+- **Unknown rule or setting**: ignored with a warning.
+- **`schemaVersion` newer than the app understands**: the settings it knows are applied, with a warning.
+- **Version 1** (the original flat file, `{"maxPermission": "auto"}`, with `envMode` and `envPassthrough`) is still accepted.
+
+## Environment variables
+
+Each setting can also be set in the daemon's environment, which locks it like the managed file. The name is `TALLPINE_AGENT_<RULE>_<SETTING>`:
+
+| Setting | Variable |
+| --- | --- |
+| `permissionCap.max` | `TALLPINE_AGENT_PERMISSION_CAP_MAX` (also `TALLPINE_AGENT_MAX_PERMISSION`) |
+| `envFilter.mode` | `TALLPINE_AGENT_ENV_FILTER_MODE` (also `TALLPINE_AGENT_ENV_MODE`) |
+| `envFilter.passthrough` | `TALLPINE_AGENT_ENV_FILTER_PASSTHROUGH` (also `TALLPINE_AGENT_ENV_PASSTHROUGH`), comma-separated |
+| `githubCreds.mode` | `TALLPINE_AGENT_GITHUB_CREDS_MODE` |
+| `protectState.mode` | `TALLPINE_AGENT_PROTECT_STATE_MODE` |
+| `orchestratorApprovals.enabled` | `TALLPINE_AGENT_ORCHESTRATOR_APPROVALS_ENABLED` |
+| `repoAgentConfig.enabled` | `TALLPINE_AGENT_REPO_AGENT_CONFIG_ENABLED` |
+| `agentSettings.mode` | `TALLPINE_AGENT_AGENT_SETTINGS_MODE` |
+| `agentSettings.allow`, `agentSettings.deny` | `TALLPINE_AGENT_AGENT_SETTINGS_ALLOW`, `TALLPINE_AGENT_AGENT_SETTINGS_DENY`, comma-separated |
+| `accountPool.placement` | `TALLPINE_AGENT_ACCOUNT_POOL_PLACEMENT` (also `TALLPINE_ACCOUNT_PLACEMENT`) |
+| `accountPool.failover` | `TALLPINE_AGENT_ACCOUNT_POOL_FAILOVER` (also `TALLPINE_ACCOUNT_FAILOVER`) |
+
+## Per-harness environment allowlist
+
+With `envFilter.mode` set to `allowlist`, each agent receives the credential variables of **its own harness only**: a Claude Code worker gets `ANTHROPIC_*`, Claude Bedrock/Vertex routing and AWS/Google credentials for them, but not `OPENAI_*`; a Codex worker gets `OPENAI_*` and `CODEX_*`. A harness the filter does not recognize gets the union of all lists. This limits ambient credentials, not what an allowed agent can do: a harness still sees its own credentials.
+
+If a tool fails because it needs a variable that was dropped, add its name to `passthrough` (Settings, or the environment variable above). Each launch's decision record lists the dropped variable **names**, never values: `tallpine policy show --session <id>`. An invalid mode value is reported and ignored rather than cutting agents off from their tools.
+
+## Permission cap
+
+`permissionCap.max` limits the most permissive mode agents may run in. `auto` forbids bypass/full-access modes; `accept_edits` forbids anything above accept-edits. The cap also applies to a chat switching permission mode mid-session, so a managed tightening takes effect for chats already running.
+
+## Account pool and failover
+
+When you have several signed-in accounts for one harness (Claude Code, Codex), `accountPool` can spread work across them. Both settings are off by default.
+
+- `placement` picks the account a new session without a chosen one starts on: `default` (the default account), `random`, `most-headroom`, or `least-used`.
+- `failover` moves a session whose account hit a usage limit to another account with headroom, instead of waiting for the reset.
+
+Rotating several personal subscriptions to avoid usage limits may conflict with the provider's terms; for teams, prefer organization seats or API keys.
+
+## GitHub credentials
+
+`githubCreds.mode` decides how an agent gets GitHub access:
+
+- `env` (default): a token is placed in the agent's environment (`GH_TOKEN`).
+- `helper`: no token in the environment. `git` asks a credential helper (`tallpine git-credential`) and `gh` runs through a shim (`tallpine gh-exec`); each asks the daemon for the project's token per use, with an audit line and the ability to deny. This removes the token from env dumps, logs, and every child process, but does not stop an agent from invoking the helper.
+- `none`: every request is refused.
+
+A token the project's own environment sets (`GH_TOKEN`, `GITHUB_TOKEN`, or `TALLPINE_GITHUB_TOKEN`) keeps winning, and the decision record notes which variable name did. Per-project GitHub identity is set with the project's `githubUser` field (a valid GitHub login); see [Projects](/configuration/projects).
+
+On Windows the helper and shim are not implemented yet, so `helper` falls back to the token in the environment and logs a warning.

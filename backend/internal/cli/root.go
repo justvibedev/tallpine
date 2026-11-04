@@ -1,0 +1,294 @@
+// Package cli implements the user-facing tallpine command. It stays thin: commands
+// discover the local daemon, call its loopback HTTP API, and format output.
+package cli
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"time"
+
+	"tallpine.eu/tallpine/backend/internal/brand"
+	"tallpine.eu/tallpine/backend/internal/config"
+	"tallpine.eu/tallpine/backend/internal/domain"
+
+	"github.com/spf13/cobra"
+
+	"tallpine.eu/tallpine/backend/internal/daemon"
+	"tallpine.eu/tallpine/backend/internal/datadirlock"
+	tallpineprocess "tallpine.eu/tallpine/backend/internal/process"
+	"tallpine.eu/tallpine/backend/internal/processalive"
+)
+
+// Execute runs the tallpine CLI with process stdio.
+func Execute() error {
+	return executeWithDeps(DefaultDeps(), os.Args[1:])
+}
+
+func executeWithDeps(deps Deps, args []string) error {
+	deps = deps.withDefaults()
+	// Sessions inherit the daemon env, so enterprise PR URLs parse the same way.
+	if raw, ok := brand.LookupEnv("GITHUB_ENTERPRISE_HOSTS"); ok {
+		domain.SetGitHubEnterpriseHosts(config.ParseGitHubEnterpriseHosts(raw))
+	}
+	cmd := NewRootCommand(deps)
+	cmd.SetArgs(args)
+	return cmd.Execute()
+}
+
+// usageError marks a command-line misuse (bad flag, wrong arg count). It lets
+// the process entrypoint return exit code 2 for usage errors versus 1 for
+// runtime failures, matching the convention CLIs are scripted against.
+type usageError struct{ err error }
+
+func (e usageError) Error() string { return e.err.Error() }
+func (e usageError) Unwrap() error { return e.err }
+
+// exitDataDirLocked is the exit code of a daemon that gave up waiting for
+// another Tallpine process to release its data dir: sysexits EX_TEMPFAIL, since the
+// start can succeed once that process exits.
+const exitDataDirLocked = 75
+
+// ExitCode maps a CLI error to a process exit code: 2 for usage errors, 75 when
+// another Tallpine process owns the data dir, 1 for any other failure, 0 for success.
+func ExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ue usageError
+	if errors.As(err, &ue) {
+		return 2
+	}
+	var ec exitCodeError
+	if errors.As(err, &ec) {
+		return ec.code
+	}
+	if errors.Is(err, datadirlock.ErrLocked) {
+		return exitDataDirLocked
+	}
+	return 1
+}
+
+// Deps holds the small set of side effects the CLI needs. Tests replace these
+// functions without reaching into process-global state.
+type Deps struct {
+	In  io.Reader
+	Out io.Writer
+	Err io.Writer
+
+	HTTPClient            *http.Client
+	Executable            func() (string, error)
+	StartProcess          func(processStartConfig) error
+	ProcessAlive          func(pid int) bool
+	LookPath              func(file string) (string, error)
+	CommandOutput         func(ctx context.Context, name string, args ...string) ([]byte, error)
+	CommandOutputInDir    func(ctx context.Context, dir, name string, args ...string) ([]byte, error)
+	RunInteractiveCommand func(ctx context.Context, name string, args []string, stdin io.Reader, stdout, stderr io.Writer) error
+	ReadSecret            func(io.Reader) ([]byte, error)
+	// DoctorGitHubRESTBase lets tests point the doctor GitHub token probe at
+	// httptest without mutating package-global state.
+	DoctorGitHubRESTBase string
+	// DoctorGitLabRESTBase lets tests point the doctor GitLab token probe at
+	// httptest without mutating package-global state.
+	DoctorGitLabRESTBase string
+	Now                  func() time.Time
+	Sleep                func(time.Duration)
+}
+
+// DefaultDeps returns production dependencies.
+func DefaultDeps() Deps {
+	return Deps{
+		In:                    os.Stdin,
+		Out:                   os.Stdout,
+		Err:                   os.Stderr,
+		HTTPClient:            &http.Client{Timeout: 2 * time.Second},
+		Executable:            os.Executable,
+		StartProcess:          startProcess,
+		ProcessAlive:          processalive.Alive,
+		LookPath:              exec.LookPath,
+		CommandOutput:         commandOutput,
+		CommandOutputInDir:    commandOutputInDir,
+		RunInteractiveCommand: runInteractiveCommand,
+		ReadSecret:            readSecret,
+		DoctorGitHubRESTBase:  defaultDoctorGitHubRESTBase,
+		DoctorGitLabRESTBase:  defaultDoctorGitLabRESTBase,
+		Now:                   time.Now,
+		Sleep:                 time.Sleep,
+	}
+}
+
+func commandOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return tallpineprocess.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+func commandOutputInDir(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
+	cmd := tallpineprocess.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	return cmd.CombinedOutput()
+}
+
+func (d Deps) withDefaults() Deps {
+	def := DefaultDeps()
+	if d.In == nil {
+		d.In = def.In
+	}
+	if d.Out == nil {
+		d.Out = def.Out
+	}
+	if d.Err == nil {
+		d.Err = def.Err
+	}
+	if d.HTTPClient == nil {
+		d.HTTPClient = def.HTTPClient
+	}
+	if d.Executable == nil {
+		d.Executable = def.Executable
+	}
+	if d.StartProcess == nil {
+		d.StartProcess = def.StartProcess
+	}
+	if d.ProcessAlive == nil {
+		d.ProcessAlive = def.ProcessAlive
+	}
+	if d.LookPath == nil {
+		d.LookPath = def.LookPath
+	}
+	if d.CommandOutput == nil {
+		d.CommandOutput = def.CommandOutput
+	}
+	if d.CommandOutputInDir == nil {
+		d.CommandOutputInDir = def.CommandOutputInDir
+	}
+	if d.RunInteractiveCommand == nil {
+		d.RunInteractiveCommand = def.RunInteractiveCommand
+	}
+	if d.ReadSecret == nil {
+		d.ReadSecret = def.ReadSecret
+	}
+	if d.DoctorGitHubRESTBase == "" {
+		d.DoctorGitHubRESTBase = def.DoctorGitHubRESTBase
+	}
+	if d.DoctorGitLabRESTBase == "" {
+		d.DoctorGitLabRESTBase = def.DoctorGitLabRESTBase
+	}
+	if d.Now == nil {
+		d.Now = def.Now
+	}
+	if d.Sleep == nil {
+		d.Sleep = def.Sleep
+	}
+	return d
+}
+
+// NewRootCommand builds a testable root command.
+func NewRootCommand(deps Deps) *cobra.Command {
+	deps = deps.withDefaults()
+	ctx := &commandContext{deps: deps}
+
+	root := &cobra.Command{
+		Use:           brand.CLIName,
+		Short:         brand.ProductName,
+		Long:          brand.ProductName + " manages the local daemon that supervises parallel coding-agent sessions.",
+		Version:       VersionString(),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	root.SetIn(deps.In)
+	root.SetOut(deps.Out)
+	root.SetErr(deps.Err)
+	root.CompletionOptions.DisableDefaultCmd = true
+	// Tag flag-parse failures as usage errors so the entrypoint can exit 2 for
+	// misuse versus 1 for runtime failures. Subcommands inherit this func.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return usageError{err}
+	})
+
+	root.AddCommand(newDaemonCommand())
+	root.AddCommand(newStartCommand(ctx))
+	root.AddCommand(newStopCommand(ctx))
+	root.AddCommand(newStatusCommand(ctx))
+	root.AddCommand(newRemoteHostCommand(ctx))
+	root.AddCommand(newDoctorCommand(ctx))
+	root.AddCommand(newAgentCommand(ctx))
+	root.AddCommand(newSpawnCommand(ctx))
+	root.AddCommand(newSendCommand(ctx))
+	root.AddCommand(newReportCommand(ctx))
+	root.AddCommand(newPreviewCommand(ctx))
+	root.AddCommand(newRenderCommand(ctx))
+	root.AddCommand(newMCPCommand(ctx))
+	root.AddCommand(newBrowserCommand(ctx))
+	root.AddCommand(newHooksCommand(ctx))
+	root.AddCommand(newAgentProcessCommand(ctx))
+	root.AddCommand(newChatHostCommand())
+	root.AddCommand(newLaunchCommand(ctx))
+	root.AddCommand(newPtyHostCommand())
+	root.AddCommand(newCodexLoginCommand(ctx))
+	root.AddCommand(newClaudeLoginCommand(ctx))
+	root.AddCommand(newDevCommand(ctx))
+	root.AddCommand(newImportCommand(ctx))
+	root.AddCommand(newProjectCommand(ctx))
+	root.AddCommand(newSessionCommand(ctx))
+	root.AddCommand(newCleanupCommand(ctx))
+	root.AddCommand(newMigrateFromVoCommand())
+	root.AddCommand(newPolicyCommand(ctx))
+	root.AddCommand(newSettingsCommand(ctx))
+	root.AddCommand(newRetentionCommand(ctx))
+	root.AddCommand(newGitCredentialCommand(ctx), newGHExecCommand(ctx), newCommitCommand(ctx))
+	root.AddCommand(newUpdateCommand(ctx))
+	root.AddCommand(newOrchestratorCommand(ctx))
+	root.AddCommand(newMergesCommand(ctx))
+	root.AddCommand(newMergeGateCommand(ctx))
+	root.AddCommand(newPRCommand(ctx))
+	root.AddCommand(newReviewCommand(ctx))
+	root.AddCommand(newAutomationCommand(ctx))
+	root.AddCommand(newCueCommand(ctx))
+	root.AddCommand(newBacklogCommand(ctx))
+	root.AddCommand(newReleaseCommand(ctx))
+	root.AddCommand(newPlanCommand(ctx))
+	root.AddCommand(newCompletionCommand())
+	root.AddCommand(newVersionCommand())
+
+	return root
+}
+
+type commandContext struct {
+	deps Deps
+}
+
+func usageArgs(validate cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := validate(cmd, args); err != nil {
+			return usageError{err}
+		}
+		return nil
+	}
+}
+
+func noArgs(cmd *cobra.Command, args []string) error {
+	if err := cobra.ExactArgs(0)(cmd, args); err != nil {
+		return usageError{err}
+	}
+	return nil
+}
+
+func atMostOneArg(cmd *cobra.Command, args []string) error {
+	if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+		return usageError{err}
+	}
+	return nil
+}
+
+func newDaemonCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:    "daemon",
+		Short:  "Run the " + brand.ProductName + " backend daemon",
+		Hidden: true,
+		Args:   noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemon.Run()
+		},
+	}
+}

@@ -1,0 +1,30 @@
+{
+	"title": "Docs",
+	"pages": [
+		"---Getting Started---",
+		"index",
+		"installation",
+		"quickstart",
+		"platforms",
+		"---Using Tallpine---",
+		"dashboard",
+		"settings-tour",
+		"backlog",
+		"lanes",
+		"examples",
+		"guides",
+		"---Built-in capabilities---",
+		"plugins",
+		"---Reference---",
+		"cli",
+		"cli-commands",
+		"configuration",
+		"security",
+		"architecture",
+		"---Help---",
+		"troubleshooting",
+		"faq",
+		"migration",
+		"changelog"
+	]
+}

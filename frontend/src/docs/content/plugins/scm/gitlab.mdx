@@ -1,0 +1,46 @@
+---
+title: GitLab
+description: Observe GitLab merge requests, connect a self-managed host, and use GitLab as an issue source.
+---
+
+Tallpine treats a GitLab merge request (MR) like a GitHub pull request: it tracks the MR attached to a session, shows its pipeline, approvals and review threads, and sends merge actions to GitLab. This page covers what differs. The shared concepts are in [Source control and pull requests](/plugins/scm).
+
+## Authenticate
+
+The daemon looks for a token in this order and uses the first that is non-empty:
+
+1. `TALLPINE_GITLAB_TOKEN`
+2. `GITLAB_TOKEN`
+3. Credentials from an authenticated `glab` CLI
+
+Use an account with access to the repository and the actions you want. These are daemon environment settings, not project settings; do not put tokens in project JSON.
+
+## Connect a self-managed host
+
+gitlab.com is always allowed. For any other host:
+
+```sh
+export TALLPINE_GITLAB_ALLOWED_HOSTS="gitlab.example.com"
+export TALLPINE_GITLAB_HOST_TOKENS="gitlab.example.com=YOUR_GITLAB_TOKEN"
+```
+
+Include the port if the host uses one, and omit `https://`. A host that is neither gitlab.com nor in `TALLPINE_GITLAB_ALLOWED_HOSTS` is refused. `TALLPINE_GITLAB_HOST_TOKENS` holds `host=token` entries so a token for one host is never sent to another; without an entry, the order above applies. Restart Tallpine after changing them, quitting it completely if the desktop app manages the daemon.
+
+## What Tallpine does with an MR
+
+| Capability | GitLab behavior |
+| --- | --- |
+| Observe | MR state, pipeline status and failing jobs, a tail of a failed job's log, approvals, and unresolved review threads. |
+| Merge | `tallpine pr merge` performs a **squash** merge pinned to the reviewed head commit. Other merge methods are refused. |
+| Request a review | Assigns a user as MR reviewer, keeping existing reviewers. |
+| Resolve threads | `tallpine pr resolve-comments` resolves review threads. |
+
+Review decisions are read from GitLab approvals.
+
+## GitLab issues
+
+With `--tracker-provider gitlab` on `tallpine spawn --issue <id>`, or the project's tracker settings, a worker can start from a GitLab issue. The adapter is read-only: it reads an issue (open maps to `open`, closed to `done`) and lists issues with state, label and assignee filters, but never comments on or transitions them. Automatic intake needs the per-project opt-in plus the daemon-wide `TALLPINE_TRACKER_INTAKE` flag; see [Issue tracking](/plugins/trackers).
+
+## Numeric references and forks
+
+When a numeric MR reference is ambiguous, pass the full URL. If the Git remote is a fork but claims should target the upstream, set the project's `canonicalRepoURL`. A claim records ownership; it does not check out the MR branch.

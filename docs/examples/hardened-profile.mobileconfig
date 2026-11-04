@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Sample Configuration Profile that turns on the Tallpine hardened profile.
+  The single key "profile" = "hardened" locks every strict floor and refuses to
+  launch agents that cannot be fenced off Tallpine's files (anything but Claude
+  Code on macOS). Optional "rules" may only tighten a floor (for example
+  permissionCap.max = accept_edits or githubCreds.mode = none); a looser value
+  is ignored with a warning. Replace the two PayloadUUID values with fresh UUIDs
+  (uuidgen) and the identifier/organization with your own before uploading it to
+  your MDM. See docs/agent-policy.md, "Hardened profile".
+-->
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadType</key>
+			<string>ee.justdev.tallpine</string>
+			<key>PayloadIdentifier</key>
+			<string>com.example.tallpine.hardened-profile.settings</string>
+			<key>PayloadUUID</key>
+			<string>00000000-0000-4000-8000-000000000011</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadDisplayName</key>
+			<string>Tallpine hardened profile</string>
+
+			<key>profile</key>
+			<string>hardened</string>
+			<key>schemaVersion</key>
+			<integer>2</integer>
+			<key>rules</key>
+			<dict>
+				<!-- Optional: tighter than the profile's auto cap. -->
+				<key>permissionCap</key>
+				<dict>
+					<key>max</key>
+					<string>accept_edits</string>
+				</dict>
+				<!-- The profile already sets envFilter.mode=allowlist; passthrough stays yours. -->
+				<key>envFilter</key>
+				<dict>
+					<key>passthrough</key>
+					<array>
+						<string>CORP_PROXY_*</string>
+					</array>
+				</dict>
+			</dict>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>Tallpine hardened profile</string>
+	<key>PayloadIdentifier</key>
+	<string>com.example.tallpine.hardened-profile</string>
+	<key>PayloadOrganization</key>
+	<string>Example Corp</string>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>00000000-0000-4000-8000-000000000012</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

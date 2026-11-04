@@ -1,0 +1,1116 @@
+package systeminstall
+
+import (
+	"context"
+	"errors"
+	"io"
+	"os/exec"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
+)
+
+type installJobStoreFake struct {
+	mu                 sync.Mutex
+	records            map[string]ports.AgentInstallJobRecord
+	history            []ports.AgentInstallJobRecord
+	upsertErr          error
+	upsertErrForStatus map[string]error
+	upsert             func(context.Context, ports.AgentInstallJobRecord) error
+}
+
+func newInstallJobStoreFake() *installJobStoreFake {
+	return &installJobStoreFake{records: make(map[string]ports.AgentInstallJobRecord)}
+}
+
+func (s *installJobStoreFake) UpsertAgentInstallJob(ctx context.Context, record ports.AgentInstallJobRecord) error {
+	if s.upsert != nil {
+		return s.upsert(ctx, record)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.upsertErr != nil {
+		return s.upsertErr
+	}
+	if err := s.upsertErrForStatus[record.Status]; err != nil {
+		return err
+	}
+	s.records[record.Target] = record
+	s.history = append(s.history, record)
+	return nil
+}
+
+func TestAgentJobTransitionPersistenceIsBounded(t *testing.T) {
+	store := newInstallJobStoreFake()
+	store.upsert = func(ctx context.Context, _ ports.AgentInstallJobRecord) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	s := newTestService("darwin", "npm")
+	s.jobStore = store
+	s.persistenceTimeout = 20 * time.Millisecond
+	now := time.Now().UTC()
+	job := &Job{Target: TargetCodex, Status: StatusInstalling, StartedAt: &now, UpdatedAt: &now}
+
+	started := time.Now()
+	err := s.transitionAgentJob(job, StatusVerifying, "", "", "")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("transitionAgentJob error = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("transitionAgentJob blocked for %s", elapsed)
+	}
+}
+
+func (s *installJobStoreFake) GetAgentInstallJob(_ context.Context, target string) (ports.AgentInstallJobRecord, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[target]
+	return record, ok, nil
+}
+
+func (s *installJobStoreFake) ListAgentInstallJobs(context.Context) ([]ports.AgentInstallJobRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]ports.AgentInstallJobRecord, 0, len(s.records))
+	for _, record := range s.records {
+		out = append(out, record)
+	}
+	return out, nil
+}
+
+func (s *installJobStoreFake) InterruptActiveAgentInstallJobs(_ context.Context, interruptedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for target, record := range s.records {
+		if record.Status != string(StatusInstalling) && record.Status != string(StatusVerifying) {
+			continue
+		}
+		record.Status = string(StatusInterrupted)
+		record.Error = "Tallpine restarted before this job completed."
+		record.FinishedAt = &interruptedAt
+		record.UpdatedAt = interruptedAt
+		s.records[target] = record
+	}
+	return nil
+}
+
+type harnessVerifierFunc func(context.Context, Target) (VerifyResult, error)
+
+func (f harnessVerifierFunc) Verify(ctx context.Context, target Target) (VerifyResult, error) {
+	return f(ctx, target)
+}
+
+type sessionListerStub struct {
+	sessions []domain.SessionRecord
+	err      error
+}
+
+func (s sessionListerStub) ListLiveSessions(context.Context) ([]domain.SessionRecord, error) {
+	return s.sessions, s.err
+}
+
+type sessionListerFunc func(context.Context) ([]domain.SessionRecord, error)
+
+func (f sessionListerFunc) ListLiveSessions(ctx context.Context) ([]domain.SessionRecord, error) {
+	return f(ctx)
+}
+
+type commandRunnerFunc func(context.Context, []string, io.Writer, io.Writer) error
+
+func (f commandRunnerFunc) Run(ctx context.Context, argv []string, stdout, stderr io.Writer) error {
+	return f(ctx, argv, stdout, stderr)
+}
+
+func testCommandRunner(command func(context.Context, []string) *exec.Cmd) commandRunnerFunc {
+	return func(ctx context.Context, argv []string, stdout, stderr io.Writer) error {
+		cmd := command(ctx, argv)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		return cmd.Run()
+	}
+}
+
+// lookPathFound returns a lookPath fake that resolves only the names present
+// in paths (defaulting each found name to "/usr/bin/<name>" when the map
+// value is empty), and errors for everything else — mirroring the
+// systemcheck test fake.
+func lookPathFound(names ...string) func(string) (string, error) {
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return func(name string) (string, error) {
+		if set[name] {
+			return "/usr/bin/" + name, nil
+		}
+		return "", errors.New("exec: " + name + ": executable file not found in $PATH")
+	}
+}
+
+func newTestService(goos string, found ...string) *Service {
+	backgroundContext, stop := context.WithCancel(context.Background())
+	return &Service{
+		jobs:              make(map[Target]*Job),
+		backgroundContext: backgroundContext,
+		stop:              stop,
+		executables:       executableFinderFunc(lookPathFound(found...)),
+		installCapabilities: installCapabilitiesStub{
+			prefix: "/Users/test/.npm", writable: true,
+		},
+		pathWritable:       pathWritableProbeFunc(func(context.Context, string) (bool, error) { return true, nil }),
+		privateNPMPrefixes: map[Target]string{Target("opencode-v2"): "/Users/test/.local/share/opencode-v2-home/npm"},
+		commands: testCommandRunner(func(ctx context.Context, argv []string) *exec.Cmd {
+			return exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // test-only, deterministic argv
+		}),
+		goos:           goos,
+		installTimeout: 2 * time.Second,
+	}
+}
+
+type pathWritableProbeFunc func(context.Context, string) (bool, error)
+
+func (f pathWritableProbeFunc) PathWritable(ctx context.Context, path string) (bool, error) {
+	return f(ctx, path)
+}
+
+func TestValid(t *testing.T) {
+	for _, target := range []Target{TargetTmux, TargetGH, TargetClaude, TargetCodex, TargetCodex, TargetCodex, TargetCodex} {
+		if !Valid(target) {
+			t.Errorf("Valid(%q) = false, want true", target)
+		}
+	}
+	for _, target := range []Target{"", "rm -rf /", "../../etc/passwd", "TMUX", "tmux "} {
+		if Valid(target) {
+			t.Errorf("Valid(%q) = true, want false", target)
+		}
+	}
+}
+
+func TestStartAndStatus_Succeeded(t *testing.T) {
+	s := newTestService("darwin", "brew", "tmux")
+	s.commands = testCommandRunner(func(context.Context, []string) *exec.Cmd { return exec.Command("true") })
+
+	job, err := s.Start(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if job.Status != StatusRunning {
+		t.Fatalf("Status = %q, want %q", job.Status, StatusRunning)
+	}
+	if job.Command != "brew install tmux" {
+		t.Fatalf("Command = %q, want %q", job.Command, "brew install tmux")
+	}
+
+	waitForStatus(t, s, TargetTmux, StatusSucceeded)
+
+	final, err := s.Status(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if final.Error != "" {
+		t.Fatalf("Error = %q, want empty", final.Error)
+	}
+	if final.FinishedAt == nil {
+		t.Fatalf("FinishedAt is nil, want set")
+	}
+}
+
+func TestStart_SuccessCallbackRunsAfterVerifiedInstall(t *testing.T) {
+	s := newTestService("darwin", "npm", "codex")
+	s.commands = testCommandRunner(func(context.Context, []string) *exec.Cmd { return exec.Command("true") })
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/Users/test/.npm/bin/codex"}, nil
+	})
+	succeeded := make(chan Target, 1)
+	s.SetOnSucceeded(func(target Target) { succeeded <- target })
+
+	if _, err := s.Start(context.Background(), TargetCodex); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+
+	select {
+	case target := <-succeeded:
+		if target != TargetCodex {
+			t.Fatalf("callback target = %q, want %q", target, TargetCodex)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for success callback")
+	}
+}
+
+func TestStart_FailedInstallDoesNotRunSuccessCallback(t *testing.T) {
+	s := newTestService("darwin", "npm")
+	s.commands = testCommandRunner(func(context.Context, []string) *exec.Cmd { return exec.Command("false") })
+	called := make(chan Target, 1)
+	s.SetOnSucceeded(func(target Target) { called <- target })
+
+	if _, err := s.Start(context.Background(), TargetCodex); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	waitForStatus(t, s, TargetCodex, StatusFailed)
+
+	select {
+	case target := <-called:
+		t.Fatalf("success callback ran for failed target %q", target)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestStart_ExitZeroWithoutTargetOnPATHFails(t *testing.T) {
+	s := newTestService("darwin", "brew")
+	s.commands = testCommandRunner(func(context.Context, []string) *exec.Cmd { return exec.Command("true") })
+
+	if _, err := s.Start(context.Background(), TargetTmux); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	waitForStatus(t, s, TargetTmux, StatusFailed)
+
+	final, err := s.Status(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if !strings.Contains(final.Error, "tmux is still not in PATH") {
+		t.Fatalf("Error = %q, want failed PATH verification", final.Error)
+	}
+}
+
+func TestStartAndStatus_Failed(t *testing.T) {
+	s := newTestService("darwin", "brew")
+	s.commands = testCommandRunner(func(context.Context, []string) *exec.Cmd { return exec.Command("false") })
+
+	if _, err := s.Start(context.Background(), TargetTmux); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	waitForStatus(t, s, TargetTmux, StatusFailed)
+
+	final, _ := s.Status(context.Background(), TargetTmux)
+	if final.Error == "" {
+		t.Fatalf("Error is empty, want the exec failure")
+	}
+}
+
+func TestStart_Unsupported(t *testing.T) {
+	s := newTestService("windows") // no winget on PATH
+
+	job, err := s.Start(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if job.Status != StatusUnsupported {
+		t.Fatalf("Status = %q, want %q", job.Status, StatusUnsupported)
+	}
+	if job.Error == "" {
+		t.Fatalf("Error is empty, want the Unsupported reason")
+	}
+	if job.FinishedAt == nil {
+		t.Fatalf("FinishedAt is nil, want set immediately for an Unsupported job")
+	}
+}
+
+func TestStart_UnknownTarget(t *testing.T) {
+	s := newTestService("darwin")
+	if _, err := s.Start(context.Background(), Target("bogus")); err == nil {
+		t.Fatalf("Start(bogus) error = nil, want an error")
+	}
+}
+
+func TestStatus_UnknownTarget(t *testing.T) {
+	s := newTestService("darwin")
+	if _, err := s.Status(context.Background(), Target("bogus")); err == nil {
+		t.Fatalf("Status(bogus) error = nil, want an error")
+	}
+}
+
+func TestStatus_NeverStartedIsIdle(t *testing.T) {
+	s := newTestService("darwin", "brew")
+	job, err := s.Status(context.Background(), TargetGH)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if job.Status != StatusIdle {
+		t.Fatalf("Status = %q, want %q", job.Status, StatusIdle)
+	}
+	if job.Target != TargetGH {
+		t.Fatalf("Target = %q, want %q", job.Target, TargetGH)
+	}
+	if job.Command != "brew install gh" {
+		t.Fatalf("Command = %q, want install preview", job.Command)
+	}
+}
+
+func TestStatus_LinuxReturnsManualCommandBeforeStart(t *testing.T) {
+	s := newTestService("linux", "apt-get")
+	job, err := s.Status(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if job.Status != StatusUnsupported {
+		t.Fatalf("Status = %q, want %q", job.Status, StatusUnsupported)
+	}
+	if job.Command != "sudo apt-get install -y tmux" {
+		t.Fatalf("Command = %q, want exact sudo command", job.Command)
+	}
+}
+
+// TestStart_IdempotentWhileRunning gates the fake install on a channel so the
+// test controls exactly when it finishes, then fires two concurrent Starts
+// and confirms neither one starts a second run.
+func TestStart_IdempotentWhileRunning(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 2)
+
+	s := newTestService("darwin", "brew", "tmux")
+	callCount := 0
+	s.commands = testCommandRunner(func(context.Context, []string) *exec.Cmd {
+		callCount++
+		started <- struct{}{}
+		<-release
+		return exec.Command("true")
+	})
+
+	first, err := s.Start(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("first Start() error = %v", err)
+	}
+	if first.Status != StatusRunning {
+		t.Fatalf("first Status = %q, want %q", first.Status, StatusRunning)
+	}
+
+	<-started // the background goroutine has begun (and is blocked on release)
+
+	second, err := s.Start(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("second Start() error = %v", err)
+	}
+	if second.Status != StatusRunning {
+		t.Fatalf("second Status = %q, want %q", second.Status, StatusRunning)
+	}
+
+	close(release)
+	waitForStatus(t, s, TargetTmux, StatusSucceeded)
+
+	if callCount != 1 {
+		t.Fatalf("command runner called %d times, want 1 (Start must be idempotent while running)", callCount)
+	}
+}
+
+// TestRun_Timeout confirms a stalled installer eventually surfaces as a
+// failure instead of pinning its target in StatusRunning forever. The fake
+// command actually respects ctx (exec.CommandContext, same as real installs),
+// so the short installTimeout below kills it well before the real 5s sleep
+// would return on its own.
+func TestRun_Timeout(t *testing.T) {
+	s := newTestService("darwin", "brew")
+	s.installTimeout = 50 * time.Millisecond
+	s.commands = testCommandRunner(func(ctx context.Context, _ []string) *exec.Cmd {
+		return exec.CommandContext(ctx, "sleep", "5") //nolint:gosec // test-only, fixed argv
+	})
+
+	if _, err := s.Start(context.Background(), TargetTmux); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	waitForStatus(t, s, TargetTmux, StatusFailed)
+
+	final, _ := s.Status(context.Background(), TargetTmux)
+	if !strings.Contains(final.Error, "timed out") {
+		t.Fatalf("Error = %q, want it to mention the timeout", final.Error)
+	}
+	if final.FinishedAt == nil {
+		t.Fatalf("FinishedAt is nil, want set")
+	}
+}
+
+func TestAgentInstallPersistsInstallVerifySuccessLifecycle(t *testing.T) {
+	store := newInstallJobStoreFake()
+	s := newTestService("darwin", "npm")
+	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
+	s.jobStore = store
+	s.commands = commandRunnerFunc(func(_ context.Context, _ []string, stdout, _ io.Writer) error {
+		_, _ = io.WriteString(stdout, "installed\n")
+		return nil
+	})
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/Users/test/.npm/bin/codex", Output: "codex 1.2.3\n"}, nil
+	})
+
+	job, err := s.StartAgent(context.Background(), TargetCodex, "npm")
+	if err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+	if job.Status != StatusInstalling || job.Method != "npm" {
+		t.Fatalf("initial job = %+v", job)
+	}
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+
+	final, err := s.Status(context.Background(), TargetCodex)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if final.ExpectedDestination != "/Users/test/.npm/bin/codex" {
+		t.Fatalf("expected destination = %q", final.ExpectedDestination)
+	}
+	if !strings.Contains(final.Output, "installed") || !strings.Contains(final.Output, "codex 1.2.3") {
+		t.Fatalf("output = %q, want installer and verifier diagnostics", final.Output)
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	statuses := make([]string, 0, len(store.history))
+	for _, record := range store.history {
+		statuses = append(statuses, record.Status)
+	}
+	if strings.Join(statuses, ",") != "installing,verifying,succeeded" {
+		t.Fatalf("persisted statuses = %v", statuses)
+	}
+}
+
+func TestStartAgentSuccessCallbackRunsAfterPersistedVerification(t *testing.T) {
+	store := newInstallJobStoreFake()
+	s := newTestService("darwin", "npm")
+	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
+	s.jobStore = store
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return nil })
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/Users/test/.npm/bin/codex"}, nil
+	})
+	succeeded := make(chan Target, 1)
+	s.SetOnSucceeded(func(target Target) { succeeded <- target })
+
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "npm"); err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+
+	select {
+	case target := <-succeeded:
+		if target != TargetCodex {
+			t.Fatalf("callback target = %q, want %q", target, TargetCodex)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for durable agent-install success callback")
+	}
+}
+
+func TestAgentInstallRejectsConcurrentWorkForSameHarness(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{})
+	s := newTestService("darwin", "npm")
+	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error {
+		close(started)
+		<-release
+		return nil
+	})
+
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "npm"); err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+	<-started
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "npm"); !errors.Is(err, ErrInstallActive) {
+		t.Fatalf("concurrent StartAgent error = %v, want ErrInstallActive", err)
+	}
+	if _, err := s.Verify(context.Background(), TargetCodex); !errors.Is(err, ErrInstallActive) {
+		t.Fatalf("concurrent Verify error = %v, want ErrInstallActive", err)
+	}
+	close(release)
+}
+
+func TestCloseCancelsAndDrainsActiveAgentInstall(t *testing.T) {
+	started := make(chan struct{})
+	s := newTestService("darwin", "npm")
+	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
+	s.commands = commandRunnerFunc(func(ctx context.Context, _ []string, _, _ io.Writer) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	})
+
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "npm"); err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := s.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	job, err := s.Status(context.Background(), TargetCodex)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if job.Status != StatusInterrupted {
+		t.Fatalf("status after Close = %q, want interrupted", job.Status)
+	}
+}
+
+func TestCloseCancelsAndDrainsLegacyClaudeInstall(t *testing.T) {
+	started := make(chan struct{})
+	s := newTestService("darwin", "npm")
+	s.commands = commandRunnerFunc(func(ctx context.Context, _ []string, _, _ io.Writer) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	})
+
+	if _, err := s.Start(context.Background(), TargetClaude); err != nil {
+		t.Fatalf("Start Claude: %v", err)
+	}
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := s.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	job, err := s.Status(context.Background(), TargetClaude)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if job.Status != StatusInterrupted {
+		t.Fatalf("status after Close = %q, want interrupted", job.Status)
+	}
+}
+
+func TestAgentVerificationGetsFreshDaemonContext(t *testing.T) {
+	s := newTestService("darwin", "npm")
+	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return nil })
+	s.verifier = harnessVerifierFunc(func(ctx context.Context, _ Target) (VerifyResult, error) {
+		if _, hasDeadline := ctx.Deadline(); hasDeadline {
+			return VerifyResult{}, errors.New("verification inherited installer deadline")
+		}
+		return VerifyResult{ResolvedPath: "/Users/test/.npm/bin/codex"}, nil
+	})
+
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "npm"); err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+}
+
+func TestAgentInstallVerificationFailureIsTerminalFailure(t *testing.T) {
+	store := newInstallJobStoreFake()
+	s := newTestService("darwin", "brew")
+	s.jobStore = store
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return nil })
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/opt/homebrew/bin/codex", Output: "bad version output"}, errors.New("version probe failed")
+	})
+
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "homebrew"); err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+	waitForStatus(t, s, TargetCodex, StatusFailed)
+	job, _ := s.Status(context.Background(), TargetCodex)
+	if !strings.Contains(job.Error, "version probe failed") || !strings.Contains(job.Output, "bad version output") {
+		t.Fatalf("failed job = %+v", job)
+	}
+}
+
+func TestVerifyAgainDoesNotRunInstaller(t *testing.T) {
+	store := newInstallJobStoreFake()
+	s := newTestService("darwin", "brew")
+	s.jobStore = store
+	installCalls := 0
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error {
+		installCalls++
+		return nil
+	})
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/opt/homebrew/bin/codex", Output: "codex 1.2.3"}, nil
+	})
+
+	job, err := s.Verify(context.Background(), TargetCodex)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if job.Status != StatusVerifying {
+		t.Fatalf("initial status = %q, want verifying", job.Status)
+	}
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+	if installCalls != 0 {
+		t.Fatalf("installer calls = %d, want 0", installCalls)
+	}
+}
+
+func TestVerifyPersistenceFailureDoesNotLeavePhantomActiveJob(t *testing.T) {
+	store := newInstallJobStoreFake()
+	store.upsertErr = errors.New("database unavailable")
+	s := newTestService("darwin", "brew")
+	s.jobStore = store
+	verifyCalls := 0
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		verifyCalls++
+		return VerifyResult{ResolvedPath: "/opt/homebrew/bin/codex", Output: "codex 1.2.3"}, nil
+	})
+
+	if _, err := s.Verify(context.Background(), TargetCodex); err == nil {
+		t.Fatal("Verify error = nil, want persistence failure")
+	}
+	store.mu.Lock()
+	store.upsertErr = nil
+	store.mu.Unlock()
+
+	job, err := s.Verify(context.Background(), TargetCodex)
+	if err != nil {
+		t.Fatalf("retry Verify: %v", err)
+	}
+	if job.Status != StatusVerifying {
+		t.Fatalf("retry status = %q, want verifying", job.Status)
+	}
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+	if verifyCalls != 1 {
+		t.Fatalf("verifier calls = %d, want 1", verifyCalls)
+	}
+}
+
+func TestRecoverInterruptsAndHydratesDurableJobs(t *testing.T) {
+	store := newInstallJobStoreFake()
+	started := time.Now().Add(-time.Minute).UTC()
+	store.records[string(TargetCodex)] = ports.AgentInstallJobRecord{
+		Target: string(TargetCodex), Status: string(StatusVerifying), Method: "npm", StartedAt: started, UpdatedAt: started,
+	}
+	s := newTestService("darwin", "npm")
+	s.jobStore = store
+	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
+	installCalls := 0
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error {
+		installCalls++
+		return nil
+	})
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/Users/test/.npm/bin/codex"}, nil
+	})
+	if err := s.Recover(context.Background()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	job, err := s.Status(context.Background(), TargetCodex)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if job.Status != StatusInterrupted || job.FinishedAt == nil || job.Error == "" {
+		t.Fatalf("recovered job = %+v", job)
+	}
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "npm"); err != nil {
+		t.Fatalf("retry interrupted install: %v", err)
+	}
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+	if installCalls != 1 {
+		t.Fatalf("retry installer calls = %d, want 1", installCalls)
+	}
+}
+
+func TestListAgentJobsReturnsDurableJobs(t *testing.T) {
+	store := newInstallJobStoreFake()
+	now := time.Now().UTC()
+	store.records[string(TargetCodex)] = ports.AgentInstallJobRecord{Target: string(TargetCodex), Status: string(StatusFailed), StartedAt: now, UpdatedAt: now}
+	s := newTestService("darwin", "npm")
+	s.jobStore = store
+	jobs, err := s.AgentJobs(context.Background())
+	if err != nil {
+		t.Fatalf("AgentJobs: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].Target != TargetCodex || jobs[0].Status != StatusFailed {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+}
+
+func TestTerminalPersistenceFailureOverridesStaleActiveDurableJob(t *testing.T) {
+	store := newInstallJobStoreFake()
+	store.upsertErrForStatus = map[string]error{string(StatusSucceeded): errors.New("database unavailable")}
+	s := newTestService("darwin", "npm")
+	s.installCapabilities = installCapabilitiesStub{prefix: "/Users/test/.npm", writable: true}
+	s.jobStore = store
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return nil })
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/Users/test/.npm/bin/codex"}, nil
+	})
+
+	if _, err := s.StartAgent(context.Background(), TargetCodex, "npm"); err != nil {
+		t.Fatalf("StartAgent: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		s.mu.Lock()
+		terminal := s.jobs[TargetCodex] != nil && !activeStatus(s.jobs[TargetCodex].Status)
+		s.mu.Unlock()
+		if terminal || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	job, err := s.Status(context.Background(), TargetCodex)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if job.Status != StatusFailed || !strings.Contains(job.Error, "persist terminal operation state") {
+		t.Fatalf("Status returned stale durable job: %+v", job)
+	}
+	jobs, err := s.AgentJobs(context.Background())
+	if err != nil {
+		t.Fatalf("AgentJobs: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].Status != StatusFailed || !strings.Contains(jobs[0].Error, "persist terminal operation state") {
+		t.Fatalf("AgentJobs returned stale durable jobs: %+v", jobs)
+	}
+}
+
+func TestDroidInstallAllowsTerminatedSessionAndOtherHarnesses(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		target   Target
+		sessions []domain.SessionRecord
+	}{
+		{name: "terminated droid", target: TargetCodex, sessions: []domain.SessionRecord{{Harness: domain.HarnessCodex, IsTerminated: true}}},
+		{name: "active codex does not block droid", target: TargetCodex, sessions: []domain.SessionRecord{{Harness: domain.HarnessCodex, IsTerminated: false}}},
+		{name: "active droid does not block codex", target: TargetCodex, sessions: []domain.SessionRecord{{Harness: domain.HarnessCodex, IsTerminated: false}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestService("darwin", "brew")
+			s.sessions = sessionListerStub{sessions: tt.sessions}
+			s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return errors.New("stop after guard") })
+			if _, err := s.StartAgent(context.Background(), tt.target, "homebrew"); err != nil {
+				t.Fatalf("StartAgent: %v", err)
+			}
+		})
+	}
+}
+
+func TestHarnessLaunchGateBlocksCodexMaintenanceBeforeSessionEnumeration(t *testing.T) {
+	s := newTestService("darwin", "npm")
+	sessionCalls := 0
+	s.sessions = sessionListerFunc(func(context.Context) ([]domain.SessionRecord, error) {
+		sessionCalls++
+		return nil, nil
+	})
+	release, ok := s.TryBeginHarnessUse(domain.HarnessCodex)
+	if !ok {
+		t.Fatal("Codex launch lease was unexpectedly rejected")
+	}
+	defer release()
+
+	for _, operation := range []AgentOperation{AgentOperationReinstall, AgentOperationUpdate} {
+		method := "npm"
+		if _, err := s.StartAgentOperation(context.Background(), TargetCodex, method, operation, ""); !errors.Is(err, ErrHarnessActive) {
+			t.Fatalf("%s error = %v, want ErrHarnessActive", operation, err)
+		}
+	}
+	if sessionCalls != 0 {
+		t.Fatalf("session enumeration calls = %d, want 0 before acquiring maintenance gate", sessionCalls)
+	}
+}
+
+func TestHarnessMaintenanceGateBlocksCodexLaunchThroughWorkerLifetime(t *testing.T) {
+	s := newTestService("darwin", "npm")
+	s.ownsInstallation = func(context.Context, string, string, string, bool) (bool, error) { return true, nil }
+	started := make(chan struct{})
+	releaseCommand := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(releaseCommand) }) }
+	defer unblock()
+	s.commands = commandRunnerFunc(func(ctx context.Context, _ []string, _, _ io.Writer) error {
+		close(started)
+		select {
+		case <-releaseCommand:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/verified/codex", Output: "codex 2.0.0"}, nil
+	})
+
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
+		t.Fatalf("StartAgentOperation: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("maintenance worker did not start")
+	}
+	if !harnessHeld(s, domain.HarnessCodex) {
+		t.Fatal("Codex launch could acquire the gate while maintenance worker was running")
+	}
+	unblock()
+	s.workers.Wait()
+	waitForStatus(t, s, TargetCodex, StatusSucceeded)
+	if release, ok := s.TryBeginHarnessUse(domain.HarnessCodex); !ok {
+		t.Fatal("Codex launch remained blocked after maintenance completed")
+	} else {
+		release()
+	}
+}
+
+func TestHarnessMaintenanceSeesSessionCreatedBeforeLaunchGateRelease(t *testing.T) {
+	s := newTestService("darwin", "npm")
+	// With TALLPINE_UPDATE_WHILE_RUNNING off, the update must see the new session.
+	s.updateWhileRunningDisabled = true
+	// Sessions are checked once the update proves which method owns the copy.
+	s.ownsInstallation = func(context.Context, string, string, string, bool) (bool, error) { return true, nil }
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/verified/codex", Output: "codex 1.0.0"}, nil
+	})
+	release, ok := s.TryBeginHarnessUse(domain.HarnessCodex)
+	if !ok {
+		t.Fatal("Codex launch lease was unexpectedly rejected")
+	}
+	s.sessions = sessionListerStub{sessions: []domain.SessionRecord{{ID: "codex-1", Harness: domain.HarnessCodex}}}
+	release()
+
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); !errors.Is(err, ErrHarnessActive) {
+		t.Fatalf("StartAgentOperation error = %v, want ErrHarnessActive", err)
+	}
+}
+
+func TestUpdatePinsRequestedVersionEvenWithoutCachedAdvisory(t *testing.T) {
+	s := newTestService("darwin", "npm")
+	s.ownsInstallation = func(context.Context, string, string, string, bool) (bool, error) { return true, nil }
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return nil })
+	probes := 0
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		probes++
+		version := "1.2.3"
+		if probes > 1 {
+			version = "1.2.4"
+		}
+		return VerifyResult{ResolvedPath: "/verified/codex", Output: "codex " + version}, nil
+	})
+	if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, "1.3.0"); err != nil {
+		t.Fatal(err)
+	}
+	s.workers.Wait()
+	waitForStatus(t, s, TargetCodex, StatusFailed)
+	job, err := s.Status(context.Background(), TargetCodex)
+	if err != nil || !strings.Contains(job.Error, "requested version 1.3.0") {
+		t.Fatalf("job=%+v err=%v", job, err)
+	}
+}
+
+func TestUpdateRejectsInvalidRequestedVersion(t *testing.T) {
+	s := newTestService("darwin", "npm")
+	for _, operation := range []AgentOperation{AgentOperationUpdate, AgentOperationInstall} {
+		if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", operation, "not-a-version"); !errors.Is(err, ErrUpdateVersion) {
+			t.Fatalf("operation=%s err=%v", operation, err)
+		}
+	}
+}
+
+func TestHarnessMaintenanceAllowsTerminatedAndOtherHarnessSessions(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		sessions []domain.SessionRecord
+	}{
+		{name: "terminated Codex", sessions: []domain.SessionRecord{{ID: "codex-1", Harness: domain.HarnessCodex, IsTerminated: true}}},
+		{name: "active Claude", sessions: []domain.SessionRecord{{ID: "claude-1", Harness: domain.HarnessClaudeCode}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestService("darwin", "npm")
+			s.sessions = sessionListerStub{sessions: tt.sessions}
+			s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error { return errors.New("stop after guard") })
+
+			if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); err != nil {
+				t.Fatalf("StartAgentOperation: %v", err)
+			}
+			waitForStatus(t, s, TargetCodex, StatusFailed)
+		})
+	}
+}
+
+func TestHarnessGatesAllowDifferentHarnessesConcurrently(t *testing.T) {
+	s := newTestService("darwin")
+	releaseCodex, ok := s.TryBeginHarnessUse(domain.HarnessCodex)
+	if !ok {
+		t.Fatal("Codex launch lease was unexpectedly rejected")
+	}
+	defer releaseCodex()
+
+	releaseClaude, ok := s.TryBeginHarnessUse(domain.HarnessClaudeCode)
+	if !ok {
+		t.Fatal("Claude launch should not share the Codex gate")
+	}
+	releaseClaude()
+}
+
+func waitForStatus(t *testing.T, s *Service, target Target, want Status) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		job, err := s.Status(context.Background(), target)
+		if err != nil {
+			t.Fatalf("Status() error = %v", err)
+		}
+		if job.Status == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s to reach status %q", target, want)
+}
+
+// A Linux package-manager plan must now carry the resolved argv even though it
+// stays Unsupported. That pairing is the whole point of the split: the daemon
+// refuses to elevate, while the CLI (which has a terminal and can prompt for a
+// sudo password) runs the very same command. Before this, the argv existed only
+// inside the Reason string, so the CLI had to re-derive it and the two surfaces
+// could drift.
+func TestLinuxPlanExposesArgvWhileStayingUnsupported(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		found       string
+		wantCommand string
+		wantManager string
+	}{
+		{"apt-get", "apt-get", "apt-get install -y tmux", "apt-get"},
+		{"dnf", "dnf", "dnf install -y tmux", "dnf"},
+		{"pacman", "pacman", "pacman -S --noconfirm tmux", "pacman"},
+		{"zypper", "zypper", "zypper install -y tmux", "zypper"},
+		{"apk", "apk", "apk add tmux", "apk"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := newTestService("linux", tt.found).planFor(TargetTmux)
+			if got := strings.Join(plan.Command, " "); got != tt.wantCommand {
+				t.Fatalf("Command = %q, want %q", got, tt.wantCommand)
+			}
+			if plan.Manager != tt.wantManager {
+				t.Fatalf("Manager = %q, want %q", plan.Manager, tt.wantManager)
+			}
+			if !plan.NeedsRoot {
+				t.Fatal("NeedsRoot = false, want true: every Linux package manager needs root")
+			}
+			// The security invariant. Exposing the argv must not have made the
+			// daemon willing to run it.
+			if !plan.Unsupported {
+				t.Fatal("Unsupported = false, want true: the daemon must never run a root install itself")
+			}
+		})
+	}
+}
+
+// The daemon must still refuse to execute a Linux plan, argv or not. This is
+// the behavioural half of the invariant asserted above.
+func TestStartRefusesLinuxRootInstall(t *testing.T) {
+	s := newTestService("linux", "apt-get")
+	s.commands = commandRunnerFunc(func(context.Context, []string, io.Writer, io.Writer) error {
+		t.Fatal("the daemon must not execute a root install")
+		return nil
+	})
+	job, err := s.Start(context.Background(), TargetTmux)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if job.Status != StatusUnsupported {
+		t.Fatalf("Status = %q, want %q", job.Status, StatusUnsupported)
+	}
+}
+
+// Resolve is the seam the CLI consumes; it must agree with the Service's own
+// planner rather than being a second implementation of the same table.
+func TestResolveMatchesServicePlan(t *testing.T) {
+	lookPath := lookPathFound("brew", "curl", "bash")
+	service := &Service{goos: "darwin", executables: executableFinderFunc(lookPath)}
+	for _, target := range []Target{TargetTmux, Target("cursor")} {
+		got := Resolve("darwin", lookPath, target)
+		want := service.resolvePlan(target)
+		if strings.Join(got.Command, " ") != strings.Join(want.Command, " ") {
+			t.Fatalf("Resolve(%q) Command = %v, want %v", target, got.Command, want.Command)
+		}
+		if got.Unsupported != want.Unsupported {
+			t.Fatalf("Resolve(%q) Unsupported = %v, want %v", target, got.Unsupported, want.Unsupported)
+		}
+		if got.Method != want.Method {
+			t.Fatalf("Resolve(%q) Method = %q, want %q", target, got.Method, want.Method)
+		}
+	}
+	if unknown := Resolve("linux", lookPath, Target("nope")); !unknown.Unsupported {
+		t.Fatal("Resolve of an unknown target must be Unsupported")
+	}
+}
+
+func TestLastOutputLineShowsWhatTheTerminalWouldShow(t *testing.T) {
+	long := strings.Repeat("é", maxUpdaterReportRunes+50)
+	for output, want := range map[string]string{
+		"":            "",
+		" \n\r\n\t\n": "",
+		"Checking...\nDroid is already up to date.\n\n": "Droid is already up to date.",
+		"\x1b[32m✓\x1b[0m Already up to date!\r\n":      "✓ Already up to date!",
+		"Downloading 10%\rDownloading 100%\rDone\n":     "Done",
+		"Checking...\nDownloading 50%\rDone\r":          "Done",
+		"\x1b]0;title\x07Updated to 2.2.0\n":            "Updated to 2.2.0",
+		long:                                            strings.Repeat("é", maxUpdaterReportRunes) + "…",
+	} {
+		if got := lastOutputLine(output); got != want {
+			t.Errorf("lastOutputLine(%q) = %q, want %q", output, got, want)
+		}
+	}
+}
+
+func TestFailedUpdateQuotesWhatTheUpdaterReported(t *testing.T) {
+	s := newTestService("darwin", "sh")
+	s.commands = commandRunnerFunc(func(_ context.Context, _ []string, stdout, _ io.Writer) error {
+		_, _ = io.WriteString(stdout, "Checking for updates...\nDroid is already up to date.\n\n")
+		return nil
+	})
+	s.verifier = harnessVerifierFunc(func(context.Context, Target) (VerifyResult, error) {
+		return VerifyResult{ResolvedPath: "/Users/test/.local/bin/droid", Output: "0.159.1"}, nil
+	})
+	job := &Job{Target: Target("droid"), Method: "official-installer", Status: StatusInstalling}
+	plan := Plan{Target: Target("droid"), Method: "official-installer", Command: []string{"/Users/test/.local/bin/droid", "update"}}
+	baseline := &installedBaseline{path: "/Users/test/.local/bin/droid", version: "0.159.1", expected: "0.242.0", scheme: versionSchemeFor(Target("droid"))}
+	s.runAgentOperation(context.Background(), plan, AgentOperationUpdate, job, baseline)
+	want := `The update finished, but it reports 0.159.1, not the requested version 0.242.0. The updater said: "Droid is already up to date."`
+	if job.Status != StatusFailed || job.Error != want {
+		t.Fatalf("status = %s, error = %q; want failed with %q", job.Status, job.Error, want)
+	}
+}
+
+type reviewerListerStub struct {
+	handles []domain.ReviewerHandle
+	chats   []domain.Review
+}
+
+func (s reviewerListerStub) ListLiveReviewerHandles(context.Context) ([]domain.ReviewerHandle, error) {
+	return s.handles, nil
+}
+
+func (s reviewerListerStub) ListRecoverableChatReviews(context.Context) ([]domain.Review, error) {
+	return s.chats, nil
+}
+
+func TestHarnessUpdateIsBlockedWhileItsReviewerRuns(t *testing.T) {
+	for name, reviewers := range map[string]reviewerListerStub{
+		"terminal reviewer": {handles: []domain.ReviewerHandle{{SessionID: "claude-worker", Harness: domain.ReviewerCodex, HandleID: "pane-1"}}},
+		"chat reviewer":     {chats: []domain.Review{{SessionID: "claude-worker", Harness: domain.ReviewerCodex, InterfaceMode: domain.ReviewerInterfaceChat, ControllerGeneration: "gen-1"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newTestService("darwin", "npm")
+			// Updates run alongside live work unless TALLPINE_UPDATE_WHILE_RUNNING is off;
+			// with it off a reviewer still counts as live work.
+			s.updateWhileRunningDisabled = true
+			// The worker runs Claude Code; only its reviewer uses Codex.
+			s.sessions = sessionListerStub{sessions: []domain.SessionRecord{{ID: "claude-worker", Harness: domain.HarnessClaudeCode}}}
+			s.reviewers = reviewers
+			if _, err := s.StartAgentOperation(context.Background(), TargetCodex, "npm", AgentOperationUpdate, ""); !errors.Is(err, ErrHarnessActive) {
+				t.Fatalf("update error = %v, want ErrHarnessActive", err)
+			}
+		})
+	}
+	// A reviewer on another harness, or a reviewer chat with no live
+	// controller, leaves the update to its other checks.
+	s := newTestService("darwin", "npm")
+	s.reviewers = reviewerListerStub{
+		handles: []domain.ReviewerHandle{{Harness: domain.ReviewerClaudeCode, HandleID: "pane-1"}},
+		chats:   []domain.Review{{Harness: domain.ReviewerCodex, InterfaceMode: domain.ReviewerInterfaceChat}},
+	}
+	if sessions, reviewers, err := s.harnessInUse(context.Background(), TargetCodex); err != nil || len(sessions)+len(reviewers) != 0 {
+		t.Fatalf("harnessInUse = %v, %v, %v; want nothing in use", sessions, reviewers, err)
+	}
+}

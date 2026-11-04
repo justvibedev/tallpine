@@ -1,0 +1,41 @@
+Tallpine
+Copyright 2026 JustDev OÜ
+
+This product is a modified version of "agent-orchestrator" by OrchestratorInc
+(https://github.com/OrchestratorInc/agent-orchestrator), which is licensed under
+the Apache License, Version 2.0. The full license text is in the LICENSE file,
+which is unchanged from the original work.
+
+Original work:
+  agent-orchestrator
+  Copyright OrchestratorInc and contributors
+  https://github.com/OrchestratorInc/agent-orchestrator
+
+MODIFICATION NOTICE (Apache License 2.0, section 4(b)):
+This version has been modified from the original. Files carrying changes were
+altered from the upstream versions; the git history of this repository records
+what changed and when. The principal modifications are:
+
+  - Rebranded to "Tallpine" so it can run side by side with the
+    official install: CLI binary "tallpine" (alias "tp"), bundle/app id "ee.justdev.tallpine",
+    state root "~/.tallpine", environment prefix "TALLPINE_", default daemon port 3101,
+    "tallpine://" link scheme, tmux socket "tallpine", launchd labels
+    "ee.justdev.tallpine.*", and "tallpine hooks" agent hook entries.
+  - Removed telemetry, analytics and crash reporting.
+  - Removed the hosted cloud integration, WorkOS sign-in and the GitHub App.
+  - Replaced the upstream auto-updater and release infrastructure with a
+    GitHub-Releases updater.
+  - Removed the legacy TypeScript-AO import feature.
+  - Added a per-install daemon token and a localhost Host allowlist on the
+    loopback listener.
+  - Limited supported agent harnesses to claude-code, codex and kiro.
+  - Added per-project report delivery, automatic worker turn-ended/exited
+    notifications, a verifyCommand project setting, soft-verified done reports,
+    task intent for the reviewer, .worktreeinclude seeding (with APFS clonefile
+    support), a merged-workspace flag, right-click actions on local file paths
+    in chat, and several CLI fixes.
+
+All original copyright, patent, trademark and attribution notices from the
+upstream work are retained. "Agent Orchestrator" and "Orchestrator.inc" are
+names of the upstream project; this fork is not affiliated with or endorsed by
+OrchestratorInc.

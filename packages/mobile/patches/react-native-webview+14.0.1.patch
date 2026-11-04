@@ -1,0 +1,88 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+index 209b855..633d0dc 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -147,6 +147,22 @@ public class RNCWebViewClient extends WebViewClient {
+         super.onReceivedHttpAuthRequest(view, handler, host, realm);
+     }
+ 
++    private static boolean tallpineMatchesPin(final SslError error) {
++        try {
++            android.net.Uri uri = android.net.Uri.parse(error.getUrl());
++            String host = uri.getHost();
++            if (host == null) return false;
++            int port = uri.getPort() != -1 ? uri.getPort() : ("https".equals(uri.getScheme()) ? 443 : 80);
++            java.security.cert.X509Certificate cert = error.getCertificate().getX509Certificate();
++            Class<?> store = Class.forName("ee.justdev.tallpine.pinning.PinStore");
++            Object instance = store.getField("INSTANCE").get(null);
++            java.lang.reflect.Method m = store.getMethod("matchesCertificate", java.security.cert.X509Certificate.class, String.class, int.class);
++            return Boolean.TRUE.equals(m.invoke(instance, cert, host, port));
++        } catch (Throwable t) {
++            return false;
++        }
++    }
++
+     @Override
+     public void onReceivedSslError(final WebView webView, final SslErrorHandler handler, final SslError error) {
+         // onReceivedSslError is called for most requests, per Android docs: https://developer.android.com/reference/android/webkit/WebViewClient#onReceivedSslError(android.webkit.WebView,%2520android.webkit.SslErrorHandler,%2520android.net.http.SslError)
+@@ -156,6 +172,12 @@ public class RNCWebViewClient extends WebViewClient {
+         String topWindowUrl = webView.getUrl();
+         String failingUrl = error.getUrl();
+ 
++        // Tallpine: a self-signed gateway is trusted only when its key matches the pin registered for this host:port.
++        if (tallpineMatchesPin(error)) {
++            handler.proceed();
++            return;
++        }
++
+         // Cancel request after obtaining top-level URL.
+         // If request is cancelled before obtaining top-level URL, undesired behavior may occur.
+         // Undesired behavior: Return value of WebView.getUrl() may be the current URL instead of the failing URL.
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+index 3890426..8a03fbd 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewImpl.m
++++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+@@ -1175,6 +1175,30 @@ - (void)                    webView:(WKWebView *)webView
+     completionHandler(NSURLSessionAuthChallengeUseCredential, clientAuthenticationCredential);
+     return;
+   }
++  // Tallpine: trust a self-signed gateway only when its key matches the pin registered for this host:port.
++  if ([[[challenge protectionSpace] authenticationMethod] isEqualToString:NSURLAuthenticationMethodServerTrust] && [[challenge protectionSpace] serverTrust] != nil) {
++    Class pinStore = NSClassFromString(@"TLPinStore");
++    SEL sel = NSSelectorFromString(@"trust:matchesPinForHost:port:");
++    if (pinStore != nil && [pinStore respondsToSelector:sel]) {
++      NSMethodSignature *sig = [pinStore methodSignatureForSelector:sel];
++      NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
++      SecTrustRef pinTrust = [[challenge protectionSpace] serverTrust];
++      NSString *pinHost = [[challenge protectionSpace] host];
++      NSInteger pinPort = [[challenge protectionSpace] port];
++      [inv setTarget:pinStore];
++      [inv setSelector:sel];
++      [inv setArgument:&pinTrust atIndex:2];
++      [inv setArgument:&pinHost atIndex:3];
++      [inv setArgument:&pinPort atIndex:4];
++      [inv invoke];
++      BOOL pinOk = NO;
++      [inv getReturnValue:&pinOk];
++      if (pinOk) {
++        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:pinTrust]);
++        return;
++      }
++    }
++  }
+   if ([[challenge protectionSpace] serverTrust] != nil && customCertificatesForHost != nil && host != nil) {
+     SecCertificateRef localCertificate = (__bridge SecCertificateRef)([customCertificatesForHost objectForKey:host]);
+     if (localCertificate != nil) {
+diff --git a/node_modules/react-native-webview/index.d.ts b/node_modules/react-native-webview/index.d.ts
+index 10b9c14..626a67a 100644
+--- a/node_modules/react-native-webview/index.d.ts
++++ b/node_modules/react-native-webview/index.d.ts
+@@ -5,7 +5,7 @@ export { FileDownload, WebViewMessageEvent, WebViewNavigation } from './lib/WebV
+ 
+ export type WebViewProps = IOSWebViewProps & AndroidWebViewProps & WindowsWebViewProps;
+ 
+-declare class WebView<P = undefined> extends Component<WebViewProps & P> {
++declare class WebView<P = {}> extends Component<WebViewProps & P> {
+   /**
+    * Go back one page in the webview's history.
+    */

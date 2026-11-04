@@ -1,0 +1,9 @@
+{
+	"name": "@tallpine/acp-runtime",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Pinned ACP adapters packaged with the Tallpine desktop app (provider CLIs are not included)",
+	"dependencies": {
+		"@agentclientprotocol/claude-agent-acp": "0.99.0"
+	}
+}

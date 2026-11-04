@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  SAMPLE ONLY. The real profile is generated from a signed build by
+  `scripts/release-local pppc <Tallpine.app>` and attached to every release as
+  Tallpine-PPPC.mobileconfig. Replace <TEAMID> (your Developer ID Team ID) and
+  every PayloadUUID before use. See docs/jamf.md.
+-->
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.TCC.configuration-profile-policy</string>
+			<key>PayloadIdentifier</key>
+			<string>ee.justdev.tallpine.pppc.tcc</string>
+			<key>PayloadUUID</key>
+			<string>00000000-0000-4000-8000-000000000011</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>Services</key>
+			<dict>
+				<key>SystemPolicyDocumentsFolder</key>
+				<array>
+					<dict>
+						<key>Identifier</key>
+						<string>ee.justdev.tallpine</string>
+						<key>IdentifierType</key>
+						<string>bundleID</string>
+						<key>CodeRequirement</key>
+						<string>identifier "ee.justdev.tallpine" and anchor apple generic and certificate leaf[subject.OU] = &lt;TEAMID&gt;</string>
+						<key>Authorization</key>
+						<string>Allow</string>
+					</dict>
+					<dict>
+						<key>Identifier</key>
+						<string>ee.justdev.tallpine.daemon</string>
+						<key>IdentifierType</key>
+						<string>bundleID</string>
+						<key>CodeRequirement</key>
+						<string>identifier "ee.justdev.tallpine.daemon" and anchor apple generic and certificate leaf[subject.OU] = &lt;TEAMID&gt;</string>
+						<key>Authorization</key>
+						<string>Allow</string>
+					</dict>
+				</array>
+				<!-- SystemPolicyDesktopFolder and SystemPolicyDownloadsFolder repeat the two entries above. -->
+			</dict>
+		</dict>
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.servicemanagement</string>
+			<key>PayloadIdentifier</key>
+			<string>ee.justdev.tallpine.pppc.login-items</string>
+			<key>PayloadUUID</key>
+			<string>00000000-0000-4000-8000-000000000012</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>Rules</key>
+			<array>
+				<dict>
+					<key>RuleType</key>
+					<string>TeamIdentifier</string>
+					<key>RuleValue</key>
+					<string>&lt;TEAMID&gt;</string>
+				</dict>
+			</array>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>Tallpine privacy and background items</string>
+	<key>PayloadIdentifier</key>
+	<string>ee.justdev.tallpine.pppc</string>
+	<key>PayloadOrganization</key>
+	<string>Example Corp</string>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>00000000-0000-4000-8000-000000000013</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

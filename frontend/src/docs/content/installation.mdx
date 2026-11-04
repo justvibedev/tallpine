@@ -1,0 +1,111 @@
+---
+title: Installation
+description: Download the Tallpine desktop app and connect your coding tools.
+---
+
+For the latest stable desktop build, start at the [official Tallpine download page](https://tallpine.eu/download/). It also lists nightly builds and the mobile apps. If you want a direct desktop package, choose one below:
+
+<InstallDownloads />
+
+The Tallpine mobile app is a companion to the desktop app. To pair it, use [Connections](/configuration/remote-access) in the desktop app.
+
+The desktop app is the canonical install path. It owns the local daemon, requires no global `tallpine` command, and checks for updates after launch and while it is running.
+
+## Prerequisites
+
+| Tool | When you need it | Why |
+| --- | --- | --- |
+| Git | Repository projects | Creates and manages isolated worktrees and branches. |
+| GitHub CLI `gh` | GitHub projects | Uses your existing authentication for repository and pull-request operations. |
+| External coding agent (called a harness in Tallpine) | Agent sessions that use an installed CLI | Install a supported tool: Claude Code, Codex, Kiro, or DeepSeek. See the [agent catalog](/plugins/agents) for interface support. |
+| tmux | macOS preflight and legacy/fallback terminal sessions | Desktop macOS/Linux packages include it. Source launches may need system tmux; see [Runtime](/plugins/runtimes). |
+
+Tallpine uses the coding agents and sign-ins already installed on your computer. **Settings → Harness** offers setup and readiness checks for supported agents; some need to be installed or signed in outside Tallpine. Unreal Agent is a built-in Chat-only exception with its own platform and permission limits. See the [agent catalog](/plugins/agents).
+
+<span id="set-up-ao" />
+## Set up Tallpine
+
+<Steps>
+<Step>
+
+### Install and open the desktop app
+
+Choose the download for your platform above, install it, and open **Tallpine**. The app starts and supervises the local Go daemon automatically.
+
+</Step>
+<Step>
+
+### Authenticate GitHub
+
+For a GitHub repository, [install GitHub CLI](https://cli.github.com/) if needed, then sign in:
+
+```bash
+gh auth login
+gh auth status
+```
+
+Use an account that can read the repository and perform the branch and pull-request actions you expect the agent to take.
+
+For GitLab, sign in with a GitLab token or `glab`. See [source-control setup](/plugins/scm).
+
+</Step>
+<Step>
+
+<span id="install-and-sign-in-to-an-agent" />
+
+### Install and sign in to an external agent
+
+For an externally installed harness, install it and run it once outside Tallpine to complete its sign-in flow. Tallpine detects available harnesses when you create a session. If you use the built-in Unreal Agent, skip this step and choose it for a Chat session on supported macOS or Linux.
+
+Chat support depends on the harness and installed version; see the [agent capability catalog](/plugins/agents#chat-versus-terminal-ui).
+
+</Step>
+<Step>
+
+### Add a project
+
+In the desktop app, choose **Add project** and select an existing local Git repository. Tallpine registers it without moving your original checkout. Each worker session gets its own isolated worktree.
+
+</Step>
+</Steps>
+
+You can also start a projectless standalone task for work that needs no repository. The optional CLI form is `tallpine spawn --standalone --agent codex --name notes --prompt "Draft release notes"`; standalone workers cannot claim a PR or take Git/project flags.
+
+<span id="where-tallpine-stores-data" />
+## Where Tallpine stores data
+
+All Tallpine application state lives under `~/.tallpine` by default, including the daemon database, run file, managed worktrees, Electron browser data, and mobile pairing configuration. Advanced installations can override daemon paths with `TALLPINE_DATA_DIR` and `TALLPINE_RUN_FILE`.
+
+## Common installation problems
+
+<Accordions>
+	<Accordion title="No agent is available">
+		For an external harness, install it, run it once to authenticate, then restart Tallpine so the desktop-launched daemon receives the updated login-shell environment. Unreal Agent is built into Tallpine for Chat on supported macOS and Linux; choose it directly instead of installing a CLI.
+	</Accordion>
+	<Accordion title="GitHub data is missing">
+		Run `gh auth status`. Confirm the active account can access the repository and its pull requests.
+	</Accordion>
+	<Accordion title="Terminal UI cannot start on macOS or Linux">
+		Packaged builds include tmux. New sessions normally use native PTY hosts; macOS still checks tmux availability and older sessions may need it. See [runtime diagnostics](/plugins/runtimes/tmux) for source installs and fallback behavior.
+	</Accordion>
+	<Accordion title="The legacy `tallpine` command is not found">
+		The desktop app does not require it. Only troubleshoot the package manager's global bin path if you intentionally use the frozen legacy CLI.
+	</Accordion>
+	<Accordion title="macOS says the developer cannot be verified">
+		In Finder, right-click Tallpine, choose Open, then choose Open again in the confirmation dialog. If macOS still blocks the app, run these diagnostics and include the output when opening an issue:
+		```bash
+		sw_vers
+		codesign -dvvv "/Applications/Tallpine.app"
+		spctl -a -t exec -vvv --ignore-cache --no-cache "/Applications/Tallpine.app"
+		log show --last 10m --predicate 'subsystem == "com.apple.syspolicy"'
+		```
+	</Accordion>
+</Accordions>
+
+## Next
+
+<Cards>
+	<Card title="Quickstart" description="Create a project and run the first worker." href="/quickstart" />
+	<Card title="Platforms" description="Review platform downloads and terminal behavior." href="/platforms" />
+	<Card title="Troubleshooting" description="Diagnose desktop, daemon, and agent problems." href="/troubleshooting" />
+</Cards>

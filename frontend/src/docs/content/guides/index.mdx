@@ -1,0 +1,18 @@
+---
+title: Guides
+description: Current Tallpine workflows for agents, parallel sessions, CI, reviews, projects, Chat, Terminal UI, and mobile.
+---
+
+These guides follow the current desktop workflow. The desktop app is the main place to manage Tallpine; use the optional CLI for scripts and agent-driven tasks.
+
+<Cards>
+	<Card title="Per-role agents" description="Choose different worker and orchestrator harnesses." href="/guides/per-role-agents" />
+	<Card title="Parallel work" description="Run isolated sessions across issues and projects." href="/guides/parallel-issues" />
+	<Card title="CI recovery" description="See how failing checks reach the correct Chat or Terminal UI session." href="/guides/ci-recovery" />
+	<Card title="Review loop" description="Combine GitHub feedback with Tallpine reviewer-agent runs." href="/guides/review-loop" />
+	<Card title="Reports" description="How workers tell the orchestrator they are done, blocked, or need input." href="/guides/reports" />
+	<Card title="Handle CI and review feedback" description="Understand built-in deduplication, notifications, and mode-aware delivery." href="/guides/reactions" />
+	<Card title="Multi-project" description="Manage repositories, workspaces, and Scratch from one desktop." href="/guides/multi-project" />
+</Cards>
+
+Tallpine sessions use **Chat** or the agent's **Terminal UI**. Compatible Claude Code and Codex sessions can switch between them without changing the session or worktree. The mobile app connects to the same sessions through **Connections**.

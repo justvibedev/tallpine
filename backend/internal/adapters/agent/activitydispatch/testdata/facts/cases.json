@@ -1,0 +1,212 @@
+[
+ {
+  "name": "claude-session-start",
+  "agent": "claude-code",
+  "event": "session-start",
+  "payload": "{\"session_id\": \"sess-1\", \"transcript_path\": \"/t/a.jsonl\", \"model\": \"claude-sonnet-5-5\"}"
+ },
+ {
+  "name": "claude-prompt",
+  "agent": "claude-code",
+  "event": "user-prompt-submit",
+  "payload": "{\"session_id\": \"sess-1\", \"prompt\": \"fix the bug\", \"prompt_id\": \"p-1\", \"transcript_path\": \"/t/a.jsonl\"}"
+ },
+ {
+  "name": "claude-prompt-camel",
+  "agent": "claude-code",
+  "event": "user-prompt-submit",
+  "payload": "{\"sessionId\": \"sess-2\", \"userPrompt\": \"camel prompt\", \"transcriptPath\": \"/t/b.jsonl\"}"
+ },
+ {
+  "name": "claude-stop",
+  "agent": "claude-code",
+  "event": "stop",
+  "payload": "{\"session_id\": \"sess-1\", \"last_assistant_message\": \"all done\", \"prompt_id\": \"p-1\"}"
+ },
+ {
+  "name": "claude-stop-subagent",
+  "agent": "claude-code",
+  "event": "stop",
+  "payload": "{\"session_id\": \"sess-1\", \"agent_id\": \"child-9\", \"last_assistant_message\": \"sub done\"}"
+ },
+ {
+  "name": "claude-subagent-stop-tasks",
+  "agent": "claude-code",
+  "event": "subagent-stop",
+  "payload": "{\"session_id\": \"sess-1\", \"agent_id\": \"child-1\", \"background_tasks\": [{\"id\": \"c2\", \"type\": \"subagent\"}, {\"id\": \"sh\", \"type\": \"shell\"}]}"
+ },
+ {
+  "name": "claude-stop-empty-tasks",
+  "agent": "claude-code",
+  "event": "stop",
+  "payload": "{\"session_id\": \"sess-1\", \"background_tasks\": []}"
+ },
+ {
+  "name": "claude-stop-bad-task",
+  "agent": "claude-code",
+  "event": "stop",
+  "payload": "{\"session_id\": \"sess-1\", \"background_tasks\": [{\"id\": \"\", \"type\": \"subagent\"}]}"
+ },
+ {
+  "name": "claude-pre-tool",
+  "agent": "claude-code",
+  "event": "pre-tool-use",
+  "payload": "{\"session_id\": \"sess-1\", \"tool_name\": \"Bash\", \"tool_use_id\": \"toolu_1\"}"
+ },
+ {
+  "name": "claude-post-tool-longname",
+  "agent": "claude-code",
+  "event": "post-tool-use",
+  "payload": "{\"session_id\": \"sess-1\", \"tool_name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"tool_use_id\": \"toolu_2\"}"
+ },
+ {
+  "name": "claude-handoff-prompt",
+  "agent": "claude-code",
+  "event": "user-prompt-submit",
+  "payload": "{\"session_id\": \"sess-1\", \"prompt\": \"<ao-handoff-request id=1>please\"}"
+ },
+ {
+  "name": "claude-transfer-prompt",
+  "agent": "claude-code",
+  "event": "user-prompt-submit",
+  "payload": "{\"session_id\": \"sess-1\", \"prompt\": \"Tallpine transferred the previous agent's context in hidden system instructions. go\"}"
+ },
+ {
+  "name": "claude-control-chars",
+  "agent": "claude-code",
+  "event": "user-prompt-submit",
+  "payload": "{\"session_id\": \"s\", \"prompt\": \"a\\u0007b\\nc\"}"
+ },
+ {
+  "name": "claude-bom",
+  "agent": "claude-code",
+  "event": "user-prompt-submit",
+  "payload": "\ufeff{\"session_id\": \"bom-1\", \"prompt\": \"hi\", \"launch_id\": \"launch-1\", \"tool_name\": \"Bash\", \"tool_use_id\": \"t1\"}"
+ },
+ {
+  "name": "claude-malformed",
+  "agent": "claude-code",
+  "event": "stop",
+  "payload": "{not json"
+ },
+ {
+  "name": "claude-empty",
+  "agent": "claude-code",
+  "event": "stop",
+  "payload": ""
+ },
+ {
+  "name": "claude-launch-camel",
+  "agent": "claude-code",
+  "event": "session-start",
+  "payload": "{\"session_id\": \"s\", \"launchId\": \"L-2\"}"
+ },
+ {
+  "name": "codex-session-start",
+  "agent": "codex",
+  "event": "session-start",
+  "payload": "{\"session_id\": \"cx-1\", \"transcript_path\": \"/r/rollout.jsonl\", \"model\": \"gpt-6\"}"
+ },
+ {
+  "name": "codex-prompt",
+  "agent": "codex",
+  "event": "user-prompt-submit",
+  "payload": "{\"session_id\": \"cx-1\", \"turn_id\": \"turn-1\", \"prompt\": \"do x\"}"
+ },
+ {
+  "name": "codex-stop",
+  "agent": "codex",
+  "event": "stop",
+  "payload": "{\"session_id\": \"cx-1\", \"turn_id\": \"turn-1\", \"last_assistant_message\": \"fin\"}"
+ },
+ {
+  "name": "codex-pre-tool-child",
+  "agent": "codex",
+  "event": "pre-tool-use",
+  "payload": "{\"session_id\": \"cx-1\", \"tool_name\": \"Bash\", \"agent_id\": \"child-1\"}"
+ },
+ {
+  "name": "codex-pre-tool-main",
+  "agent": "codex",
+  "event": "pre-tool-use",
+  "payload": "{\"session_id\": \"cx-1\", \"tool_name\": \"Bash\"}"
+ },
+ {
+  "name": "codex-subagent-start",
+  "agent": "codex",
+  "event": "subagent-start",
+  "payload": "{\"session_id\": \"cx-1\", \"agent_id\": \"child-2\"}"
+ },
+ {
+  "name": "codex-spawn-post",
+  "agent": "codex",
+  "event": "post-tool-use",
+  "payload": "{\"session_id\": \"cx-1\", \"tool_name\": \"spawn_agent\", \"tool_use_id\": \"call_1\", \"tool_response\": \"{\\\"task_name\\\":\\\"t\\\"}\"}"
+ },
+ {
+  "name": "codex-spawn-collab",
+  "agent": "codex",
+  "event": "post-tool-use",
+  "payload": "{\"session_id\": \"cx-1\", \"tool_name\": \"collaborationspawn_agent\", \"tool_use_id\": \"call_2\", \"tool_response\": \"{\\\"task_name\\\":\\\"t\\\"}\"}"
+ },
+ {
+  "name": "codex-spawn-no-task",
+  "agent": "codex",
+  "event": "post-tool-use",
+  "payload": "{\"session_id\": \"cx-1\", \"tool_name\": \"spawn_agent\", \"tool_use_id\": \"call_3\", \"tool_response\": \"{}\"}"
+ },
+ {
+  "name": "kiro-prompt",
+  "agent": "kiro",
+  "event": "user-prompt-submit",
+  "payload": "{\"conversationId\": \"k-1\", \"prompt\": \"hello\"}"
+ },
+ {
+  "name": "kiro-stop-text",
+  "agent": "kiro",
+  "event": "stop",
+  "payload": "{\"session_id\": \"k-1\", \"last_assistant_message\": \"kiro says\"}"
+ },
+ {
+  "name": "kiro-stop-notext",
+  "agent": "kiro",
+  "event": "stop",
+  "payload": "{\"session_id\": \"k-1\"}"
+ },
+ {
+  "name": "kiro-stop-badid",
+  "agent": "kiro",
+  "event": "stop",
+  "payload": "{\"session_id\": \"../x\"}"
+ },
+ {
+  "name": "deepseek-subagent-start",
+  "agent": "deepseek-harness",
+  "event": "subagent-start",
+  "payload": "{\"session_id\": \"child-sess\", \"agent_id\": \"ds-child\"}"
+ },
+ {
+  "name": "deepseek-stop",
+  "agent": "deepseek-harness",
+  "event": "stop",
+  "payload": "{\"session_id\": \"ds-1\", \"agent_id\": \"\", \"background_tasks\": []}"
+ },
+ {
+  "name": "deepseek-prompt",
+  "agent": "deepseek-harness",
+  "event": "user-prompt-submit",
+  "payload": "{\"session_id\": \"ds-1\", \"prompt\": \"hi\"}"
+ },
+ {
+  "name": "unknown-agent",
+  "agent": "bogus",
+  "event": "stop",
+  "payload": "{\"session_id\": \"x\"}"
+ },
+ {
+  "name": "claude-unknown-event",
+  "agent": "claude-code",
+  "event": "mystery-event",
+  "payload": "{\"session_id\": \"sess-1\"}"
+ }
+]

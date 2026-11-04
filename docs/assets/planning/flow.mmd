@@ -1,0 +1,14 @@
+flowchart TD
+    A[Backlog item] --> B{Needs a plan?}
+    B -- no --> I
+    B -- yes --> C[Planner explores the repo, read-only]
+    C --> D[Up to 5 questions with a recommended answer, up to 20 assumptions]
+    D --> E[You answer on the plan card, correct assumptions, or take the defaults]
+    E --> F[Planner writes plan, decisions table, PR split, review focus]
+    F --> G{You approve?}
+    G -- re-plan --> C
+    G -- approve --> H{2 or more PRs?}
+    H -- yes --> H2[Child items, one per PR, each blocked by the one before]
+    H -- no --> I
+    H2 --> I[Implementer builds from the plan and reports any deviation]
+    I --> J[Reviewer checks the code against the decisions and the review focus]

@@ -1,0 +1,233 @@
+---
+title: Security
+description: What Tallpine protects, how it does it, how each agent harness compares, and which security setting to pick.
+---
+
+Tallpine runs coding agents (Claude Code, Codex, Kiro, DeepSeek Harness) on your Mac, as your user. This page explains in plain terms what Tallpine keeps safe, how, and where it stops. The exact settings and managed-config syntax are in [Agent policy and managed config](/configuration/agent-policy).
+
+Tallpine does not claim any compliance framework or third-party certification.
+
+## In short
+
+- **Off by default.** A fresh install runs agents the way they would run without Tallpine. You turn protection on with one switch: **Settings > Security > Protected**.
+- **Tallpine protects its own things**: the keys and database that control Tallpine. A protected agent cannot read Tallpine's secrets. Kiro, Codex and DeepSeek Harness, when fenced, also cannot write outside their own work folder, their own state and a few caches.
+- **Tallpine does not police the harness.** Each agent keeps the access it needs to its own folders and sign-in (for example Kiro keeps `~/.aws`, Codex keeps `~/.codex`). Bugs or weak defaults inside a harness are for that harness's vendor to fix.
+- **It is a file fence, not a firewall.** Network access is not restricted. Anything an agent is allowed to read could be sent anywhere.
+
+## What Tallpine protects
+
+Without protection, an agent's shell can read anything you can read, including the files that let a program take control of Tallpine. With Security mode on, Tallpine keeps these out of the agent's reach:
+
+| Protected | Why it matters |
+| --- | --- |
+| The install token and the session key | They let a program act as you in Tallpine, or mint tokens for other sessions. |
+| Tallpine's database | It holds every project, session and setting. |
+| The stored GitHub token and browser key | They are your credentials, kept by Tallpine. |
+| The app's browser profile (cookies) and the phone-connection keys | They give access to your signed-in pages and paired phones. |
+| Other sessions' chat connections | They would let one agent drive another session's agent. |
+| Everything outside the agent's own work folder (for writes; Kiro, Codex and DeepSeek Harness) | Under Tallpine's own sandbox profile an agent can only change its worktree, its temp and artifacts folders, the usual build caches and its harness's own folders. It cannot change other projects' worktrees, Tallpine's files or your shell startup files. Claude Code's writes are limited by Claude's own sandbox, which in our earlier test still allowed writes in Tallpine's state folder and `/tmp`. |
+
+Only those secret files are hidden. An agent can still list Tallpine's folders and read files that hold no secret, such as `run/running.json`.
+
+The `tallpine` command keeps working inside the fence: it talks to the app with the session's own limited token.
+
+## What Tallpine does not protect
+
+We are honest about the edges, so you can decide what else you need:
+
+- **The harness's own access.** Each harness keeps its own config folder, sign-in and caches, read and write, even when fenced. Tallpine fences its own state, not the harness. If a harness has a flaw, report it to its vendor.
+- **Your other files and credentials, for reading.** A fenced agent can still read your home folder, other worktrees, and credential files such as `~/.ssh`, `~/.aws` or `~/.npmrc`. Security mode does not hide them; only the managed hardened profile does (see below).
+- **The network.** Agents can reach any address. Where data must not leave, use network controls outside Tallpine.
+- **Linux and Windows.** The file fence works on macOS only.
+- **Some harness modes.** Codex and DeepSeek Harness have their own sandbox. macOS does not allow one sandbox inside another, so when their own sandbox is on, Tallpine cannot add its fence. For example, DeepSeek Harness in its **default** permission mode is not fenced even with Security mode on: Tallpine's token, session key and database stay readable to it. The session then shows **Not fenced** with the reason.
+- **Pushing to a folder on disk.** Inside the fence, `git push` to a remote that is a local path (a bare repository on your disk) fails, because that folder is outside the agent's writable area. Pushing to `https://` and `ssh://` remotes, such as GitHub, works.
+
+## How Tallpine protects
+
+### Security level (Settings > Security)
+
+One choice for the whole app:
+
+| Level | What it means |
+| --- | --- |
+| **Standard** (default) | Agents run as before. No extra fence. |
+| **Protected** | Security mode on. Agents are fenced off Tallpine's files, get only the environment variables they need, and get GitHub access through Tallpine's helper instead of a token in their environment. |
+| **Unrestricted** | Dev mode. Orchestrators may do anything you can in Tallpine and new sessions start without the fence. Only for a development machine you trust. |
+
+A project can override the app setting in **Project settings > General > Security mode**. Protected never refuses to start a session: if an agent cannot be fenced, it still starts and shows **Not fenced**. Changes apply to sessions started, relaunched or restored after the change. The same switch is available as `tallpine policy set security-mode on|off`.
+
+### The file fence (macOS)
+
+When Security mode is on, Tallpine fences each session that it can:
+
+- **Claude Code** runs its shell commands in Claude Code's own sandbox, configured by Tallpine to deny Tallpine's files and limit writes. Claude's own file tools are denied the same files. A fenced Claude Code session also ignores the repository's `.claude` settings, hooks and MCP servers, since those could widen the sandbox.
+- **Kiro, Codex and DeepSeek Harness** run inside a macOS sandbox profile that Tallpine generates for each launch, around the whole agent process. The harness's own settings and flags are not changed.
+
+### Permission modes and the permission cap
+
+Every session has a permission mode, the harness's own setting for how much it may do without asking: **default**, **accept edits**, **auto** or **bypass** (full access). The **permission cap** sets the highest mode any session may use: `auto` forbids bypass and full access, and `accept_edits` also forbids `auto`, so workers stop and ask before running commands. Security mode does not change permission modes or the cap; the cap is a separate setting.
+
+### Environment and GitHub credentials
+
+- **Environment filter** (`envFilter` set to `allowlist`): agents start with a short list of needed environment variables instead of everything the app has, so stray secrets in your environment do not reach them.
+- **GitHub credentials** (`githubCreds` set to `helper`): git and `gh` get a token through Tallpine's helper when they need it, instead of a token sitting in the agent's environment.
+
+Security mode turns both on.
+
+## Harness comparison
+
+What each harness brings, what Tallpine adds on macOS with Security mode on, and the known limits.
+
+| Harness | Its own protection | What Tallpine adds | Known limits |
+| --- | --- | --- | --- |
+| **Claude Code** | Permission prompts and modes; an optional sandbox for shell commands. | Fenced in every permission mode, terminal and chat: Tallpine turns on Claude's sandbox with Tallpine's secret files denied, and denies the same files to Claude's own tools. Repository `.claude` settings and hooks do not load. Tested earlier: token, session key and database reads denied. | Write limits are Claude's sandbox's own; our earlier test could still write in Tallpine's state folder and `/tmp`. macOS only. |
+| **Codex** | Its own sandbox modes (read-only, workspace-write, full access) and approval prompts. | Fenced when Codex runs with no sandbox of its own (bypass, or default, which is full access). Tested: secret reads and writes to Tallpine's folders, your home and `/tmp` denied. Codex keeps `~/.codex`, `~/.aws`, `~/.config` and its caches. | In accept edits and auto, Codex's own sandbox runs and Tallpine cannot add its fence: shown as Not fenced. Codex's own sandbox limits writes but does not hide Tallpine's files from reads. |
+| **Kiro** | Tool permissions and trusted-tool rules. No sandbox of its own. | Fenced in every permission mode (terminal, chat and reviewer). Tested in default and bypass: secret reads and writes outside its area denied. Kiro keeps `~/.kiro`, its Application Support folder and `~/.aws`. Repository `.kiro` config still loads. | macOS only; needs the system `sandbox-exec` tool. |
+| **DeepSeek Harness** | Its own sandbox modes (read-only, workspace-write, full access). | Fenced in bypass, where its own sandbox is off. Tested: secret reads and writes outside its area denied. It keeps `~/.dsh`, `~/.config` and its caches. | In default and its other confined modes its own sandbox runs and Tallpine cannot add its fence: shown as Not fenced, and tested readable. Its own sandbox limits writes (it blocked some build-cache writes in our test). |
+
+On Linux and Windows no harness is fenced; the environment filter and GitHub helper still apply. In every harness, `~/.ssh` and other credential files stayed readable with Security mode on, as designed. "Tested" means our own smoke test on macOS (November 2026); it is not a certification.
+
+## Each harness's own settings
+
+The [comparison table](#harness-comparison) gives one line per harness. This section goes deeper: what the harness controls itself, what Tallpine sets when it launches it, and how that meets Security mode. Tallpine sets the permission mode; everything else in the harness's own config stays yours to change. Tallpine does not fix harness issues. Report those to the vendor.
+
+The four Tallpine permission modes are **default**, **accept edits**, **auto** and **bypass**. A [permission cap](#permission-modes-and-the-permission-cap) can lower the mode before launch; the tables show the mode after the cap. The tables describe **terminal** sessions. Chat sessions launch differently: Kiro chat runs `kiro-cli acp --agent-engine v3` with no `--agent` or `--trust-all-tools` flag; Codex chat uses its app server with approval `never` and full access for default and bypass, and `on-request` with workspace-write for accept edits and auto; DeepSeek Harness chat sets `DSH_PERMISSION_MODE=danger-full-access` for bypass instead of an overlay file.
+
+### Claude Code
+
+**Its own controls.** Permission prompts and modes (`default`, `acceptEdits`, `auto`, `bypassPermissions`), allow and deny rules for tools and file reads, and an optional sandbox for shell commands. These live in `~/.claude/settings.json`, the repository's `.claude/` folder and `.claude/settings.local.json`.
+
+**What Tallpine passes.**
+
+| Tallpine mode | Claude Code flag |
+| --- | --- |
+| Default | None. Claude picks its start mode from your settings. |
+| Accept edits | `--permission-mode acceptEdits` |
+| Auto | `--permission-mode auto` |
+| Bypass | `--permission-mode bypassPermissions` |
+
+Under a permission cap that forbids bypass, default becomes an explicit `--permission-mode default`, so a `bypassPermissions` default in your own settings cannot slip through. Tallpine also passes a `--settings` overlay on every launch. It sits in Claude's flag layer, so your own settings cannot remove what is in it: Tallpine's hooks (with `disableAllHooks` pinned to false), deny rules that stop Claude's file tools reading Tallpine's token, session key, database and similar files (even with Security mode off), and your compaction and Ultracode choices. In bypass it also skips Claude's bypass warning prompt; in the other non-default modes it keeps the "switch to auto mode?" dialog away. Your other settings, rules and the sandbox you configure still apply.
+
+**With Security mode.** Fenced in every mode. Tallpine turns on Claude's sandbox with Tallpine's secret files denied, adds the same deny rules for Claude's own file tools, and stops loading the repository's `.claude` settings, hooks and MCP servers, because they could widen the sandbox. Claude's sandbox is Claude's own, not a Tallpine profile, so no nesting problem arises.
+
+**Pick.** Default or accept edits when you want to watch what it does. Auto for routine work you trust. Bypass only with Protected on.
+
+### Codex
+
+**Its own controls.** Approval policy (when it asks), sandbox mode (`read-only`, `workspace-write`, `danger-full-access`), and settings in `~/.codex/config.toml`. Its sandbox is its own, and it limits writes but does not hide Tallpine's files from reads.
+
+**What Tallpine passes.**
+
+| Tallpine mode | Codex flags | Codex sandbox |
+| --- | --- | --- |
+| Default | `--dangerously-bypass-approvals-and-sandbox` | None (full access) |
+| Accept edits | `--ask-for-approval on-request` | Workspace-write |
+| Auto | `--ask-for-approval on-request` and `approvals_reviewer="auto_review"` | Workspace-write |
+| Bypass | `--dangerously-bypass-approvals-and-sandbox` | None (full access) |
+
+Note that Tallpine's **default** is full access for Codex, the same as bypass. In accept edits and auto Tallpine adds `-c sandbox_workspace_write.network_access=true` and the writable folders a normal build needs (build caches and the worktree's git folders), so `git push`, `gh`, installs and the `tallpine` command work. It does not pass `--sandbox` itself unless a permission cap forces it (`--sandbox workspace-write`, with the mode lowered to the cap). Without a cap, the sandbox mode otherwise comes from your `~/.codex/config.toml`. Under a cap, default is lowered to the cap's level rather than staying full access.
+
+**With Security mode.** Fenced in default and bypass, where Codex has no sandbox. In accept edits and auto Codex's sandbox runs, macOS does not allow a sandbox inside a sandbox, so Tallpine cannot add its fence and the session shows **Not fenced**. A permission cap that forbids bypass turns Codex's own sandbox on, even in default or bypass, so those sessions show **Not fenced** too.
+
+**Pick.** Protected plus Tallpine's fence: default or bypass. Codex's own command approval: accept edits or auto, accepting Not fenced.
+
+### Kiro
+
+**Its own controls.** Tool permissions and trusted tools, set per agent profile. No sandbox of its own. Settings live in `~/.kiro` and the repository's `.kiro` folder.
+
+**What Tallpine passes.** Tallpine writes a workspace-local agent profile named `tallpine` and launches `kiro-cli chat --v3 --trust-workspace --agent tallpine`. The mode becomes permission rules in that profile:
+
+| Tallpine mode | Kiro flag | Profile rules |
+| --- | --- | --- |
+| Default | None | Read the workspace; everything else asks. |
+| Accept edits | None | Read and write the workspace. |
+| Auto | None | Accept edits, plus an allow-list of dev shell commands (`git status/diff/log/add/commit/push`, a few `gh pr` verbs, `tallpine report`, and fixed build and test commands). |
+| Bypass | `--trust-all-tools` | Everything allowed. |
+
+Tallpine owns the `tallpine` profile and rewrites its managed keys (name, prompt, model, permissions, resources) at launch; other keys you add to it are kept. Your other Kiro profiles and your `~/.kiro` settings are untouched, and repository `.kiro` config still loads.
+
+**With Security mode.** Fenced in every mode, because Kiro has no sandbox of its own. Tallpine wraps the whole process in a macOS sandbox profile, so Kiro's flags are not changed. Kiro keeps `~/.kiro`, its Application Support folder and `~/.aws`.
+
+**Pick.** Protected with default, accept edits or auto; fencing does not depend on the mode.
+
+### DeepSeek Harness
+
+**Its own controls.** A sandbox policy (`read-only`, `workspace-write`, `danger-full-access`) and an approval policy, read from the profile and from the `DSH_PERMISSION_MODE` setting. State lives in `~/.dsh`.
+
+**What Tallpine passes.** Terminal sessions run `dsh --profile headless` with overlay files Tallpine writes under its data folder. Every mode gets a privacy overlay (keeps session logs from being uploaded to DeepSeek) and a credentials overlay.
+
+| Tallpine mode | Sandbox and approval |
+| --- | --- |
+| Default, accept edits, auto | No Tallpine override. DeepSeek Harness's own sandbox and approval settings apply. |
+| Bypass | Overlay sets `danger-full-access` and approval `never`, so git can reach a linked worktree's shared `.git`. |
+
+**With Security mode.** Fenced in bypass only, where its sandbox is off. In the other modes its own sandbox runs, macOS does not allow nesting, and the session shows **Not fenced**. If you set `DSH_PERMISSION_MODE` yourself to something that contradicts the mode, a Protected launch is refused with an error rather than run unfenced.
+
+**Pick.** Bypass with Protected for Tallpine's fence. Default when you prefer DeepSeek Harness's own sandbox.
+
+## Which setting should I pick?
+
+- **Just trying Tallpine, on your own machine:** Standard is fine. Turn on Protected once agents work on code or issues you did not write, since a prompt hidden in a file, issue or web page can steer an agent.
+- **Daily work with Claude Code or Kiro:** Protected. They are fenced in every mode and normal work (git, `gh`, tests, builds, package installs) keeps working.
+- **Codex or DeepSeek Harness with Protected:** the fence applies in bypass (and Codex's default, which is full access). DeepSeek Harness in default mode is not fenced. In their sandboxed modes you get their own sandbox instead of Tallpine's, and the session says Not fenced. Pick based on which matters more to you: Tallpine's read protection, or the harness's own command approval.
+- **A company fleet:** ask your administrator to set the hardened profile in a managed configuration (below). It locks the strict settings, hides credential folders and refuses any session that cannot be fenced.
+- **Unrestricted:** only on a development machine, when you need orchestrators to manage Tallpine itself. Rotate the install token after turning it off.
+
+## For administrators
+
+### Hardened profile
+
+An administrator can set `"profile": "hardened"` in the managed policy file. It locks a strict floor: permission cap `auto`, environment filter `allowlist`, GitHub credentials `helper`, the fence required, repository agent config off, orchestrator approvals off and cross-project orchestration off. A managed value looser than the floor is ignored with a warning, and an unknown or malformed profile name applies the hardened profile.
+
+Under the profile every launch must be fenced. A session that cannot be fenced is refused with `POLICY_REQUIRES_FENCE` instead of starting. Because the profile caps permissions at `auto`, Codex and DeepSeek Harness always run their own sandbox and so are refused; Claude Code and Kiro on macOS run. Every agent on Linux and Windows is refused.
+
+### Credential folder hiding
+
+Under the hardened profile the fence also hides common developer credential locations: `~/.ssh`, `~/.aws`, `~/.kube`, `~/.config/gcloud`, `~/.azure`, `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.config/gh`, `~/.git-credentials` and `~/.config/git/credentials`. `~/.ssh/known_hosts` and `~/.ssh/config` stay readable so git over SSH with an SSH agent still works. A harness's own sign-in files are re-allowed for that harness (for example Kiro and Codex keep `~/.aws`). Administrators can add paths with `protectState.credentialPaths`; exemptions (`credentialAllow`) are honoured only from the managed file or the daemon's environment.
+
+### Environment encryption
+
+Under the hardened profile, project environment values (Settings, project, Environment) are stored AES-256-GCM encrypted in Tallpine's database, each bound to its project and variable name. The key is a random 256-bit value in your login Keychain. This fails closed: if the key cannot be read, that project cannot be opened or saved and launches are refused with `PROJECT_ENV_LOCKED`. Values are never rewritten as plaintext.
+
+### Docker
+
+The fence closes the Docker socket. A project can open it with `allowDocker` (owner-only). Docker access is effectively full access to the machine, so Settings warns.
+
+### Dev tooling inside the fence (`protectState.devTooling`)
+
+Test servers, dev servers and the merge gate bind Unix sockets, which the fence denies by default. `allow` (the default) opens exactly two things: socket binding in the session's own temp folder, and the `xcrun_db-*` cache files in the per-user temp folder. `strict` allows only the daemon socket folder, so tests that bind a socket fail. A project may choose `strict` but not loosen a stricter user or managed value.
+
+### Managed configuration and locks
+
+Administrators deliver policy as a managed file (a macOS Configuration Profile for the domain `ee.justdev.tallpine`, for example through [Jamf](/configuration/jamf)). Resolution order is managed, then environment, then project, then user, then default. Managed and environment values are locked and shown read-only in Settings. A malformed managed file, or an invalid value in a field with a defined strictest value, applies the strictest value with a warning, so a mistake does not silently remove a lock. In release builds `TALLPINE_MANAGED_POLICY_FILE` is ignored, so a user cannot point the app at a weaker file. Check the result with `tallpine policy show`.
+
+### Who can change what
+
+- **Security rules only tighten per project.** A project can make `permissionCap`, `envFilter`, `githubCreds` and `protectState` stricter, never looser.
+- **Agents may only tighten.** An orchestrator can change its own project's settings, but the app refuses a write that loosens agent policy. Turning Security mode off needs you, not an agent.
+- **Workers change nothing.** Workers cannot write settings.
+- **Cross-project and lane powers are opt-in** and off by default; a managed `false` forces them off.
+
+### Session approvals
+
+When an agent hits a permission prompt, the prompt goes to you. A project can let its orchestrator answer its workers' prompts (`orchestratorApprovals`, off by default). The orchestrator can only make one-time decisions; a standing "always allow" stays with you. Some requests are never approvable by an orchestrator: reads of Tallpine's secrets and database, Keychain dumps, SSH keys and cloud credentials, agent harness config, and shell or launchd startup files. Commands: `tallpine session approvals`, `approve`, `deny` and `answer`.
+
+## Other protections
+
+### Signed release installer
+
+When a locally built release is installed for the main-health orchestrator, the app runs the installer itself, not the agent. It resolves the build by its commit hash inside Tallpine's `release-builds` folder, copies the app bundle to a private staging folder, verifies the copy with `codesign --verify --deep --strict` against the release signing team, and runs only the installer scripts listed (with SHA-256 hashes) in the signed app. If any step fails, the install is refused.
+
+### Phone connection
+
+The phone connection is off until you turn it on. It uses HTTPS with a certificate your Mac creates, which the phone pins when it pairs; plain HTTP is refused. Each phone gets its own credential from a one-time pairing code, only hashes are stored, and repeated failed attempts are locked out. Shutdown, phone-control and browser-control routes are not served there. An administrator can turn it off for good with a managed `app.mobile.enabled = false`. Details are in [Connections](/configuration/remote-access#security-model).
+
+## Not covered
+
+- No network egress control.
+- Security mode does not hide `~/.ssh` or other credential files; only the hardened profile does.
+- A fenced agent can read other sessions' worktrees and your other files.
+- `git push` to a local-path remote fails inside the fence.
+- No file fence on Linux or Windows.
+- Codex and DeepSeek Harness in their own sandboxed modes are not fenced by Tallpine.
+- Each harness keeps full access to its own folders and credentials.

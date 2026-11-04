@@ -1,0 +1,7 @@
+{
+  "name": "tallpine-pinning",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Certificate pinning for the Mac gateway: fetch and WebSocket trust decisions",
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,69 @@
+---
+title: Agent adapters
+description: The agent harnesses built into Tallpine, with terminal and structured Chat capabilities.
+---
+
+Tallpine supports four agent harnesses: **Claude Code**, **Codex**, **Kiro** and **DeepSeek**. Each needs a local installation and sign-in. For an installed agent, check that Tallpine can find it and start a session:
+
+```bash
+tallpine agent ls --refresh
+tallpine spawn --project my-app --name task --agent codex
+```
+
+Tallpine uses the agent CLI and authentication you already installed. It does not bundle external provider credentials or install external adapters from npm.
+
+<span id="shipped-terminal-harnesses" />
+
+## Shipped agent harnesses
+
+The current daemon registers the following capabilities. Availability still depends on platform, installed version, credentials, and permissions; a registered adapter is not proof that it is ready on your machine.
+
+| Harness | Terminal UI | Chat | Reviewer |
+| --- | --- | --- | --- |
+| `claude-code` | Yes | Yes | Yes |
+| `codex` | Yes | Yes | Yes |
+| `kiro` | Yes | — | Yes |
+| `deepseek-harness` | Yes (one-shot task) | Yes | — |
+
+The table shows shipped capabilities, not whether an agent is ready on your machine. Run the catalog for current readiness or when scripting:
+
+```bash
+tallpine agent ls --refresh
+tallpine agent ls --refresh --json
+```
+
+The readiness probe reports whether a harness is supported, installed, and authenticated. Spawn still performs authoritative validation.
+
+## Chat versus Terminal UI
+
+Claude Code, Codex and DeepSeek have structured Chat drivers:
+
+| Harness | Chat transport |
+| --- | --- |
+| `codex` | Codex native app-server |
+| `claude-code` | `claude-agent-acp` using the user's Claude executable |
+| `deepseek-harness` | `dsh` Agent Client Protocol (ACP) server |
+
+Kiro is Terminal UI-only. Choose the initial interface with `tallpine spawn --mode chat|tui`. Compatible Claude Code and Codex sessions can hand off between Chat and Terminal UI while retaining the Tallpine session and worktree.
+
+Chat registration does not imply interface handoff support. Use the switch action and its disabled reason in the session UI.
+
+## Choosing and configuring a harness
+
+```bash
+tallpine spawn --project my-app --name auth-fix --agent claude-code --mode chat
+```
+
+To make Codex the default worker, use `tallpine project set-config my-app --worker-agent codex`. Focused flags merge into the existing config; only `--config-json` replaces it. See [Update from the CLI](/configuration/projects#update-from-the-cli).
+
+`--agent` and `--harness` are aliases. The CLI's project-config mirror also omits `effort`: `tallpine project get --json` cannot show it, and a CLI configuration replacement drops existing effort values. Use Project Settings in the desktop app or the daemon API to preserve or change effort. Use `tallpine project set-config --help` for supported fields.
+
+## Harnesses that were removed
+
+Earlier versions supported more harnesses. A project, automation or reviewer setting that still names a removed harness falls back to Claude Code (a warning is logged), and `tallpine spawn` prints the same notice. A session that was created under a removed harness stays visible but is read-only: it cannot be restored, resumed, messaged or switched, and the session view explains why. Terminate it, or start a new session with Claude Code, Codex or Kiro.
+
+<Cards>
+	<Card title="Claude Code" description="Terminal UI and structured Chat." href="/plugins/agents/claude-code" />
+	<Card title="Codex" description="Terminal UI and native app-server Chat." href="/plugins/agents/codex" />
+	<Card title="Kiro" description="Terminal UI." href="/plugins/agents/kiro" />
+</Cards>

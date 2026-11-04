@@ -1,0 +1,162 @@
+{
+	"version": 1,
+	"note": "Ten merged items picked from main's history (6 single-PR, 4 multi-PR). Replayed at baseCommit (the parent of the first PR's squash commit); prs are the merged PRs, oldest first. answers are the owner's real answers where a plan record exists (only B310); every other item has none, so the owner-proxy takes each question's recommended option. decisions come from the plan record when there is one (decisionsSource plan), else from the item's done-when and note (item).",
+	"items": [
+		{
+			"ref": "B310",
+			"kind": "single",
+			"baseCommit": "d65daf73dbc0f7d255b2598c2bf9d0a8ff3bc239",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/696"
+			],
+			"title": "GitHub Enterprise support: per-host API endpoints for GHE.com (data residency) and self-hosted GHES",
+			"note": "Split from C01/#623 (2026-11-01). The owner asked whether an employer's GitHub org would work. github.com orgs already do. GHE.com tenants (<tenant>.ghe.com, API at api.<tenant>.ghe.com) and self-hosted GHES (custom host, API at https://<host>/api/v3 and /api/graphql) do not: the GitHub adapter ignores SCMRepo.Host and always talks to github.com with one token, so accepting those hosts would fetch github.com/<owner>/<repo>#N. That is wrong data, so #623 keeps rejecting them. Also check what *.ghe.io links do today; they are probably mis-routed the same way. Fix: the adapter picks its API base from Repo.Host, uses a per-host token (gh auth for that host), then IsGitHubHost accepts *.ghe.com and the project's own GHES host.",
+			"doneWhen": "A claimed PR on <tenant>.ghe.com or a self-hosted GHES host fetches that host's PR data, with tests against a fake per-host server",
+			"answers": [
+				{
+					"question": "How should Tallpine learn which self-hosted hosts are GitHub Enterprise Server (a GHES name like git.acme.corp looks the same as self-managed GitLab, which is today's fallback)?",
+					"answer": "Daemon env TALLPINE_GITHUB_ENTERPRISE_HOSTS (comma list, like TALLPINE_GITLAB_ALLOWED_HOSTS); MDM/launchd can set it"
+				},
+				{
+					"question": "*.ghe.io is accepted as a GitHub host today but its PRs are fetched from api.github.com (wrong data). No current GitHub product uses ghe.io (GHE.com tenants are *.ghe.com). What should happen to *.ghe.io?",
+					"answer": "Drop it from the built-in rules (SCM, PR URLs, tracker); a real ghe.io host can be listed as a GHES host"
+				}
+			],
+			"decisions": "| # | Question / assumption | Final answer | Source |\n|---|---|---|---|\n| q1 | How GHES hosts are known | Daemon env `TALLPINE_GITHUB_ENTERPRISE_HOSTS` (comma list, entries may include `:port`), parsed like `TALLPINE_GITLAB_ALLOWED_HOSTS` | Owner answer |\n| q2 | `*.ghe.io` | Dropped from every built-in rule (SCM host, PR URL, tracker inference, tracker intake parse). A real ghe.io host can be listed in q1's env | Owner answer |\n| a1 | GHE.com | `*.ghe.com` built in. REST `https://api.<tenant>.ghe.com`, GraphQL `https://api.<tenant>.ghe.com/graphql`. `api.*` never a PR URL host | Accepted |\n| a2 | GHES endpoints | `https://<host>/api/v3`, `https://<host>/api/graphql`; https only; listed host matched exactly, case-insensitive, port included | Accepted |\n| a3 | Per-host token | `TALLPINE_GITHUB_HOST_TOKENS` (host=token,...) else `gh auth token --hostname <host>`. github.com tokens (env, account tokens) never sent to another host | Accepted |\n| a4 | Missing token / unlisted host | Only that host's PRs fail (Fetched=false, auth error logged once per host); github.com/GitLab unaffected. Unlisted host rejected before any request | Accepted |\n| a5 | Accounts | Multi-account auto-pick and project githubUser apply to github.com only | Accepted |\n| a6 | Routing coverage | Every GitHub adapter call routes by repo host; batch GraphQL groups by (host, account) | Accepted |\n| a7 | Identity | Per host via `AuthenticatedIdentityForHost` | Accepted |\n| a8 | URL acceptance | claim-pr, report --pr-created/--pr-reviewed, review gateway, PR summaries accept enterprise PR URLs via the shared domain rule; CLI registers hosts from the same env (sessions inherit daemon env) | Accepted |\n| a9 | Tracker intake on GHE | Out of scope; tracker stays github.com-only | Accepted |\n| a10 | Git credential helper for GHES remote | Out of scope, follow-up risk | Accepted |\n| a11 | Surface / split | Env only, documented beside GitLab vars; one PR | Accepted |\n| n1 | How the pure domain rule learns listed hosts | Process-wide registry in `domain` set once at startup (daemon after `config.Load`, CLI root from env); empty by default | New, not confirmed by owner |\n| n2 | PR URL ports | github.com/ghe.com PR URLs still reject ports; a listed GHES host with `:port` accepts that exact port | New, not confirmed by owner |\n| n3 | Stored `*.ghe.io` rows | No migration; they stop being observed (they never had correct data) | New, not confirmed by owner |",
+			"decisionsSource": "plan"
+		},
+		{
+			"ref": "B167",
+			"kind": "single",
+			"baseCommit": "985cb551633e201a6dfc44bbdaa40572cebb2d51",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/471"
+			],
+			"title": "Track a worker's follow-up PR automatically after its first PR merges",
+			"note": "2026-10-30: worker 416's first PR #457 merged, then it opened #459 from the same session. 'review trigger' failed with REVIEW_INVALID ('no open PR head'), and --pr 459 failed with REVIEW_NOT_FOUND until a manual 'session claim-pr'. Auto-attach PRs opened by the session (gh pr create observed or a branch match), or make 'review trigger --pr' attach one the worker authored.",
+			"doneWhen": "",
+			"answers": [],
+			"decisions": "2026-10-30: worker 416's first PR #457 merged, then it opened #459 from the same session. 'review trigger' failed with REVIEW_INVALID ('no open PR head'), and --pr 459 failed with REVIEW_NOT_FOUND until a manual 'session claim-pr'. Auto-attach PRs opened by the session (gh pr create observed or a branch match), or make 'review trigger --pr' attach one the worker authored.",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B189",
+			"kind": "single",
+			"baseCommit": "e0e158aa438c315926576efc8ec1100351715427",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/494"
+			],
+			"title": "Orchestrators can edit their own project's rules; make the #490 prompt line generic",
+			"note": "Owner 2026-10-31: 'make it possible to edit; it's a stupid rule very specific to this project'. #490 (B187) added a line to backend/internal/session_manager/prompt.go naming release-local, local CI and the release build tree. Project-specific procedure belongs in the project's orchestratorRules, which orchestrators can't edit today (PUT /api/v1/projects/<id>/config -> AGENT_SCOPE_FORBIDDEN).",
+			"doneWhen": "An orchestrator can update its OWN project's orchestrator rules and worker rules (text fields only) via 'tallpine project set-config <id> --orchestrator-rules/--agent-rules'; all other config fields (permissions, env, post-create, model, reviewers, etc.) and other projects stay forbidden for agent tokens; each change is logged; the built-in orchestrator prompt line from #490 is made generic (no release-local/local CI/build-tree names); tests cover allowed and forbidden fields",
+			"answers": [],
+			"decisions": "Done when: An orchestrator can update its OWN project's orchestrator rules and worker rules (text fields only) via 'tallpine project set-config <id> --orchestrator-rules/--agent-rules'; all other config fields (permissions, env, post-create, model, reviewers, etc.) and other projects stay forbidden for agent tokens; each change is logged; the built-in orchestrator prompt line from #490 is made generic (no release-local/local CI/build-tree names); tests cover allowed and forbidden fields\n\nOwner 2026-10-31: 'make it possible to edit; it's a stupid rule very specific to this project'. #490 (B187) added a line to backend/internal/session_manager/prompt.go naming release-local, local CI and the release build tree. Project-specific procedure belongs in the project's orchestratorRules, which orchestrators can't edit today (PUT /api/v1/projects/<id>/config -> AGENT_SCOPE_FORBIDDEN).",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B192",
+			"kind": "single",
+			"baseCommit": "6413a7f274c248919128963e90506f84bafbebdf",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/500"
+			],
+			"title": "Report tiering: low-value auto reports stop waking orchestrators",
+			"note": "B117 study (artifacts/agent-orchestrator-488/b117-lane-optimizations.md): 177/260 (68%) orchestrator turns today were 'Worker reports' batches, each a full turn at 200-380k context.",
+			"doneWhen": "Non-actionable auto items (turn_ended, checkpoint, turn_resumed, and review_approved when it needs no action) don't wake an idle orchestrator on their own: they ride along with the next real batch or coalesce over a window (e.g. 10 min); actionable items (needs_input, stuck, done, blocked, human messages) still wake immediately; measured before/after: share of orchestrator turns that are report-only",
+			"answers": [],
+			"decisions": "Done when: Non-actionable auto items (turn_ended, checkpoint, turn_resumed, and review_approved when it needs no action) don't wake an idle orchestrator on their own: they ride along with the next real batch or coalesce over a window (e.g. 10 min); actionable items (needs_input, stuck, done, blocked, human messages) still wake immediately; measured before/after: share of orchestrator turns that are report-only\n\nB117 study (artifacts/agent-orchestrator-488/b117-lane-optimizations.md): 177/260 (68%) orchestrator turns today were 'Worker reports' batches, each a full turn at 200-380k context.",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B305",
+			"kind": "single",
+			"baseCommit": "268afecc2b8666072795893dae1760e3e3d75e1d",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/644"
+			],
+			"title": "session ls has no name/label column; orchestrator missed a live worker and spawned a duplicate",
+			"note": "2026-11-01: grepping session ls for 'B262' found nothing, because names aren't printed, so I spawned a second B262 worker (588) while 587 was already running it. Also: spawn --backlog of a blocked item printed 'warning: B262 is blocked by B261' as the LAST line, after the 'spawned session' line, so tail -1 hid the success. Fix: add a NAME column (truncated) to session ls; print warnings before the result line; spawn --backlog refuses when a live worker already holds that item (or says so loudly).",
+			"doneWhen": "session ls shows names; spawn --backlog warns or refuses when a live session already owns the item; warnings print before the result",
+			"answers": [],
+			"decisions": "Done when: session ls shows names; spawn --backlog warns or refuses when a live session already owns the item; warnings print before the result\n\n2026-11-01: grepping session ls for 'B262' found nothing, because names aren't printed, so I spawned a second B262 worker (588) while 587 was already running it. Also: spawn --backlog of a blocked item printed 'warning: B262 is blocked by B261' as the LAST line, after the 'spawned session' line, so tail -1 hid the success. Fix: add a NAME column (truncated) to session ls; print warnings before the result line; spawn --backlog refuses when a live worker already holds that item (or says so loudly).",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B257",
+			"kind": "single",
+			"baseCommit": "5fffc5cff56d30a2adb454e362438bb3309535c9",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/581"
+			],
+			"title": "Native reviewer turn ends without submitting a verdict (review_failed after ~15 min)",
+			"note": "2026-11-01: Opus review of PR #566 (head 0ad7bed2774b, run b8c8bafa-7ba7-47b5-a848-437f7f511530, worker agent-orchestrator-560) started 16:59Z, failed 17:13Z with 'reviewer turn ended without submitting a result'. Find why the reviewer stopped (transcript of the run), and make the reviewer either submit or be re-prompted once to submit before failing.",
+			"doneWhen": "A reviewer that ends its turn without a verdict is re-prompted to submit; root cause of the #566 case explained.",
+			"answers": [],
+			"decisions": "Done when: A reviewer that ends its turn without a verdict is re-prompted to submit; root cause of the #566 case explained.\n\n2026-11-01: Opus review of PR #566 (head 0ad7bed2774b, run b8c8bafa-7ba7-47b5-a848-437f7f511530, worker agent-orchestrator-560) started 16:59Z, failed 17:13Z with 'reviewer turn ended without submitting a result'. Find why the reviewer stopped (transcript of the run), and make the reviewer either submit or be re-prompted once to submit before failing.",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B88",
+			"kind": "multi",
+			"baseCommit": "201f4be75ba4b12d46eb19ebd63165823e8be484",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/329",
+				"https://github.com/justvibedev/tallpine-dev/pull/330",
+				"https://github.com/justvibedev/tallpine-dev/pull/331"
+			],
+			"title": "Orchestrator lanes: several orchestrator chats per project, one topic each, with a daemon-owned merge queue",
+			"note": "Owner (2026-10-28): wants separate chats per topic (brand/repo name, mobile app, features, deps, security) without mixing topics or drowning one orchestrator in worker reports; asked about multiple orchestrators that coordinate merges. Design: an orchestrator chat is bound to a lane = a backlog parent/topic; workers it spawns inherit the lane; reports route to the lane's orchestrator only. Coordination through shared state, not LLM-to-LLM chat: (1) backlog item/lane ownership; (2) PR area claims (paths touched) visible to all lanes with conflict warnings; (3) a daemon-owned merge queue: approved PRs are rebased, CI-gated (local CI), merged serially, with same-area ordering; (4) a short cross-lane digest (what merged, what is in flight) injected into each orchestrator on request. Size: M (2-4 PRs). Depends on B85 steering/notifications.",
+			"doneWhen": "",
+			"answers": [],
+			"decisions": "Owner (2026-10-28): wants separate chats per topic (brand/repo name, mobile app, features, deps, security) without mixing topics or drowning one orchestrator in worker reports; asked about multiple orchestrators that coordinate merges. Design: an orchestrator chat is bound to a lane = a backlog parent/topic; workers it spawns inherit the lane; reports route to the lane's orchestrator only. Coordination through shared state, not LLM-to-LLM chat: (1) backlog item/lane ownership; (2) PR area claims (paths touched) visible to all lanes with conflict warnings; (3) a daemon-owned merge queue: approved PRs are rebased, CI-gated (local CI), merged serially, with same-area ordering; (4) a short cross-lane digest (what merged, what is in flight) injected into each orchestrator on request. Size: M (2-4 PRs). Depends on B85 steering/notifications.",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B100",
+			"kind": "multi",
+			"baseCommit": "1b286b1f939a6a1e8cac633e9e29f2958f0aa112",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/282",
+				"https://github.com/justvibedev/tallpine-dev/pull/291",
+				"https://github.com/justvibedev/tallpine-dev/pull/296",
+				"https://github.com/justvibedev/tallpine-dev/pull/298"
+			],
+			"title": "Account pool: spread sessions across several accounts per harness and fail over on usage limits (harness-agnostic, off by default)",
+			"note": "Owner 2026-10-29: for other people (not own use); \"3 Claude accounts, subagents start on a random account or move when one hits limits\"; must cover Codex; ideally harness-agnostic.\nHAVE TODAY: multiple signed-in accounts per harness for Claude Code and Codex (backend/internal/adapters/agentaccount/claude.go, codex.go; stores agent_account_store.go, codex_account_management_store.go); per-session account binding + default account + \"Use for all sessions\"; durable live move of a running session to another account that resumes the same conversation (session_manager/agent_account.go:12-26 StartAccountTransition, preflight checks first); per-account rate-limit reading (agentaccount/claude.go:184-253) and usage-limit auto-resume at reset (service/chat/usage_limit.go, controller_send.go:227).\nMISSING: (1) placement policy at spawn: default | random | most headroom | least used, over the harness's usable accounts; (2) auto-failover: on a usage-limit stop, pick an account with headroom and run StartAccountTransition instead of waiting for reset (cooldown, no ping-pong, fall back to wait-for-reset when all are limited); (3) harness-agnostic AccountPool interface (List/Usable/Limits/Bind) over agentaccount adapters, so Kiro/DeepSeek (API keys) can join later; (4) settings UI + MDM/managed-config keys, OFF by default; (5) B19 polish items that matter for multi-account (misdirected CLAUDE_CONFIG_DIR check, ExitAgentsOnAccount move callback).\nESTIMATE: 3-4 PRs behind a switch: AccountPool+placement; failover; UI+policy keys; B19 subset. Opus first reviews (concurrency in the move path).\nCAVEAT: rotating several personal Claude/ChatGPT subscriptions to get around usage limits may conflict with provider terms; frame and document it for team/org seats and API keys, and say so in the docs.",
+			"doneWhen": "",
+			"answers": [],
+			"decisions": "Owner 2026-10-29: for other people (not own use); \"3 Claude accounts, subagents start on a random account or move when one hits limits\"; must cover Codex; ideally harness-agnostic.\nHAVE TODAY: multiple signed-in accounts per harness for Claude Code and Codex (backend/internal/adapters/agentaccount/claude.go, codex.go; stores agent_account_store.go, codex_account_management_store.go); per-session account binding + default account + \"Use for all sessions\"; durable live move of a running session to another account that resumes the same conversation (session_manager/agent_account.go:12-26 StartAccountTransition, preflight checks first); per-account rate-limit reading (agentaccount/claude.go:184-253) and usage-limit auto-resume at reset (service/chat/usage_limit.go, controller_send.go:227).\nMISSING: (1) placement policy at spawn: default | random | most headroom | least used, over the harness's usable accounts; (2) auto-failover: on a usage-limit stop, pick an account with headroom and run StartAccountTransition instead of waiting for reset (cooldown, no ping-pong, fall back to wait-for-reset when all are limited); (3) harness-agnostic AccountPool interface (List/Usable/Limits/Bind) over agentaccount adapters, so Kiro/DeepSeek (API keys) can join later; (4) settings UI + MDM/managed-config keys, OFF by default; (5) B19 polish items that matter for multi-account (misdirected CLAUDE_CONFIG_DIR check, ExitAgentsOnAccount move callback).\nESTIMATE: 3-4 PRs behind a switch: AccountPool+placement; failover; UI+policy keys; B19 subset. Opus first reviews (concurrency in the move path).\nCAVEAT: rotating several personal Claude/ChatGPT subscriptions to get around usage limits may conflict with provider terms; frame and document it for team/org seats and API keys, and say so in the docs.",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B161",
+			"kind": "multi",
+			"baseCommit": "ee21ac84cacf711c27cc6e793646e639b38696cf",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/455",
+				"https://github.com/justvibedev/tallpine-dev/pull/456"
+			],
+			"title": "Session retention policy (auto-cleanup), user + MDM configurable",
+			"note": "Owner 2026-10-30: default retention threshold = 7 days.",
+			"doneWhen": "",
+			"answers": [],
+			"decisions": "Owner 2026-10-30: default retention threshold = 7 days.",
+			"decisionsSource": "item"
+		},
+		{
+			"ref": "B166",
+			"kind": "multi",
+			"baseCommit": "d0569285eddbc65abf5b78956240d319e6af3ef8",
+			"prs": [
+				"https://github.com/justvibedev/tallpine-dev/pull/460",
+				"https://github.com/justvibedev/tallpine-dev/pull/461"
+			],
+			"title": "Mobile: HTTPS-only phone connection (pinned LAN cert + Tailscale Serve), drop plain http",
+			"note": "Owner 2026-10-30: 'can't we enforce https?' Today the LAN gateway (:65221) is plain http, and TLS on the phone is a manual toggle that fails unless secure pairing (tailscale serve) is on AND the tailnet has HTTPS Certificates enabled (CertDomains was empty). Design: (1) the daemon generates a self-signed cert and the QR carries its SHA-256 fingerprint; the phone pins it, so LAN uses https with no CA; (2) tailnet uses Tailscale Serve with a real *.ts.net cert when available, otherwise the pinned cert over the MagicDNS name; (3) remove the TLS toggle from the phone and stop plain http after a migration window; existing pairings re-pair once. iOS: pinning needs a native module or a URLSession delegate (Expo config plugin). After #457 and the review follow-ups (same area).",
+			"doneWhen": "",
+			"answers": [],
+			"decisions": "Owner 2026-10-30: 'can't we enforce https?' Today the LAN gateway (:65221) is plain http, and TLS on the phone is a manual toggle that fails unless secure pairing (tailscale serve) is on AND the tailnet has HTTPS Certificates enabled (CertDomains was empty). Design: (1) the daemon generates a self-signed cert and the QR carries its SHA-256 fingerprint; the phone pins it, so LAN uses https with no CA; (2) tailnet uses Tailscale Serve with a real *.ts.net cert when available, otherwise the pinned cert over the MagicDNS name; (3) remove the TLS toggle from the phone and stop plain http after a migration window; existing pairings re-pair once. iOS: pinning needs a native module or a URLSession delegate (Expo config plugin). After #457 and the review follow-ups (same area).",
+			"decisionsSource": "item"
+		}
+	]
+}

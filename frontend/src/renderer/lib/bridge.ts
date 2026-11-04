@@ -1,0 +1,334 @@
+import type { TallpineBridge } from "../../preload";
+import { coerceUiSettings, DEFAULT_UI_SETTINGS } from "../../shared/ui-locale";
+
+
+export const tallpineBridge: TallpineBridge =
+	window.tallpine ??
+	({
+		app: {
+			getVersion: async () => "0.0.0-preview",
+			chooseDirectory: async () => null,
+			checkGitRepository: async () => true,
+			openExternal: async (url: string) => {
+				window.open(url, "_blank", "noopener,noreferrer");
+			},
+			daemonTcpOpen: async () => true,
+			scanImportFolder: async ({ path }) => ({ path, repos: [] }),
+			checkAncestorRepo: async () => undefined,
+		getRepositoryBranch: async () => undefined,
+		getGitHubLogin: async (_repoPath?: string) => "",
+		getCachedGitHubOwners: async () => [],
+		refreshGitHubOwners: async () => [],
+		checkGitHubRepositoryAvailability: async () => ({ available: true }),
+			getPathForFile: () => "",
+			onOpenFolderPath: () => () => undefined,
+			onNewSessionShortcut: () => () => undefined,
+			onKeyboardShortcutsHelp: () => () => undefined,
+			onQuitConfirmRequest: () => () => undefined,
+			resolveQuitConfirm: () => undefined,
+			onNewShellTerminalShortcut: () => () => undefined,
+			onCloseShellTerminalShortcut: () => () => undefined,
+			setCloseShellTerminalShortcutEnabled: () => undefined,
+			setChatDraftRisk: () => undefined,
+			onOpenSettingsShortcut: () => () => undefined,
+			onPreviousSessionShortcut: () => () => undefined,
+			onNextSessionShortcut: () => () => undefined,
+			onPreviousTabShortcut: () => () => undefined,
+			onNextTabShortcut: () => () => undefined,
+			onShortcut: () => () => undefined,
+		},
+		terminal: {
+			saveDroppedFile: async () => "",
+			setFocused: () => undefined,
+			onFontSizeShortcut: () => () => undefined,
+		},
+		window: {
+			getZoomFactor: async () => 1,
+			onZoomFactor: () => () => undefined,
+			isMaximized: async () => false,
+			onMaximized: () => () => undefined,
+			isFullScreen: async () => false,
+			onFullScreen: () => () => undefined,
+		},
+		theme: {
+			set: async () => undefined,
+			persistTerminal: async () => undefined,
+			setWindowBackground: async () => undefined,
+			setWindowTranslucent: async () => undefined,
+		},
+		menu: {
+			action: async () => undefined,
+			notifyShellFocus: () => undefined,
+		},
+		clipboard: {
+			writeText: async (text: string) => {
+				if (navigator.clipboard?.writeText) {
+					await navigator.clipboard.writeText(text);
+				}
+			},
+			readText: async () => (navigator.clipboard?.readText ? navigator.clipboard.readText() : ""),
+			writeImage: async (bytes: Uint8Array) => {
+				await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([new Uint8Array(bytes)], { type: "image/png" }) })]);
+			},
+		},
+		chatImage: {
+			fetch: async (url: string) => {
+				const response = await fetch(url);
+				if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+				const blob = await response.blob();
+				return { bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: blob.type };
+			},
+			save: async ({ name, bytes }: { name: string; bytes: Uint8Array }) => {
+				const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
+				const link = document.createElement("a");
+				link.href = url;
+				link.download = name;
+				link.click();
+				setTimeout(() => URL.revokeObjectURL(url), 0);
+				return true;
+			},
+		},
+		daemon: {
+			getStatus: async () => ({
+				state: "stopped",
+				message: "Electron preload is not available in browser preview.",
+			}),
+			start: async () => ({ state: "starting" }),
+			stop: async () => ({ state: "stopped" }),
+			restart: async () => ({ state: "starting" }),
+			onStatus: () => () => undefined,
+		},
+		daemonSocket: {
+			open: async () => null,
+			send: () => undefined,
+			close: () => undefined,
+			onEvent: () => () => undefined,
+		},
+		sideChats: { capture: async () => undefined },
+		localPath: {
+			inspect: async () => ({ ok: false, reason: "invalid" }),
+			perform: async () => ({ ok: false, reason: "failed" }),
+		},
+		editorHandoff: {
+			getState: async () => ({
+				targets: [],
+				preferredEditorId: "cursor",
+				workspaceAvailable: false,
+				unavailableReason: "Desktop app is required to open a workspace.",
+			}),
+			open: async () => {
+				throw new Error("Desktop app is required to open a workspace.");
+			},
+			openArtifacts: async () => {
+				throw new Error("Desktop app is required to open artifacts.");
+			},
+			copyWorkspacePath: async () => {
+				throw new Error("Desktop app is required to copy a workspace path.");
+			},
+		},
+		browser: {
+			nativeCompositionEnabled: false,
+			reconnectRuntime: async () => undefined,
+			getRuntimeState: async () => ({ connected: false, connecting: false, rejected: false }),
+			ensure: async (sessionId: string) => ({
+				viewId: `preview:${sessionId}`,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			setBounds: () => undefined,
+			onBoundsApplied: () => () => undefined,
+			setOverlayOpen: () => undefined,
+			navigate: async ({ viewId, url }) => ({
+				viewId,
+				url,
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			historySuggestions: async () => [],
+			historyFavicon: async () => undefined,
+			clear: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			goBack: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			goForward: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			reload: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			stop: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			getFindState: async (viewId: string) => ({
+				viewId,
+				tabId: "t1",
+				query: "",
+				activeMatchOrdinal: 0,
+				matches: 0,
+				finalUpdate: true,
+			}),
+			findInPage: async ({ viewId, query }) => ({
+				viewId,
+				tabId: "t1",
+				query,
+				activeMatchOrdinal: 0,
+				matches: 0,
+				finalUpdate: true,
+			}),
+			stopFindInPage: async ({ viewId }) => ({
+				viewId,
+				tabId: "t1",
+				query: "",
+				activeMatchOrdinal: 0,
+				matches: 0,
+				finalUpdate: true,
+			}),
+			captureScreenshot: async () => {
+				throw new Error("Desktop app is required to take a browser screenshot.");
+			},
+			downloads: {
+				list: async () => ({ downloads: [] }),
+				action: async () => ({ downloads: [] }),
+				clear: async () => ({ downloads: [] }),
+				onChanged: () => () => { /* preview has no native download events */ },
+			},
+			getTabs: async (viewId: string) => ({ viewId, activeTabId: "t1", tabs: [] }),
+			selectTab: async ({ viewId, tabId }) => ({ viewId, activeTabId: tabId, tabs: [] }),
+			closeTab: async ({ viewId }) => ({ viewId, activeTabId: "", tabs: [] }),
+			openTab: async ({ viewId }) => ({ viewId, activeTabId: "", tabs: [] }),
+			getProfile: async (viewId) => ({ viewId, profileId: null, temporary: true }),
+			showProfileMenu: async () => undefined,
+			selectProfile: async () => undefined,
+			notifyPanelUsed: () => undefined,
+			notifyPanelBlur: () => undefined,
+			onFocusLocation: () => () => undefined,
+			onFindOpen: () => () => undefined,
+			onReopenClosedTab: () => () => undefined,
+			onClosePanel: () => () => undefined,
+			devtools: async ({ viewId, operation }) => ({
+				viewId,
+				open: operation !== "close",
+				activeTabId: "",
+			}),
+			destroy: () => undefined,
+			setAnnotationMode: async () => undefined,
+			completeAnnotation: async () => undefined,
+			discardAnnotations: async () => undefined,
+			annotationAction: async () => undefined,
+			onNavState: () => () => undefined,
+			onFindState: () => () => undefined,
+			onPageFocus: () => () => undefined,
+			onTabsState: () => () => undefined,
+			onAgentActivity: () => () => undefined,
+			onRuntimeState: () => () => undefined,
+			onDevToolsState: () => () => undefined,
+			onProfileState: () => () => undefined,
+			onProfileManage: () => () => undefined,
+			onAnnotationSubmit: () => () => undefined,
+			onAnnotationCancel: () => () => undefined,
+			onAnnotationState: () => () => undefined,
+		},
+		browserProfiles: {
+			list: async () => ({ profiles: [], defaultProfileId: null }),
+			create: async (name: string) => {
+				const now = new Date().toISOString();
+				return { id: `preview-${name}`, name, createdAt: now, updatedAt: now };
+			},
+			rename: async ({ id, name }) => {
+				const now = new Date().toISOString();
+				return { id, name, createdAt: now, updatedAt: now };
+			},
+			clear: async () => undefined,
+			usage: async () => ({ sessions: [] }),
+			delete: async () => ({}),
+			setDefault: async () => undefined,
+			discoverImportSources: async () => ({ sources: [] }),
+			import: async () => ({ sourceName: "", entries: [] }),
+			onImportProgress: () => () => undefined,
+		},
+		notifications: {
+			show: async () => undefined,
+			setBadge: async () => undefined,
+			devBounce: async () => undefined,
+			onClick: () => () => undefined,
+			onPlaySound: () => () => undefined,
+			reportSoundFailure: () => undefined,
+		},
+		tray: {
+			setAttentionState: () => undefined,
+			onOpenSession: () => () => undefined,
+		},
+		cliLink: {
+			inspect: async () => ({ ok: false as const, code: "unsupported" as const, message: "The desktop app is required to link the global tallpine command." }),
+			link: async () => ({ ok: false as const, code: "unsupported" as const, message: "The desktop app is required to link the global tallpine command." }),
+			unlink: async () => ({ ok: false as const, code: "unsupported" as const, message: "The desktop app is required to link the global tallpine command." }),
+		},
+		appUpdates: {
+			getStatus: async () => ({ state: "disabled" as const, reason: "unpackaged" as const }),
+			getPreferences: async () => null,
+			setSettings: async () => undefined,
+			check: async () => undefined,
+			install: async () => false,
+			installWhenIdle: async () => false,
+			cancelInstallWhenIdle: async () => undefined,
+			onStatus: () => () => undefined,
+		},
+		uiSettings: {
+			get: async () => ({ ...DEFAULT_UI_SETTINGS }),
+			set: async (settings) => coerceUiSettings({ ...DEFAULT_UI_SETTINGS, ...settings }),
+		},
+		keybindings: {
+			get: async () => ({}),
+			set: async (overrides) => overrides,
+			setRecording: async () => undefined,
+		},
+		// The daemon-served web build has no Electron bridge and so no access to
+		// ~/.tallpine/remotes.json. Reporting no hosts leaves the UI showing local only,
+		// which is the truth there.
+		remotes: {
+			list: async () => [],
+			add: async () => "offline" as const,
+			update: async () => "offline" as const,
+			remove: async () => undefined,
+			connect: async () => { throw new Error("remote hosts need the desktop app"); },
+			disconnect: async () => undefined,
+			certificate: async () => { throw new Error("remote hosts need the desktop app"); },
+			computerName: async () => { throw new Error("remote hosts need the desktop app"); },
+			previewUrl: async (_hostId: string, _sessionId: string, sourceUrl: string) => sourceUrl,
+			resolvePreviewUrl: async (_hostId: string, _sessionId: string, viewedUrl: string) => viewedUrl,
+			agentBrowserUrl: async () => "",
+			externalUrl: async (_hostId: string, url: string) => url,
+		},
+	} satisfies TallpineBridge);

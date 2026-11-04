@@ -1,0 +1,127 @@
+{
+	"expo": {
+		"name": "Tallpine",
+		"slug": "tallpine-mobile",
+		"version": "2.1.0",
+		"orientation": "portrait",
+		"icon": "./assets/icon.png",
+		"userInterfaceStyle": "automatic",
+		"backgroundColor": "#0a0b0d",
+		"scheme": "tallpine-mobile",
+		"updates": {
+			"enabled": false
+		},
+		"ios": {
+			"icon": "./assets/icon.png",
+			"supportsTablet": true,
+			"buildNumber": "11",
+			"bundleIdentifier": "ee.justdev.tallpine.mobile",
+			"config": {
+				"usesNonExemptEncryption": false
+			},
+			"privacyManifests": {
+				"NSPrivacyTracking": false,
+				"NSPrivacyCollectedDataTypes": [
+					{
+						"NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeProductInteraction",
+						"NSPrivacyCollectedDataTypeLinked": false,
+						"NSPrivacyCollectedDataTypeTracking": false,
+						"NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAnalytics"]
+					},
+					{
+						"NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeDeviceID",
+						"NSPrivacyCollectedDataTypeLinked": false,
+						"NSPrivacyCollectedDataTypeTracking": false,
+						"NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+					}
+				]
+			},
+			"infoPlist": {
+				"NSLocalNetworkUsageDescription": "Tallpine connects to the Tallpine app running on your computer over your local network.",
+				"NSPhotoLibraryUsageDescription": "Tallpine uses your photo library so you can attach images to an agent conversation.",
+				"NSAppTransportSecurity": {
+					"NSAllowsLocalNetworking": true
+				},
+				"LSApplicationQueriesSchemes": ["github"]
+			}
+		},
+		"android": {
+			"package": "ee.justdev.tallpine.mobile",
+			"googleServicesFile": "./google-services.json",
+			"adaptiveIcon": {
+				"backgroundImage": "./assets/android-icon-background.png",
+				"foregroundImage": "./assets/android-icon-foreground.png",
+				"monochromeImage": "./assets/android-icon-monochrome.png"
+			},
+			"predictiveBackGestureEnabled": true,
+			"permissions": ["android.permission.CAMERA"],
+			"softwareKeyboardLayoutMode": "resize"
+		},
+		"web": {
+			"favicon": "./assets/favicon.png",
+			"bundler": "metro"
+		},
+		"plugins": [
+			"expo-router",
+			"./plugins/withCircleDashedCheck",
+			"./plugins/withNativeVersion",
+			"./plugins/withReleaseScheme",
+			"expo-web-browser",
+			[
+				"expo-navigation-bar",
+				{
+					"enforceContrast": false
+				}
+			],
+			[
+				"expo-build-properties",
+				{
+					"android": {
+						"usesCleartextTraffic": false
+					}
+				}
+			],
+			[
+				"expo-camera",
+				{
+					"cameraPermission": "Allow Tallpine to scan the pairing QR code.",
+					"recordAudioAndroid": false
+				}
+			],
+			[
+				"expo-image-picker",
+				{
+					"photosPermission": "Allow Tallpine to attach images to agent conversations."
+				}
+			],
+			"expo-document-picker",
+			[
+				"expo-speech-recognition",
+				{
+					"microphonePermission": "Allow Tallpine to use the microphone so you can dictate prompts to an agent.",
+					"speechRecognitionPermission": "Allow Tallpine to transcribe your speech into prompts for an agent."
+				}
+			],
+			[
+				"expo-notifications",
+				{
+					"color": "#4d8dff"
+				}
+			],
+			"expo-secure-store",
+			"expo-status-bar",
+			"expo-font",
+			[
+				"expo-splash-screen",
+				{
+					"image": "./assets/splash-icon.png",
+					"resizeMode": "contain",
+					"backgroundColor": "#0a0b0d"
+				}
+			]
+		],
+		"extra": {
+			"router": {}
+		}
+	}
+}

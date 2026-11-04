@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Electron's V8 needs JIT under the hardened runtime. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<!-- Microphone: the app's own code never records, but terminal panes run
+	     agent CLIs (daemon -> tmux -> shell -> CLI) and macOS attributes their
+	     TCC requests to this hardened-runtime app. Without audio-input a CLI
+	     with voice dictation is denied the mic (VS Code and iTerm2 keep it for
+	     the same reason). Camera, location, bluetooth, usb, print and photos
+	     are dropped: no frontend/src code and no known terminal CLI needs them.
+	     The shell and Browser panel deny every web permission except clipboard
+	     write (main/shell-permissions.ts, browser-view-host/session.ts). -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

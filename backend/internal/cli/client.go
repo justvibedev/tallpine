@@ -1,0 +1,285 @@
+package cli
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"tallpine.eu/tallpine/backend/internal/brand"
+	"tallpine.eu/tallpine/backend/internal/config"
+	"tallpine.eu/tallpine/backend/internal/daemontoken"
+	"tallpine.eu/tallpine/backend/internal/runfile"
+	"tallpine.eu/tallpine/backend/internal/sessiontoken"
+)
+
+// commandTimeout bounds a mutating daemon call. Calls do real work (tmux
+// launch, hook install), so it is generous compared to the status probe
+// timeout. A spawn or a restore runs the project's Setup and has no client
+// timeout (postSetupJSON).
+const commandTimeout = 2 * time.Minute
+
+// maxDrainedBodyBytes bounds how much of an unused response body the CLI
+// discards for keep-alive reuse without an unbounded read.
+const maxDrainedBodyBytes = 4 << 10
+
+// apiError is the subset of the daemon's JSON error envelope the CLI surfaces.
+// RequestID is surfaced so a failed command can be correlated with daemon logs.
+type apiError struct {
+	Message   string         `json:"message"`
+	Code      string         `json:"code"`
+	RequestID string         `json:"requestId"`
+	Details   map[string]any `json:"details,omitempty"`
+}
+
+type apiResponseError struct {
+	StatusCode int
+	ErrorBody  apiError
+}
+
+var errDaemonUnavailable = errors.New(brand.CLIName + " daemon unavailable")
+
+// errDaemonNotRunning distinguishes a missing/stale run file from transport
+// failures so hooks can keep expected restart noise out of the agent's stderr.
+var errDaemonNotRunning = errors.New(brand.CLIName + " daemon is not running")
+
+// daemonUnavailableError keeps the established user-facing diagnostics while
+// giving the few idempotent CLI operations that can safely retry a typed signal.
+// Most commands continue returning this error immediately through doJSON.
+type daemonUnavailableError struct {
+	message string
+	cause   error
+}
+
+func (e daemonUnavailableError) Error() string { return e.message }
+
+func (e daemonUnavailableError) Unwrap() error { return e.cause }
+
+func (e daemonUnavailableError) Is(target error) bool {
+	return target == errDaemonUnavailable || errors.Is(e.cause, target)
+}
+
+// daemonResponseBody marks read failures for retry by idempotent calls. Keeping
+// the marker at the reader boundary leaves JSON syntax and value errors intact.
+type daemonResponseBody struct{ io.ReadCloser }
+
+func (b daemonResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return n, daemonUnavailableError{message: err.Error(), cause: err}
+	}
+	return n, err
+}
+
+func (e apiResponseError) Error() string {
+	if e.ErrorBody.Message == "" {
+		return fmt.Sprintf("daemon returned HTTP %d", e.StatusCode)
+	}
+	return e.ErrorBody.String()
+}
+
+// String renders the envelope for the user: "<message> (<code>) [request <id>]",
+// omitting whichever parts the daemon left empty.
+func (e apiError) String() string {
+	msg := e.Message
+	if e.Code != "" {
+		msg = fmt.Sprintf("%s (%s)", msg, e.Code)
+	}
+	if e.RequestID != "" {
+		msg = fmt.Sprintf("%s [request %s]", msg, e.RequestID)
+	}
+	return msg
+}
+
+// getJSON sends GET /api/v1/<path> to the running daemon and decodes a 2xx
+// response into out. A missing daemon or non-2xx API envelope is rendered the
+// same way as mutating calls.
+func (c *commandContext) getJSON(ctx context.Context, path string, out any) error {
+	return c.doJSON(ctx, http.MethodGet, path, nil, out)
+}
+
+// postJSON sends body as JSON to POST /api/v1/<path> on the running daemon and
+// decodes a 2xx response into out (out may be nil). A non-2xx response becomes
+// an error built from the API error envelope. A missing run-file or a stale one
+// (dead PID) yields a clear "not running" message rather than a
+// connection-refused dump.
+func (c *commandContext) postJSON(ctx context.Context, path string, body, out any) error {
+	return c.doJSON(ctx, http.MethodPost, path, body, out)
+}
+
+// postSetupJSON is postJSON for a call that runs the project's Setup (a spawn,
+// a restore) with no client timeout. The daemon bounds the call by the Setup
+// steps' own time limits, and any client limit would be a ceiling under them:
+// hanging up cancels the call and its Setup. Interrupting the command closes
+// the connection, which cancels it on the daemon.
+func (c *commandContext) postSetupJSON(ctx context.Context, path string, body, out any) error {
+	return c.doJSONPathWithHeadersAndTimeout(ctx, http.MethodPost, "/api/v1/"+path, body, out, nil, 0)
+}
+
+// patchJSON sends body as JSON to PATCH /api/v1/<path> on the running daemon
+// and decodes a 2xx response into out.
+func (c *commandContext) patchJSON(ctx context.Context, path string, body, out any) error {
+	return c.doJSON(ctx, http.MethodPatch, path, body, out)
+}
+
+// putJSON sends body as JSON to PUT /api/v1/<path> on the running daemon and
+// decodes a 2xx response into out.
+func (c *commandContext) putJSON(ctx context.Context, path string, body, out any) error {
+	return c.doJSON(ctx, http.MethodPut, path, body, out)
+}
+
+// deleteJSON sends DELETE /api/v1/<path> to the running daemon and decodes a
+// 2xx response into out.
+func (c *commandContext) deleteJSON(ctx context.Context, path string, out any) error {
+	return c.doJSON(ctx, http.MethodDelete, path, nil, out)
+}
+
+func (c *commandContext) doJSON(ctx context.Context, method, path string, body, out any) error {
+	return c.doJSONPath(ctx, method, "/api/v1/"+path, body, out)
+}
+
+func (c *commandContext) doJSONPath(ctx context.Context, method, path string, body, out any) error {
+	return c.doJSONPathWithHeaders(ctx, method, path, body, out, nil)
+}
+
+func (c *commandContext) doJSONPathWithHeaders(
+	ctx context.Context,
+	method, path string,
+	body, out any,
+	headers map[string]string,
+) error {
+	return c.doJSONPathWithHeadersAndTimeout(ctx, method, path, body, out, headers, commandTimeout)
+}
+
+func (c *commandContext) doJSONPathWithHeadersAndTimeout(
+	ctx context.Context,
+	method, path string,
+	body, out any,
+	headers map[string]string,
+	timeout time.Duration,
+) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	info, err := runfile.Read(cfg.RunFilePath)
+	if err != nil {
+		return err
+	}
+	if info == nil {
+		return daemonUnavailableError{message: brand.ProductName + " daemon is not running — start it with `" + brand.CLIName + " start`", cause: errDaemonNotRunning}
+	}
+	if !c.deps.ProcessAlive(info.PID) {
+		return daemonUnavailableError{message: fmt.Sprintf("%s daemon is not running (stale run-file at %s) — start it with `%s start`", brand.ProductName, cfg.RunFilePath, brand.CLIName), cause: errDaemonNotRunning}
+	}
+
+	var reader io.Reader = http.NoBody
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(payload)
+	}
+	base, client := c.daemonEndpoint(info.Socket, info.Port, timeout)
+	req, err := http.NewRequestWithContext(ctx, method, base+path, reader) // #nosec G704 -- daemon host is the user-only socket or fixed loopback; path is an internal API route.
+	if err != nil {
+		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	setDaemonToken(req, cfg.RunFilePath)
+	if sideID := brand.Getenv("SIDE_CONVERSATION_ID"); sideID != "" {
+		req.Header.Set("X-AO-Side-Conversation", sideID)
+	}
+
+	// daemonEndpoint gives daemon API calls far more headroom than the 2s
+	// status-probe timeout.
+	resp, err := client.Do(req) // #nosec G704 -- request target is the daemon socket or fixed loopback URL above.
+	if err != nil {
+		return daemonUnavailableError{message: fmt.Sprintf("call daemon: %v", err), cause: err}
+	}
+	resp.Body = daemonResponseBody{ReadCloser: resp.Body}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var e apiError
+		_ = json.NewDecoder(resp.Body).Decode(&e)
+		return apiResponseError{StatusCode: resp.StatusCode, ErrorBody: e}
+	}
+	if out == nil {
+		// Explicitly bodyless call (telemetry/activity hooks, fire-and-forget
+		// posts). Drain only a bounded remainder so the connection can be
+		// reused without an unbounded read.
+		_, _ = io.CopyN(io.Discard, resp.Body, maxDrainedBodyBytes)
+		return nil
+	}
+	// A 204 carries no body by contract; a zero-value out is the legitimate
+	// result. Any other 2xx with a required decoded result must carry a
+	// JSON document — an empty body is a broken contract, not success.
+	if resp.StatusCode == http.StatusNoContent {
+		_, _ = io.CopyN(io.Discard, resp.Body, maxDrainedBodyBytes)
+		return nil
+	}
+	// Peek at the first non-whitespace byte before decoding: an empty body
+	// surfaces as io.EOF, but a literal JSON null decodes successfully into
+	// a zero value. Both are a broken contract for a required result, so
+	// both are rejected here rather than silently succeeding.
+	br := bufio.NewReader(resp.Body)
+	for {
+		b, err := br.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return fmt.Errorf("decode response: missing required response body (HTTP %d %s %s): %w", resp.StatusCode, method, path, err)
+			}
+			return fmt.Errorf("decode response: %w", err)
+		}
+		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			continue
+		}
+		if b == 'n' {
+			if rest, err := br.Peek(3); err == nil && string(rest) == "ull" {
+				return fmt.Errorf("decode response: missing required response body (HTTP %d %s %s): null response body", resp.StatusCode, method, path)
+			}
+		}
+		if err := br.UnreadByte(); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+		break
+	}
+	if err := json.NewDecoder(br).Decode(out); err != nil {
+		if errors.Is(err, io.EOF) {
+			return fmt.Errorf("decode response: missing required response body (HTTP %d %s %s): %w", resp.StatusCode, method, path, err)
+		}
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+// setDaemonToken attaches the caller's daemon credential to a loopback daemon
+// request. Inside an agent session, calls to the daemon that launched it carry
+// the session's scoped token (TALLPINE_SESSION_TOKEN), which that daemon authorizes
+// against the agent capability policy; the CLI then never reads the install
+// token file. The token is bound to its issuer's run file
+// (TALLPINE_SESSION_TOKEN_RUN_FILE): a call to any other daemon, and every call
+// outside a session, uses the per-install token from the file next to that
+// daemon's running.json. A missing file sends no header and the daemon answers
+// 401 DAEMON_TOKEN_REQUIRED, which explains where it belongs.
+func setDaemonToken(req *http.Request, runFilePath string) {
+	if token, issuer := sessiontoken.FromEnv(); token != "" && sessiontoken.BoundTo(issuer, runFilePath) {
+		req.Header.Set(daemontoken.Header, token)
+		return
+	}
+	if token, err := daemontoken.Read(daemontoken.Path(runFilePath)); err == nil {
+		req.Header.Set(daemontoken.Header, token)
+	}
+}

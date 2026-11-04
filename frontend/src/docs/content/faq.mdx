@@ -1,0 +1,58 @@
+---
+title: FAQ
+description: Common questions about the current Tallpine desktop product.
+---
+
+<Accordions expandAll>
+	<Accordion title="How is Tallpine different from several agent terminals?">
+		Tallpine adds isolated worktrees, durable session identity, Chat or TUI control, pull-request observation, lifecycle reactions, review runs, notifications, and browser previews around those agents.
+	</Accordion>
+
+	<Accordion title="Do I have to use Claude Code?">
+		No. Tallpine supports Claude Code, Codex, Kiro, and DeepSeek. Chat is available for Claude Code, Codex, and DeepSeek; Kiro is Terminal UI-only. See the [agent capability catalog](/plugins/agents#chat-versus-terminal-ui).
+	</Accordion>
+
+	<Accordion title="Does Tallpine merge pull requests?">
+		Tallpine provides a merge action, but merging is a deliberate user or workflow decision, not an unconditional default. Review code and repository policy before requesting a merge.
+	</Accordion>
+
+	<Accordion title="Which source-control systems are supported?">
+		GitHub and GitLab provide pull-request or merge-request (PR/MR), CI, review, and merge-status data. Issue intake works with either provider when enabled in both daemon and project settings. Tallpine reads issues but does not change them. Linear and old external plugin packages are not supported. See [source-control setup](/plugins/scm).
+	</Accordion>
+
+	<Accordion title="Does Tallpine need webhooks?">
+		The local SCM observation workflow does not require webhooks. GitHub polling uses authentication, ETag guards, and semantic diffing. Live desktop updates come from the daemon's SQLite CDC event stream.
+	</Accordion>
+
+	<Accordion title="Does it work on Windows?">
+		Yes. Windows supports the desktop app, Chat, and native Terminal UI through Tallpine's conpty host. tmux and iTerm2-specific behavior applies only to other platforms.
+	</Accordion>
+
+	<Accordion title="Where does Tallpine store data?">
+		Under `~/.tallpine` by default. Durable daemon state is SQLite under `~/.tallpine/data`; the same Tallpine home also contains the run file, managed worktrees and metadata, Electron data, and mobile configuration. Advanced daemon paths can be overridden with `TALLPINE_DATA_DIR` and `TALLPINE_RUN_FILE`.
+	</Accordion>
+
+	<Accordion title="Can I expose Tallpine on a remote server?">
+		No. Local clients reach the daemon over a Unix socket only your user can open (loopback `127.0.0.1` on Windows); neither is meant to be exposed, and the bind host is not configurable. For a phone, use the separate authenticated HTTPS listener in **Settings → Connections**, on the same Wi-Fi or over Tailscale. See [Connections](/configuration/remote-access).
+	</Accordion>
+
+	<Accordion title="What does Tallpine cost?">
+		Tallpine is Apache-2.0 licensed. Agent usage is billed according to the provider account or subscription used by each installed harness. Chat records usage data when the provider reports it. Cloud is a separately gated service; check the account offering shown in your app rather than assuming the local license includes remote execution or provider credits.
+	</Accordion>
+
+	<Accordion title="Does Tallpine upload my source code?">
+		Local sessions use worktrees on your computer. Your coding agents and source-control tools follow their own data policies. Cloud sessions run remotely and require sharing the project content needed for that work.
+	</Accordion>
+
+	<Accordion title="Can Chat and Terminal UI run at the same time for one session?">
+		No. A session commits to one controller at a time. Compatible Claude Code and Codex sessions can hand off between interfaces, but Tallpine drains or interrupts the old controller before activating the new one.
+	</Accordion>
+
+	<Accordion title="How do I uninstall Tallpine?">
+		On macOS, first open **Settings → Stay Awake → Battery and heat protection** and choose **Revoke authorization…** if you authorized Low Power Mode. Disable Low Power Mode policies in other Tallpine instances first. Tallpine disables its automation, restores Tallpine-owned changes, and asks for administrator approval to remove only `/etc/sudoers.d/tallpine-low-power-<your numeric uid>`. Canceling removal leaves automation disabled and the permission installed; retry before uninstalling. Existing user-owned power preferences are preserved.
+
+		If Tallpine is already removed, cannot open, or the revoke action is unavailable, first confirm all Tallpine-owned power changes are restored, then remove only the account's grant with `sudo rm -f /etc/sudoers.d/tallpine-low-power-$(id -u)` and verify with `sudo visudo -c`. Keep `~/.tallpine` recovery journals until restoration is confirmed. Disabling automation or deleting the app alone does not remove this permission.
+
+		Remove the desktop application using your operating system's normal process. If you also remove `~/.tallpine`, you permanently delete Tallpine's database, session history, managed state, Electron data, and mobile pairing configuration. Inspect and preserve any work you need first. Legacy CLI users can separately run `npm uninstall -g @aoagents/ao`.
+	</Accordion>
+</Accordions>

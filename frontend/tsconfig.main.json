@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./node_modules/.cache/tsc/main",
+		"tsBuildInfoFile": "./node_modules/.cache/tsc/main.tsbuildinfo"
+	},
+	"include": ["src/main.ts", "src/main/**/*.ts", "src/types/**/*.d.ts"],
+	"exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/renderer/test/**"],
+	"references": [{ "path": "./tsconfig.shared.json" }]
+}

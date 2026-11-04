@@ -1,0 +1,28 @@
+{
+	// One program over every frontend project, for `npm run typecheck:fast`
+	// (tsgo, the native TypeScript 7 compiler). Its own build info keeps it from
+	// invalidating `tsc -b`'s cache, which a different compiler version would.
+	// It sees vitest globals in app code, which the `test`-only split rejects;
+	// `npm run typecheck` stays the authoritative check.
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"composite": false,
+		"emitDeclarationOnly": false,
+		"noEmit": true,
+		"incremental": true,
+		"tsBuildInfoFile": "./node_modules/.cache/tsgo/frontend.tsbuildinfo",
+		"types": ["node", "vite/client", "vitest/globals"]
+	},
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.tsx",
+		"src/renderer/**/*.json",
+		"forge.config.ts",
+		"makers/**/*.ts",
+		"vite.main.config.ts",
+		"vite.preload.config.ts",
+		"vite.renderer.config.ts",
+		"playwright.config.ts"
+	],
+	"exclude": ["src/docs"]
+}

@@ -1,0 +1,11 @@
+{
+  "skillOverrides": {
+    "android-cli": "off",
+    "edge-to-edge": "off",
+    "testing-setup": "off",
+    "anthropic-skills:artifact-emulator": "off",
+    "anthropic-skills:built-in-browser": "off",
+    "anthropic-skills:chrome-browser": "off",
+    "anthropic-skills:computer-use": "off"
+  }
+}

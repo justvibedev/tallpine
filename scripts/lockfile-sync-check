@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Fails when any tracked package-lock.json is out of sync with its package.json,
+# i.e. when `npm ci` (as run by scripts/release-local) would fail. No install happens.
+set -u
+root="$(git rev-parse --show-toplevel)"
+rc=0
+while IFS= read -r f; do
+  d="$root/$(dirname "$f")"
+  out="$(cd "$d" && npm ci --dry-run --ignore-scripts --no-audit --no-fund 2>&1)" || { echo "lockfile out of sync: $f"; echo "$out" | grep -E 'Missing|Invalid|error' | head -5; rc=1; }
+done < <(git -C "$root" ls-files '*package-lock.json')
+exit $rc

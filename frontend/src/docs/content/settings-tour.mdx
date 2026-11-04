@@ -1,0 +1,60 @@
+---
+title: Settings and views
+description: A tour of the desktop app's views, Settings sections, project Skills, context-window compaction and usage information.
+---
+
+This page names what you see in the desktop app and points to the guide for each part. The [Dashboard](/dashboard) page covers sessions, Chat, Terminal UI and pull requests.
+
+## Views
+
+| View | What it is for |
+| --- | --- |
+| **Inbox** | The durable notification history. Select a notification to see its details and open the related session or pull request. It shows the same records as the notification bell. See [Notification center](/plugins/notifiers/dashboard). |
+| **Backlog** | Deferred work and run mode. See [Backlog](/backlog). |
+| **Automations** | Recurring work with schedules and run history. See [Lifecycle and automation](/configuration/lifecycle-automation). |
+| **Artifacts** | Files sessions saved as artifacts. Open one to read it, copy it as Markdown, or show it in your file manager. |
+| **Terminals** | Terminal sessions. |
+
+## Settings
+
+Open Settings from the sidebar. The Diagnostics, Side chats and global CLI switches are in **General → Advanced**; the Diagnostics page appears only while its switch is on. The sections are:
+
+| Section | Contents |
+| --- | --- |
+| **General** | **Appearance**, **Sessions** (including the default interface, Chat or Terminal UI), **Updates** and **Advanced**. |
+| **Agents** | Setup and readiness for each agent: install, sign-in and models. See [Agent adapters](/plugins/agents). |
+| **Accounts** | Agent accounts, including Codex device accounts and their usage limits, and account failover. |
+| **Browser** | Browser profiles and downloads for the session browser. |
+| **Connections** | **Phones**: pair the mobile app and manage paired phones. **Other computers**: sessions on other computers. See [Remote access](/configuration/remote-access). |
+| **Storage** | What Tallpine and its agents keep on disk, storage compaction, artifact size, raw-event retention and session retention. |
+| **Shortcuts** | Keyboard shortcuts. |
+| **Diagnostics** | Memory and CPU usage on session cards and the board, and the Diagnostics page. Shown only when the Diagnostics switch is on. |
+| **Help** | **Report a problem**. |
+
+Project-level settings are separate: open a project's settings from its sidebar row. See [Projects](/configuration/projects).
+
+## Project skills
+
+**Project Settings → Skills** lists the skills available to the project's agents, grouped as **In this project** and **From your account**. Each skill shows whether the project's agent can use it:
+
+| Status | Meaning |
+| --- | --- |
+| sees it | The agent has the skill. |
+| can't see it | The agent will not find it. |
+| uses a same-name skill | A different skill with the same name wins. |
+| not verified | Tallpine could not confirm it. |
+
+When a skill is missing for an agent, the session shows a notice naming the skills that agent can't see. **Project instructions** shows whether each of the project's agents finds its instruction file: `CLAUDE.md` for Claude Code, `AGENTS.md` for Codex (the two harnesses it checks).
+
+## Context window and compaction
+
+A Chat session's context meter shows how full the model's context window is. Click it for details: the **Model**, the **Window**, how much is **Used**, where the agent **Compacts at**, how much is **Left until compaction**, and when the conversation was **Last compacted**. A compaction in progress shows **Compacting…**.
+
+The **Auto-compact** control in the agent controls sets when Claude Code compacts the conversation on its own. Choose **Auto** (the agent's default), a percentage of the window, or a **Custom %**. It is not supported for Codex chats. The stored setting is `autoCompactWindow` in the agent configuration: a size such as `200k` or `1m`, or a percentage such as `70%`.
+
+## Usage
+
+- `tallpine session usage [id]` prints a session's cumulative token usage by model. See the [CLI reference](/cli#tallpine-session).
+- `tallpine session top` shows the memory each live session uses, largest first.
+- Under **Accounts**, Codex accounts show their **Usage limit** and whether capacity is available, near its limit or exhausted. Usage information can be out of date until it is checked again.
+- When a Chat session reaches a provider limit, the session shows **Usage limit reached**.

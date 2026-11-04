@@ -1,0 +1,25 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'ee.justdev.tallpine'
+version = '1.0.0'
+
+expoModule {
+  v2 true
+}
+
+android {
+  namespace "ee.justdev.tallpine.pinning"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+    consumerProguardFiles 'consumer-rules.pro'
+  }
+}
+
+dependencies {
+  // RN's network stack: OkHttpClientProvider carries both fetch and WebSocket.
+  implementation 'com.facebook.react:react-android'
+}

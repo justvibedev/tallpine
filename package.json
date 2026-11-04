@@ -1,0 +1,25 @@
+{
+	"name": "tallpine",
+	"private": true,
+	"scripts": {
+		"lint": "cd backend && ../scripts/go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run --allow-parallel-runners --path-mode=abs",
+		"test:go": "cd backend && ../scripts/go test -count=1 ./...",
+		"verify": "scripts/verify --full",
+		"verify:fast": "scripts/verify --changed",
+		"frontend:typecheck": "npm --prefix frontend run typecheck",
+		"frontend:typecheck:fast": "npm --prefix frontend run typecheck:fast",
+		"product-ui:check": "npm --prefix packages/product-ui run typecheck && npm --prefix packages/product-ui test && npm --prefix packages/product-ui run build",
+		"shared:check": "npm --prefix packages/shared run typecheck && npm --prefix packages/shared test && npm run product-ui:check",
+		"migration:create": "node scripts/create-migration.mjs",
+		"sqlc": "cd backend && ../scripts/go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate",
+		"api:spec": "cd backend && PATH=\"$PWD/../scripts/bin:$PATH\" go generate ./internal/httpd/apispec/...",
+		"api:ts": "openapi-typescript backend/internal/httpd/apispec/openapi.yaml -o packages/shared/api/schema.ts",
+		"api": "npm run api:spec && npm run api:ts"
+	},
+	"devDependencies": {
+		"openapi-typescript": "7.4.4"
+	},
+	"overrides": {
+		"js-yaml": "^4.3.2"
+	}
+}

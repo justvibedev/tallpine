@@ -1,0 +1,23 @@
+{
+	// The vitest suite (~45% of the frontend's TypeScript). It reads the app
+	// projects' declarations, so a test-only edit never re-checks app code and an
+	// app edit re-checks only the tests that see a changed declaration.
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./node_modules/.cache/tsc/test",
+		"tsBuildInfoFile": "./node_modules/.cache/tsc/test.tsbuildinfo",
+		"types": ["node", "vite/client", "vitest/globals"]
+	},
+	"include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.test.*.ts", "src/**/*.test.*.tsx", "src/renderer/test/**/*.ts", "src/renderer/test/**/*.tsx",
+		// Ambient declarations are not emitted, so the projects that rely on them list them directly.
+		"src/renderer/**/*.d.ts",
+		"src/types/**/*.d.ts"
+	],
+	"exclude": ["src/docs"],
+	"references": [
+		{ "path": "./tsconfig.shared.json" },
+		{ "path": "./tsconfig.main.json" },
+		{ "path": "./tsconfig.preload.json" },
+		{ "path": "./tsconfig.renderer.json" }
+	]
+}

@@ -1,0 +1,150 @@
+---
+title: Architecture
+description: How the Go daemon, Electron app, storage, controllers, and adapters fit together.
+---
+
+Tallpine is a local, single-user system built around a long-running Go daemon. The Electron/React desktop app, the optional CLI and agent hooks connect to it over HTTP, server-sent events (SSE) and terminal streams carried on a Unix socket that only your user can open (loopback TCP on Windows). The opt-in Expo mobile app connects through a separate HTTPS gateway.
+
+<Callout type="info">
+	This page is a technical reference for contributors and users who want to understand Tallpine internals. For everyday controls and workflows, start with the [Dashboard guide](/dashboard).
+</Callout>
+
+## System overview
+
+<figure className="not-prose my-6">
+<svg viewBox="0 0 760 330" role="img" aria-labelledby="arch-svg-title" style={{ width: "100%", height: "auto", color: "currentColor", fontFamily: "inherit" }}>
+<title id="arch-svg-title">Desktop app, CLI and hooks reach the daemon over a user-only Unix socket. The daemon keeps SQLite under ~/.tallpine and runs agents in Git worktrees. The phone uses a separate HTTPS gateway.</title>
+<defs><marker id="arch-ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="currentColor" /></marker></defs>
+<g fill="none" stroke="currentColor" strokeWidth="1.2">
+<rect x="10" y="10" width="740" height="250" rx="12" strokeOpacity="0.35" />
+<rect x="30" y="50" width="150" height="40" rx="7" />
+<rect x="30" y="105" width="150" height="40" rx="7" />
+<rect x="30" y="160" width="150" height="40" rx="7" />
+<rect x="290" y="70" width="180" height="110" rx="9" strokeWidth="2" />
+<rect x="570" y="40" width="160" height="40" rx="7" />
+<rect x="570" y="95" width="160" height="40" rx="7" />
+<rect x="570" y="150" width="160" height="40" rx="7" />
+<rect x="290" y="205" width="180" height="40" rx="7" strokeDasharray="4 3" />
+<rect x="570" y="275" width="160" height="40" rx="7" strokeDasharray="4 3" />
+<path d="M180 70L288 115M180 125L288 125M180 180L288 135" markerEnd="url(#arch-ah)" />
+<path d="M470 110L568 60M470 120L568 115M470 135L568 170" markerEnd="url(#arch-ah)" />
+<path d="M380 180L380 203" />
+<path d="M470 225L650 225L650 273" markerEnd="url(#arch-ah)" strokeDasharray="4 3" />
+</g>
+<g fill="currentColor" fontSize="13" textAnchor="middle">
+<text x="70" y="32" fontWeight="600" textAnchor="start" fontSize="12">Your Mac</text>
+<text x="105" y="75">Desktop app</text>
+<text x="105" y="130">tallpine CLI</text>
+<text x="105" y="185">Agent hooks</text>
+<text x="235" y="44" fontSize="11" fillOpacity="0.75">Unix socket</text>
+<text x="235" y="58" fontSize="11" fillOpacity="0.75">(your user only)</text>
+<text x="380" y="105" fontWeight="600">Tallpine daemon</text>
+<text x="380" y="128" fontSize="11" fillOpacity="0.75">SQLite in ~/.tallpine/data</text>
+<text x="380" y="146" fontSize="11" fillOpacity="0.75">policy, lifecycle, SCM</text>
+<text x="650" y="65">Agent in worktree</text>
+<text x="650" y="120">Agent in worktree</text>
+<text x="650" y="175">Agent in worktree</text>
+<text x="380" y="230" fontSize="12">Phone gateway (opt-in)</text>
+<text x="650" y="300" fontSize="12">Phone</text>
+<text x="560" y="245" fontSize="11" fillOpacity="0.75">HTTPS, pinned certificate</text>
+</g>
+</svg>
+</figure>
+
+```text
+desktop app ─┐
+tallpine CLI ┼─ Unix socket ─> Go daemon ─> services ─> SQLite
+agent hooks ─┘                  │   ├─> SSE events, terminal mux
+phone (opt-in) ─ HTTPS ─────────┘   ├─> agent, runtime and worktree adapters
+                                    └─> GitHub/GitLab observer
+```
+
+The desktop app finds, starts, and supervises the daemon. Its renderer uses a generated typed client to call the API. The CLI is also an HTTP client; it does not open SQLite or launch agent adapters directly. The daemon advertises its socket in the run file (`running.json`), and clients find it there.
+
+## Sessions and worktrees
+
+Workers in Git projects use isolated worktrees. A workspace can include its root repository and child repositories. Scratch and standalone sessions use Tallpine-managed directories. Each session uses one agent interface at a time:
+
+- **Terminal UI** runs the harness in a detached native pseudo-terminal (PTY) host on macOS/Linux. Older sessions and fallback launches can use tmux. Windows uses ConPTY.
+- **Chat** runs a native provider controller without an agent terminal runtime.
+
+Tallpine saves Chat conversation history, including provider identity, messages, activities, approvals, structured input, usage, compaction, and rollback state.
+
+Compatible Claude Code and Codex sessions can move the same provider conversation between Terminal UI and Chat. Tallpine finishes or interrupts the old controller before starting the replacement, so both controllers are never active at once. The session and worktree stay the same.
+
+## Saved facts and derived status
+
+<span id="durable-facts-derived-status" />
+
+Tallpine saves session facts and derives the status shown in the app when it reads a session. Saved facts include:
+
+- Agent activity: active, idle, waiting for input, blocked, or exited.
+- Whether the session has been terminated.
+- The current interface mode, controller handle, and generation.
+- Interface-transition checkpoints and queued messages.
+- Pull request, check, and review-comment facts.
+
+The service layer combines these facts to show labels such as working, needs input, CI failed, or ready to merge. This keeps a displayed status tied to the underlying activity and pull-request data.
+
+Failed or unknown runtime probes are observations, not proof of death. Cleanup also refuses to force-delete a dirty registered worktree.
+
+## Storage and live updates
+
+Tallpine stores local data in SQLite under `~/.tallpine/data` by default. Database triggers append changes to `change_log`. A background poller reads that log and tells in-process subscribers and `GET /api/v1/events` which data to refresh.
+
+The event stream supports replay with `Last-Event-ID`. Clients use it to invalidate targeted queries rather than transferring every full session or Chat payload on each update.
+
+All application state stays under `~/.tallpine`, including the run file, managed worktrees, Electron data, and mobile configuration. `TALLPINE_DATA_DIR` and `TALLPINE_RUN_FILE` override the daemon's data and discovery paths.
+
+## Services and adapters
+
+HTTP controllers validate requests and call domain services. Services decide how data is read and changed. Session and lifecycle managers coordinate multi-step work. External systems connect through Go interfaces and adapters.
+
+Adapters currently support more than twenty agent harnesses, native PTY and ConPTY hosts, tmux for older sessions and fallback launches, Git worktrees, native Chat drivers, and GitHub/GitLab source-control observation. Tallpine uses the provider binaries and sign-ins already installed on the machine.
+
+Issue intake from GitHub or GitLab requires opt-in in both daemon and project settings. Tallpine reads issues but does not change them. Recurring Automations run through a local scheduler. Project Cues save reusable prompts or commands. These features are separate from repository lifecycle reactions.
+
+## Pull requests and lifecycle reactions
+
+The source-control observer connects to GitHub and GitLab. GitHub authentication happens only when needed. Tallpine uses HTTP ETags to avoid fetching unchanged data and compares changed pull-request details before updating SQLite. The observer notifies lifecycle logic when CI fails, a review requests changes, or a merge conflict appears.
+
+The daemon also exposes pull-request merge and comment-resolution actions plus reviewer-agent routes. Desktop clients receive concise summaries rather than raw CI logs or complete review bodies.
+
+## Network boundaries
+
+{/* B176 */}The desktop app, the CLI and agent hooks reach the daemon over a Unix socket, `sock/daemon.sock` next to the run file (`running.json`) under `~/.tallpine`; on macOS and Linux no TCP port is open for local clients. The socket directory is mode `0700` and must be owned by you, the socket is mode `0600`, and the daemon checks the peer user id of every connection and closes any that is not yours. If the check cannot run, the connection is refused. On Windows, and on Unix systems where the daemon cannot check peer credentials, there is no socket and local clients use loopback TCP `127.0.0.1:3101` instead, protected by a per-install token.
+
+The phone gateway is a second listener that exists only after you turn on the phone connection in **Settings → Connections**. It serves HTTPS with a self-signed certificate that the phone pins when it pairs, and refuses plain HTTP from the network. Pairing uses a one-time code; each phone gets its own credential and can be unpaired on its own. Phones reach it on the same Wi-Fi or over your Tailscale network. The gateway serves the mobile app API and terminal connection, not shutdown, mobile-control or browser-control routes. Only `GET /api/v1/identity` is public; the phone uses it to check the computer and app version before pairing.
+
+An optional Cloudflare quick tunnel (`trycloudflare.com`) can expose the gateway to the internet. It is a separate opt-in and off by default. Cloudflare terminates TLS for it and can read that traffic. See [Connections](/configuration/remote-access).
+
+## Terminal and browser bridges
+
+`/mux` lets clients connect to a terminal. Terminal UI sessions attach to the agent runtime. Chat sessions can use a separate shell in the worktree.
+
+Browser automation uses a local connection between the daemon and Electron. The daemon authorizes and matches commands to results. Electron displays each session's browser in an isolated `WebContentsView`. The mobile listener cannot control the browser.
+
+The temporary browser profile is isolated per session. Named profiles save cookies and storage and can be reused across sessions. Sessions using the same named profile share its browser state. Tallpine copies imported browser data into Tallpine-owned storage and does not change the source profile.
+
+The architecture above describes local sessions. Cloud execution is a separate gated integration requiring build enablement, account access, and a reachable control plane. Standalone local workers are projectless; they are not Cloud sessions.
+
+## Load-bearing rules
+
+1. Never store display status; derive it from durable facts.
+2. Never treat failed probes as proof that a session died.
+3. Never force-delete dirty worktrees.
+4. Keep all app state under `~/.tallpine` unless an explicit supported override applies.
+5. Local clients use the user-only Unix socket (loopback TCP only where no peer-credential check exists); only the phone connection may open the authenticated opt-in network listener.
+6. Keep the CLI and UI thin; domain logic belongs in the daemon.
+7. Emit change events through SQLite triggers and the background poller.
+8. Add new migrations; never modify an already-merged migration.
+
+<span id="next" />
+
+## Next steps
+
+<Cards>
+	<Card title="Dashboard" href="/dashboard" description="See how these capabilities appear in the desktop app." />
+	<Card title="Platforms" href="/platforms" description="Understand desktop and mobile platform behavior." />
+	<Card title="Troubleshooting" href="/troubleshooting" description="Diagnose daemon, controller, terminal, and SCM problems." />
+</Cards>

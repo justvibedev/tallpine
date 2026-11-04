@@ -1,0 +1,114 @@
+---
+title: Configuration
+description: Configure projects, agents, session interfaces, and local daemon behavior in current Tallpine.
+---
+
+Tallpine keeps its durable state under `~/.tallpine`. The daemon stores projects, sessions, pull-request facts, notifications, and typed project configuration in SQLite under `~/.tallpine/data`; `~/.tallpine/running.json` lets the desktop app and CLI find the running daemon.
+
+The desktop app is the normal place to add projects and change settings. The CLI talks to the same daemon API when you need a scriptable path.
+
+## Add a project
+
+In the desktop app, choose **Add project** and select a local repository. From the CLI:
+
+```bash
+tallpine project add --path /absolute/path/to/repo
+```
+
+To set the default agents while registering the project:
+
+```bash
+tallpine project add --path /absolute/path/to/repo \
+  --worker-agent codex \
+  --orchestrator-agent claude-code
+```
+
+Tallpine also supports workspace projects, which contain a root repository and direct child repositories:
+
+```bash
+tallpine project add --path /absolute/path/to/workspace --as-workspace
+```
+
+Standalone workers support projectless work: `tallpine spawn --standalone --agent codex --name notes`. Existing Scratch projects also use Tallpine-managed directories without branches or PR claims.
+
+## Inspect and update configuration
+
+```bash
+tallpine project ls
+tallpine project get <project-id>
+```
+
+Use Project Settings in the desktop app for interactive changes. The CLI's `set-config` focused flags merge into the existing project config, while `--config-json` replaces the entire config. Before using `--config-json`, read [the CLI update warning](/configuration/projects#update-from-the-cli). It ignores unknown JSON keys and drops existing effort values; use Project Settings or the daemon API to view or change effort.
+
+Project configuration has typed fields for the base branch, session prefix, environment variables, symlinks, setup commands, worker and orchestrator agents, agent options, project rules, reviewers, automatic review, trusted repository URLs, issue intake, and container cleanup. The daemon API rejects unknown fields. The CLI's `--config-json` decoder ignores unknown keys, so a typo can clear existing settings when the full config is replaced.
+
+### Orchestrator context window
+
+An orchestrator compacts early (`orchestrator.autoCompactWindow`, 120k by default), so plain coordination stays cheap. When the orchestrator decides a task needs it to examine a large codebase itself, it runs `tallpine orchestrator research on`, which raises its compaction window to `orchestrator.researchCompactWindow` (250k by default; a size from 50k to 1m or a percent of the model window). Research mode ends when the orchestrator runs `research off`, when an idle compaction or handoff runs, or after an hour without a turn. It needs a Claude Code orchestrator, which can change its window while it runs, and it never overrides a window chosen for that chat. Idle compaction is still sized from the coordination window.
+
+Turn the feature off for every orchestrator with **Dynamic orchestrator context** in Settings (on by default; turning it off ends running research modes), or for one project with `tallpine project set-config <project> --orchestrator-research-window off`.
+
+See [Projects](/configuration/projects) for the current field reference.
+
+## Daemon environment
+
+{/* B176 */}Local clients reach the daemon over a Unix socket only your user can open; on macOS and Linux no TCP port is open for local clients. On Windows, and on Unix systems where the daemon cannot check peer credentials, there is no socket and local clients use loopback TCP `127.0.0.1:3101` instead. The loopback bind host is not configurable. Useful environment variables include:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TALLPINE_PORT` | `3101` | REST, events, terminal mux, health, and control port |
+| `TALLPINE_DATA_DIR` | `~/.tallpine/data` | Durable daemon data |
+| `TALLPINE_RUN_FILE` | `~/.tallpine/running.json` | Daemon discovery file |
+| `TALLPINE_REQUEST_TIMEOUT` | `60s` | REST request timeout |
+| `TALLPINE_SPAWN_TIMEOUT` | `TALLPINE_REQUEST_TIMEOUT` | Base budget for spawn, orchestrator start and restore requests; raise it if spawns fail with `SPAWN_TIMEOUT` under load |
+| `TALLPINE_TMUX_COMMAND_TIMEOUT` | `5s` | Per-command timeout for tmux calls (session creation and input) |
+| `TALLPINE_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown deadline. It also scales how long a starting daemon waits for a previous daemon to release the data directory (9 × this + 18 s) |
+| `TALLPINE_ARTIFACT_VERSIONS_KEEP` | `20` | Versions kept per session artifact file (1-1000). Older versions and their blobs are removed, including at daemon start for history recorded under a larger cap. `venv`, `.venv`, `node_modules`, `.git` and `__pycache__` are never listed or versioned |
+| `TALLPINE_ARTIFACT_SIZE_WARN_MB` | `1024` | Per-session artifact size (MB) at which Settings > Storage > Session artifacts flags a session as large. The same view can archive or delete the artifacts of sessions finished longer ago than a chosen window, only after you select sessions and confirm. Automatic cleanup (below) never removes deliverables without confirmation unless you opt in |
+| `TALLPINE_SESSION_GRADLE_HOME` | `on` | Gives each project's sessions their own `GRADLE_USER_HOME` under `<data dir>/caches/gradle/<project>`, with your `~/.gradle/gradle.properties` and init scripts linked in, so Gradle caches agents create can be removed with the project. `off` leaves Gradle's default home. A `GRADLE_USER_HOME` set in the project's env, or inherited by the daemon, always wins. Separately, every session gets a private `TMPDIR` (also `TMP`/`TEMP`) at `<data dir>/tmp/<session-id>`, discarded when the session ends, unless the project's env sets one |
+| `TALLPINE_ACCOUNT_PLACEMENT` | `default` | Overrides the Settings, Accounts, Account pool choice (and locks it). How a new session without a chosen account picks one of its harness's signed-in accounts: `default` (the harness's default account, as always), `random`, `most-headroom` (furthest from its fullest usage window) or `least-used` (fewest tokens through Tallpine in the last day). Accounts at a limit or signed out are skipped; with no eligible account the default is used. Works with personal subscriptions, org seats and API keys. Rotating several personal subscriptions to avoid usage limits may conflict with the provider's terms; for teams, prefer org seats or API keys |
+| `TALLPINE_ACCOUNT_FAILOVER` | `off` | Overrides the Settings, Accounts, Account pool switch (and locks it). When a session's account hits a usage limit and you armed auto-resume for that turn, move the session to another signed-in account of the same harness that has headroom and retry there, instead of waiting for the reset. Needs two or more accounts; a session moves at most once per 30 minutes. With no account showing headroom, or on any failed read or refused move, the turn waits for the reset as before. The same provider-terms note as `TALLPINE_ACCOUNT_PLACEMENT` applies |
+| `TALLPINE_ALLOWED_ORIGINS` | packaged desktop origin | Additional trusted browser origins |
+| `TALLPINE_TRACKER_INTAKE` | `off` | Enables the issue-intake observer; a project's own `trackerIntake` cannot enable it alone |
+| `TALLPINE_BACKLOG_RUN` | `on` | Backlog run mode ("finish the backlog"): the Run button, the run card and `tallpine backlog run`. Set `off` to hide and refuse all of it. See [Backlog](/backlog#run-mode) |
+| `TALLPINE_REVIEW_PASS_DEADLINE` | `45m` | How long a Tallpine review pass may run without submitting a result before it fails. Minimum `10m`, or `off`. See [Review loop](/guides/review-loop#deadlines-and-failures) |
+| `TALLPINE_REVIEW_IDLE_GRACE` | `10m` | How long a terminal reviewer may sit idle with a pass running before the pass fails. Minimum `1m`, or `off` |
+| `TALLPINE_WORKER_IDLE_NUDGE` | `10m` | How long a silent idle worker waits before it is reminded to run `tallpine report`. Minimum `1m`, or `off`. See [Reports](/guides/reports#automatic-reports) |
+
+Do not set `HOST=0.0.0.0` or proxy the primary daemon to a network. For phone access, use the separate authenticated listener created in **Settings → Connections**. See [Connections](/configuration/remote-access).
+
+## Chat and Terminal UI defaults
+
+Every session commits to one interface at a time:
+
+- **Chat** uses a structured, runtime-less provider controller with durable messages, activities, approvals, and usage.
+- **Terminal UI** runs the agent's native terminal interface through Tallpine's terminal runtime.
+
+Choose the default for new sessions in **Settings → General**. A choice made for a specific task takes precedence. If a requested interface is unavailable, Tallpine uses Terminal UI as its compatibility fallback.
+
+Project `agentConfig.mode` selects a provider execution mode. It does not select Chat or Terminal UI. Choose the interface in the new-session flow or with `tallpine spawn --mode chat|tui`. Compatible Claude Code and Codex sessions can switch interfaces without changing the Tallpine session or worktree.
+
+Manage recurring tasks in **Automations**, reusable project actions in **Cues**, installed provider readiness in **Settings → Harness**, and persistent profiles/imports in **Settings → Browser**. These features have their own settings/resources rather than legacy YAML keys.
+
+<Cards>
+	<Card title="Projects" href="/configuration/projects" description="Configure one project and its session roles." />
+	<Card title="Automation reference" href="/configuration/lifecycle-automation" description="Understand built-in CI, review, and merge-conflict handling." />
+	<Card title="Remote access" href="/configuration/remote-access" description="Pair the native mobile app safely." />
+</Cards>
+
+## Automatic cleanup
+
+The daemon removes what ended sessions leave behind, so you do not have to clean up after agents. A light pass runs hourly and a full pass daily, at low priority, one item at a time. The first scheduled pass after cleanup arrives is a dry run: it only reports what later passes would remove (`tallpine cleanup status`). By default, scheduled passes only remove what is regenerable or already safe elsewhere; anything under artifacts waits for your confirmation. Run one yourself with `tallpine cleanup` (it previews and asks first; `--dry-run` only reports). `tallpine cleanup status` shows the policy, the last run and what it freed; `tallpine cleanup history` lists past runs.
+
+| Category | What goes | What is always kept |
+| --- | --- | --- |
+| Worktrees (light and full pass) | The worktree of a session terminated more than `worktrees.retentionDays` ago (default 7) whose work is merged or pushed elsewhere (`worktrees.requireMerged`, default on) | Uncommitted or untracked changes, a rebase/merge/cherry-pick in progress, stashes on its branch, commits no other branch, remote branch or tag contains (including a detached HEAD), a worktree a live session uses, one whose status cannot be read, and anything outside `<data dir>/worktrees`. Every repo of a multi-repo workspace session is checked, and the checks run again right before removal. Note that gitignored files (a `.env`, a local database) are not changes: they go with a worktree that is otherwise safe to remove |
+| Artifacts (full pass) | For sessions that ended more than `artifacts.retentionDays` ago (default 30), once you confirm with `tallpine cleanup --confirm-artifacts`: version history and tool dirs (`node_modules`, virtual environments, `__pycache__`), and deliverable files, archived (or deleted if `artifacts.deliverableAction` is `delete`) | Everything, until you confirm. `artifacts.autoPrune` and `artifacts.autoDeliverables` opt into removing them on the schedule. The session is re-read right before removal, so one restored meanwhile keeps everything |
+| Session temp dirs (light and full pass) | `<data dir>/tmp/<session-id>` of a session that ended over an hour ago (each session's `TMPDIR`; normally discarded when it ends), and discarded ones waiting in `<data dir>/tmp/.trash` | A live session's temp dir, and one whose session was restored meanwhile |
+| Harness caches (full pass) | A project's Gradle home under `<data dir>/caches/gradle/` once the project has had no live session for `harnessCaches.retentionDays` (default 14) | Caches of projects with a live session. Linked `gradle.properties` and init scripts in `~/.gradle` are never followed |
+| System temp leftovers (full pass, off by default) | Top-level entries in the system temp dir matching `systemTemp.patterns` (default `tallpine-*`; add your own leftovers, such as `release-check.*`), owned by you throughout and untouched for `systemTemp.minAgeDays` (default 3). While off, runs only report them | Symlinks, anything modified recently or not readable anywhere inside, anything a process has open, and the data directory |
+| Go build cache (full pass, off by default) | Files in the user-wide Go build cache (`GOCACHE`, default `~/Library/Caches/go-build`) not used for 2 days, only in a directory carrying Go's own README marker. Enable with `goBuildCache.enabled`; while off, runs only report them | Entries used in the last 2 days, Go's README and `trim.txt`, any directory without the marker |
+| Branches (full pass, off by default) | While off, runs only report what they would delete. Once on: local `tp/` branches of terminated worker sessions: merged ones (tip in another branch the server confirms, or the head of the session's merged PR; another local branch alone doesn't count) after `branches.mergedRetentionDays` (default 7), and unmerged ones whose every commit is on a remote branch the server confirms after `branches.staleRetentionDays` (default 30). With `branches.deleteRemote` on (off by default), also the remote branch of a merged PR | A branch with commits that exist nowhere else, one checked out in a worktree, one whose session has preserved uncommitted work (`refs/tallpine/preserved/<id>`), branches of live sessions, a branch another live session uses as its branch or base, all branches of a project while a session is starting in it (each re-checked right before deletion), and any branch Tallpine cannot attribute to a session. Deletions run while no session of the project can restore or spawn. A deletion only succeeds while the branch is still at the judged commit, and a remote one only while it is at the PR's head |
+| Docker (light and full pass, off by default) | While off, runs only report what they would remove. Once on: containers labeled `tallpine.session=<id>` of a session that ended over 10 minutes ago (normally reaped when it ends), and labeled volumes after `containers.volumeRetentionDays` (default 7) | Anything labeled `tallpine.spare=true`, anything of a project with `containerReap.disabled`, live sessions' resources (re-checked right before removal), and resources of sessions this install does not know |
+
+Live sessions are never touched. Change the policy with `tallpine cleanup policy --set key=value`, for example `tallpine cleanup policy --set automatic=false` to stop the scheduled passes.

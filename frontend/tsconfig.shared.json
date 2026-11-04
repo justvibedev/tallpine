@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./node_modules/.cache/tsc/shared",
+		"tsBuildInfoFile": "./node_modules/.cache/tsc/shared.tsbuildinfo"
+	},
+	"include": ["src/shared/**/*.ts", "src/shared/managed-keys.json", "src/api/**/*.ts", "../packages/shared/**/*.ts"],
+	"exclude": ["../packages/shared/**/*.test.ts", "../packages/shared/vitest.config.ts", "src/**/*.test.ts", "src/**/*.test.tsx", "src/renderer/test/**"],
+	"references": []
+}

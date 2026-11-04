@@ -1,0 +1,427 @@
+import "@testing-library/jest-dom/vitest";
+import * as jestDomMatchers from "@testing-library/jest-dom/matchers";
+import { configure } from "@testing-library/react";
+import { beforeEach, expect } from "vitest";
+import { appI18n } from "../i18n";
+import { appCatalogs } from "../i18n/all-messages";
+import { coerceUiSettings, DEFAULT_UI_SETTINGS } from "../../shared/ui-locale";
+import "./setup.node";
+
+// Testing Library's findBy*/waitFor default to 1000ms. The first render of a
+// heavy component pays for cold module transforms and lazy chunks, which under
+// a loaded machine (parallel workers, other CI jobs) takes longer than that and
+// produced the "Unable to find ..." flakes of B216. The timeout is only a
+// ceiling: a ready UI still resolves on the first poll. Stay below testTimeout.
+configure({ asyncUtilTimeout: 10_000 });
+
+// The app loads non-English catalogs on demand. Component tests read other
+// locales synchronously (getFixedT, t after changeLanguage), so give the shared
+// instance every catalog up front. instance.test.ts covers the lazy path.
+for (const [locale, catalog] of Object.entries(appCatalogs)) {
+	appI18n.addResourceBundle(locale, "translation", catalog, true, true);
+}
+import { appShortcutBus } from "./app-shortcut-bus";
+import { chatScrollMemory } from "../components/chat/useChatScrollMemory";
+
+// Scroll positions are remembered per session id across mounts; tests reuse ids.
+beforeEach(() => chatScrollMemory.clear());
+
+// Vitest 4 can load the convenience entry against a different matcher
+// instance. Register the matchers on the active test runtime as well.
+expect.extend(jestDomMatchers);
+
+// Guard: src/main/** tests run in the Node.js environment (no DOM). vitest still
+// routes setupFiles here, so only install the DOM stubs when a DOM exists.
+// ponytail: single guard; node env has no DOM to stub.
+if (typeof window !== "undefined") {
+	const emptyRect = () => ({
+		bottom: 0,
+		height: 0,
+		left: 0,
+		right: 0,
+		top: 0,
+		width: 0,
+		x: 0,
+		y: 0,
+		toJSON: () => ({}),
+	});
+
+	// JSDOM does not implement the selection geometry rich text editors use to
+	// keep the caret visible. Lexical only reads these values; zero geometry is
+	// sufficient for component tests.
+	if (!Range.prototype.getBoundingClientRect) {
+		Range.prototype.getBoundingClientRect = emptyRect;
+	}
+	if (!Range.prototype.getClientRects) {
+		Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+	}
+	if (!(Text.prototype as Text & { getBoundingClientRect?: () => DOMRect }).getBoundingClientRect) {
+		Object.defineProperty(Text.prototype, "getBoundingClientRect", {
+			configurable: true,
+			value: emptyRect,
+		});
+	}
+	if (typeof globalThis.ClipboardEvent === "undefined") {
+		Object.defineProperty(globalThis, "ClipboardEvent", {
+			configurable: true,
+			value: class ClipboardEventStub extends Event {},
+		});
+	}
+
+	class ResizeObserverStub {
+		observe() {}
+		unobserve() {}
+		disconnect() {}
+	}
+
+	Object.defineProperty(window, "ResizeObserver", {
+		configurable: true,
+		writable: true,
+		value: ResizeObserverStub,
+	});
+
+	// jsdom has no Web Animations API. Components that animate from a
+	// requestAnimationFrame callback (the file tree's expand slide) would
+	// otherwise throw after their test has already passed.
+	if (typeof HTMLElement.prototype.animate !== "function") {
+		Object.defineProperty(HTMLElement.prototype, "animate", {
+			configurable: true,
+			writable: true,
+			value: () => ({ cancel() {}, finish() {}, addEventListener() {}, removeEventListener() {}, finished: Promise.resolve() }),
+		});
+	}
+
+	Object.defineProperty(window, "matchMedia", {
+		configurable: true,
+		writable: true,
+		value: (query: string) => ({
+			matches: false,
+			media: query,
+			onchange: null,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined,
+			addListener: () => undefined,
+			removeListener: () => undefined,
+			dispatchEvent: () => false,
+		}),
+	});
+
+	const localStorageStub = (() => {
+		const values = new Map<string, string>();
+		return {
+			get length() { return values.size; },
+			key: (index: number) => [...values.keys()][index] ?? null,
+			clear: () => values.clear(),
+			getItem: (key: string) => values.get(key) ?? null,
+			removeItem: (key: string) => values.delete(key),
+			setItem: (key: string, value: string) => values.set(key, value),
+		};
+	})();
+
+	const installLocalStorage = () => {
+		Object.defineProperty(window, "localStorage", {
+			configurable: true,
+			writable: true,
+			value: localStorageStub,
+		});
+	};
+	installLocalStorage();
+	// A test can spy on the getter and return a Storage that has no clear().
+	// The next file's beforeEach calls clear(). Put the stub back first.
+	beforeEach(() => {
+		if (typeof window.localStorage?.clear !== "function") installLocalStorage();
+	});
+
+	HTMLCanvasElement.prototype.getContext = (() => ({})) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+
+	Element.prototype.hasPointerCapture = (() => false) as typeof Element.prototype.hasPointerCapture;
+	Element.prototype.setPointerCapture = (() => undefined) as typeof Element.prototype.setPointerCapture;
+	Element.prototype.releasePointerCapture = (() => undefined) as typeof Element.prototype.releasePointerCapture;
+	Element.prototype.scrollIntoView = (() => undefined) as typeof Element.prototype.scrollIntoView;
+	document.elementFromPoint = (() => null) as typeof document.elementFromPoint;
+
+	window.tallpine = {
+		app: {
+			getVersion: async () => "0.0.0-test",
+			chooseDirectory: async () => null,
+			checkGitRepository: async () => true,
+			openExternal: async () => undefined,
+						daemonTcpOpen: async () => true,
+			scanImportFolder: async ({ path }: { path: string }) => ({ path, repos: [] }),
+			checkAncestorRepo: async () => undefined,
+			getRepositoryBranch: async () => undefined,
+			getGitHubLogin: async (_repoPath?: string) => "",
+			getCachedGitHubOwners: async () => [],
+			refreshGitHubOwners: async () => [],
+			checkGitHubRepositoryAvailability: async () => ({ available: true }),
+			getPathForFile: () => "",
+			onOpenFolderPath: () => () => undefined,
+			onNewSessionShortcut: () => () => undefined,
+			onKeyboardShortcutsHelp: () => () => undefined,
+			onQuitConfirmRequest: () => () => undefined,
+			resolveQuitConfirm: () => undefined,
+			onNewShellTerminalShortcut: () => () => undefined,
+			onCloseShellTerminalShortcut: () => () => undefined,
+			setCloseShellTerminalShortcutEnabled: () => undefined,
+			setChatDraftRisk: () => undefined,
+			onOpenSettingsShortcut: () => () => undefined,
+			onPreviousSessionShortcut: () => () => undefined,
+			onNextSessionShortcut: () => () => undefined,
+			onPreviousTabShortcut: () => () => undefined,
+			onNextTabShortcut: () => () => undefined,
+			onShortcut: (listener: Parameters<typeof appShortcutBus.subscribe>[0]) => appShortcutBus.subscribe(listener),
+		},
+		terminal: {
+			saveDroppedFile: async () => "",
+			setFocused: () => undefined,
+			onFontSizeShortcut: () => () => undefined,
+		},
+		window: {
+			getZoomFactor: async () => 1,
+			onZoomFactor: () => () => undefined,
+			isMaximized: async () => false,
+			onMaximized: () => () => undefined,
+			isFullScreen: async () => false,
+			onFullScreen: () => () => undefined,
+		},
+		theme: {
+			set: async () => undefined,
+			persistTerminal: async () => undefined,
+			setWindowBackground: async () => undefined,
+			setWindowTranslucent: async () => undefined,
+		},
+		menu: {
+			action: async () => undefined,
+			notifyShellFocus: () => undefined,
+		},
+		clipboard: {
+			writeText: async () => undefined,
+			readText: async () => "",
+			writeImage: async () => undefined,
+		},
+		chatImage: {
+			fetch: async () => ({ bytes: new Uint8Array(), mimeType: "image/png" }),
+			save: async () => true,
+		},
+		// No WebSocket bridge: tests stub the global WebSocket. Bridge tests
+		// (daemon-websocket.test.ts) pass their own.
+		daemonSocket: undefined as unknown as NonNullable<typeof window.tallpine>["daemonSocket"],
+		daemon: {
+			getStatus: async () => ({ state: "stopped" }),
+			start: async () => ({ state: "starting" }),
+			stop: async () => ({ state: "stopped" }),
+			restart: async () => ({ state: "starting" }),
+			onStatus: () => () => undefined,
+		},
+		sideChats: { capture: async () => undefined },
+		localPath: {
+			inspect: async (filePath: string) => ({ ok: true, path: filePath, kind: "file", canOpen: true }),
+			perform: async (_filePath: string, action: "reveal" | "open" | "copy") => ({ ok: true, performed: action }),
+		},
+	editorHandoff: {
+			getState: async () => ({
+				targets: [
+					{ id: "cursor", name: "Cursor", kind: "editor" },
+					{ id: "file-manager", name: "Finder", kind: "file_manager" },
+					{ id: "terminal", name: "Terminal", kind: "terminal" },
+				],
+				preferredEditorId: "cursor",
+				workspaceAvailable: true,
+			}),
+			open: async ({ targetId }) => {
+				if (targetId === "file-manager") return { id: "file-manager", name: "Finder", kind: "file_manager" };
+				if (targetId === "terminal") return { id: "terminal", name: "Terminal", kind: "terminal" };
+				return { id: targetId ?? "cursor", name: "Cursor", kind: "editor" };
+			},
+			openArtifacts: async ({ targetId }) => targetId === "terminal"
+				? { id: "terminal", name: "Terminal", kind: "terminal" }
+				: { id: "file-manager", name: "Finder", kind: "file_manager" },
+			copyWorkspacePath: async () => undefined,
+		},
+		browser: {
+			nativeCompositionEnabled: true,
+			reconnectRuntime: async () => undefined,
+			getRuntimeState: async () => ({ connected: false, connecting: false, rejected: false }),
+			ensure: async (sessionId: string) => ({
+				viewId: `test:${sessionId}`,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+		setBounds: () => undefined,
+		onBoundsApplied: () => () => undefined,
+		setOverlayOpen: () => undefined,
+		navigate: async ({ viewId }: { viewId: string }) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			historySuggestions: async () => [],
+			historyFavicon: async () => undefined,
+			clear: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			goBack: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			goForward: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			reload: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			stop: async (viewId: string) => ({
+				viewId,
+				url: "",
+				title: "",
+				canGoBack: false,
+				canGoForward: false,
+				isLoading: false,
+			}),
+			getFindState: async (viewId: string) => ({
+				viewId, tabId: "t1", query: "", activeMatchOrdinal: 0, matches: 0, finalUpdate: true,
+			}),
+			findInPage: async ({ viewId, query }) => ({
+				viewId, tabId: "t1", query, activeMatchOrdinal: 1, matches: 1, finalUpdate: true,
+			}),
+			stopFindInPage: async ({ viewId }) => ({
+				viewId, tabId: "t1", query: "", activeMatchOrdinal: 0, matches: 0, finalUpdate: true,
+			}),
+			captureScreenshot: async () => undefined,
+			downloads: {
+				list: async () => ({ downloads: [] }),
+				action: async () => ({ downloads: [] }),
+				clear: async () => ({ downloads: [] }),
+				onChanged: () => () => { /* no-op test subscription */ },
+			},
+			getTabs: async (viewId: string) => ({ viewId, activeTabId: "t1", tabs: [] }),
+			selectTab: async ({ viewId, tabId }) => ({ viewId, activeTabId: tabId, tabs: [] }),
+			closeTab: async ({ viewId }) => ({ viewId, activeTabId: "", tabs: [] }),
+			openTab: async ({ viewId }) => ({ viewId, activeTabId: "", tabs: [] }),
+			getProfile: async (viewId: string) => ({ viewId, profileId: null, temporary: true }),
+			showProfileMenu: async () => undefined,
+			selectProfile: async () => undefined,
+			notifyPanelUsed: () => undefined,
+			notifyPanelBlur: () => undefined,
+			onFocusLocation: () => () => undefined,
+			onFindOpen: () => () => undefined,
+			onReopenClosedTab: () => () => undefined,
+			onClosePanel: () => () => undefined,
+			devtools: async ({ viewId, operation }) => ({
+				viewId,
+				open: operation !== "close",
+				activeTabId: "",
+			}),
+			destroy: () => undefined,
+			setAnnotationMode: async () => undefined,
+			completeAnnotation: async () => undefined,
+			discardAnnotations: async () => undefined,
+			annotationAction: async () => undefined,
+			onNavState: () => () => undefined,
+			onFindState: () => () => undefined,
+			onPageFocus: () => () => undefined,
+			onTabsState: () => () => undefined,
+			onAgentActivity: () => () => undefined,
+			onRuntimeState: () => () => undefined,
+			onDevToolsState: () => () => undefined,
+			onProfileState: () => () => undefined,
+			onProfileManage: () => () => undefined,
+			onAnnotationSubmit: () => () => undefined,
+			onAnnotationCancel: () => () => undefined,
+			onAnnotationState: () => () => undefined,
+		},
+		browserProfiles: {
+			list: async () => ({ profiles: [], defaultProfileId: null }),
+			create: async (name: string) => {
+				const now = new Date().toISOString();
+				return { id: `test-${name}`, name, createdAt: now, updatedAt: now };
+			},
+			rename: async ({ id, name }: { id: string; name: string }) => {
+				const now = new Date().toISOString();
+				return { id, name, createdAt: now, updatedAt: now };
+			},
+			clear: async () => undefined,
+			usage: async () => ({ sessions: [] }),
+			delete: async () => ({}),
+			setDefault: async () => undefined,
+			discoverImportSources: async () => ({ sources: [] }),
+			import: async () => ({ sourceName: "", entries: [] }),
+			onImportProgress: () => () => undefined,
+		},
+		notifications: {
+			show: async () => undefined,
+			setBadge: async () => undefined,
+			devBounce: async () => undefined,
+			onClick: () => () => undefined,
+			onPlaySound: () => () => undefined,
+			reportSoundFailure: () => undefined,
+		},
+		tray: {
+			setAttentionState: () => undefined,
+			onOpenSession: () => () => undefined,
+		},
+		cliLink: {
+			inspect: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
+			link: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
+			unlink: async () => ({ ok: false as const, code: "unsupported" as const, message: "unavailable" }),
+		},
+		appUpdates: {
+			getStatus: async () => ({ state: "disabled" as const, reason: "unpackaged" as const }),
+			getPreferences: async () => null,
+			setSettings: async () => undefined,
+			check: async () => undefined,
+			install: async () => false,
+			installWhenIdle: async () => false,
+			cancelInstallWhenIdle: async () => undefined,
+			onStatus: () => () => undefined,
+		},
+		uiSettings: {
+			get: async () => ({ ...DEFAULT_UI_SETTINGS }),
+			set: async (settings) => coerceUiSettings({ ...DEFAULT_UI_SETTINGS, ...settings }),
+		},
+		keybindings: {
+			get: async () => ({}),
+			set: async (overrides) => overrides,
+			setRecording: async () => undefined,
+		},
+		remotes: {
+			list: async () => [],
+			add: async () => "offline" as const,
+			update: async () => "offline" as const,
+			remove: async () => undefined,
+			connect: async () => { throw new Error("no remote hosts in test bridge"); },
+			disconnect: async () => undefined,
+			certificate: async () => ({ pin: "0".repeat(64), cert: "" }),
+			computerName: async () => "Test computer",
+			previewUrl: async (_hostId: string, _sessionId: string, sourceUrl: string) => sourceUrl,
+			resolvePreviewUrl: async (_hostId: string, _sessionId: string, viewedUrl: string) => viewedUrl,
+		agentBrowserUrl: async () => "",
+			externalUrl: async (_hostId: string, url: string) => url,
+		},
+	};
+} // end if (typeof window !== "undefined")

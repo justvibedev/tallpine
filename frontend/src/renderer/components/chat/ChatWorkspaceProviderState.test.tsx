@@ -1,0 +1,397 @@
+import userEvent from "@testing-library/user-event";
+import { fireEvent, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { ChatWorkspace } from "./ChatWorkspace";
+import {
+	chatFixture,
+	chatFixtureMcpFailed,
+	chatFixtureReauth,
+	chatFixtureRerouted,
+	chatFixtureThreadError,
+} from "../../lib/chat-fixture";
+import { useUiStore } from "../../stores/ui-store";
+import type { ConversationSnapshot } from "../../types/conversation";
+import type { WorkspaceSession } from "../../types/workspace";
+import { renderChat as render } from "../../test/render-chat";
+
+// The sign-in banner reads the session's account; these tests cover the chrome
+// without a daemon, so the account reads answer nothing.
+vi.mock("../../hooks/useAgentAccounts", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../hooks/useAgentAccounts")>()),
+	useSessionAgentAccounts: () => ({ data: undefined }),
+	useAgentAccounts: () => ({ data: undefined }),
+	useAgentAccountActions: () => ({}),
+}));
+
+// A session means the surface sits beside an inspector that has a Plan tab.
+const planSession = {
+	id: chatFixture.sessionId,
+	workspaceId: "project-1",
+	workspaceName: "tallpine",
+	title: "Planner",
+	provider: "claude-code",
+	kind: "worker",
+	mode: "chat",
+	status: "working",
+	updatedAt: "2026-08-15T00:00:00Z",
+	activity: { state: "active", lastActivityAt: "2026-08-15T00:00:00Z" },
+	prs: [],
+} satisfies WorkspaceSession;
+
+// The surface-level wiring: which snapshot fields produce which chrome, and — the part
+// that is easy to get wrong — which combinations stay quiet.
+
+const MODELS = [
+	{ id: "gpt-5.6-terra", displayName: "gpt-5.6-terra", default: true },
+	{ id: "gpt-5.6-terra-mini", displayName: "gpt-5.6-terra-mini", default: false },
+];
+
+function withoutPendingApproval(snapshot: ConversationSnapshot): ConversationSnapshot {
+	return {
+		...snapshot,
+		items: snapshot.items.filter(
+			(item) =>
+				!(item.kind === "activity" && item.activityKind === "approval" && item.status === "pending"),
+		),
+	};
+}
+
+describe("reasoning", () => {
+	it("keeps provider reasoning out of the conversation chrome", () => {
+		render(<ChatWorkspace snapshot={chatFixture} />);
+		expect(screen.queryByText(/Reading the worktree first/)).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /Reasoning/ })).not.toBeInTheDocument();
+	});
+});
+
+describe("plan", () => {
+	it("renders the turn's plan as one checklist", () => {
+		render(<ChatWorkspace snapshot={chatFixture} />);
+		expect(screen.getByRole("region", { name: "Agent plan" })).toBeInTheDocument();
+		expect(screen.getByText("Run the backend tests")).toBeInTheDocument();
+	});
+
+	// The daemon writes the plan twice — on the turn and as a row — from one event. Both
+	// rendered would be the same list twice in the same turn.
+	it("does not also render the plan row the turn already carries", () => {
+		const withPlanRow: ConversationSnapshot = {
+			...chatFixture,
+			items: [
+				...chatFixture.items,
+				{
+					kind: "activity",
+					id: "plan-row",
+					turnId: "turn-2",
+					sequence: 20,
+					revision: 0,
+					activityKind: "plan",
+					status: "running",
+					summary: "Updated plan",
+					detail: {
+						event: "plan",
+						steps: [{ text: "Run the backend tests", status: "in_progress" }],
+					},
+					createdAt: new Date().toISOString(),
+				},
+			],
+			latestSequence: 20,
+		};
+		render(<ChatWorkspace snapshot={withPlanRow} />);
+		expect(screen.getAllByRole("region", { name: "Agent plan" })).toHaveLength(1);
+	});
+
+	// The group's identity is reused across polls to keep the memo boundary from
+	// re-rendering finished history. A plan and a diff are current state the daemon
+	// overwrites while the turn's items stay put, so they have to take part in that
+	// comparison — otherwise a checklist stops ticking until something else changes.
+	it("ticks a step off on the next poll even though the items did not change", () => {
+		const before = chatFixture;
+		const { rerender } = render(<ChatWorkspace snapshot={before} />);
+		expect(screen.getByLabelText("Run the backend tests — in progress")).toBeInTheDocument();
+
+		const after: ConversationSnapshot = structuredClone(before);
+		after.turns = after.turns.map((turn) =>
+			turn.plan
+				? {
+						...turn,
+						plan: {
+							...turn.plan,
+							steps: turn.plan.steps.map((step) =>
+								step.text === "Run the backend tests"
+									? { ...step, status: "completed" as const }
+									: step,
+							),
+						},
+					}
+				: turn,
+		);
+		rerender(<ChatWorkspace snapshot={after} />);
+
+		expect(screen.getByLabelText("Run the backend tests — done")).toBeInTheDocument();
+	});
+
+	// Claude keeps one task list for the session and re-sends it into every later turn.
+	// The list lives in the inspector's Plan tab; the timeline only notes real changes.
+	it("notes a list that spans turns only on the turns where it changed", () => {
+		const current = chatFixture.turns[1]!.plan!;
+		const spanning: ConversationSnapshot = {
+			...chatFixture,
+			turns: chatFixture.turns.map((turn) => ({
+				...turn,
+				plan:
+					turn.id === "turn-1"
+						? {
+								spansTurns: true,
+								steps: current.steps.map((step) => ({ ...step, status: "pending" as const })),
+							}
+						: { ...current, spansTurns: true },
+			})),
+		};
+		render(<ChatWorkspace snapshot={spanning} session={planSession} />);
+		expect(screen.queryByRole("region", { name: "Agent plan" })).toBeNull();
+		expect(document.querySelectorAll("[data-plan-update]")).toHaveLength(2);
+	});
+
+	it("adds nothing to the timeline for a re-sent identical list", () => {
+		const current = chatFixture.turns[1]!.plan!;
+		const resent: ConversationSnapshot = {
+			...chatFixture,
+			turns: chatFixture.turns.map((turn) => ({ ...turn, plan: { ...current, spansTurns: true } })),
+		};
+		render(<ChatWorkspace snapshot={resent} session={planSession} />);
+		expect(document.querySelectorAll("[data-plan-update]")).toHaveLength(1);
+	});
+
+	it("opens the Plan tab from the timeline row", async () => {
+		const current = chatFixture.turns[1]!.plan!;
+		const spanning: ConversationSnapshot = {
+			...chatFixture,
+			turns: chatFixture.turns.map((turn) => ({ ...turn, plan: { ...current, spansTurns: true } })),
+		};
+		render(<ChatWorkspace snapshot={spanning} session={planSession} />);
+		await userEvent.click(document.querySelector<HTMLElement>("[data-plan-update]")!);
+		const inspector = useUiStore.getState().inspectorSessions[chatFixture.sessionId];
+		expect(inspector).toMatchObject({ isOpen: true, view: "plan" });
+	});
+
+	// Surfaces with no inspector (a reviewer chat) have no Plan tab to point at.
+	it("keeps the full card on the latest turn where there is no Plan tab", () => {
+		const current = chatFixture.turns[1]!.plan!;
+		const spanning: ConversationSnapshot = {
+			...chatFixture,
+			turns: chatFixture.turns.map((turn) => ({ ...turn, plan: { ...current, spansTurns: true } })),
+		};
+		render(<ChatWorkspace snapshot={spanning} />);
+		expect(screen.getAllByRole("region", { name: "Agent plan" })).toHaveLength(1);
+		expect(document.querySelector("[data-plan-update]")).toBeNull();
+	});
+
+	it("keeps a separate plan on each turn when the plans are per turn", () => {
+		const current = chatFixture.turns[1]!.plan!;
+		const perTurn: ConversationSnapshot = {
+			...chatFixture,
+			turns: chatFixture.turns.map((turn) => ({
+				...turn,
+				plan: turn.id === "turn-1" ? { steps: [{ text: "Read the store", status: "completed" }] } : current,
+			})),
+		};
+		render(<ChatWorkspace snapshot={perTurn} />);
+		expect(screen.getAllByRole("region", { name: "Agent plan" })).toHaveLength(2);
+	});
+
+	// A plan whose turn Tallpine never correlated — one from before this controller started.
+	it("still renders a plan row whose turn carries none", () => {
+		const orphan: ConversationSnapshot = {
+			...chatFixture,
+			turns: chatFixture.turns.map((turn) => ({ ...turn, plan: undefined })),
+			items: [
+				...chatFixture.items,
+				{
+					kind: "activity",
+					id: "plan-orphan",
+					sequence: 21,
+					revision: 0,
+					activityKind: "plan",
+					status: "running",
+					summary: "Updated plan",
+					detail: { event: "plan", steps: [{ text: "Resumed plan step", status: "pending" }] },
+					createdAt: new Date().toISOString(),
+				},
+			],
+			latestSequence: 21,
+		};
+		render(<ChatWorkspace snapshot={orphan} />);
+		expect(screen.getByText("Resumed plan step")).toBeInTheDocument();
+	});
+});
+
+describe("provider state chrome", () => {
+	it.each(["completion", "notification", "both"])("keeps the %s failure in chat while preserving sign-in guidance", (source) => {
+		const reason = "Provider access denied.\n\nContact your administrator.";
+		const snapshot: ConversationSnapshot = {
+			...chatFixtureReauth,
+			account: { ...chatFixtureReauth.account, reauthReason: reason },
+			turns: chatFixtureReauth.turns.map((turn) =>
+				turn.id === "turn-2" ? { ...turn, state: "failed", errorMessage: source === "notification" ? undefined : reason } : turn,
+			),
+			items: [
+				...chatFixtureReauth.items.filter(
+					(item) => !(item.kind === "activity" && item.detail?.event === "auth.reauth_required"),
+				),
+				{
+					kind: "activity",
+					id: "transient-provider-failure",
+					turnId: "turn-2",
+					sequence: chatFixtureReauth.latestSequence + 1,
+					revision: 1,
+					activityKind: "system",
+					status: "failed",
+					summary: "Provider access denied.",
+					detail: { event: "provider.failure", text: "Contact your administrator." },
+					createdAt: "2026-08-03T00:00:00Z",
+				},
+				{
+					kind: "activity",
+					id: "earlier-recovered-warning",
+					turnId: "turn-2",
+					sequence: chatFixtureReauth.latestSequence + 2,
+					revision: 1,
+					activityKind: "system",
+					status: "completed",
+					summary: "Earlier recovered warning",
+					detail: { event: "provider.failure" },
+					createdAt: "2026-08-03T00:00:00Z",
+				},
+			],
+			latestSequence: chatFixtureReauth.latestSequence + 2,
+		};
+		if (source !== "completion") {
+			snapshot.items.push({
+				kind: "activity", id: "terminal-error", turnId: "turn-2",
+				sequence: ++snapshot.latestSequence, revision: 1,
+				activityKind: "error", status: "failed", summary: reason,
+				createdAt: "2026-08-03T00:00:00Z",
+			});
+		}
+		const { rerender } = render(<ChatWorkspace snapshot={snapshot} />);
+		for (const trigger of screen.getAllByRole("button", { name: /Worked for/ })) {
+			fireEvent.click(trigger);
+		}
+		expect(screen.getByRole("alert")).toHaveTextContent("Provider authentication needs attention");
+		expect(screen.getByRole("alert")).toHaveTextContent("login");
+		expect(screen.getByRole("alert")).not.toHaveTextContent("Provider access denied");
+		expect(screen.getAllByText(/Provider access denied/)).toHaveLength(1);
+		expect(screen.getByText(/Contact your administrator/)).toBeInTheDocument();
+		expect(screen.getByText("Earlier recovered warning")).toBeInTheDocument();
+
+		rerender(<ChatWorkspace snapshot={structuredClone(snapshot)} />);
+		expect(screen.getByRole("alert")).toHaveTextContent("Provider authentication needs attention");
+		expect(screen.getByRole("alert")).toHaveTextContent("login");
+		expect(screen.getByRole("alert")).not.toHaveTextContent("Provider access denied");
+		expect(screen.getAllByText(/Provider access denied/)).toHaveLength(1);
+
+		rerender(
+			<ChatWorkspace
+				snapshot={{ ...snapshot, account: { ...snapshot.account, reauthReason: "Session expired." } }}
+			/>,
+		);
+		expect(screen.getAllByText(/Provider access denied/)).toHaveLength(1);
+		expect(screen.getByRole("alert")).toHaveTextContent("Session expired.");
+	});
+
+	it("keeps credential recovery available when the failure is not in loaded history", () => {
+		render(<ChatWorkspace snapshot={chatFixtureReauth} />);
+		expect(screen.getByRole("alert")).toHaveTextContent(/Provider authentication needs attention/);
+	});
+
+	it("reports a provider-side thread fault while the controller is healthy", () => {
+		render(<ChatWorkspace snapshot={chatFixtureThreadError} />);
+		expect(screen.getByText(/thread hit an internal error/i)).toBeInTheDocument();
+		// The controller banner is a separate claim and must not appear for this.
+		expect(screen.queryByText(/agent controller stopped/i)).not.toBeInTheDocument();
+	});
+
+	it("notes tool servers that did not start, without a reload control", () => {
+		render(<ChatWorkspace snapshot={chatFixtureMcpFailed} />);
+		expect(screen.getByText("Playwright, Postgres didn’t start. Continuing without them.").closest("[role=status]")).not.toBeNull();
+		expect(screen.queryByRole("button", { name: /Reload/ })).not.toBeInTheDocument();
+	});
+
+	it("says nothing about tool servers when they all started", () => {
+		render(<ChatWorkspace snapshot={chatFixture} />);
+		expect(screen.queryByText(/didn’t start/)).not.toBeInTheDocument();
+	});
+
+	it("does not use up the note while the chat panel is behind another tab", () => {
+		const snapshot = { ...chatFixtureMcpFailed, sessionId: "tallpine-mcp-hidden" };
+		const { rerender } = render(<ChatWorkspace snapshot={snapshot} workspaceActiveTabKey="file:README.md" />);
+		expect(screen.queryByText(/didn’t start/)).not.toBeInTheDocument();
+		rerender(<ChatWorkspace snapshot={snapshot} />);
+		expect(screen.getByText("Playwright, Postgres didn’t start. Continuing without them.")).toBeInTheDocument();
+	});
+});
+
+describe("model reroute", () => {
+	it("names what answered rather than what was asked for", () => {
+		render(
+			<ChatWorkspace
+				snapshot={withoutPendingApproval(chatFixtureRerouted)}
+				models={MODELS}
+				onChooseSettings={vi.fn()}
+			/>,
+		);
+		// The control the user reads to know which model is in play now names the model
+		// that replied, and says whose place it took.
+		const trigger = screen.getByRole("button", {
+			name: "Model and reasoning effort for the next turn",
+		});
+		expect(trigger.getAttribute("title")).toMatch(
+			/answered with gpt-5\.6-terra-mini instead of gpt-5\.6-terra/,
+		);
+		expect(screen.getByLabelText(/Substituted for gpt-5\.6-terra$/)).toBeInTheDocument();
+	});
+
+	it("carries the provider's own reason", () => {
+		render(
+			<ChatWorkspace
+				snapshot={chatFixtureRerouted}
+				models={MODELS}
+				onChooseSettings={vi.fn()}
+			/>,
+		);
+		for (const trigger of screen.getAllByRole("button", { name: /Worked for/ })) {
+			fireEvent.click(trigger);
+		}
+		expect(
+			screen.getByText(/The requested model is at capacity for this account tier/),
+		).toBeInTheDocument();
+	});
+
+	it("keeps naming the chosen model when nothing was substituted", () => {
+		render(
+			<ChatWorkspace
+				snapshot={withoutPendingApproval(chatFixture)}
+				models={MODELS}
+				onChooseSettings={vi.fn()}
+			/>,
+		);
+		expect(screen.getByText(/gpt-5\.6-terra/)).toBeInTheDocument();
+		expect(screen.queryByLabelText(/Substituted for/)).not.toBeInTheDocument();
+	});
+});
+
+
+describe("empty project session permissions", () => {
+	it.each(["orchestrator", "worker"] as const)("exposes permissions and project remembering for an empty %s", async (role) => {
+		const user = userEvent.setup();
+		const remember = vi.fn();
+		render(<ChatWorkspace sessionRole={role} snapshot={{ ...chatFixture, items: [], turns: [],
+			controller: { state: "ready" }, settings: { approvalMode: "auto" } }}
+			onChooseSettings={vi.fn()} onRememberPermissions={remember} />);
+		const picker = screen.getByRole("button", { name: "Approval policy for the next turn" });
+		expect(picker).toBeEnabled();
+		await user.click(picker);
+		await user.click(screen.getByRole("menuitem", { name: /Remember for this project/ }));
+		expect(remember).toHaveBeenCalledWith("auto");
+	});
+});

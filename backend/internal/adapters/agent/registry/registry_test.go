@@ -1,0 +1,179 @@
+package registry
+
+import (
+	"context"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/hookutil"
+	"tallpine.eu/tallpine/backend/internal/ports"
+)
+
+// TestGetAgentHooksFootprintIsGitignored enforces a contract every shipped
+// (and future) adapter must hold: any file GetAgentHooks writes into a session
+// worktree must be covered by a sibling Tallpine-managed self-ignoring .gitignore
+// (hookutil.EnsureWorkspaceGitignore). Hook files are untracked, and
+// `git worktree remove` (without --force) refuses on any untracked file — an
+// uncovered hook file makes every one of that adapter's session workspaces
+// permanently undeletable (kill/cleanup can never free them).
+func TestGetAgentHooksFootprintIsGitignored(t *testing.T) {
+	for _, ha := range Harnessed() {
+		t.Run(string(ha.Harness), func(t *testing.T) {
+			ws := t.TempDir()
+			cfg := ports.WorkspaceHookConfig{
+				SessionID:     "proj-1",
+				WorkspacePath: ws,
+				DataDir:       t.TempDir(),
+			}
+			ensureAgentBinary(t, string(ha.Harness))
+			if err := ha.Agent.GetAgentHooks(context.Background(), cfg); err != nil {
+				t.Fatalf("GetAgentHooks: %v", err)
+			}
+			files := workspaceFiles(t, ws)
+			for _, rel := range files {
+				gitignorePath := filepath.Join(ws, filepath.Dir(rel), ".gitignore")
+				data, err := os.ReadFile(gitignorePath) //nolint:gosec // test-owned temp dir
+				if err != nil {
+					t.Errorf("hook file %q has no sibling .gitignore (%v); it will keep the session worktree permanently dirty", rel, err)
+					continue
+				}
+				content := string(data)
+				if !strings.Contains(content, hookutil.GitignoreSentinel) {
+					t.Errorf(".gitignore next to %q is not Tallpine-managed (missing sentinel)", rel)
+					continue
+				}
+				if entry := "/" + filepath.Base(rel); !hasLine(content, entry) {
+					t.Errorf(".gitignore next to %q does not list %q", rel, entry)
+				}
+			}
+		})
+	}
+}
+
+func TestEveryHarnessReportsAuthStatus(t *testing.T) {
+	for _, ha := range Harnessed() {
+		if _, ok := ha.Agent.(ports.AgentAuthChecker); !ok {
+			t.Errorf("%s does not implement ports.AgentAuthChecker", ha.Harness)
+		}
+	}
+}
+
+func TestRegistryShipsOnlySupportedHarnesses(t *testing.T) {
+	reg, err := Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []domain.AgentHarness
+	for _, item := range Harnessed() {
+		got = append(got, item.Harness)
+	}
+	if len(got) != len(domain.AllHarnesses) {
+		t.Fatalf("Harnessed() = %v, want exactly %v", got, domain.AllHarnesses)
+	}
+	for i, h := range domain.AllHarnesses {
+		if got[i] != h {
+			t.Fatalf("Harnessed()[%d] = %q, want %q", i, got[i], h)
+		}
+		if _, ok := reg.Get(string(h)); !ok {
+			t.Fatalf("registry does not contain %q", h)
+		}
+	}
+	for _, removed := range []string{"aider", "opencode", "cursor", "hermes", "fx"} {
+		if _, ok := reg.Get(removed); ok {
+			t.Fatalf("registry still contains removed harness %q", removed)
+		}
+	}
+}
+
+func TestHarnessedExcludesFakeHarness(t *testing.T) {
+	for _, ha := range Harnessed() {
+		if ha.Harness == domain.HarnessFake {
+			t.Fatal("fake harness must not be returned as a shipped selectable agent")
+		}
+	}
+}
+
+func TestEveryProductionHarnessReportsModelOrModeConfig(t *testing.T) {
+	for _, ha := range Harnessed() {
+		t.Run(string(ha.Harness), func(t *testing.T) {
+			spec, err := ha.Agent.GetConfigSpec(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range spec.Fields {
+				if field.Key == "model" || field.Key == "mode" {
+					return
+				}
+			}
+			t.Fatalf("%s exposes neither model nor mode configuration: %#v", ha.Harness, spec.Fields)
+		})
+	}
+}
+
+// workspaceFiles returns every regular file under root, relative to root.
+func workspaceFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type().IsRegular() {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			files = append(files, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk workspace: %v", err)
+	}
+	return files
+}
+
+func ensureAgentBinary(t *testing.T, name string) {
+	t.Helper()
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, name)
+	version := "0.80.6"
+	script := "#!/usr/bin/env sh\nif [ \"${1:-}\" = \"--version\" ]; then\n  echo \"" + name + " " + version + "\"\nfi\nexit 0\n"
+	if err := os.WriteFile(binPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write fake agent binary %q: %v", binPath, err)
+	}
+
+	old := os.Getenv("PATH")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+old)
+}
+
+func hasLine(content, line string) bool {
+	for _, l := range strings.Split(content, "\n") {
+		if strings.TrimSpace(l) == line {
+			return true
+		}
+	}
+	return false
+}
+
+// DeepSeek Harness ships as the fourth harness beside claude-code, codex and kiro.
+func TestRegistryShipsDeepSeekHarness(t *testing.T) {
+	reg, err := Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reg.Get(string(domain.HarnessDeepSeek)); !ok {
+		t.Fatal("deepseek-harness adapter is not registered")
+	}
+	found := false
+	for _, ha := range Harnessed() {
+		found = found || ha.Harness == domain.HarnessDeepSeek
+	}
+	if !found {
+		t.Fatal("Harnessed() omits deepseek-harness")
+	}
+}

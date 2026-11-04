@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# scripts/security-scan: free, local, report-only security scanning.
+#
+#   scripts/security-scan [results-dir] [--app <path to .app>] [--strict] [--only <tool>[,<tool>...]]
+#
+# Tools: govulncheck, osv, gosec, semgrep, trivy, fuses (fuses needs --app).
+# Writes each tool's raw output and summary.txt (one line per tool) to the
+# results dir (default: $TMPDIR/vo-security-scan-<timestamp>; never inside the
+# repo). Exit 0 unless --strict: then non-zero on reachable govulncheck vulns
+# or osv-scanner high/critical findings. Nothing is uploaded anywhere: Semgrep
+# metrics are off and the tools only download public rules/advisory data.
+# Pinned versions live in scripts/security-scan.d/*.sh.
+# Host needs: jq, docker, osv-scanner, trivy, npx. Go tools use scripts/go.
+set -uo pipefail
+
+SS_REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
+SS_DIR="$SS_REPO/scripts/security-scan.d"
+for f in lib go osv semgrep trivy fuses; do
+	# shellcheck source=/dev/null
+	. "$SS_DIR/$f.sh"
+done
+
+SS_OUT="" SS_APP="" strict=0 only="govulncheck,osv,gosec,semgrep,trivy,fuses"
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--app)
+		SS_APP="${2:-}"
+		shift
+		;;
+	--strict) strict=1 ;;
+	--only)
+		only="${2:-}"
+		shift
+		;;
+	-h | --help)
+		awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
+		exit 0
+		;;
+	-*)
+		ss_log "unknown argument $1 (see --help)"
+		exit 2
+		;;
+	*) SS_OUT="$1" ;;
+	esac
+	shift
+done
+
+[ -z "$SS_OUT" ] && SS_OUT="${TMPDIR:-/tmp}/vo-security-scan-$(date +%Y%m%d-%H%M%S)"
+# Canonicalize without creating anything: resolve the nearest existing ancestor, then
+# re-append the missing tail, so a refused path leaves no directory behind.
+ss_abspath() {
+	local p="$1" tail=""
+	case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+	while [ ! -d "$p" ]; do
+		tail="/$(basename "$p")$tail"
+		p="$(dirname "$p")"
+	done
+	printf '%s%s' "$(cd "$p" && pwd -P)" "$tail"
+}
+SS_OUT="$(ss_abspath "$SS_OUT")"
+case "$SS_OUT/" in "$SS_REPO"/*)
+	ss_log "results dir $SS_OUT is inside the repo; pick a path outside $SS_REPO"
+	exit 2
+	;;
+esac
+mkdir -p "$SS_OUT" || exit 2
+if [ -n "$SS_APP" ]; then
+	[ -d "$SS_APP" ] || { ss_log "--app $SS_APP is not a directory"; exit 2; }
+	SS_APP="$(cd "$SS_APP" && pwd -P)"
+fi
+command -v jq >/dev/null || { ss_log "jq is required"; exit 2; }
+: >"$SS_OUT/summary.txt"
+: >"$SS_OUT/.state"
+
+want() { case ",$only," in *",$1,"*) return 0 ;; esac; return 1; }
+
+# Tracked files of HEAD as a read-only snapshot for the tools that walk a tree.
+SS_SNAPSHOT="$(mktemp -d "${TMPDIR:-/tmp}/vo-security-snap.XXXXXX")"
+trap 'rm -rf "$SS_SNAPSHOT"' EXIT
+git -C "$SS_REPO" archive HEAD | tar -x -C "$SS_SNAPSHOT"
+ss_log "scanning $(git -C "$SS_REPO" rev-parse --short HEAD) -> $SS_OUT"
+
+want govulncheck && ss_run_govulncheck
+want osv && ss_run_osv
+want gosec && ss_run_gosec
+want semgrep && ss_run_semgrep
+want trivy && ss_run_trivy
+if want fuses; then
+	if [ -n "$SS_APP" ]; then ss_run_fuses; else ss_summary fuses "SKIPPED (no --app)"; fi
+fi
+
+cat "$SS_OUT/summary.txt"
+ss_log "raw results in $SS_OUT"
+if [ "$strict" = 1 ]; then
+	ss_strict_failures >&2 || exit 1
+fi
+exit 0

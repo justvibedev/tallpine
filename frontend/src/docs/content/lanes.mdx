@@ -1,0 +1,79 @@
+---
+title: Tallpine lanes
+description: Run several orchestrators in one project, each owning a topic, with per-lane report routing and a cross-lane merge digest.
+---
+
+A project normally has one orchestrator. When the backlog holds several unrelated topics, a **lane** lets you give each topic its own orchestrator. Workers report to the orchestrator of their lane, so one orchestrator is not flooded with reports about work it does not own.
+
+A lane is a **top-level backlog item**: the topic item, with its child items as the tasks. See [Backlog](/backlog) for items and parents. The item must be open and must not be a child to start a new lane orchestrator; otherwise the daemon refuses it (`BACKLOG_LANE_CLOSED`, `BACKLOG_LANE_NOT_TOP_LEVEL`). If the item is closed or dropped while its orchestrator still runs, `tallpine orchestrator new --lane B12` still returns that running orchestrator, so you can [end the lane](#end-a-lane).
+
+If you never start a laned orchestrator, nothing changes: the project has a single default orchestrator and all work goes to it.
+
+## Start a lane orchestrator
+
+```bash
+tallpine orchestrator new --lane B12
+```
+
+This starts the orchestrator that owns `B12`, or returns it if one is already running. Without `--lane`, `tallpine orchestrator new` starts or returns the project's default orchestrator, which also receives work that has no lane. `--project <id>` selects the project (default: `TALLPINE_PROJECT_ID`, the current session, or the current registered repository) and `--json` prints structured output.
+
+A lane orchestrator gets its own conversation, branch and worktree. Its branch and worktree names carry a suffix derived from the lane, so it never shares the default orchestrator's workspace.
+
+## Create a lane in the desktop
+
+You can start a lane orchestrator without the CLI:
+
+- Choose **Lane** next to **New task** in the project board header.
+- Or choose **New lane…** in the project's right-click menu or its kebab (three-dot) menu in the sidebar.
+
+The **New orchestrator** dialog has a **Lane** field. Pick an existing lane, pick **No lane (default orchestrator)**, or pick **New lane (create backlog item)…** and enter a **Lane title**. The last choice creates a new top-level backlog item and starts its orchestrator in one step. Choose **Start**. Each lane orchestrator appears as a row under its project in the sidebar, labelled with its lane.
+
+## How workers join a lane
+
+A worker joins a lane when it is created:
+
+1. If another session spawned it, it inherits that session's lane. A lane orchestrator's workers are therefore in its lane without any flag.
+2. Otherwise, if you start it with `tallpine spawn --backlog <ref>`, it joins the lane of that item's parent.
+3. Otherwise it is un-laned.
+
+A stale `TALLPINE_SESSION_ID` from another project is ignored.
+
+## Where reports go
+
+A worker's [reports](/guides/reports) go to the orchestrator of its lane, and only to that one. The worker's prompt names that orchestrator.
+
+If the lane has no live orchestrator, the report goes to the project's default orchestrator (the newest un-laned one). It never goes to another lane's orchestrator, which would receive work it does not own. If there is no default orchestrator either, the report is held until one runs. An un-laned worker's report goes to the default orchestrator, or, if none exists, to the newest running orchestrator of any lane.
+
+## End a lane
+
+```bash
+tallpine orchestrator end --lane B12
+```
+
+Or right-click the lane orchestrator's row in the sidebar and choose **End lane…**. (The same menu now has **Archive session** for every row.) Use `--session <id>` instead of `--lane` to name the orchestrator by session id. The dialog names the lane and the number of live workers before you confirm.
+
+Ending a lane **removes** the lane orchestrator for good; it is not archived and cannot be restored. The daemon stops it and deletes its worktree, branch, artifacts and session record, so it disappears from the sidebar, the history and `tallpine orchestrator ls`. It does this in one step:
+
+- **Refuses** if the orchestrator's worktree has uncommitted changes or commits that are not in the base branch. It changes nothing and says so; save or discard the work and try again.
+- **Moves every live worker** of the lane to the project's default orchestrator, moves their pending reports there, and sends each worker a message naming its new orchestrator (their prompts still name the removed one). If no default orchestrator is running, it starts one, as `tallpine orchestrator new` without `--lane` does. There is no choice to make here.
+- **Leaves the backlog item as it is.** The backlog is per project; close or drop the item yourself if the topic is finished.
+
+Archiving a lane orchestrator is different from ending the lane. An archived orchestrator keeps its session record and branch, so it can be restored (its worktree is removed unless it holds uncommitted work), and its workers stay in the lane. Their reports go to the project's default orchestrator while the lane has no live orchestrator (see [Where reports go](#where-reports-go)). Start a new one with `tallpine orchestrator new --lane B12` to give the lane an owner again. End the lane when you want its workers moved and the orchestrator removed.
+
+## See what is merging: `tallpine merges`
+
+```bash
+tallpine merges
+```
+
+`tallpine merges` prints what merged in the last 24 hours, what is in flight per lane, and which in-flight pull requests touch the same files, with merge-order advice. Run it before merging so same-area PRs from different lanes land one at a time. Changed files come from the provider and are capped, so a very large PR may show only part of its paths. Flags: `--project <id>` and `--json`.
+
+## Lanes in run mode are different
+
+The `lanes` in a [backlog run plan](/backlog#plan) are parallel sequences of items inside one run. They are not orchestrator lanes. A run plan does not start orchestrators.
+
+## Related
+
+- [CLI reference: `tallpine orchestrator`](/cli#tallpine-orchestrator) and [`tallpine merges`](/cli#tallpine-merges)
+- [Backlog](/backlog)
+- [CLI reference: `tallpine report`](/cli#tallpine-report)

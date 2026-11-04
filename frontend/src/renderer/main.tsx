@@ -1,0 +1,95 @@
+import "./lib/apply-initial-theme";
+import { createRoot } from "react-dom/client";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
+import { I18nextProvider } from "react-i18next";
+import "@xterm/xterm/css/xterm.css";
+import "./styles.css";
+import { queryClient } from "./lib/query-client";
+import { mergeUnreadNotification, unreadNotificationsQueryKey } from "./lib/notifications";
+import { playNotificationSound } from "./lib/notification-sound-player";
+import { createAppRouter } from "./router";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { tallpineBridge } from "./lib/bridge";
+import { appI18n } from "./i18n";
+import { useLocaleStore } from "./stores/locale-store";
+import { useSoundNotificationsStore } from "./stores/sound-notifications-store";
+
+const router = createAppRouter(queryClient);
+
+// Main decides *when* a notification sound plays; the renderer only supplies
+// the speakers, since main has no audio output of its own.
+tallpineBridge.notifications.onPlaySound(() => {
+	playNotificationSound(() => tallpineBridge.notifications.reportSoundFailure());
+});
+
+if (import.meta.env.DEV) {
+	const w = window as never as Record<string, unknown>;
+	w.__qc = queryClient;
+	// __testNotif("needs_input") — simulates a real notification:
+	//   bell count + dock badge update immediately; dock bounces after 3s
+	//   (gives you time to click away from Tallpine so the bounce is visible)
+	const testNotifTitles: Record<string, string> = {
+		needs_input: "Agent needs your input",
+		ready_to_merge: "Ready to merge",
+		pr_merged: "PR merged",
+		pr_closed_unmerged: "PR closed",
+	};
+	w.__testNotif = async (
+		type: "needs_input" | "ready_to_merge" | "pr_merged" | "pr_closed_unmerged" = "needs_input",
+	) => {
+		const key = unreadNotificationsQueryKey;
+		const id = `test-${Date.now()}`;
+		// Freeze the query so window-focus refetch doesn't wipe test data
+		queryClient.setQueryDefaults(key, { staleTime: 60_000 });
+		await queryClient.cancelQueries({ queryKey: key });
+		mergeUnreadNotification(queryClient, {
+			id,
+			type,
+			title: testNotifTitles[type] ?? "Notification",
+			body: "Test notification",
+			createdAt: new Date().toISOString(),
+			sessionId: "",
+			projectId: "",
+			prUrl: "",
+			target: { kind: "session", sessionId: "" },
+			status: "unread",
+		});
+		console.log("[testNotif] bell updated - click away from Tallpine now, bounce fires in 3s");
+		setTimeout(() => {
+			void window.tallpine?.notifications.devBounce();
+			// Restore normal stale time after bounce
+			queryClient.setQueryDefaults(key, { staleTime: 0 });
+		}, 3000);
+	};
+}
+
+declare module "@tanstack/react-router" {
+	interface Register {
+		router: typeof router;
+	}
+}
+
+async function renderApp(): Promise<void> {
+	// The persisted locale is cosmetic; do not leave a newly opened native
+	// window blank while its IPC read completes. The router's pending screen
+	// renders immediately, then i18n updates if the user chose another locale.
+	void useLocaleStore.getState().load();
+	// The sound-notifications toggle only needs to be right by the time
+	// Settings renders, so it loads in the background rather than blocking mount.
+	void useSoundNotificationsStore.getState().load();
+	// Do not wrap the desktop root in StrictMode. React 19 enables per-component
+	// performance tracking for that tree in development, which made common route
+	// switches and drag updates spend hundreds of milliseconds recording timings.
+	createRoot(document.getElementById("root") as HTMLElement).render(
+		<I18nextProvider i18n={appI18n}>
+			<AppErrorBoundary>
+				<QueryClientProvider client={queryClient}>
+					<RouterProvider router={router} />
+				</QueryClientProvider>
+			</AppErrorBoundary>
+		</I18nextProvider>,
+	);
+}
+
+void renderApp();

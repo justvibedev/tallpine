@@ -1,0 +1,371 @@
+import { describe, expect, it, vi } from "vitest";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { computerName, registerRemotesIpc, remotesFilePath, type RemotesIpcDeps } from "./remotes-main";
+import { RemoteRegistry } from "./remote-registry";
+import { createLocalHostIdentity } from "./remote-request";
+
+type Handler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
+
+// ipcMain stand-in: records what was registered and lets a test invoke it.
+function fakeIpc() {
+	const handlers = new Map<string, Handler>();
+	return {
+		ipcMain: { handle: (channel: string, handler: Handler) => void handlers.set(channel, handler) },
+		invoke: (channel: string, ...args: unknown[]) => {
+			const handler = handlers.get(channel);
+			if (!handler) throw new Error(`no handler for ${channel}`);
+			return handler({}, ...args);
+		},
+		channels: () => [...handlers.keys()].sort(),
+	};
+}
+
+function registerRemotes(
+	ipcMain: Parameters<typeof registerRemotesIpc>[0],
+	deps: Omit<RemotesIpcDeps, "localIdentity"> & Partial<Pick<RemotesIpcDeps, "localIdentity">>,
+): void {
+	registerRemotesIpc(ipcMain, { localIdentity: async () => "h_this_mac", certificate: async () => ({ pin: "", cert: "", trusted: true }), ...deps });
+}
+
+async function tempFile(): Promise<string> {
+	const dir = await mkdtemp(join(tmpdir(), "tallpine-remotes-main-"));
+	const path = join(dir, "remotes.json");
+	await writeFile(path, `{"remotes":[{"hostId":"h_workbox","label":"workbox","url":"http://192.0.2.1:1","password":"old"}]}`, "utf8");
+	await chmod(path, 0o600);
+	return path;
+}
+
+describe("remotesFilePath", () => {
+	it("keeps an isolated TALLPINE_DATA_DIR out of the real home credentials", () => {
+		vi.stubEnv("TALLPINE_DATA_DIR", "/tmp/tallpine-remote-proof");
+		try {
+			expect(remotesFilePath()).toBe("/tmp/tallpine-remote-proof/remotes.json");
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+});
+
+describe("computerName", () => {
+	it("prefers the macOS Computer Name and falls back to the host name", async () => {
+		await expect(computerName(async () => ({ stdout: "Dhruv’s Mac mini\n" }), "darwin", () => "Dhruvs-Mac-mini.local")).resolves.toBe("Dhruv’s Mac mini");
+		await expect(computerName(async () => { throw new Error("scutil missing"); }, "darwin", () => "Dhruvs-Mac-mini.local")).resolves.toBe("Dhruvs-Mac-mini");
+		await expect(computerName(async () => ({ stdout: "unused" }), "linux", () => "build-box")).resolves.toBe("build-box");
+	});
+});
+
+describe("registerRemotesIpc", () => {
+
+	it.each(["remotes:add", "remotes:update", "remotes:connect", "remotes:previewUrl", "remotes:resolvePreviewUrl", "remotes:externalUrl"])("rejects direct self access through %s before credentials or proxies", async (channel) => {
+		const file = await tempFile();
+		const original = await readFile(file, "utf8");
+		const probe = vi.fn(async () => "online" as const);
+		const start = vi.fn(async () => { throw new Error("proxy must not start"); });
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(start), localIdentity: async () => "h_workbox", identity: async () => "h_workbox", probe });
+		const args = channel === "remotes:add" ? [{ label: "self", url: "https://self.example", password: "new" }]
+			: channel === "remotes:update" ? ["http://192.0.2.1:1", { password: "new" }]
+			: channel.includes("Preview") || channel === "remotes:previewUrl" ? ["h_workbox", "s_1", "http://localhost:3000"]
+			: channel === "remotes:externalUrl" ? ["h_workbox", "https://ao-preview-0123456789abcdef0123456789abcdef.localhost:41000/"]
+			: ["http://192.0.2.1:1"];
+		await expect(ipc.invoke(channel, ...args)).rejects.toThrow(/itself/);
+		expect(probe).not.toHaveBeenCalled();
+		expect(start).not.toHaveBeenCalled();
+		expect(await readFile(file, "utf8")).toBe(original);
+	});
+
+	it("refuses an address that resolves to self under another saved host ID before authentication", async () => {
+		const file = await tempFile();
+		const probe = vi.fn(async () => "online" as const);
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(async () => { throw new Error("unused"); }), identity: async () => "h_this_mac", probe });
+		await expect(ipc.invoke("remotes:update", "http://192.0.2.1:1", { url: "https://self.example" })).rejects.toThrow(/itself/);
+		expect(probe).not.toHaveBeenCalled();
+	});
+
+	it("defers new connections while identity is unknown, then recovers without changing the password", async () => {
+		const file = await tempFile();
+		const identity = vi.fn(async () => "h_workbox");
+		const probe = vi.fn(async () => "online" as const);
+		let localHostId: string | null = null;
+		const start = vi.fn(async () => ({ base: "http://127.0.0.1:5000/token", previewUrl: (_sessionId: string, sourceUrl: string) => sourceUrl, resolvePreviewUrl: (_sessionId: string, viewedUrl: string) => viewedUrl, agentBrowserUrl: async () => "", isAgentBrowserUrl: () => false, externalUrl: (url: string) => url, close: async () => {} }));
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(start), identity, probe, localIdentity: async () => localHostId });
+		await expect(ipc.invoke("remotes:list")).resolves.toHaveLength(1);
+		await expect(ipc.invoke("remotes:connect", "http://192.0.2.1:1")).rejects.toThrow(/ is offline$/);
+		expect(identity).not.toHaveBeenCalled();
+		expect(probe).not.toHaveBeenCalled();
+		expect(start).not.toHaveBeenCalled();
+		localHostId = "h_this_mac";
+		await expect(ipc.invoke("remotes:connect", "http://192.0.2.1:1")).resolves.toMatchObject({ hostId: "h_workbox" });
+		expect(start).toHaveBeenCalledWith(expect.objectContaining({ password: "old" }));
+		localHostId = null;
+		await expect(ipc.invoke("remotes:connect", "http://192.0.2.1:1")).resolves.toMatchObject({ hostId: "h_workbox" });
+		expect(start).toHaveBeenCalledOnce();
+		expect(probe).toHaveBeenCalledOnce();
+	});
+
+	it.each(["remotes:add", "remotes:update"])("defers %s without presenting a credential when local identity is unknown", async (channel) => {
+		const file = await tempFile();
+		const original = await readFile(file, "utf8");
+		const identity = vi.fn(async () => "h_workbox");
+		const probe = vi.fn(async () => "online" as const);
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(async () => { throw new Error("unused"); }), localIdentity: async () => null, identity, probe });
+		const args = channel === "remotes:add" ? [{ label: "Other", url: "https://other.example", password: "new" }]
+			: channel === "remotes:update" ? ["http://192.0.2.1:1", { password: "new" }] : ["http://192.0.2.1:1"];
+		await expect(ipc.invoke(channel, ...args)).rejects.toThrow(/ is offline$/);
+		expect(identity).not.toHaveBeenCalled();
+		expect(probe).not.toHaveBeenCalled();
+		expect(await readFile(file, "utf8")).toBe(original);
+	});
+
+	it("asks for a fingerprint confirmation before adding a self-signed https host, then stores the confirmed certificate", async () => {
+		const file = await tempFile();
+		const identity = vi.fn(async () => "h_lan");
+		const probe = vi.fn(async () => "online" as const);
+		const certificate = vi.fn(async () => ({ pin: "a".repeat(64), cert: "PEM", trusted: false }));
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(async () => { throw new Error("unused"); }), identity, probe, certificate });
+		const input = { label: "lan", url: "https://192.168.1.5:3011", password: "code" };
+		await expect(ipc.invoke("remotes:add", input)).resolves.toBe("untrusted-certificate");
+		expect(identity).not.toHaveBeenCalled();
+		expect(await readFile(file, "utf8")).not.toContain("192.168.1.5");
+		await expect(ipc.invoke("remotes:add", { ...input, cert: "PEM" })).resolves.toBe("online");
+		expect(identity).toHaveBeenCalledWith(expect.objectContaining({ cert: "PEM" }));
+		expect(await readFile(file, "utf8")).toContain('"cert": "PEM"');
+	});
+
+	it("moves a saved http host to https only after the fingerprint is confirmed, and keeps the certificate", async () => {
+		const file = await tempFile();
+		const certificate = vi.fn(async () => ({ pin: "a".repeat(64), cert: "PEM", trusted: false }));
+		const probe = vi.fn(async () => "online" as const);
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(async () => { throw new Error("unused"); }), identity: async () => "h_workbox", probe, certificate });
+		const changes = { url: "https://192.0.2.1:3011" };
+		await expect(ipc.invoke("remotes:update", "http://192.0.2.1:1", changes)).resolves.toBe("untrusted-certificate");
+		expect(await readFile(file, "utf8")).toContain("http://192.0.2.1:1");
+		await expect(ipc.invoke("remotes:update", "http://192.0.2.1:1", { ...changes, cert: "PEM" })).resolves.toBe("online");
+		const saved = await readFile(file, "utf8");
+		expect(saved).toContain("https://192.0.2.1:3011");
+		expect(saved).toContain('"cert": "PEM"');
+	});
+
+	it("drops the pinned certificate when a host is edited to a CA-trusted address", async () => {
+		const file = await tempFile();
+		await writeFile(file, JSON.stringify({ remotes: [{ hostId: "h_workbox", label: "w", url: "https://192.0.2.1:3011", password: "p", cert: "PEM" }] }));
+		await chmod(file, 0o600);
+		const certificate = vi.fn(async () => ({ pin: "a".repeat(64), cert: "PEM2", trusted: true }));
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(async () => { throw new Error("unused"); }), identity: async () => "h_workbox", probe: async () => "online", certificate });
+		await expect(ipc.invoke("remotes:update", "https://192.0.2.1:3011", { url: "https://mac.tailnet.ts.net" })).resolves.toBe("online");
+		const saved = await readFile(file, "utf8");
+		expect(saved).toContain("mac.tailnet.ts.net");
+		expect(saved).not.toContain("PEM");
+	});
+
+	it.each(["http://192.0.2.1:3011", "https://other.trycloudflare.com:443"])("preserves another host's pairing through %s", async (url) => {
+		const file = await tempFile();
+		await writeFile(file, JSON.stringify({ remotes: [{ hostId: "h_workbox", label: "Other", url, password: "original" }] }));
+		const original = await readFile(file, "utf8");
+		const probe = vi.fn(async () => "online" as const);
+		const start = vi.fn(async () => ({ base: "http://127.0.0.1:5000/token", previewUrl: (_sessionId: string, sourceUrl: string) => sourceUrl, resolvePreviewUrl: (_sessionId: string, viewedUrl: string) => viewedUrl, agentBrowserUrl: async () => "", isAgentBrowserUrl: () => false, externalUrl: (url: string) => url, close: async () => {} }));
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(start), identity: async () => "h_workbox", probe });
+		await expect(ipc.invoke("remotes:connect", url)).resolves.toMatchObject({ hostId: "h_workbox", url });
+		expect(probe).toHaveBeenCalledWith(expect.objectContaining({ url, password: "original" }));
+		expect(start).toHaveBeenCalledWith(expect.objectContaining({ url, password: "original" }));
+		expect(await readFile(file, "utf8")).toBe(original);
+	});
+
+	it("retains an existing verified remote if local identity becomes unavailable during its probe", async () => {
+		const file = await tempFile();
+		const close = vi.fn(async () => {});
+		const registry = new RemoteRegistry(async () => ({ base: "http://127.0.0.1:5000/token", previewUrl: (_sessionId, sourceUrl) => sourceUrl, resolvePreviewUrl: (_sessionId, viewedUrl) => viewedUrl, agentBrowserUrl: async () => "", isAgentBrowserUrl: () => false, externalUrl: (url: string) => url, close }));
+		await registry.connect({ hostId: "h_workbox", label: "workbox", url: "http://192.0.2.1:1", password: "old" });
+		let localHostId: string | null = "h_this_mac";
+		const probe = vi.fn(async () => { localHostId = null; return "online" as const; });
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry, identity: async () => "h_workbox", localIdentity: async () => localHostId, probe });
+		await expect(ipc.invoke("remotes:connect", "http://192.0.2.1:1")).resolves.toMatchObject({ hostId: "h_workbox" });
+		expect(close).not.toHaveBeenCalled();
+	});
+
+	it("invalidates identity on a same-port restart before allowing another remote connection", async () => {
+		const file = await tempFile();
+		let generation = 1;
+		const localProbe = vi.fn().mockResolvedValueOnce("h_this_mac").mockRejectedValueOnce(new Error("starting")).mockResolvedValueOnce("h_workbox");
+		const localIdentity = createLocalHostIdentity(() => ({ port: 4011, generation }), localProbe);
+		const start = vi.fn(async () => { throw new Error("unused"); });
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry: new RemoteRegistry(start), localIdentity });
+		await expect(ipc.invoke("remotes:list")).resolves.toHaveLength(1);
+		generation++;
+		await expect(ipc.invoke("remotes:connect", "http://192.0.2.1:1")).rejects.toThrow(/ is offline$/);
+		await expect(ipc.invoke("remotes:list")).resolves.toEqual([]);
+		await expect(ipc.invoke("remotes:connect", "http://192.0.2.1:1")).rejects.toThrow(/itself/);
+		expect(start).not.toHaveBeenCalled();
+	});
+
+
+
+
+
+	it("saves the observed host ID and authenticates only after the identity probe", async () => {
+		const requests: Array<{ path: string; authorization: string | undefined }> = [];
+		const server = createServer((request, response) => {
+			requests.push({ path: request.url ?? "", authorization: request.headers.authorization });
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify(request.url === "/api/v1/identity"
+				? { hostId: "h_new", apiVersion: 1 }
+				: { status: "ok", service: "tallpine-daemon", pid: 1234 }));
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("missing test port");
+			const url = `http://127.0.0.1:${address.port}`;
+			const file = await tempFile();
+			const ipc = fakeIpc();
+			registerRemotes(ipc.ipcMain, {
+				file,
+				registry: new RemoteRegistry(async () => { throw new Error("unused"); }),
+			});
+			await expect(ipc.invoke("remotes:add", { label: "mini", url, password: "secret" })).resolves.toBe("online");
+			const saved = JSON.parse(await readFile(file, "utf8")).remotes as Array<{ url: string; hostId: string }>;
+			expect(saved.find((entry) => entry.url === url)?.hostId).toBe("h_new");
+			expect(requests[0]).toEqual({ path: "/api/v1/identity", authorization: undefined });
+			expect(requests.filter((request) => request.authorization)).toEqual([
+				{ path: "/healthz", authorization: "Bearer secret" },
+			]);
+		} finally {
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+		}
+	});
+
+	it("refuses a changed host before sending the saved password", async () => {
+		let authenticated = false;
+		const server = createServer((request, response) => {
+			if (request.headers.authorization) authenticated = true;
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify(request.url === "/api/v1/identity"
+				? { hostId: "h_other", apiVersion: 1 }
+				: { status: "ok", service: "tallpine-daemon", pid: 1234 }));
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("missing test port");
+			const url = `http://127.0.0.1:${address.port}`;
+			const file = await tempFile();
+			await writeFile(file, JSON.stringify({ remotes: [{ label: "workbox", url, password: "secret", hostId: "h_expected" }] }));
+			const ipc = fakeIpc();
+			registerRemotes(ipc.ipcMain, {
+				file,
+				registry: new RemoteRegistry(async () => { throw new Error("proxy must not start"); }),
+			});
+			await expect(ipc.invoke("remotes:connect", url)).rejects.toThrow(/identity|host/i);
+			expect(authenticated).toBe(false);
+		} finally {
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+		}
+	});
+
+	it("reports an incompatible host before sending or saving its credential", async () => {
+		let authenticated = false;
+		const server = createServer((request, response) => {
+			if (request.headers.authorization) authenticated = true;
+			response.setHeader("content-type", "application/json");
+			response.end(JSON.stringify({ hostId: "h_new", apiVersion: 2 }));
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		try {
+			const address = server.address();
+			if (!address || typeof address === "string") throw new Error("missing test port");
+			const url = `http://127.0.0.1:${address.port}`;
+			const file = await tempFile();
+			const ipc = fakeIpc();
+			registerRemotes(ipc.ipcMain, {
+				file,
+				registry: new RemoteRegistry(async () => { throw new Error("proxy must not start"); }),
+			});
+			await expect(ipc.invoke("remotes:add", { label: "new", url, password: "secret" })).resolves.toBe("incompatible");
+			expect(authenticated).toBe(false);
+			expect((JSON.parse(await readFile(file, "utf8")).remotes as Array<{ url: string }>).some((host) => host.url === url)).toBe(false);
+		} finally {
+			await new Promise<void>((resolve) => server.close(() => resolve()));
+		}
+	});
+
+	it("keeps the real host connected when another saved host points at its URL", async () => {
+		const file = await tempFile();
+		const url = "http://127.0.0.1:9123";
+		await writeFile(file, JSON.stringify({ remotes: [
+			{ hostId: "h_a", label: "A", url, password: "a" },
+			{ hostId: "h_b", label: "B", url, password: "b" },
+		] }));
+		const closed = vi.fn().mockResolvedValue(undefined);
+		const registry = new RemoteRegistry(async () => ({ base: "http://127.0.0.1:5000/token", previewUrl: (_sessionId, sourceUrl) => sourceUrl, resolvePreviewUrl: (_sessionId, viewedUrl) => viewedUrl, agentBrowserUrl: async () => "", isAgentBrowserUrl: () => false, externalUrl: (url: string) => url, close: closed }));
+		await registry.connect({ hostId: "h_b", label: "B", url, password: "b" });
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file, registry, identity: async () => "h_b", probe: async () => "online" });
+
+		await expect(ipc.invoke("remotes:connect", url, "h_a")).rejects.toThrow(/identity changed/);
+		await expect(ipc.invoke("remotes:connect", url, "h_b")).resolves.toMatchObject({ hostId: "h_b" });
+		expect(closed).not.toHaveBeenCalled();
+	});
+
+	it("reports an unreachable new address as offline without changing the saved host", async () => {
+		const file = await tempFile();
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, {
+			file,
+			registry: new RemoteRegistry(async () => { throw new Error("proxy must not start"); }),
+			identity: async () => { throw new TypeError("fetch failed"); },
+		});
+
+		await expect(ipc.invoke("remotes:update", "http://192.0.2.1:1", { url: "https://new.trycloudflare.com" })).resolves.toBe("offline");
+		expect((JSON.parse(await readFile(file, "utf8")).remotes as Array<{ url: string }>)[0].url).toBe("http://192.0.2.1:1");
+	});
+
+	it("lists hosts without their passwords", async () => {
+		const ipc = fakeIpc();
+		registerRemotes(ipc.ipcMain, { file: await tempFile(), registry: new RemoteRegistry(async () => { throw new Error("unused"); }), });
+		await expect(ipc.invoke("remotes:list")).resolves.toEqual([{ hostId: "h_workbox", label: "workbox", url: "http://192.0.2.1:1" }]);
+	});
+
+	it("saves a new host only after it answers as a daemon", async () => {
+		const ipc = fakeIpc();
+		const file = await tempFile();
+		const probe = vi.fn().mockResolvedValueOnce("offline" as const).mockResolvedValueOnce("online" as const);
+		registerRemotes(ipc.ipcMain, {
+			file,
+			registry: new RemoteRegistry(async () => { throw new Error("unused"); }),
+			probe,
+			identity: async () => "h_mini",
+		});
+		const mini = { label: "mini", url: "http://192.0.2.9:9", password: "m" };
+
+		await expect(ipc.invoke("remotes:add", mini)).resolves.toBe("offline");
+		expect(JSON.parse(await readFile(file, "utf8")).remotes).toHaveLength(1);
+
+		await expect(ipc.invoke("remotes:add", mini)).resolves.toBe("online");
+		expect(JSON.parse(await readFile(file, "utf8")).remotes).toHaveLength(2);
+		expect(JSON.parse(await readFile(file, "utf8")).remotes[1].hostId).toBe("h_mini");
+	});
+
+	it("drops the proxy of a removed host", async () => {
+		const ipc = fakeIpc();
+		const closed = vi.fn().mockResolvedValue(undefined);
+		const registry = new RemoteRegistry(async () => ({ base: "http://127.0.0.1:7654/token", previewUrl: (_sessionId, sourceUrl) => sourceUrl, resolvePreviewUrl: (_sessionId, viewedUrl) => viewedUrl, agentBrowserUrl: async () => "", isAgentBrowserUrl: () => false, externalUrl: (url: string) => url, close: closed }));
+		await registry.connect({ hostId: "h_workbox", label: "workbox", url: "http://192.0.2.1:1", password: "old" });
+		registerRemotes(ipc.ipcMain, { file: await tempFile(), registry, });
+		await ipc.invoke("remotes:remove", "http://192.0.2.1:1");
+		expect(closed).toHaveBeenCalledOnce();
+	});
+
+
+});

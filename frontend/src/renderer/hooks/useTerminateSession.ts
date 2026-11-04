@@ -1,0 +1,212 @@
+import { useCallback, useSyncExternalStore } from "react";
+import { type QueryClient, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
+import type { WorkspaceSession, WorkspaceSummary } from "../types/workspace";
+import { workspaceQueryKeyForHost } from "./useWorkspaceQuery";
+import {
+	applyTerminatedSession,
+	clearOptimisticSessionKill,
+	trackOptimisticSessionKill,
+} from "./optimistic-session-kills";
+import { apiClient, apiErrorMessage } from "../lib/api-client";
+import { useTranslation } from "react-i18next";
+import { clientForHost } from "../lib/host-clients";
+import { LOCAL_HOST, refKey } from "../lib/hosts";
+import { useUiStore } from "../stores/ui-store";
+import { invalidateArchivedSessions } from "./useArchivedSessions";
+
+type TerminateSessionOptions = {
+	/** Fires synchronously as the kill starts — before the cache drops the row. */
+	onOptimistic?: (session: WorkspaceSession) => void;
+	/** Fires after a successful kill and its workspace refresh have settled. */
+	onSuccess?: (session: WorkspaceSession) => void;
+};
+
+export const terminateSessionMutationKey = ["terminate-session"] as const;
+
+/**
+ * The session to archive. `deleteArtifacts` asks the daemon to also delete the
+ * session's artifact files; only the archive dialog sets it.
+ */
+export type TerminateSessionRequest = WorkspaceSession & { deleteArtifacts?: boolean };
+
+/** Resolves to whether the daemon confirmed it deleted the artifacts. */
+async function terminateSession(session: TerminateSessionRequest): Promise<boolean> {
+	const { data, error, response } = await (session.hostId ? clientForHost(session.hostId) : apiClient).POST("/api/v1/sessions/{sessionId}/kill", {
+		params: { path: { sessionId: session.id } },
+		body: session.deleteArtifacts ? { deleteArtifacts: true } : undefined,
+	});
+	if (error) {
+		const fallback = response ? `Failed to terminate session (${response.status})` : "Failed to terminate session";
+		throw new Error(apiErrorMessage(error, fallback));
+	}
+	return data?.artifactsDeleted === true;
+}
+
+type WorkspaceSnapshot = [readonly unknown[], WorkspaceSummary[] | undefined];
+
+type TerminateMutationContext = {
+	workspace: WorkspaceSnapshot | undefined;
+};
+
+type TerminateSessionMutationState = {
+	error: unknown;
+	session?: WorkspaceSession;
+	status: "error" | "idle" | "pending" | "success";
+	submittedAt: number;
+};
+
+function useTerminateSessionMutations() {
+	return useMutationState<TerminateSessionMutationState>({
+		filters: { mutationKey: terminateSessionMutationKey },
+		select: (mutation) => ({
+			error: mutation.state.error,
+			session: mutation.state.variables as WorkspaceSession | undefined,
+			status: mutation.state.status,
+			submittedAt: mutation.state.submittedAt,
+		}),
+	});
+}
+
+function summarizeBySession(mutations: TerminateSessionMutationState[]) {
+	const summaries = new Map<
+		string,
+		{ isPending: boolean; latest: TerminateSessionMutationState; session: WorkspaceSession }
+	>();
+	for (const mutation of mutations) {
+		if (!mutation.session) continue;
+		const key = refKey({ host: mutation.session.hostId ?? LOCAL_HOST, id: mutation.session.id });
+		const current = summaries.get(key);
+		if (!current) {
+			summaries.set(key, {
+				isPending: mutation.status === "pending",
+				latest: mutation,
+				session: mutation.session,
+			});
+			continue;
+		}
+		current.isPending ||= mutation.status === "pending";
+		if (mutation.submittedAt >= current.latest.submittedAt) current.latest = mutation;
+	}
+	return [...summaries.values()];
+}
+
+export function useTerminateSession(options: TerminateSessionOptions = {}) {
+	const queryClient = useQueryClient();
+	const { t } = useTranslation();
+	return useMutation({
+		mutationKey: terminateSessionMutationKey,
+		mutationFn: async (session: TerminateSessionRequest) => {
+
+			return terminateSession(session);
+		},
+		// Navigate and archive the card on the click, not on the round trip: the
+		// delete is slow (daemon kill or CP delete + sandbox teardown), and a row
+		// that does not move reads as "the click did nothing" — the reason a
+		// delete needed two or three taps. Roll every optimistic write back in
+		// onError and re-apply it across CDC/refetches while the kill is in flight.
+			onMutate: async (session): Promise<TerminateMutationContext> => {
+			// Navigate first while the row is still on screen / in closed-over lists.
+			options.onOptimistic?.(session);
+			// Drop in-flight workspace fetches so they cannot overwrite the optimistic
+			// remove with a pre-kill snapshot (CDC + refetchInterval race).
+			const queryKey = workspaceQueryKeyForHost(session.hostId);
+			await queryClient.cancelQueries({ queryKey });
+			const workspace: WorkspaceSnapshot = [
+				queryKey,
+				queryClient.getQueryData<WorkspaceSummary[]>(queryKey),
+			];
+			trackOptimisticSessionKill(session.id, session.hostId);
+			queryClient.setQueryData<WorkspaceSummary[]>(queryKey, (workspaces) =>
+				applyTerminatedSession(workspaces, session.id, session.hostId),
+			);
+			return { workspace };
+		},
+		onSuccess: async (artifactsDeleted, session) => {
+			// The archive stands either way. A failed delete, or a host whose daemon
+			// predates the option, leaves the files on disk, so say so.
+			if (session.deleteArtifacts && !artifactsDeleted) {
+				useUiStore.getState().showGlobalToast(t("archive.artifactsNotDeleted"), t("archive.artifactsNotDeletedBody"), "error");
+			}
+			// Reinforce before refresh; keep the optimistic id until this refetch finishes.
+			const queryKey = workspaceQueryKeyForHost(session.hostId);
+			queryClient.setQueryData<WorkspaceSummary[]>(queryKey, (workspaces) =>
+				applyTerminatedSession(workspaces, session.id, session.hostId),
+			);
+			await queryClient.invalidateQueries({ queryKey });
+			void invalidateArchivedSessions(queryClient, session.hostId);
+			options.onSuccess?.(session);
+		},
+		onError: (_error, session, context) => {
+			// Restore the pre-mutation snapshots so a failed kill un-archives the card
+			// rather than leaving it wrongly terminated.
+			clearOptimisticSessionKill(session.id, session.hostId);
+			const ctx = context as TerminateMutationContext | undefined;
+			if (ctx?.workspace) queryClient.setQueryData(ctx.workspace[0], ctx.workspace[1]);
+		},
+		onSettled: (_data, error, session) => {
+			if (!error) clearOptimisticSessionKill(session.id, session.hostId);
+		},
+	});
+}
+
+function workspaceCleanupErrorKey(session: WorkspaceSession | undefined): "shell.workspaceCleanupFailed" | "shell.workspaceCleanupDirty" | null {
+	if (session?.workspaceCleanup === "failed") return "shell.workspaceCleanupFailed";
+	if (session?.workspaceCleanup === "preserved_dirty") return "shell.workspaceCleanupDirty";
+	return null;
+}
+
+function useCachedWorkspaces(hostId?: string) {
+	const queryClient = useQueryClient();
+	const subscribe = useCallback((notify: () => void) => queryClient.getQueryCache().subscribe(notify), [queryClient]);
+	return useSyncExternalStore(subscribe, () => queryClient.getQueryData<WorkspaceSummary[]>(workspaceQueryKeyForHost(hostId)));
+}
+
+export function useTerminateSessionState(sessionId: string, hostId?: string) {
+	const { t } = useTranslation();
+	// Observe existing board data; this does not start another network request.
+	const data = useCachedWorkspaces(hostId);
+	const session = data?.flatMap((workspace) => workspace.sessions).find((session) => session.id === sessionId);
+	const errorKey = workspaceCleanupErrorKey(session);
+	const summary = summarizeBySession(useTerminateSessionMutations()).find(({ session }) =>
+		session.id === sessionId && session.hostId === hostId);
+	return {
+		error: (errorKey ? t(errorKey) : null) ??
+			(!summary?.isPending && summary?.latest.status === "error" && summary.latest.error instanceof Error
+				? summary.latest.error.message : null),
+		isPending: summary?.isPending === true || session?.workspaceCleanup === "pending",
+	};
+}
+
+export function useProjectTerminateSessionStates(workspaceId: string | undefined, hostId?: string) {
+	const { t } = useTranslation();
+	const data = useCachedWorkspaces(hostId);
+	const sessions = data?.find((workspace) => workspace.id === workspaceId)?.sessions ?? [];
+	const states = summarizeBySession(useTerminateSessionMutations())
+		.filter(({ session }) => session.hostId === hostId && session.workspaceId === workspaceId)
+		.sort((a, b) => b.latest.submittedAt - a.latest.submittedAt)
+		.map(({ isPending, latest, session }) => ({
+			error: !isPending && latest.error instanceof Error ? latest.error.message : null,
+			isPending, session, cleanupPending: false,
+		}));
+	for (const session of sessions) {
+		const errorKey = workspaceCleanupErrorKey(session);
+		const error = errorKey ? t(errorKey) : null;
+		const cleanupPending = session.workspaceCleanup === "pending";
+		if (!error && !cleanupPending) continue;
+		const previous = states.findIndex((state) => state.session.id === session.id);
+		const state = { error, isPending: cleanupPending, session, cleanupPending };
+		if (previous < 0) states.push(state);
+		else states[previous] = state;
+	}
+	return states.filter((state) => state.error || state.isPending);
+}
+
+export function clearTerminateSessionState(queryClient: QueryClient, sessionId: string, hostId?: string) {
+	const mutationCache = queryClient.getMutationCache();
+	for (const mutation of mutationCache.findAll({ mutationKey: terminateSessionMutationKey })) {
+		const target = mutation.state.variables as WorkspaceSession | undefined;
+		if (target?.id === sessionId && target.hostId === hostId && mutation.state.status !== "pending") {
+			mutationCache.remove(mutation);
+		}
+	}
+}

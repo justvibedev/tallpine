@@ -1,0 +1,110 @@
+#!/bin/sh
+# scripts/test-slot: run a heavy test command inside the machine-wide slot pool (B363).
+#
+#   scripts/test-slot [--throttle-if RE | --skip-if RE | --fixed N] -- cmd args...
+#
+# Every worker session shares TALLPINE_TEST_SLOTS slots (default 4, i.e. about 8 cores' worth of
+# 2-core runs) under $TALLPINE_DATA_DIR/verify-slots: a slot is a mkdir lock holding the owner's pid,
+# so a killed holder frees its slot (a dead pid is reaped by the next waiter). Callers queue in
+# FIFO order and see "waiting for a test slot (N ahead)" instead of failing.
+#
+# Narrow runs are not throttled:
+#   --throttle-if RE  only throttle when some arg matches RE (go test: '\.\.\.$' = a package tree)
+#   --skip-if RE      run unthrottled when some arg matches RE
+#   --fixed N         the first N words are the base command; unthrottled when any later arg is not a
+#                     flag (a file or name filter: `npm test -- src/x.test.ts`)
+# The local CI loop (VERIFY_PRIORITY=1) is a reserved lane: it never takes a pool slot. A command
+# started inside a held slot (TALLPINE_SLOT_HELD=1) runs directly, so nested entry points never deadlock.
+set -u
+throttle_re="" skip_re="" fixed=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--throttle-if) throttle_re="$2"; shift 2 ;;
+	--skip-if) skip_re="$2"; shift 2 ;;
+	--fixed) fixed="$2"; shift 2 ;;
+	--) shift; break ;;
+	*) break ;;
+	esac
+done
+[ $# -gt 0 ] || { echo "usage: test-slot [opts] -- cmd..." >&2; exit 2; }
+
+if [ "${TALLPINE_SLOT_HELD:-}" = 1 ] || [ "${VERIFY_PRIORITY:-0}" = 1 ] || [ "${TALLPINE_TEST_SLOTS:-}" = 0 ]; then
+	exec "$@"
+fi
+if [ -n "$fixed" ]; then
+	i=0
+	for a in "$@"; do
+		i=$((i + 1))
+		[ "$i" -gt "$fixed" ] || continue
+		case "$a" in -*) ;; *) exec "$@" ;; esac
+	done
+fi
+if [ -n "$skip_re" ]; then
+	for a in "$@"; do printf '%s\n' "$a" | grep -Eq -- "$skip_re" && exec "$@"; done
+fi
+if [ -n "$throttle_re" ]; then
+	hit=0
+	for a in "$@"; do printf '%s\n' "$a" | grep -Eq -- "$throttle_re" && hit=1; done
+	[ "$hit" = 1 ] || exec "$@"
+fi
+
+dir="${TALLPINE_DATA_DIR:-$HOME/.tallpine}/verify-slots"
+slots="${TALLPINE_TEST_SLOTS:-${VERIFY_SLOTS:-4}}"
+mkdir -p "$dir/q" || exec "$@"
+ticket="$dir/q/$(date +%s)-$$" # queue order = name order (epoch seconds, then pid)
+mine=""
+
+alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null; }
+reap() { # drop slots and queue tickets whose owner is gone
+	for d in "$dir"/slot.*; do
+		[ -d "$d" ] || continue
+		p="$(cat "$d/pid" 2>/dev/null)"
+		if [ -z "$p" ]; then
+			[ -z "$(find "$d" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rm -rf "$d"
+		else alive "$p" || rm -rf "$d"; fi
+	done
+	for t in "$dir"/q/*; do
+		[ -f "$t" ] || continue
+		b="${t##*/}"
+		alive "${b#*-}" || rm -f "$t"
+	done
+}
+cleanup() { [ -z "$mine" ] || rm -rf "$mine"; rm -f "$ticket"; }
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 130' INT HUP
+trap cleanup EXIT
+
+: >"$ticket"
+waited=0
+while :; do
+	reap
+	ahead=0
+	for t in "$dir"/q/*; do
+		[ -f "$t" ] && [ "$t" \< "$ticket" ] && ahead=$((ahead + 1))
+	done
+	if [ "$ahead" = 0 ]; then
+		i=1
+		while [ "$i" -le "$slots" ]; do
+			if mkdir "$dir/slot.$i" 2>/dev/null; then
+				mine="$dir/slot.$i"
+				echo $$ >"$mine/pid"
+				break 2
+			fi
+			i=$((i + 1))
+		done
+	fi
+	if [ $((waited % 60)) = 0 ]; then
+		echo "waiting for a test slot ($ahead ahead)" >&2
+	fi
+	sleep 2
+	waited=$((waited + 2))
+done
+rm -f "$ticket"
+export TALLPINE_SLOT_HELD=1
+"$@" &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; cleanup; exit 143' TERM
+trap 'kill -INT "$child" 2>/dev/null; wait "$child" 2>/dev/null; cleanup; exit 130' INT HUP
+wait "$child"
+rc=$?
+exit "$rc"

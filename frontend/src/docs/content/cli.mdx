@@ -1,0 +1,335 @@
+---
+title: CLI reference
+description: Commands provided by the current Go CLI.
+---
+
+The `tallpine` CLI is a thin client for the local desktop app's daemon. Commands that operate on projects and sessions require the app and its daemon to be running. `tallpine start` opens or downloads the app, `tallpine status` inspects daemon state even when it is stopped, and `tallpine doctor` checks the local environment without requiring a running daemon. Run `tallpine <command> --help` to see flags supported by your installed version.
+
+## Command tree
+
+For every flag of every command, see the generated [command reference](/cli-commands). This page explains the commands and shows examples.
+
+```text
+tallpine
+├── start / stop / status          Open the app, stop the daemon, show daemon health
+├── doctor                         Check the local environment
+├── update                         status, start (owner only; update to a CI-passed build)
+├── agent ls                       List built-in agents and readiness
+├── project                        add, ls, get, set-config, rm
+├── spawn                          Create a worker or orchestrator session
+├── session                        ls, get, kill, restore, rename, cleanup, claim-pr,
+│                                  exit-agent, resume-agent, history, usage, top,
+│                                  approvals, approve, deny, task stop
+├── send                           Send a message to a session
+├── report                         Report worker progress or artifacts
+├── orchestrator                   ls, new [--lane], handoff
+├── merges                         Merged and in-flight PRs across lanes, with overlaps
+├── pr                             merge, land, resolve-comments
+├── review                         ls, trigger, wait, cancel, submit
+├── backlog                        add, ls, show, next, edit, set, link, unlink, move,
+│                                  accept, hold, unhold, done, drop, reopen, delete,
+│                                  purge, run (plan, start, status, item, ...)
+├── policy show                    Show the effective agent policy
+├── automation                     create, list, get, update, delete, runs
+├── cue                            create, list
+├── cleanup                        status, history, policy
+├── preview                        clear, start, status, stop
+├── browser                        Control the session browser
+├── render                         Show an HTML page inline in a Chat session
+├── remote-host                    enable, disable, status
+├── import ao                      Import projects and settings from an official Agent Orchestrator install (read-only)
+├── completion                     Generate shell completions
+└── version                        Print build information
+```
+
+This reference omits internal commands such as `daemon`, `hooks`, `launch`, `agent-process`, `pty-host`, `chat-host`, `mcp`, `git-credential`, and `gh-exec`.
+
+## Desktop and daemon
+
+### `tallpine start`
+
+Opens the installed desktop app. If the app is missing, the legacy launcher can download the latest release first. The desktop app starts and supervises the daemon.
+
+| Flag | Purpose |
+| --- | --- |
+| `--json` | Print the launch result as JSON. |
+
+For a new installation, download the desktop app from the [installation guide](/installation). The frozen npm package is a legacy launcher, not the current distribution channel.
+
+### `tallpine stop`
+
+Asks the local daemon to shut down after checking that the run file identifies Tallpine. Agents keep running and the next daemon adopts them, as a restart does.
+
+| Flag | Purpose |
+| --- | --- |
+| `--timeout <duration>` | Maximum time to wait for shutdown. |
+| `--json` | Print the result as JSON. |
+| `--stop-agents` | Stop every agent's processes first. Each Chat session sleeps and resumes its conversation on its next message. |
+
+### `tallpine status`
+
+Reports daemon state, process identity, run-file location, health, and readiness. This command does not list sessions.
+
+| Flag | Purpose |
+| --- | --- |
+| `--json` | Print structured daemon status. |
+
+Use `tallpine session ls` for sessions.
+
+### `tallpine doctor`
+
+Checks Tallpine configuration, the data directory and database, daemon state, Git, GitHub authentication, and the platform runtime (`tmux` on macOS/Linux; ConPTY is built into Windows).
+
+| Flag | Purpose |
+| --- | --- |
+| `--json` | Print checks as JSON. |
+
+### `tallpine update`
+
+Owner only; agent sessions are refused. `tallpine update status` shows the installed commit, the newest CI-passed commit and the last update result. `tallpine update start [commit]` starts a detached job that quits and relaunches the app and daemon on a CI-passed commit (the newest by default), and rolls back automatically if the new daemon is not healthy. `--allow-downgrade` installs a commit older than the installed one.
+
+### `tallpine remote-host`
+
+`tallpine remote-host enable`, `disable` and `status` manage this machine's authenticated remote listener. `enable --tunnel` also starts the managed Cloudflare tunnel for access beyond the local network (Cloudflare terminates TLS and can read tunneled traffic); `--tunnel-only` binds only to loopback and uses the tunnel. See [Connections](/configuration/remote-access).
+
+### `tallpine retention`
+
+`tallpine retention show`, `set`, `preview` and `run` manage the session retention policy. `preview` lists what would be removed without removing anything; `run` shows that preview and asks first. See [Agent policy](/configuration/agent-policy).
+
+## Projects and agents
+
+### `tallpine agent ls`
+
+Lists the daemon's built-in agent catalog together with local installation and authentication readiness.
+
+| Flag | Purpose |
+| --- | --- |
+| `--refresh` | Rerun bounded local install/auth probes (orchestrator or human only; workers see the cached catalog with a note). |
+| `--json` | Print the raw inventory response. |
+
+Agent adapters are compiled into Tallpine. There is no plugin marketplace or `tallpine plugin install` command.
+
+### `tallpine project`
+
+| Command | Purpose |
+| --- | --- |
+| `tallpine project add` | Register a local Git repository or multi-repository workspace. Scratch is a Tallpine-managed built-in project. |
+| `tallpine project ls` | List registered projects. |
+| `tallpine project get <id>` | Show one project and its resolved configuration. |
+| `tallpine project set-config <id>` | Update typed per-project configuration. |
+| `tallpine project rm <id>` | Remove a project registration. |
+
+Focused `set-config` flags merge into the existing project config: only the flags you pass change. `--config-json` replaces the entire config (its JSON decoder ignores unknown keys, and it drops existing `effort` values), and `--clear` removes it. See [Projects: update from the CLI](/configuration/projects#update-from-the-cli) for safe alternatives and details. This command does not edit the old `agent-orchestrator.yaml` file.
+
+Use `tallpine automation create`, `list`, `get`, `update`, `delete`, and `runs` to manage recurring work. To create one, provide a project, name, prompt, and exactly one schedule: `--cron` or `--rrule`. Set `--timezone` to an IANA time-zone name such as `America/New_York`. Pause a definition with `tallpine automation update <id> --enabled=false`. See [schedule behavior](/configuration/lifecycle-automation#what-tallpine-handles).
+
+`tallpine cue create --project <id> --name <name>` requires exactly one `--command` or `--prompt`. `tallpine cue list --project <id>` lists definitions. Editing, deleting, and invoking Cues is available in the desktop; the CLI does not have a `cue run` command.
+
+## Sessions
+
+### `tallpine spawn`
+
+Creates a session in a registered project, or a projectless worker with `--standalone`. The command takes no positional arguments and requires a display name.
+
+```bash
+tallpine spawn --name fix-login --project my-app --agent codex --prompt "Fix the login regression"
+```
+
+Important flags include:
+
+| Flag | Purpose |
+| --- | --- |
+| `--name <name>` | Required sidebar name, at most 100 characters. |
+| `--project <id>` | Project to use. Otherwise Tallpine resolves environment and current directory context. |
+| `--agent`, `--harness <name>` | Override the project's agent. The two names are aliases. |
+| `--kind worker\|orchestrator` | Select the session role. |
+| `--mode chat\|tui` | Select structured Chat or the agent's native terminal UI. |
+| `--branch <name>` | Branch for Git projects. Scratch projects do not support it. |
+| `--prompt <text>` | Initial prompt. |
+| `--standalone` | Projectless worker; requires an explicit agent and excludes project, branch, issue, PR, and orchestrator options. |
+| `--model <model>` | Override the selected provider model for this spawn. |
+| `--tracker-provider github\|gitlab` | Select the issue provider for `--issue`. |
+| `--issue <id>` | Associate a tracker issue. |
+| `--claim-pr <ref>` | Claim an existing pull request after spawning. |
+| `--no-takeover` | Refuse a PR already owned by another active session. |
+| `--skip-agent-check` | Skip only the CLI-side install/auth preflight. |
+| `--effort <level>` | Reasoning effort for this session only; empty defers to the agent or model default. |
+| `--backlog <ref>` | Work on a [backlog](#tallpine-backlog) item (for example `B12`): its title, note and done-when join the task and the session is linked to it. |
+| `--force` | With `--backlog`, start the item even if it is held. |
+| `--output artifact` | Ask the agent to write a file in its artifact directory instead of opening a PR. |
+
+Tallpine chooses a project in this order: `--project`, `TALLPINE_PROJECT_ID`, the project for `TALLPINE_SESSION_ID`, then the closest registered project containing the current directory. Before spawning, Tallpine refreshes the selected agent's readiness unless you use `--skip-agent-check`. Readiness is advisory.
+
+### `tallpine session`
+
+| Command | Purpose |
+| --- | --- |
+| `tallpine session ls` | List active worker sessions. Use `--all` for orchestrators and `--include-terminated` for history. |
+| `tallpine session get <id>` | Show one session. |
+| `tallpine session kill <id>` | Terminate a session. Dirty workspaces are preserved. |
+| `tallpine session restore <id>` | Relaunch a terminated session when recovery is supported. |
+| `tallpine session exit-agent <id>` | Stop the controller while retaining the session. |
+| `tallpine session resume-agent <id>` | Start the controller again in that session. |
+| `tallpine session rename <id> <name>` | Change its display name. The project orchestrator cannot be renamed. |
+| `tallpine session cleanup` | Reclaim eligible terminated workspaces; supports `--dry-run`. |
+| `tallpine cleanup` | Run a cleanup pass now: worktrees of terminated sessions whose work is merged or pushed (never dirty ones, ones mid-rebase, with stashes or unpushed commits, or ones a live session uses), and, with `--confirm-artifacts`, the artifact history, tool dirs and deliverables of long-finished sessions. Previews and asks first; `--dry-run` only reports, `--yes` skips the prompt. |
+| `tallpine cleanup status` / `history` | Show the policy, the last run and the schedule / list past runs and what each freed. |
+| `tallpine cleanup policy [--set key=value]` | Show or change the cleanup policy (for example `--set artifacts.retentionDays=14`). |
+| `tallpine session claim-pr [<session-id>] <pr-ref>` | Attach an existing PR; omitting the session uses `TALLPINE_SESSION_ID`. |
+| `tallpine session history [id]` | Print a session's turns, newest first (`--limit` up to 50, `--offset`). Defaults to the current session. |
+| `tallpine session usage [id]` | Print a session's cumulative token usage by model. Defaults to the current session. |
+| `tallpine session top` | Show resident memory of each live session's process tree, largest first (`--all` includes orchestrators). |
+| `tallpine session approvals <session>` | List a worker's pending permission prompts with the exact command or tool input. |
+| `tallpine session approve <session> <requestId>` / `deny` | Answer a worker's pending permission prompt (orchestrator only, when the project allows it). `--note` records a reason in the audit trail. |
+| `tallpine session task stop <session> <taskId>` | Stop a background task (command or monitor) the session's agent is running. A worker may stop its own; an orchestrator may stop its project's workers'. |
+
+Most lookup commands accept `--project` to disambiguate a session ID.
+
+Claiming a PR records ownership and starts observation. It does not check out the PR branch, so prepare the right branch or worktree separately. **Archive** ends the session. Exit and resume stop or start only its controller. Closing a view does neither.
+
+### `tallpine send`
+
+Sends a message through the daemon to a running session.
+
+```bash
+tallpine send --session tp-123 --message "Please address the failing test"
+```
+
+`--session` and `--message` are required for ordinary sends. When called from a session with `TALLPINE_SESSION_ID`, Tallpine prefixes the sender identity.
+
+A plain send prints its outcome: `delivered to <session>` when the agent received the message, or `queued for next turn in <session> (id …)` when it was accepted but the agent will only see it after its current turn. A session that cannot take the message right now refuses it with an error. If a Chat session's running turn is waiting on an in-chat question (a form the agent opened), a plain send is steered into that turn so the agent gets it as the answer. When the agent cannot take guidance mid-turn, the send queues and says the message is not delivered until the question is answered in the app.
+
+Use `--steer` to steer an active supported Chat turn or submit a normal turn when idle. `--client-message-id` supplies a stable delivery handle. If delivery is uncertain, recover the recorded result without resending:
+
+```bash
+tallpine send --session <session-id> --steer --recover-only --client-message-id <handle>
+```
+
+`--recover-only` requires `--steer` and a handle; it does not require a new message or contact the provider. A receipt confirms acceptance state, not that the agent completed the instruction.
+
+### `tallpine orchestrator`
+
+`tallpine orchestrator ls` lists orchestrator sessions (`--json` for structured output).
+
+`tallpine orchestrator new [--lane <ref>]` starts the project's orchestrator, or returns the running one. With `--lane <ref>` (a top-level backlog item such as `B12`) it starts or returns the orchestrator that owns that item: workers it spawns join the lane, and their reports go to that orchestrator only. Without `--lane` it is the project's default orchestrator, which also receives work that has no lane.
+
+#### `tallpine orchestrator handoff`
+
+Replaces the calling orchestrator with a fresh one for the same project. `--note <path>` names a state note inside the orchestrator's own artifact directory (default: its newest file there). The new orchestrator's first message is "`Read <note> and continue`"; the old session is retired and stays readable, and workers keep running and report to the new orchestrator. An orchestrator can hand off only its own session; the desktop app offers the same action in the orchestrator tab menu.
+
+### `tallpine merges`
+
+Prints what merged in the last 24 hours, what is in flight per lane, and which in-flight PRs touch the same files, with merge-order advice. Run it before merging so same-area PRs from different lanes land one at a time. Flags: `--project <id>`, `--json`.
+
+### `tallpine report`
+
+Inside a worker, `tallpine report "Progress summary"` sends a report to its existing orchestrator. Reporting requires `TALLPINE_SESSION_ID`; it does not create an orchestrator or claim a PR.
+
+Needs-input, stuck, done, and free-form reports, and any report with an output (artifact or PR), including a checkpoint, are immediately eligible for delivery. A checkpoint with no output is progress only: it rides along with the next delivered batch or the orchestrator's next turn, or is delivered on its own after at most ten minutes. An idle orchestrator wakes for immediate reports; a busy Chat orchestrator keeps reports in the durable outbox until it can admit them, without forcing concurrent execution. Stuck reports may interrupt or combine with other reports. The five-minute done settlement grace only informs missing-PR verification; it does not delay delivery.
+
+For a structured report, choose one state flag: `--checkpoint`, `--needs-input`, `--stuck`, or `--done`. Include `--note` with it. Attach reviewable deliverables with `--artifact`, `--pr-created`, or `--pr-reviewed`; pull-request flags require full URLs. Do not combine free-form text with structured state or output flags.
+
+```bash
+tallpine report --done --note "Focused tests passed"
+```
+
+`tallpine report` must run in a worker environment that provides `TALLPINE_SESSION_ID`.
+
+## Pull requests and reviews
+
+| Command | Purpose |
+| --- | --- |
+| `tallpine pr merge <pr-number> [--url <pr-url>] [--expected-sha <sha>]` | Request a merge through the owning SCM provider. The PR URL and the head SHA the merge is pinned to are looked up from tracked sessions unless given; pass `--url` when the number exists in several repositories. |
+| `tallpine pr resolve-comments <pr-number> [comment-id...]` | Resolve selected or eligible review comments. |
+| `tallpine pr land <pr-number>` | Orchestrator only; run from a checkout of the PR's repository. Merges a worker's PR in one step: finds the head of the latest approved review, accepts a changed head only when the rebased patch equals the approved patch, refuses unless GitHub reports the merge state as clean, merges pinned to that head, and with `--kill-worker` ends the worker session. `--dry-run` prints the decision only; `--allow-overlap` lands a rebased PR even when main changed files the PR also touches. |
+| `tallpine review ls [worker-session-id]` | List review state for a worker. Defaults to the calling session. |
+| `tallpine review trigger [worker-session-id]` | Start Tallpine's reviewer on a worker's PR heads; defaults to the calling session. Fetches the PRs fresh from the provider first; `--pr <url>` reviews only that PR, attaching it if needed. Fails on a head that already has a review unless `--rerun`. `--agent`, `--model`, `--effort` pick the reviewer for one pass; `--no-inject` keeps auto-inject unchanged. Aliases: `execute`, `restart`. |
+| `tallpine review cancel [worker-session-id]` | Cancel every running reviewer. Defaults to the calling session. Alias: `stop`. |
+| `tallpine review wait [worker-session-id]` | Block until every review pass on the worker's open PR heads has ended, then print one line per PR (verdict, PR number, head SHA). `--pr <n>` picks one PR; `--timeout` defaults to 30 minutes. Exit status: 0 approved, 10 changes requested, 11 failed or cancelled without a verdict, 12 timed out, 13 no review run for the PR's current head. |
+| `tallpine review submit [worker-session-id]` | Submit a reviewer verdict and results. |
+
+Use each subcommand's help for required review-run IDs, verdict values, and file/stdin inputs.
+
+## Backlog and policy
+
+### `tallpine backlog`
+
+A per-project backlog of deferred work. Items start in the inbox when an agent files them; accepted items are open and run in drag order. Every command takes `--project <id>` (default: `TALLPINE_PROJECT_ID`, the current session, or the current registered repo) and most take `--json`.
+
+| Command | Purpose |
+| --- | --- |
+| `tallpine backlog add <title\|->` | File an item. `-` reads the title from standard input. |
+| `tallpine backlog ls` / `show <ref>` | List items in drag order / show one item with its links. |
+| `tallpine backlog next` | Show the topmost open, unheld, unblocked, non-parent item (`--parent <ref>` limits to one parent's children). |
+| `tallpine backlog edit <ref>` / `set <ref> key=value...` | Edit title, note, done-when, scope, parent or agent notes / set custom fields (`key=` clears one). |
+| `tallpine backlog link` / `unlink` | Link an item to a session, PR, issue, artifact, memory, item or blocked-by item, or remove a link. |
+| `tallpine backlog move <ref>` | Move an item before or after another. |
+| `tallpine backlog accept <ref>` | Accept an inbox item into the open list. |
+| `tallpine backlog hold <ref> <reason...>` / `unhold <ref>` | Hold an item so `next` skips it, or remove the hold. |
+| `tallpine backlog done` / `drop` / `reopen` | Close an item as done, drop it (kept in the archive), or reopen it. |
+| `tallpine backlog delete <ref>` / `purge` | Permanently delete a done or dropped item / delete them in bulk (`--done`, `--dropped`, `--older-than 30d`, `--dry-run`, `--yes`). |
+| `tallpine backlog run` | Run mode ("finish the backlog"): one durable run per project with a plan of lanes of items, each with a model. Subcommands: `start`, `plan`, `status`, `item`, `pause`, `resume`, `stop`, `finish`. Set `TALLPINE_BACKLOG_RUN=off` on the daemon to disable it. |
+
+`tallpine spawn --backlog <ref>` starts a worker on an item (its title, note and done-when join the task, and the session is linked to it); `--force` starts an item that is held.
+
+### `tallpine policy show`
+
+Shows every agent policy rule's settings, their effective values, and the layer that set each (managed, environment, project, user, or default). A setting set by managed configuration or a `TALLPINE_AGENT_*` variable is locked and cannot be changed in Settings. `--project <id>` shows the policy as it applies to a project; `--session <id>` shows the decision that session's latest launch was made under; `--json` prints structured output.
+
+## Preview and browser control
+
+### `tallpine preview [url]`
+
+Selects what the desktop Browser panel displays for the session identified by `TALLPINE_SESSION_ID`. With no argument Tallpine looks for a supported static entry point in the session workspace; with a file or `file:`, `http:`, or `https:` target it opens that target.
+
+| Command | Purpose |
+| --- | --- |
+| `tallpine preview clear` | Clear the selected preview. |
+| `tallpine preview start [configuration]` | Start exactly one command from `.tallpine/launch.json`, wait for readiness, and select it. |
+| `tallpine preview status` | Show the managed preview process and recent bounded logs. |
+| `tallpine preview stop` | Stop the managed process tree. |
+
+`.tallpine/launch.json` is optional project configuration. Tallpine does not infer or scaffold development servers, and static files do not require one.
+
+### `tallpine browser`
+
+Controls the live, session-isolated Electron browser owned by the desktop app. It also resolves its target from `TALLPINE_SESSION_ID`; the desktop app must be open.
+
+Browser commands include status and open, page snapshots, click/drag/fill/type, scrolling, tabs and popups, DevTools, screenshots, console and page errors, and optional network metadata capture. Run `tallpine browser --help` for the full command list.
+
+An element reference becomes stale when navigation or a frame or tab change replaces the page. Take a new snapshot when Tallpine reports `STALE_REFERENCE`.
+
+The first `tallpine browser snapshot --delta` returns the full page tree. Later calls return only changes; add `--full` to request the full tree again. The `--annotate` option on screenshots labels interactive elements with references.
+
+`click` and `drag` accept `--human` for pages that ignore instant pointer movement. Keep the Browser panel visible when using `--human` or taking screenshots. Hidden or covered windows stop painting, so these commands time out.
+
+Network capture is off by default. When enabled, it records bounded metadata only, excludes request and response bodies and sensitive values, and expires automatically.
+
+### `tallpine render`
+
+Shows one self-contained HTML document (inline style and script, at most 1 MiB) inline in the current Chat session's thread. `--title` is required. `tallpine render --check <file>` first screenshots the page in the desktop app and prints its content height and console messages (`--width`, `--out`). Chat sessions only; in a terminal session use `tallpine preview`.
+
+## Migration and shell integration
+
+| Command | Purpose |
+| --- | --- |
+| `tallpine import ao [--dry-run] [--project <id>...] [--all] [--settings]` | Copy registered projects (and, with `--settings`, global non-secret settings) from an official Agent Orchestrator install. The official data is only read, never changed. Sessions, chat history, reports, artifacts, browser data and credentials are never imported. Re-running updates changed projects and skips unchanged ones; `--dry-run` prints the plan. Also available in Settings → General → Import projects from Tallpine. |
+| `tallpine dev import-projects [--from-data-dir <dir>] [--dry-run]` | Developer utility: copy active project registry rows from another data directory (default `~/.tallpine/data`) into the current `TALLPINE_DATA_DIR`. The target daemon must be running; `--dry-run` reports planned changes without writing. |
+| `tallpine completion bash\|zsh\|fish\|powershell` | Generate a shell completion script. |
+| `tallpine version` / `tallpine --version` | Print build metadata. |
+
+## Environment
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TALLPINE_PORT` | `3101` | Daemon TCP port on loopback, used where the Unix socket is unavailable. |
+| `TALLPINE_RUN_FILE` | `~/.tallpine/running.json` | Daemon identity and port handshake. |
+| `TALLPINE_DATA_DIR` | `~/.tallpine/data` | Daemon data directory. |
+| `TALLPINE_REQUEST_TIMEOUT` | `60s` | REST request timeout. |
+| `TALLPINE_SPAWN_TIMEOUT` | `TALLPINE_REQUEST_TIMEOUT` | Base budget for spawn, orchestrator start and restore requests (project Setup steps extend it). Raise it if `tallpine spawn` fails with `SPAWN_TIMEOUT` on a busy machine. |
+| `TALLPINE_TMUX_COMMAND_TIMEOUT` | `5s` | Per-command timeout for tmux calls made while creating and driving terminal sessions. |
+| `TALLPINE_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown limit. It also scales how long a starting daemon waits for a previous daemon to release the data directory (9 × this + 18 s). |
+| `TALLPINE_SESSION_ID` | unset | Current session context for preview, browser, and in-session calls. |
+| `TALLPINE_PROJECT_ID` | unset | Current project context for spawn resolution. |
+
+All current Tallpine application state stays under `~/.tallpine` unless `TALLPINE_DATA_DIR` or `TALLPINE_RUN_FILE` overrides it.

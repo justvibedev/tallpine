@@ -1,0 +1,105 @@
+package controllers
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"tallpine.eu/tallpine/backend/internal/httpd/apispec"
+	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
+	"tallpine.eu/tallpine/backend/internal/service/githubpat"
+)
+
+// GitHubPATService is the controller-facing contract for local GitHub PAT management.
+type GitHubPATService interface {
+	StorePAT(ctx context.Context, token string) error
+	HasPAT(ctx context.Context) bool
+	// Login is the GitHub username Tallpine is signed in as (a stored token or the
+	// gh CLI), or "" when unknown.
+	Login(ctx context.Context) string
+	DeletePAT(ctx context.Context) error
+	ListRepos(ctx context.Context) ([]githubpat.Repo, error)
+}
+
+// GitHubStatusResponse reports whether a token is stored and whom Tallpine is signed
+// in to GitHub as.
+type GitHubStatusResponse struct {
+	Connected bool   `json:"connected"`
+	Login     string `json:"login,omitempty" description:"GitHub username Tallpine is signed in as, from a stored token or the gh CLI; absent when it could not be resolved."`
+}
+
+// GitHubController owns the local GitHub PAT + repos routes.
+type GitHubController struct {
+	Svc GitHubPATService
+}
+
+// Register mounts the GitHub routes on the supplied router.
+func (c *GitHubController) Register(r chi.Router) {
+	r.Put("/github/pat", c.putPAT)
+	r.Delete("/github/pat", c.deletePAT)
+	r.Get("/github/status", c.status)
+	r.Get("/github/repos", c.listRepos)
+}
+
+// PutGitHubPATRequest is the request body for storing a GitHub PAT.
+type PutGitHubPATRequest struct {
+	PAT string `json:"pat"`
+}
+
+func (c *GitHubController) putPAT(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, http.MethodPut, "/api/v1/github/pat")
+		return
+	}
+	var body PutGitHubPATRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PAT == "" {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_REQUEST", "A non-empty 'pat' field is required.", nil)
+		return
+	}
+	err := c.Svc.StorePAT(r.Context(), body.PAT)
+	if err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (c *GitHubController) deletePAT(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, http.MethodDelete, "/api/v1/github/pat")
+		return
+	}
+	if err := c.Svc.DeletePAT(r.Context()); err != nil {
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (c *GitHubController) status(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, http.MethodGet, "/api/v1/github/status")
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, GitHubStatusResponse{Connected: c.Svc.HasPAT(r.Context()), Login: c.Svc.Login(r.Context())})
+}
+
+func (c *GitHubController) listRepos(w http.ResponseWriter, r *http.Request) {
+	if c.Svc == nil {
+		apispec.NotImplemented(w, r, http.MethodGet, "/api/v1/github/repos")
+		return
+	}
+	repos, err := c.Svc.ListRepos(r.Context())
+	if err != nil {
+		if errors.Is(err, githubpat.ErrInvalidCredentials) {
+			envelope.WriteAPIError(w, r, http.StatusUnauthorized, "unauthorized", "GITHUB_AUTH_INVALID", "GitHub authorization expired. Reconnect GitHub to continue.", nil)
+			return
+		}
+		envelope.WriteError(w, r, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, map[string]any{"repos": repos})
+}

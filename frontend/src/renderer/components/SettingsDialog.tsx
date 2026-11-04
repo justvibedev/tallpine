@@ -1,0 +1,524 @@
+import { Loader2, TriangleAlert, X, type LucideIcon } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { createPortal } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { tallpineBridge } from "../lib/bridge";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { useRestoreFocusOnClose } from "../hooks/useRestoreFocusOnClose";
+import { ensureCodexAccounts } from "../hooks/useCodexAccountsQuery";
+import { writeCodexAccounts } from "../hooks/codex-accounts-state";
+import { ViewCloseButton } from "./shell-nav/ViewCloseButton";
+import { GlobalSettingsForm } from "./GlobalSettingsForm";
+import { ProjectSettingsForm, type ProjectSettingsSaveState, type ProjectSettingsSection as ProjectFormSection } from "./ProjectSettingsForm";
+import { useProjectSettings } from "../hooks/useProjectSettings";
+import { extraFormIdFor, mergeSaveStates, PROJECT_MAIN_FORM_ID, submitDirtyProjectForms } from "./project-settings/mergeSaveState";
+import { initialProjectSection, projectSettingsSections } from "./project-settings/projectSections";
+import { ProjectScriptsSettings } from "./ProjectScriptsSettings";
+import { ProjectSkillsSettings } from "./ProjectSkillsSettings";
+import { ProjectEnvironmentSettings } from "./ProjectEnvironmentSettings";
+import { CuesSettings } from "./CuesDialog";
+import { topbarDragStyle } from "./ShellTopbar";
+import { useAppShortcut } from "../hooks/useAppShortcut";
+import type { GlobalSettingsSection, HarnessDiagnosticsRequest, ProjectSettingsSection, SettingsModal } from "../stores/settings-modal";
+import { useUiStore } from "../stores/ui-store";
+import { cn } from "../lib/utils";
+import { DialogHeader, settingsDialogBodyClass, settingsDialogHeaderClass, settingsDialogSurfaceClass } from "./ui/dialog";
+import { NAV_ROW_HIGHLIGHT_HOST_CLASS, NavRowHighlight } from "./NavRowHighlight";
+import { labelForHost } from "../lib/host-clients";
+import { LOCAL_HOST, refKey } from "../lib/hosts";
+import { globalSettingsItem, visibleGlobalSettings } from "./settings/settingsCatalog";
+import { prefetchMobileSettings } from "./settings/mobile/prefetchMobileSettings";
+import { Spinner } from "./ui/spinner";
+
+const IDLE_PROJECT_SAVE_STATE: ProjectSettingsSaveState = { phase: "idle" };
+
+function useSettingsLayer(settingsModal: SettingsModal | null) {
+	const { t } = useTranslation();
+	const queryClient = useQueryClient();
+	const closeSettings = useUiStore((state) => state.closeSettings);
+	// Diagnostics (memory and CPU) is listed only with its toggle on.
+	const diagnostics = useUiStore((state) => state.diagnostics);
+
+	const displaySettings = settingsModal;
+	// The selected page includes several store/query subscribers. Mount it one
+	// frame after the lightweight dialog chrome so the opening interaction can
+	// paint first.
+	const deferSettingsBody = settingsModal?.scope === "global";
+	const [bodySettings, setBodySettings] = useState<SettingsModal | null>(() =>
+		deferSettingsBody ? null : settingsModal,
+	);
+	useEffect(() => {
+		if (settingsModal === null) {
+			setBodySettings(null);
+			return;
+		}
+		if (!deferSettingsBody) {
+			setBodySettings(settingsModal);
+			return;
+		}
+		const frame = requestAnimationFrame(() => setBodySettings(settingsModal));
+		return () => cancelAnimationFrame(frame);
+	}, [deferSettingsBody, settingsModal]);
+	const isBodyReady = bodySettings === displaySettings;
+
+	const globalSections = visibleGlobalSettings({ diagnostics });
+	const remoteHostId = displaySettings?.scope === "project" ? displaySettings.hostId : undefined;
+	const scratchProject = useProjectSettings(displaySettings?.scope === "project" ? displaySettings.projectId : "", { enabled: displaySettings?.scope === "project" && !remoteHostId }).data?.kind === "scratch";
+	const projectSections = projectSettingsSections(t, Boolean(remoteHostId), scratchProject);
+
+	const isProjectSettings = displaySettings?.scope === "project";
+	const [activeSection, setActiveSection] = useState<GlobalSettingsSection>("general");
+	const [focusAgentId, setFocusAgentId] = useState<string>();
+	const [startLogin, setStartLogin] = useState(false);
+	const [showDiagnostics, setShowDiagnostics] = useState<HarnessDiagnosticsRequest | undefined>();
+	const [activeProjectSection, setActiveProjectSection] = useState<ProjectSettingsSection>("general");
+	const [pendingProjectSection, setPendingProjectSection] = useState<ProjectSettingsSection | null>(null);
+	const [formSaveState, setProjectSaveState] = useState<ProjectSettingsSaveState>(IDLE_PROJECT_SAVE_STATE);
+	const [extraSaveState, setExtraSaveState] = useState<ProjectSettingsSaveState>(IDLE_PROJECT_SAVE_STATE);
+	const projectSaveState = useMemo(() => mergeSaveStates([formSaveState, extraSaveState]), [formSaveState, extraSaveState]);
+	useEffect(() => setExtraSaveState(IDLE_PROJECT_SAVE_STATE), [activeProjectSection]);
+	const [cueBusy, setCueBusy] = useState(false);
+	useEffect(() => {
+		if (pendingProjectSection && projectSaveState.phase === "saved" && !projectSaveState.dirty) {
+			setActiveProjectSection(pendingProjectSection);
+			setPendingProjectSection(null);
+		}
+	}, [pendingProjectSection, projectSaveState]);
+	const closeWhenSavedRef = useRef(false);
+	const globalSettingsWasOpen = useRef(false);
+
+	const activeLabel = !settingsModal ? "" : isProjectSettings
+		? (projectSections.find((s) => s.id === activeProjectSection)?.label ?? t("settings.project.general"))
+		: globalSettingsItem(activeSection, { diagnostics }).label(t);
+
+	const closeSettingsDialog = () => {
+		if (!settingsModal) return;
+		if (cueBusy) return;
+		if (isProjectSettings) {
+			if (closeWhenSavedRef.current) return;
+			if (projectSaveState.requestPending) {
+				closeWhenSavedRef.current = true;
+				return;
+			}
+			// An unsaveable or failed draft is dropped; waiting for a save would hang the close.
+			if (projectSaveState.unsaveable || projectSaveState.draftFailed) {
+				closeSettings();
+				return;
+			}
+			if (projectSaveState.dirty) {
+				if ([PROJECT_MAIN_FORM_ID, extraFormIdFor(activeProjectSection)].some((id) => id && document.getElementById(id))) {
+					closeWhenSavedRef.current = true;
+					submitDirtyProjectForms(formSaveState, extraSaveState, extraFormIdFor(activeProjectSection));
+					return;
+				}
+			}
+			if (projectSaveState.phase === "pending" || projectSaveState.phase === "saving") {
+				closeWhenSavedRef.current = true;
+				return;
+			}
+		}
+		closeSettings();
+	};
+	useEffect(() => {
+		if (!closeWhenSavedRef.current) return;
+		if (projectSaveState.phase === "failed" || projectSaveState.replacementError) {
+			closeWhenSavedRef.current = false;
+		} else if (projectSaveState.unsaveable && !projectSaveState.requestPending) {
+			closeWhenSavedRef.current = false;
+			closeSettings();
+		} else if (!projectSaveState.dirty && !projectSaveState.requestPending &&
+			(projectSaveState.phase === "saved" || projectSaveState.phase === "idle")) {
+			closeWhenSavedRef.current = false;
+			closeSettings();
+		}
+	}, [closeSettings, projectSaveState]);
+	// Re-resolves the requested page as the gates settle.
+	useEffect(() => {
+		if (settingsModal?.scope === "global") {
+			setActiveSection(globalSettingsItem(settingsModal.section ?? "general", { diagnostics }).id);
+		}
+	}, [diagnostics, settingsModal]);
+	// Project scope resets only when a project is opened, never when a gate
+	// settles, so a reported save state survives.
+	useEffect(() => {
+		if (settingsModal?.scope === "project") {
+			setActiveProjectSection(initialProjectSection(settingsModal.section, Boolean(settingsModal.hostId)));
+			setProjectSaveState(IDLE_PROJECT_SAVE_STATE);
+			setExtraSaveState(IDLE_PROJECT_SAVE_STATE);
+			setCueBusy(false);
+		}
+	}, [settingsModal]);
+
+	useEffect(() => {
+		setFocusAgentId(settingsModal?.scope === "global" ? settingsModal.focusAgentId : undefined);
+		setStartLogin(settingsModal?.scope === "global" && settingsModal.startLogin === true);
+		setShowDiagnostics(settingsModal?.scope === "global" ? settingsModal.showDiagnostics : undefined);
+	}, [settingsModal]);
+
+	useEffect(() => {
+		const globalSettingsOpen = settingsModal?.scope === "global";
+		if (!globalSettingsOpen) {
+			globalSettingsWasOpen.current = false;
+			return;
+		}
+		if (globalSettingsWasOpen.current) return;
+		globalSettingsWasOpen.current = true;
+		// Warm account management as soon as global Settings opens, regardless of
+		// which page is selected. By the time the user visits Accounts, external
+		// login/logout changes and saved-account observations are already current.
+		void ensureCodexAccounts([], {
+			includeUsage: true,
+			forceAuthentication: true,
+			forceDeviceReconciliation: true,
+		})
+			.then((next) => writeCodexAccounts(queryClient, next, "replace"))
+			.catch(() => undefined);
+		// Same for Mobile: its pairing state and Keep awake are known before the
+		// page is first drawn, so nothing pops in or flips after it opens.
+		prefetchMobileSettings(queryClient);
+	}, [queryClient, settingsModal?.scope]);
+
+	const selectProjectSection = (id: ProjectSettingsSection) => {
+		if (projectSaveState.dirty && !projectSaveState.unsaveable && id !== activeProjectSection) {
+			setPendingProjectSection(id);
+			submitDirtyProjectForms(formSaveState, extraSaveState, extraFormIdFor(activeProjectSection));
+		} else {
+			setActiveProjectSection(id);
+		}
+	};
+	const selectGlobalSection = (id: GlobalSettingsSection) => {
+		setActiveSection(id);
+		setFocusAgentId(undefined);
+	};
+	const navItems: SettingsNavEntry[] = isProjectSettings
+		? projectSections.map(({ id, label, icon }) => ({ id, label, icon, active: activeProjectSection === id, disabled: cueBusy, onSelect: () => selectProjectSection(id) }))
+		: globalSections.map(({ id, label, icon }) => ({ id, label: label(t), icon, active: activeSection === id, onSelect: () => selectGlobalSection(id) }));
+	const showSaveStatus = isProjectSettings && activeProjectSection !== "cues" &&
+		(projectSaveState.phase === "failed" ||
+			(projectSaveState.phase === "pending" && !projectSaveState.unsaveable) ||
+			projectSaveState.phase === "saving" ||
+			Boolean(remoteHostId && projectSaveState.replacementError));
+
+	return {
+		modal: settingsModal,
+		navItems,
+		showSaveStatus,
+		projectSaveState,
+		submitForms: () => submitDirtyProjectForms(formSaveState, extraSaveState, extraFormIdFor(activeProjectSection)),
+		activeProjectSection,
+		remoteHostId,
+		cueBusy,
+		close: closeSettingsDialog,
+		title: activeLabel,
+		isBodyReady,
+		bodyKey: displaySettings?.scope === "project" ? refKey({ host: displaySettings.hostId ?? LOCAL_HOST, id: displaySettings.projectId }) : "global",
+		body: () => {
+			if (!isBodyReady) return <div aria-hidden="true" className="h-full" data-testid="settings-dialog-body-pending" />;
+			if (displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "cues") {
+				return <CuesSettings projectId={displaySettings.projectId} onBusyChange={setCueBusy} />;
+			}
+			if (displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "skills") {
+				return <ProjectSkillsSettings projectId={displaySettings.projectId} />;
+			}
+			if (displaySettings?.scope === "project") {
+				const form = <ProjectSettingsForm projectId={displaySettings.projectId} hostId={remoteHostId} section={activeProjectSection as ProjectFormSection} onSaveState={setProjectSaveState} />;
+				// Setup/cleanup commands and environment variables keep their own editors and save buttons.
+				if (!remoteHostId && activeProjectSection === "repository") return <>{form}<ProjectScriptsSettings projectId={displaySettings.projectId} formId="project-scripts-form" onSaveState={setExtraSaveState} /></>;
+				if (!remoteHostId && activeProjectSection === "advanced") return <>{form}<ProjectEnvironmentSettings projectId={displaySettings.projectId} formId="project-environment-form" onSaveState={setExtraSaveState} /></>;
+				return form;
+			}
+			return <GlobalSettingsForm focusAgentId={focusAgentId} hostId={displaySettings?.scope === "global" ? displaySettings.hostId : undefined} startLogin={startLogin} showDiagnostics={showDiagnostics} section={activeSection} />;
+		},
+	};
+}
+
+export type SettingsNavEntry = {
+	id: string;
+	label: string;
+	icon: LucideIcon;
+	active: boolean;
+	disabled?: boolean;
+	onSelect: () => void;
+};
+
+type SettingsLayer = ReturnType<typeof useSettingsLayer>;
+
+type SettingsPageValue = { active: SettingsLayer; layers: SettingsLayer[] };
+
+const SettingsPageContext = createContext<SettingsPageValue | null>(null);
+
+/** The settings layer currently on top, or null while settings is closed. */
+export function useSettingsPage() {
+	return useContext(SettingsPageContext)?.active ?? null;
+}
+
+/**
+ * Owns settings state for the shell so the sidebar (section list, Back) and the
+ * center pane (page body) stay in sync. A recovery settings page opened above a
+ * project form keeps the project layer's state alive underneath.
+ */
+export function SettingsProvider({ children }: { children: ReactNode }) {
+	const settingsModal = useUiStore((state) => state.settingsModal);
+	const projectModal = settingsModal?.scope === "project" ? settingsModal : settingsModal?.returnTo ?? null;
+	const globalModal = settingsModal?.scope === "global" ? settingsModal : null;
+	const projectLayer = useSettingsLayer(projectModal);
+	const globalLayer = useSettingsLayer(globalModal);
+	// Global settings is a page in the shell; project settings stays a modal.
+	const active = globalModal ? globalLayer : null;
+	const activeRef = useRef(active);
+	activeRef.current = active;
+	const isOpen = active !== null;
+	// Hand focus back to whatever opened settings once the page closes.
+	useEffect(() => {
+		if (!isOpen) return;
+		const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		return () => { if (opener?.isConnected) opener.focus({ preventScroll: true }); };
+	}, [isOpen]);
+	// Settings sections follow the app's navigation chords while the page is
+	// open: previous/next (⌘⇧[ ⌘⇧], ⌃Tab, ⌘⌥←/→) step through the section list and
+	// ⌘1-9 jumps to the Nth section. The shell stands down for these meanwhile.
+	const stepSection = useCallback((direction: -1 | 1) => {
+		const items = activeRef.current?.navItems.filter((item) => !item.disabled) ?? [];
+		if (items.length === 0) return;
+		const current = items.findIndex((item) => item.active);
+		const next = items[(current + direction + items.length) % items.length];
+		next?.onSelect();
+	}, []);
+	useEffect(() => {
+		if (!isOpen) return;
+		const disposers = [
+			tallpineBridge.app.onPreviousSessionShortcut(() => stepSection(-1)),
+			tallpineBridge.app.onNextSessionShortcut(() => stepSection(1)),
+			tallpineBridge.app.onPreviousTabShortcut(() => stepSection(-1)),
+			tallpineBridge.app.onNextTabShortcut(() => stepSection(1)),
+		];
+		return () => disposers.forEach((dispose) => dispose());
+	}, [isOpen, stepSection]);
+	useAppShortcut(
+		"jump-to-session",
+		({ index }) => {
+			const items = activeRef.current?.navItems.filter((item) => !item.disabled) ?? [];
+			if (index !== undefined) items[index]?.onSelect();
+		},
+		isOpen,
+	);
+	useEffect(() => {
+		if (!isOpen) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Escape" || event.isComposing) return;
+			const target = event.target instanceof Element ? event.target : null;
+			// In-place edits (a profile rename) and login flows (terminal, cloud login panel) take Escape themselves.
+			if (target?.closest("[data-settings-inline-edit]")) return;
+			// Open menus, listboxes, and dialogs take Escape to dismiss themselves. Only popups the
+			// event came from (or that hold focus) count, so a stray tooltip cannot swallow it.
+			if (event.isComposing) return;
+			const focused = document.activeElement instanceof Element ? document.activeElement : null;
+			const popup = '[role="menu"], [role="listbox"], [role="dialog"], [data-radix-popper-content-wrapper]';
+			if ([target, focused].some((element) => element?.closest(popup))) return;
+			activeRef.current?.close();
+		};
+		// Capture phase so a field that handles its own Escape cannot swallow the close.
+		document.addEventListener("keydown", onKeyDown, true);
+		return () => document.removeEventListener("keydown", onKeyDown, true);
+	}, [isOpen]);
+	return (
+		<SettingsPageContext.Provider value={active ? { active, layers: [globalLayer] } : null}>
+			{children}
+			{projectModal && <ProjectSettingsModal key={projectLayer.bodyKey} layer={projectLayer} covered={globalModal !== null} />}
+		</SettingsPageContext.Provider>
+	);
+}
+
+/**
+ * Settings page rendered inside the center panel, in place of the routed page:
+ * no top bar, just one centered, scrolling content column on the normal page
+ * background, headed by the page's sentence-case title.
+ */
+export function SettingsPane() {
+	const page = useContext(SettingsPageContext);
+	if (!page) return null;
+	const layer = page.active;
+	return (
+		<div className="relative flex min-h-0 flex-1 flex-col" data-testid="settings-page">
+			<ViewCloseButton />
+			{/* Transparent toolbar-height strip laid over the scroller: keeps the macOS
+			  * window-drag region while content scrolls up under it to the panel edge.
+			  * The body's top padding clears it (and the fixed titlebar controls that
+			  * sit over the panel when the sidebar is closed) at rest. Controls that
+			  * scroll beneath it are no-drag (styles.css). The strip itself never takes
+			  * pointer events (the native drag region does not need them), so a click
+			  * there reaches the control under it, and it stops short of the scrollbar
+			  * so the top of the track can still be grabbed. */}
+			<div aria-hidden="true" className="pointer-events-none absolute left-0 right-2 top-0 z-10 h-toolbar" style={topbarDragStyle} />
+			{/* A covered project layer stays mounted so its draft survives recovery settings above it. */}
+			{page.layers.map((entry) => (
+				// `relative` makes the scroller the containing block for absolutely
+				// positioned content (sr-only labels, menu triggers). Without it they
+				// escape to the shell's overflow-x-hidden wrapper, which then scrolls
+				// the whole center panel away.
+				<div
+					aria-busy={!entry.isBodyReady}
+					className={cn("settings-thin-scrollbar relative min-h-0 flex-1 overflow-y-auto", entry !== layer && "hidden")}
+					key={entry.bodyKey}
+				>
+					<div className="settings-dialog-body mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 pb-12 pt-[calc(var(--spacing-toolbar)+--spacing(4))]">
+						<h1 className="mb-8 flex items-center gap-2 px-(--settings-row-inset) text-heading font-medium leading-7 text-foreground">
+							{entry.title}
+							{entry.remoteHostId && <span className="ml-2 text-xs font-normal text-muted-foreground">· {labelForHost(entry.remoteHostId) ?? entry.remoteHostId}</span>}
+						</h1>
+						{entry.body()}
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+/** Save progress / failure for the project form, shown under the section list. */
+export function SettingsSaveStatus({ layer: layerProp }: { layer?: SettingsLayerState }) {
+	const { t } = useTranslation();
+	const pageLayer = useSettingsPage();
+	const layer = layerProp ?? pageLayer;
+	if (!layer?.showSaveStatus) return null;
+	const { projectSaveState, remoteHostId, submitForms } = layer;
+	return (
+		<div className="mt-2 border-t border-(--color-border-settings-dialog-header) px-2 py-3 text-xs" role="status" aria-live="polite">
+			{projectSaveState.phase === "failed" || (remoteHostId && projectSaveState.replacementError) ? (
+				<div className="space-y-2 text-error">
+					<p className="flex items-start gap-2" role="alert"><TriangleAlert className="size-4 shrink-0" aria-hidden="true" />{projectSaveState.error ?? projectSaveState.replacementError ?? t("settings.project.saveFailed")}</p>
+					<button className="text-settings-label underline underline-offset-2" onClick={() => {
+						if (projectSaveState.retry) projectSaveState.retry();
+						else submitForms();
+					}} type="button">{t("createProject.retry")}</button>
+				</div>
+			) : (
+				<p className="flex items-center gap-2 text-settings-muted">
+					<><Spinner icon={Loader2} className="size-4 shrink-0" />{t("settings.project.saving")}</>
+				</p>
+			)}
+		</div>
+	);
+}
+
+type SettingsLayerState = ReturnType<typeof useSettingsLayer>;
+
+/** Project settings: a dialog over the shell, sharing the page's section list and body. */
+function ProjectSettingsModal({ layer, covered }: { layer: SettingsLayerState; covered: boolean }) {
+	const { t } = useTranslation();
+	const contentRef = useRef<HTMLDivElement>(null);
+	const restoreFocusOnClose = useRestoreFocusOnClose(!covered);
+	// The body renders into a detached host so it stays mounted (and keeps its draft)
+	// while recovery settings cover the dialog, then is re-attached when it returns.
+	const [bodyHost] = useState(() => document.createElement("div"));
+	useEffect(() => { bodyHost.className = "flex min-h-0 flex-1 flex-col"; }, [bodyHost]);
+	// That portal puts the body outside the Dialog's React tree, so Radix cannot
+	// tell that a popover, menu, or picker a page opens (portalled to <body>)
+	// belongs to the dialog: a press in one reads as outside and would dismiss
+	// the dialog, dropping the pick. React still routes events through portals
+	// along the React tree, so remember each press that starts anywhere in the
+	// body's tree (the page or anything it portals) and keep the dialog open
+	// for exactly that press. A press on the backdrop never passes through here.
+	const bodyPointerDown = useRef<Event | null>(null);
+	return (
+		<>
+		{createPortal(
+			<div className="contents" onPointerDownCapture={(event) => { bodyPointerDown.current = event.nativeEvent; }}>{layer.body()}</div>,
+			bodyHost,
+		)}
+		<Dialog.Root open={!covered} onOpenChange={(open) => { if (!open) layer.close(); }}>
+			<Dialog.Portal>
+				<Dialog.Overlay
+					className="dialog-overlay z-[calc(var(--z-overlay)-1)] animate-overlay-in motion-reduce:animate-none"
+					data-testid="settings-dialog-overlay"
+					onWheel={(event) => event.preventDefault()}
+				/>
+				<Dialog.Content
+					aria-modal="true"
+					className={cn(
+						settingsDialogSurfaceClass,
+						"fixed left-1/2 top-1/2 z-overlay h-[min(40rem,calc(100vh-3rem))] w-(--size-settings-dialog-wide) max-h-none -translate-x-1/2 -translate-y-1/2 origin-center overflow-hidden p-0 animate-modal-in motion-reduce:animate-none sm:rounded-lg",
+					)}
+					onOpenAutoFocus={(event) => {
+						// Land on the current section (or the first field), not the close button.
+						const root = contentRef.current;
+						const target = root?.querySelector<HTMLElement>('nav button[aria-current="page"]:not(:disabled)')
+							?? root?.querySelector<HTMLElement>('.settings-dialog-body :is(input, textarea, select, button):not(:disabled)');
+						if (!target) return;
+						event.preventDefault();
+						target.focus({ preventScroll: true });
+					}}
+					onCloseAutoFocus={restoreFocusOnClose}
+					onPointerDownOutside={(event) => {
+						if (event.detail.originalEvent === bodyPointerDown.current) {
+							event.preventDefault();
+							return;
+						}
+						// An open picker or menu takes the first outside click to close
+						// itself, as Escape does; the dialog closes on the next one. A
+						// tooltip is not a popup that holds the click, and neither is a
+						// picker still playing its exit animation.
+						const openPopup = Array.from(document.querySelectorAll("[data-radix-popper-content-wrapper]")).some((wrapper) =>
+							!contentRef.current?.contains(wrapper)
+							&& wrapper.firstElementChild?.getAttribute("data-state") !== "closed"
+							&& wrapper.querySelector('[role="dialog"], [role="menu"], [role="listbox"]'));
+						if (openPopup) event.preventDefault();
+					}}
+					onEscapeKeyDown={(event) => {
+						const target = event.target instanceof Element ? event.target : null;
+						// In-place edits and login flows take Escape themselves.
+						if (target?.closest("[data-settings-inline-edit]")) {
+							event.preventDefault();
+							return;
+						}
+						if (contentRef.current?.contains(event.target as Node)) return;
+						const activeElement = document.activeElement instanceof Element ? document.activeElement : null;
+						const nestedPopup = [target, activeElement].some((element) => element?.closest('[role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]'));
+						if (nestedPopup) event.preventDefault();
+					}}
+					ref={contentRef}
+				>
+					<div className="flex h-full min-h-0">
+						<aside className="flex w-48 shrink-0 flex-col border-r border-(--color-border-settings-dialog-header) bg-card">
+							<p className="px-3 pb-1 pt-1.5 text-2xs font-medium tracking-normal text-muted-foreground/60">{t("shell.projectSettings")}</p>
+							<nav aria-label={t("settings.navSectionsAria")} className="flex flex-col gap-0.5 p-2 pt-0">
+								{layer.navItems.map(({ id, label, icon: Icon, active, disabled, onSelect }) => (
+									<button
+										aria-current={active ? "page" : undefined}
+										className={cn(
+											NAV_ROW_HIGHLIGHT_HOST_CLASS,
+											"flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm font-medium text-muted-foreground transition-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50",
+										)}
+										data-active={active}
+										disabled={disabled}
+										key={id}
+										onClick={onSelect}
+										type="button"
+									>
+										<NavRowHighlight active={active} disabled={disabled} />
+										<Icon aria-hidden="true" className="relative z-[1] size-icon-md shrink-0" />
+										<span className="relative z-[1] min-w-0 flex-1 truncate">{label}</span>
+									</button>
+								))}
+							</nav>
+							<div className="mt-auto"><SettingsSaveStatus layer={layer} /></div>
+						</aside>
+						<div className="flex min-w-0 flex-1 flex-col bg-card">
+							<DialogHeader className={cn(settingsDialogHeaderClass, "flex h-auto shrink-0 flex-row items-center justify-between border-b-0 py-3 pl-(--size-modal-padding) pr-3")}>
+								<Dialog.Title className="settings-dialog-title">{layer.title}{layer.remoteHostId && <span className="ml-2 text-xs font-normal text-muted-foreground">· {labelForHost(layer.remoteHostId) ?? layer.remoteHostId}</span>}</Dialog.Title>
+								<Dialog.Description className="sr-only">{t("settings.project.dialogDescription")}</Dialog.Description>
+								<button aria-label={t("settings.close")} className="settings-close-button" disabled={layer.cueBusy} onClick={layer.close} type="button">
+									<X aria-hidden="true" className="size-4" />
+								</button>
+							</DialogHeader>
+							<div aria-busy={!layer.isBodyReady} className={cn(settingsDialogBodyClass, "settings-dialog-body flex-1 px-(--size-modal-padding) pt-0")}>
+								<div className="flex min-h-0 flex-1 flex-col" ref={(node) => { if (node && bodyHost.parentElement !== node) node.appendChild(bodyHost); }} />
+							</div>
+						</div>
+					</div>
+				</Dialog.Content>
+			</Dialog.Portal>
+		</Dialog.Root>
+		</>
+	);
+}

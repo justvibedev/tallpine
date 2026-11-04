@@ -1,0 +1,17 @@
+{
+	// Forge, Vite and Playwright configs (Node-side build tooling).
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./node_modules/.cache/tsc/tooling",
+		"tsBuildInfoFile": "./node_modules/.cache/tsc/tooling.tsbuildinfo"
+	},
+	"include": [
+		"forge.config.ts",
+		"makers/**/*.ts",
+		"vite.main.config.ts",
+		"vite.preload.config.ts",
+		"vite.renderer.config.ts",
+		"playwright.config.ts"
+	],
+	"references": [{ "path": "./tsconfig.shared.json" }]
+}

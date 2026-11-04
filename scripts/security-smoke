@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# scripts/security-smoke: run a typical agent work loop and print a pass/fail +
+# seconds table, so the friction of the state fence (Claude) or the permission
+# cap (Codex) can be measured. Run it twice from an agent session of the same
+# repo, once fenced/capped and once not, then compare:
+#
+#   scripts/security-smoke [--only name,name] [--branch tp/smoke-$$]
+#
+# rc 78 from a step means expected-deny (DENY, not a failure).
+# Steps skip (SKIP) when their tool is missing. The git push step pushes a
+# scratch branch and deletes it again; it needs push access to origin.
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+only=""; branch="tp/security-smoke-$$"
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--only) only="$2"; shift 2 ;;
+	--branch) branch="$2"; shift 2 ;;
+	*) echo "usage: $0 [--only a,b] [--branch name]" >&2; exit 2 ;;
+	esac
+done
+tmp="${TMPDIR:-/tmp}/security-smoke-$$"; mkdir -p "$tmp"
+trap 'rm -rf "$tmp"' EXIT
+rows=()
+
+step() { # name, command...
+	local name="$1"; shift
+	if [ -n "$only" ] && ! printf ',%s,' "$only" | grep -q ",$name,"; then return; fi
+	local start end rc
+	start=$(date +%s)
+	if [ "$1" = "need" ]; then
+		shift
+		if ! command -v "$1" >/dev/null 2>&1; then rows+=("$(printf '%-18s %-5s %4s' "$name" SKIP -)"); return; fi
+		shift
+	fi
+	"$@" >"$tmp/$name.log" 2>&1; rc=$?
+	end=$(date +%s)
+	if [ $rc -eq 77 ]; then rows+=("$(printf '%-18s %-5s %4ss' "$name" SKIP $((end - start)))"); return; fi
+	if [ $rc -eq 78 ]; then rows+=("$(printf '%-18s %-5s %4ss' "$name" DENY $((end - start)))"); return; fi  # expected-deny: the fence blocks it on purpose
+	rows+=("$(printf '%-18s %-5s %4ss' "$name" "$([ $rc -eq 0 ] && echo PASS || echo FAIL)" $((end - start)))")
+	[ $rc -ne 0 ] && { echo "--- $name failed (rc=$rc), last lines:" >&2; tail -5 "$tmp/$name.log" >&2; }
+}
+
+go_test()   { (cd backend && ../scripts/go test -count=1 ./internal/brand/...); }
+vitest()    { [ -d frontend/node_modules ] || { echo "no frontend/node_modules (run npm ci in frontend/)"; return 77; }; (cd frontend && npx vitest run --reporter=dot src/shared 2>&1 | tail -3; exit "${PIPESTATUS[0]}"); }
+git_fetch() { git fetch origin main; }
+git_push()  { git push origin "HEAD:refs/heads/$branch" && git push origin --delete "$branch"; }
+git_commit() { git -c user.name=smoke -c user.email=smoke@example.invalid commit --allow-empty --no-verify -q -m smoke && git reset -q --soft HEAD~1; }  # writes the linked worktree git dir
+gh_api()    { gh api rate_limit; }
+npm_inst()  { mkdir -p "$tmp/npm" && (cd "$tmp/npm" && echo '{"name":"smoke","version":"1.0.0"}' >package.json && npm install --no-audit --no-fund left-pad); }
+xcode()     { xcodebuild -version || return 1; local proj; proj="${SMOKE_XCODEPROJ:-$(git ls-files '*.xcodeproj/project.pbxproj' | head -1 | xargs -I{} dirname {})}"; [ -n "$proj" ] || return 77; xcodebuild -list -project "$proj"; }
+devices()   { [ -n "${SMOKE_DEVICECTL:-}" ] || return 77; xcrun devicectl list devices --timeout 20; }  # opt-in: needs attached hardware, so a failure is not attributable to the fence
+port_bind() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));s.listen(1);print(s.getsockname())'; }
+httpd()     { python3 - <<'PY'
+import threading, http.server, urllib.request
+s = http.server.HTTPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler)
+threading.Thread(target=s.serve_forever, daemon=True).start()
+urllib.request.urlopen("http://127.0.0.1:%d/" % s.server_address[1], timeout=5)
+PY
+}
+# B462: vitest/go servers bind a unix socket under $TMPDIR (os.tmpdir()); under the Claude fence $TMPDIR is /tmp/claude-<uid>, which allowUnixSockets does not cover.
+ub() { python3 -c 'import os,shutil,socket,sys,tempfile;d=tempfile.mkdtemp(dir=sys.argv[1])
+try:
+    s=socket.socket(socket.AF_UNIX);s.bind(os.path.join(d,"s.sock"));s.listen(1);print(d)
+finally:
+    shutil.rmtree(d,ignore_errors=True)' "$1"; }
+fenced() { [ -n "${CLAUDE_CODE_TMPDIR:-}" ] && [ "$CLAUDE_CODE_TMPDIR" != "${TMPDIR:-}" ]; }  # the Claude fence sets TMPDIR to the shared /tmp/claude-<uid>
+unix_bind() { ub "${CLAUDE_CODE_TMPDIR:-${TMPDIR:-/tmp}}"; }  # the per-session dir the vitest setup (frontend/vitest.tmpdir.ts) uses
+unix_bind_shared() { ub "${TMPDIR:-/tmp}" || { fenced && return 78; return 1; }; }  # shared /tmp/claude-<uid> is denied on purpose
+node_loopback() { node -e 'const h=require("http");const s=h.createServer((q,r)=>r.end("ok")).listen(0,"127.0.0.1",()=>fetch("http://127.0.0.1:"+s.address().port).then(r=>r.text()).then(()=>s.close(),e=>{console.error(e);process.exit(1)}))'; }
+ps_etime()  { ps -o etime= -p $$ || { fenced && return 78; return 1; }; }  # ps is denied on purpose under the Claude fence (argv leaks) -> DENY, not FAIL. main's process-start reads a pid's start time with ps
+tp_cli()    { tallpine session ls; }
+
+step go-test go_test
+step vitest vitest
+step git-fetch git_fetch
+step git-commit git_commit
+step git-push git_push
+step gh-api need gh gh_api
+step npm-install need npm npm_inst
+step xcodebuild need xcodebuild xcode
+step devicectl need xcrun devices
+step port-bind port_bind
+step http-loopback httpd
+step unix-bind unix_bind
+step unix-bind-shared unix_bind_shared
+step node-loopback need node node_loopback
+step ps-etime ps_etime
+step tallpine-cli need tallpine tp_cli
+
+printf '%-18s %-5s %5s\n' step result time
+printf '%s\n' "${rows[@]}"
+printf '%s\n' "${rows[@]}" | grep -q ' FAIL ' && exit 1
+exit 0

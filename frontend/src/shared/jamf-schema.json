@@ -1,0 +1,469 @@
+{
+	"__feedback": "https://github.com/justvibedev/tallpine",
+	"__version": "1.0",
+	"description": "Tallpine managed preferences.",
+	"properties": {
+		"AutoUpdate": {
+			"description": "Desktop app update policy (app.update.enabled).",
+			"title": "AutoUpdate",
+			"type": "boolean"
+		},
+		"AutoUpdateChannel": {
+			"description": "Desktop app update policy (app.update.channel).",
+			"enum": [
+				"stable",
+				"beta"
+			],
+			"title": "AutoUpdateChannel",
+			"type": "string"
+		},
+		"AutoUpdatePinnedVersion": {
+			"description": "Desktop app update policy (app.update.pinnedVersion).",
+			"title": "AutoUpdatePinnedVersion",
+			"type": "string"
+		},
+		"profile": {
+			"description": "Hardened profile; see docs/agent-policy.md.",
+			"enum": [
+				"hardened"
+			],
+			"title": "Profile",
+			"type": "string"
+		},
+		"rules": {
+			"description": "Agent policy; see docs/agent-policy.md.",
+			"properties": {
+				"accountPool": {
+					"properties": {
+						"failover": {
+							"description": "Agent policy accountPool: failover (see docs/agent-policy.md).",
+							"title": "policy.accountPool.failover",
+							"type": "boolean"
+						},
+						"placement": {
+							"description": "Agent policy accountPool: placement (see docs/agent-policy.md).",
+							"enum": [
+								"default",
+								"random",
+								"most-headroom",
+								"least-used"
+							],
+							"title": "policy.accountPool.placement",
+							"type": "string"
+						}
+					},
+					"title": "accountPool",
+					"type": "object"
+				},
+				"agentSettings": {
+					"properties": {
+						"allow": {
+							"description": "Agent policy agentSettings: allow (see docs/agent-policy.md).",
+							"items": {
+								"type": "string"
+							},
+							"title": "policy.agentSettings.allow",
+							"type": "array"
+						},
+						"deny": {
+							"description": "Agent policy agentSettings: deny (see docs/agent-policy.md).",
+							"items": {
+								"type": "string"
+							},
+							"title": "policy.agentSettings.deny",
+							"type": "array"
+						},
+						"mode": {
+							"description": "Agent policy agentSettings: mode (see docs/agent-policy.md).",
+							"enum": [
+								"allow",
+								"allowList",
+								"deny"
+							],
+							"title": "policy.agentSettings.mode",
+							"type": "string"
+						}
+					},
+					"title": "agentSettings",
+					"type": "object"
+				},
+				"crossProjectOrchestration": {
+					"properties": {
+						"enabled": {
+							"description": "Agent policy crossProjectOrchestration: enabled (see docs/agent-policy.md).",
+							"title": "policy.crossProjectOrchestration.enabled",
+							"type": "boolean"
+						}
+					},
+					"title": "crossProjectOrchestration",
+					"type": "object"
+				},
+				"devMode": {
+					"properties": {
+						"enabled": {
+							"description": "Agent policy devMode: enabled (see docs/agent-policy.md).",
+							"title": "policy.devMode.enabled",
+							"type": "boolean"
+						}
+					},
+					"title": "devMode",
+					"type": "object"
+				},
+				"envFilter": {
+					"properties": {
+						"mode": {
+							"description": "Agent policy envFilter: mode (see docs/agent-policy.md).",
+							"enum": [
+								"inherit",
+								"allowlist"
+							],
+							"title": "policy.envFilter.mode",
+							"type": "string"
+						},
+						"passthrough": {
+							"description": "Agent policy envFilter: passthrough (see docs/agent-policy.md).",
+							"items": {
+								"type": "string"
+							},
+							"title": "policy.envFilter.passthrough",
+							"type": "array"
+						}
+					},
+					"title": "envFilter",
+					"type": "object"
+				},
+				"githubCreds": {
+					"properties": {
+						"mode": {
+							"description": "Agent policy githubCreds: mode (see docs/agent-policy.md).",
+							"enum": [
+								"env",
+								"helper",
+								"none"
+							],
+							"title": "policy.githubCreds.mode",
+							"type": "string"
+						}
+					},
+					"title": "githubCreds",
+					"type": "object"
+				},
+				"orchestratorApprovals": {
+					"properties": {
+						"enabled": {
+							"description": "Agent policy orchestratorApprovals: enabled (see docs/agent-policy.md).",
+							"title": "policy.orchestratorApprovals.enabled",
+							"type": "boolean"
+						}
+					},
+					"title": "orchestratorApprovals",
+					"type": "object"
+				},
+				"orchestratorLanes": {
+					"properties": {
+						"enabled": {
+							"description": "Agent policy orchestratorLanes: enabled (see docs/agent-policy.md).",
+							"title": "policy.orchestratorLanes.enabled",
+							"type": "boolean"
+						}
+					},
+					"title": "orchestratorLanes",
+					"type": "object"
+				},
+				"permissionCap": {
+					"properties": {
+						"max": {
+							"description": "Agent policy permissionCap: max (see docs/agent-policy.md).",
+							"enum": [
+								"none",
+								"auto",
+								"accept_edits"
+							],
+							"title": "policy.permissionCap.max",
+							"type": "string"
+						}
+					},
+					"title": "permissionCap",
+					"type": "object"
+				},
+				"planner": {
+					"properties": {
+						"autoApprove": {
+							"description": "Agent policy planner: autoApprove (see docs/agent-policy.md).",
+							"enum": [
+								"",
+								"off"
+							],
+							"title": "policy.planner.autoApprove",
+							"type": "string"
+						},
+						"harness": {
+							"description": "Agent policy planner: harness (see docs/agent-policy.md).",
+							"title": "policy.planner.harness",
+							"type": "string"
+						},
+						"inPlace": {
+							"description": "Agent policy planner: inPlace (see docs/agent-policy.md).",
+							"enum": [
+								"",
+								"off"
+							],
+							"title": "policy.planner.inPlace",
+							"type": "string"
+						},
+						"mode": {
+							"description": "Agent policy planner: mode (see docs/agent-policy.md).",
+							"enum": [
+								"",
+								"off",
+								"auto",
+								"always"
+							],
+							"title": "policy.planner.mode",
+							"type": "string"
+						},
+						"model": {
+							"description": "Agent policy planner: model (see docs/agent-policy.md).",
+							"title": "policy.planner.model",
+							"type": "string"
+						}
+					},
+					"title": "planner",
+					"type": "object"
+				},
+				"protectState": {
+					"properties": {
+						"credentialAllow": {
+							"description": "Agent policy protectState: credentialAllow (see docs/agent-policy.md).",
+							"items": {
+								"type": "string"
+							},
+							"title": "policy.protectState.credentialAllow",
+							"type": "array"
+						},
+						"credentialPaths": {
+							"description": "Agent policy protectState: credentialPaths (see docs/agent-policy.md).",
+							"items": {
+								"type": "string"
+							},
+							"title": "policy.protectState.credentialPaths",
+							"type": "array"
+						},
+						"devTooling": {
+							"description": "Agent policy protectState: devTooling (see docs/agent-policy.md).",
+							"enum": [
+								"allow",
+								"strict"
+							],
+							"title": "policy.protectState.devTooling",
+							"type": "string"
+						},
+						"mode": {
+							"description": "Agent policy protectState: mode (see docs/agent-policy.md).",
+							"enum": [
+								"off",
+								"on"
+							],
+							"title": "policy.protectState.mode",
+							"type": "string"
+						}
+					},
+					"title": "protectState",
+					"type": "object"
+				},
+				"repoAgentConfig": {
+					"properties": {
+						"enabled": {
+							"description": "Agent policy repoAgentConfig: enabled (see docs/agent-policy.md).",
+							"title": "policy.repoAgentConfig.enabled",
+							"type": "boolean"
+						}
+					},
+					"title": "repoAgentConfig",
+					"type": "object"
+				},
+				"securityMode": {
+					"properties": {
+						"allowDocker": {
+							"description": "Agent policy securityMode: allowDocker (see docs/agent-policy.md).",
+							"title": "policy.securityMode.allowDocker",
+							"type": "boolean"
+						},
+						"enabled": {
+							"description": "Agent policy securityMode: enabled (see docs/agent-policy.md).",
+							"title": "policy.securityMode.enabled",
+							"type": "boolean"
+						}
+					},
+					"title": "securityMode",
+					"type": "object"
+				},
+				"sessionRetention": {
+					"properties": {
+						"days": {
+							"description": "Agent policy sessionRetention: days (see docs/agent-policy.md).",
+							"title": "policy.sessionRetention.days",
+							"type": "integer"
+						},
+						"dropProviderEvents": {
+							"description": "Agent policy sessionRetention: dropProviderEvents (see docs/agent-policy.md).",
+							"title": "policy.sessionRetention.dropProviderEvents",
+							"type": "boolean"
+						},
+						"dropTranscripts": {
+							"description": "Agent policy sessionRetention: dropTranscripts (see docs/agent-policy.md).",
+							"title": "policy.sessionRetention.dropTranscripts",
+							"type": "boolean"
+						},
+						"dropWorktrees": {
+							"description": "Agent policy sessionRetention: dropWorktrees (see docs/agent-policy.md).",
+							"title": "policy.sessionRetention.dropWorktrees",
+							"type": "boolean"
+						},
+						"enabled": {
+							"description": "Agent policy sessionRetention: enabled (see docs/agent-policy.md).",
+							"title": "policy.sessionRetention.enabled",
+							"type": "boolean"
+						},
+						"includeOrchestrators": {
+							"description": "Agent policy sessionRetention: includeOrchestrators (see docs/agent-policy.md).",
+							"title": "policy.sessionRetention.includeOrchestrators",
+							"type": "boolean"
+						}
+					},
+					"title": "sessionRetention",
+					"type": "object"
+				}
+			},
+			"title": "Agent policy rules",
+			"type": "object"
+		},
+		"schemaVersion": {
+			"default": 2,
+			"description": "Managed file format version.",
+			"title": "Schema version",
+			"type": "integer"
+		},
+		"settings": {
+			"description": "Settings the organization sets and locks.",
+			"properties": {
+				"app.cleanup.artifacts": {
+					"description": "Retention of session artifacts.",
+					"title": "app.cleanup.artifacts",
+					"type": "object"
+				},
+				"app.cleanup.automatic": {
+					"description": "Run storage cleanup automatically.",
+					"title": "app.cleanup.automatic",
+					"type": "boolean"
+				},
+				"app.cleanup.backlog": {
+					"description": "Expiry of backlog inbox items.",
+					"title": "app.cleanup.backlog",
+					"type": "object"
+				},
+				"app.cleanup.branches": {
+					"description": "Cleanup of merged session branches.",
+					"title": "app.cleanup.branches",
+					"type": "object"
+				},
+				"app.cleanup.containers": {
+					"description": "Removal of session-labelled containers.",
+					"title": "app.cleanup.containers",
+					"type": "object"
+				},
+				"app.cleanup.goBuildCache": {
+					"description": "Trimming of the Go build cache.",
+					"title": "app.cleanup.goBuildCache",
+					"type": "object"
+				},
+				"app.cleanup.harnessCaches": {
+					"description": "Retention of harness caches.",
+					"title": "app.cleanup.harnessCaches",
+					"type": "object"
+				},
+				"app.cleanup.sessionTemp": {
+					"description": "Cleanup of session scratch directories.",
+					"title": "app.cleanup.sessionTemp",
+					"type": "object"
+				},
+				"app.cleanup.systemTemp": {
+					"description": "Cleanup of Tallpine-created system temp files.",
+					"title": "app.cleanup.systemTemp",
+					"type": "object"
+				},
+				"app.cleanup.worktrees": {
+					"description": "Cleanup of merged or old session worktrees.",
+					"title": "app.cleanup.worktrees",
+					"type": "object"
+				},
+				"app.dynamicOrchestratorContext": {
+					"description": "Let an orchestrator raise its compaction window while it researches a large codebase itself (`tallpine orchestrator research on`). Off keeps every orchestrator on its early coordination window.",
+					"title": "app.dynamicOrchestratorContext",
+					"type": "boolean"
+				},
+				"app.mobile.enabled": {
+					"description": "Whether phones may connect at all. A managed value of false turns the mobile bridge off and no user or project setting can turn it back on; the transport is always encrypted.",
+					"title": "app.mobile.enabled",
+					"type": "boolean"
+				},
+				"app.providerEventRetentionDays": {
+					"description": "Days provider events of a terminated session are kept while compaction is on.",
+					"maximum": 3650,
+					"minimum": 1,
+					"title": "app.providerEventRetentionDays",
+					"type": "integer"
+				},
+				"project.autoReview": {
+					"description": "Start a native review when a worker opens a PR.",
+					"title": "project.autoReview",
+					"type": "boolean"
+				},
+				"project.models": {
+					"description": "Models allowed in the project.",
+					"title": "project.models",
+					"type": "object"
+				},
+				"project.orchestrator": {
+					"description": "Orchestrator overrides of agentConfig.",
+					"title": "project.orchestrator",
+					"type": "object"
+				},
+				"project.planner": {
+					"description": "Planner overrides of agentConfig; empty inherits the orchestrator's agent, else the worker's. A managed policy.planner wins.",
+					"title": "project.planner",
+					"type": "object"
+				},
+				"project.reviewRisk": {
+					"description": "Paths that need a stronger review, and the stronger reviewer (agent, model, effort) they get.",
+					"title": "project.reviewRisk",
+					"type": "object"
+				},
+				"project.reviewers": {
+					"description": "Native reviewers of the project's PRs.",
+					"title": "project.reviewers",
+					"type": "object"
+				},
+				"project.terminateOnPrMerge": {
+					"description": "End each new worker once its pull requests are merged or closed (at least one merged), none is open, it is idle and no message waits for it; the orchestrator gets an [auto] notice. On unless turned off.",
+					"title": "project.terminateOnPrMerge",
+					"type": "boolean"
+				},
+				"project.trackerIntake": {
+					"description": "Issue tracker intake.",
+					"title": "project.trackerIntake",
+					"type": "object"
+				},
+				"project.worker": {
+					"description": "Worker overrides of agentConfig.",
+					"title": "project.worker",
+					"type": "object"
+				}
+			},
+			"title": "Locked settings",
+			"type": "object"
+		}
+	},
+	"title": "ee.justdev.tallpine",
+	"type": "object"
+}

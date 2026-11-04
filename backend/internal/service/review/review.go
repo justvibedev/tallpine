@@ -1,0 +1,682 @@
+// Package review is the daemon's HTTP-facing code-review service boundary. The
+// core orchestration lives in internal/review; this layer is the thin contract
+// the API controller depends on and delegates to the engine, so the same engine
+// can also back a future in-process CLI trigger.
+package review
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
+	reviewcore "tallpine.eu/tallpine/backend/internal/review"
+	"tallpine.eu/tallpine/backend/internal/textutil"
+)
+
+// errRunSuperseded marks a run that became terminal before its result arrived.
+// SubmitMany treats it as stale input so it cannot strand valid sibling results
+// in the same reviewer submission.
+var errRunSuperseded = errors.New("review: run is no longer running")
+
+// ErrInvalid and ErrNotFound re-export the engine sentinels so the HTTP
+// controller maps service failures to 422/404 without importing the core.
+var (
+	ErrInvalid              = reviewcore.ErrInvalid
+	ErrNotFound             = reviewcore.ErrNotFound
+	ErrConflict             = reviewcore.ErrConflict
+	ErrReviewAlreadyRunning = reviewcore.ErrReviewAlreadyRunning
+	ErrHeadAlreadyReviewed  = reviewcore.ErrHeadAlreadyReviewed
+	ErrPROwnedElsewhere     = reviewcore.ErrPROwnedElsewhere
+	ErrAgentBinaryNotFound  = ports.ErrAgentBinaryNotFound
+	// ErrForeignReviewRun refuses a submission naming a run of another review
+	// than the one the submitter is bound to.
+	ErrForeignReviewRun = errors.New("review: run belongs to another review")
+)
+
+// Manager is the reviews surface the HTTP controller depends on.
+type Manager interface {
+	RecoverChatReviewers(ctx context.Context) error
+	TriggerRequested(ctx context.Context, workerID domain.SessionID, req TriggerRequest) (TriggerOutcome, error)
+	RequestRereview(ctx context.Context, workerID domain.SessionID, prURL, reviewer string) error
+	ResolveReviewComment(ctx context.Context, workerID domain.SessionID, prURL, commentURL string) error
+	TriggerAuto(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness) (reviewcore.TriggerResult, error)
+	Cancel(ctx context.Context, workerID domain.SessionID) (reviewcore.CancelResult, error)
+	TerminateReviewer(ctx context.Context, workerID domain.SessionID, body string) error
+	ArchiveReviewer(ctx context.Context, workerID domain.SessionID) error
+	TeardownReviewerTerminal(ctx context.Context, workerID domain.SessionID) error
+	RestoreReviewer(ctx context.Context, workerID domain.SessionID) error
+	SwitchReviewer(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness, config domain.AgentConfig) (reviewcore.SessionReviews, error)
+	ApplyReviewActivitySignal(ctx context.Context, reviewSessionID string, signal ActivitySignal) error
+	Submit(ctx context.Context, workerID domain.SessionID, runID string, verdict domain.ReviewVerdict, body, githubReviewID string) (domain.ReviewRun, error)
+	SubmitMany(ctx context.Context, workerID domain.SessionID, reviews []SubmittedReview) ([]domain.ReviewRun, error)
+	List(ctx context.Context, workerID domain.SessionID) (reviewcore.SessionReviews, error)
+}
+
+// Service is the API-facing review service. It delegates to the core engine.
+type Service struct {
+	engine             *reviewcore.Engine
+	store              Store
+	requester          ports.SCMReviewRequester
+	resolver           ports.SCMReviewResolver
+	clock              func() time.Time
+	codexOperationGate ports.CodexOperationGate
+	notifications      reviewNotificationSink
+	prRefresher        PRRefresher
+	// engineTrigger indirects the engine's source-tagged trigger so the
+	// instrumented path can be exercised without standing up a full engine and
+	// its eighteen-method store. Defaulted in New; only tests replace it.
+	engineTrigger func(context.Context, domain.SessionID, reviewcore.TriggerOptions) (reviewcore.TriggerResult, error)
+
+	// noticeMu guards notice, which SetFailureNotice binds after construction.
+	noticeMu sync.Mutex
+	notice   *failureNotice
+	planGate planGateFunc // see SetPlanGate
+	// sweepWake asks a running sweep to run now (see wakeSweep).
+	sweepWake chan struct{}
+}
+
+type reviewNotificationSink interface {
+	Notify(context.Context, ports.NotificationIntent) error
+}
+
+var _ Manager = (*Service)(nil)
+
+// RecoverChatReviewers restores durable reviewer-owned Chat controllers after
+// daemon startup. It is intentionally part of the required manager contract so
+// startup wiring cannot silently omit it.
+func (s *Service) RecoverChatReviewers(ctx context.Context) error {
+	return s.engine.RecoverChatReviewers(ctx)
+}
+
+// Store is the review_run persistence surface owned by the service submit path.
+type Store interface {
+	GetReviewByID(ctx context.Context, id string) (domain.Review, bool, error)
+	UpdateReviewActivity(ctx context.Context, id string, state domain.ActivityState, agentSessionID, launchID string) (bool, error)
+	GetReviewRun(ctx context.Context, id string) (domain.ReviewRun, bool, error)
+	GetSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool, error)
+	SetSessionAutoInjectReview(ctx context.Context, id domain.SessionID, autoInject bool, updatedAt time.Time) (bool, error)
+	UpdateReviewRunResult(ctx context.Context, id string, status domain.ReviewRunStatus, verdict domain.ReviewVerdict, body, githubReviewID string, autoInjectReview bool) (bool, error)
+	ListPRsBySession(ctx context.Context, id domain.SessionID) ([]domain.PullRequest, error)
+	ListPRReviews(ctx context.Context, prURL string) ([]domain.PullRequestReview, error)
+	ListPRComments(ctx context.Context, prURL string) ([]domain.PullRequestComment, error)
+	MarkPRCommentResolved(ctx context.Context, prURL, commentID string) (bool, error)
+}
+
+// PRRefresher fetches one pull request fresh from its provider and records it
+// on the worker session. It attaches a PR the session does not track yet, but
+// never takes one over from another active session.
+type PRRefresher interface {
+	RefreshPR(ctx context.Context, workerID domain.SessionID, prURL string) error
+}
+
+// PRDiscoverer is an optional PRRefresher capability: attach the worker's open
+// PRs found on the provider by its branch namespace (a follow-up PR from a
+// second branch), for a trigger that names no PR and finds none tracked.
+type PRDiscoverer interface {
+	DiscoverPRs(ctx context.Context, workerID domain.SessionID) error
+}
+
+// prRefreshTimeout bounds the provider fetch a trigger waits for before
+// falling back to the PR facts Tallpine already has.
+const prRefreshTimeout = 10 * time.Second
+
+// Option customizes the review service.
+type Option func(*Service)
+
+// WithPRRefresher refreshes a worker's PRs from the provider before a
+// requested review, so the pass covers the commit actually on the PR.
+func WithPRRefresher(r PRRefresher) Option {
+	return func(s *Service) { s.prRefresher = r }
+}
+
+// WithClock overrides the service clock for tests.
+func WithClock(clock func() time.Time) Option {
+	return func(s *Service) { s.clock = clock }
+}
+
+// WithReviewRequester wires provider-backed re-review requests.
+func WithReviewRequester(requester ports.SCMReviewRequester) Option {
+	return func(s *Service) { s.requester = requester }
+}
+
+// WithReviewResolver wires provider-backed review-thread resolution.
+func WithReviewResolver(resolver ports.SCMReviewResolver) Option {
+	return func(s *Service) { s.resolver = resolver }
+}
+
+// WithNotificationSink publishes durable review results after their run has
+// reached complete. The run id is the dedupe key, so submit retries are safe.
+func WithNotificationSink(sink reviewNotificationSink) Option {
+	return func(s *Service) { s.notifications = sink }
+}
+
+// WithCodexAccountOperationGate prevents new Codex reviewer controllers from
+// entering while the device-global Codex credential is changing.
+func WithCodexAccountOperationGate(gate ports.CodexOperationGate) Option {
+	return func(s *Service) { s.codexOperationGate = gate }
+}
+
+// New wraps a core review engine as the API-facing service.
+func New(engine *reviewcore.Engine, store Store, opts ...Option) *Service {
+	s := &Service{
+		engine:    engine,
+		store:     store,
+		clock:     func() time.Time { return time.Now().UTC() },
+		sweepWake: make(chan struct{}, 1),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.engineTrigger == nil {
+		s.engineTrigger = func(ctx context.Context, workerID domain.SessionID, opts reviewcore.TriggerOptions) (reviewcore.TriggerResult, error) {
+			return s.engine.TriggerWithOptions(ctx, workerID, opts)
+		}
+	}
+	return s
+}
+
+// RequestRereview asks the SCM provider to request another review from reviewer
+// on one of the worker session's tracked PRs.
+func (s *Service) RequestRereview(ctx context.Context, workerID domain.SessionID, prURL, reviewer string) error {
+	reviewer = strings.TrimSpace(strings.TrimPrefix(reviewer, "@"))
+	if workerID == "" {
+		return fmt.Errorf("%w: worker session id is required", ErrInvalid)
+	}
+	if reviewer == "" {
+		return fmt.Errorf("%w: reviewer is required", ErrInvalid)
+	}
+	if s.requester == nil {
+		return fmt.Errorf("%w: review request provider is unavailable", ErrInvalid)
+	}
+	prs, err := s.store.ListPRsBySession(ctx, workerID)
+	if err != nil {
+		return err
+	}
+	if len(prs) == 0 {
+		return fmt.Errorf("%w: worker %q has no PR", ErrInvalid, workerID)
+	}
+	pr, ok := reviewcore.SelectRereviewPR(prs, prURL)
+	if !ok {
+		return fmt.Errorf("%w: pull request is not tracked for worker %q", ErrNotFound, workerID)
+	}
+	if pr.Closed || pr.Merged {
+		return fmt.Errorf("%w: pull request is not open", ErrInvalid)
+	}
+	if !reviewerReviewedPR(ctx, s.store, pr.URL, reviewer) {
+		return fmt.Errorf("%w: reviewer %q has not reviewed this PR", ErrInvalid, reviewer)
+	}
+	ref, err := reviewRequestRef(pr)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	if err := s.requester.RequestReview(ctx, ports.SCMReviewRequest{PR: ref, Reviewer: reviewer}); err != nil {
+		if errors.Is(err, ports.ErrSCMNotFound) {
+			return fmt.Errorf("%w: %w", ErrNotFound, err)
+		}
+		if errors.Is(err, ports.ErrSCMUnsupported) {
+			return fmt.Errorf("%w: %w", ErrInvalid, err)
+		}
+		return err
+	}
+	return nil
+}
+
+func reviewerReviewedPR(ctx context.Context, store Store, prURL, reviewer string) bool {
+	reviews, err := store.ListPRReviews(ctx, prURL)
+	if err != nil {
+		return false
+	}
+	for _, review := range reviews {
+		if strings.EqualFold(strings.TrimPrefix(strings.TrimSpace(review.Author), "@"), reviewer) {
+			return true
+		}
+	}
+	comments, err := store.ListPRComments(ctx, prURL)
+	if err != nil {
+		return false
+	}
+	for _, comment := range comments {
+		if strings.EqualFold(strings.TrimPrefix(strings.TrimSpace(comment.Author), "@"), reviewer) {
+			return true
+		}
+	}
+	return false
+}
+
+func reviewRequestRef(pr domain.PullRequest) (ports.SCMPRRef, error) {
+	repo := ports.SCMRepo{Provider: pr.Provider, Host: pr.Host, Repo: pr.Repo}
+	parsed, parseErr := domain.ParseChangeRequestURL(pr.URL)
+	if parseErr == nil {
+		if repo.Provider == "" {
+			repo.Provider = parsed.Provider
+		}
+		if repo.Host == "" {
+			repo.Host = parsed.Host
+		}
+	}
+	if repo.Repo != "" {
+		parts := strings.SplitN(repo.Repo, "/", 2)
+		if len(parts) == 2 {
+			repo.Owner = parts[0]
+			repo.Name = parts[1]
+		}
+	}
+	if parseErr == nil && repo.Provider == "github" && (repo.Owner == "" || repo.Name == "") {
+		repo.Owner, repo.Name = parsed.RepoOwnerAndName()
+		if repo.Repo == "" {
+			repo.Repo = parsed.Repository
+		}
+	}
+	if pr.Number <= 0 || repo.Provider == "" || repo.Owner == "" || repo.Name == "" {
+		return ports.SCMPRRef{}, fmt.Errorf("invalid pull request reference")
+	}
+	return ports.SCMPRRef{Repo: repo, Number: pr.Number, URL: pr.URL}, nil
+}
+
+// ResolveReviewComment resolves the provider review thread that owns the given
+// unresolved review comment.
+func (s *Service) ResolveReviewComment(ctx context.Context, workerID domain.SessionID, prURL, commentURL string) error {
+	commentURL = strings.TrimSpace(commentURL)
+	if workerID == "" {
+		return fmt.Errorf("%w: worker session id is required", ErrInvalid)
+	}
+	if commentURL == "" {
+		return fmt.Errorf("%w: comment URL is required", ErrInvalid)
+	}
+	if s.resolver == nil {
+		return fmt.Errorf("%w: review resolver provider is unavailable", ErrInvalid)
+	}
+	prs, err := s.store.ListPRsBySession(ctx, workerID)
+	if err != nil {
+		return err
+	}
+	pr, ok := reviewcore.SelectRereviewPR(prs, prURL)
+	if !ok {
+		return fmt.Errorf("%w: pull request is not tracked for worker %q", ErrNotFound, workerID)
+	}
+	comments, err := s.store.ListPRComments(ctx, pr.URL)
+	if err != nil {
+		return err
+	}
+	var target domain.PullRequestComment
+	for _, comment := range comments {
+		if comment.URL == commentURL {
+			target = comment
+			break
+		}
+	}
+	if target.ThreadID == "" {
+		return fmt.Errorf("%w: review comment is not tracked for this PR", ErrNotFound)
+	}
+	if target.Resolved {
+		return nil
+	}
+	ref, err := reviewRequestRef(pr)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+	if err := s.resolver.ResolveReviewThread(ctx, ports.SCMReviewResolveRequest{PR: ref, ThreadID: target.ThreadID}); err != nil {
+		if errors.Is(err, ports.ErrSCMNotFound) {
+			return fmt.Errorf("%w: %w", ErrNotFound, err)
+		}
+		if errors.Is(err, ports.ErrSCMUnsupported) {
+			return fmt.Errorf("%w: %w", ErrInvalid, err)
+		}
+		return err
+	}
+	if updated, err := s.store.MarkPRCommentResolved(ctx, pr.URL, target.ID); err != nil {
+		return err
+	} else if !updated {
+		return fmt.Errorf("%w: review comment is not tracked for this PR", ErrNotFound)
+	}
+	return nil
+}
+
+// TriggerRequest is a client-requested review pass with its same-commit and
+// feedback policy.
+type TriggerRequest struct {
+	Harness domain.ReviewerHarness
+	Config  domain.AgentConfig
+	// Source is manual (a person) or agent (a Tallpine session through the CLI).
+	// Automatic passes come only from the daemon through TriggerAuto.
+	Source        domain.ReviewTriggerSource
+	InterfaceMode domain.ReviewerInterfaceMode
+	// PRURL restricts the pass to one PR, attaching it to the worker first when
+	// Tallpine does not track it yet.
+	PRURL string
+	// Head, when set, is the commit the caller expects the PR to be at (a
+	// full or abbreviated SHA). The trigger refreshes the PR from the provider
+	// and refuses with ErrConflict when its head differs, so a push that Tallpine has
+	// not observed yet can never start a review of the previous commit.
+	Head               string
+	RejectReviewedHead bool
+	Rerun              bool
+	// EnableAutoInject turns on the worker session's review auto-inject once a
+	// pass has started, so the reviewer's PR review comments reach the worker.
+	EnableAutoInject bool
+}
+
+// TriggerOutcome is the trigger result plus whether this request turned the
+// session's review auto-inject on.
+type TriggerOutcome struct {
+	reviewcore.TriggerResult
+	AutoInjectEnabled bool
+}
+
+// TriggerRequested starts a client-requested review pass.
+func (s *Service) TriggerRequested(ctx context.Context, workerID domain.SessionID, req TriggerRequest) (TriggerOutcome, error) {
+	if err := s.checkPlanGate(ctx, workerID); err != nil {
+		return TriggerOutcome{}, err
+	}
+	source := req.Source
+	if source == "" {
+		source = domain.ReviewTriggerManual
+	}
+	if source != domain.ReviewTriggerManual && source != domain.ReviewTriggerAgent {
+		return TriggerOutcome{}, fmt.Errorf("%w: review trigger source must be %q or %q", ErrInvalid, domain.ReviewTriggerManual, domain.ReviewTriggerAgent)
+	}
+	if mode := req.InterfaceMode; mode != "" && mode != domain.ReviewerInterfaceChat && mode != domain.ReviewerInterfaceTUI {
+		return TriggerOutcome{}, fmt.Errorf("%w: unknown reviewer interface mode %q", ErrInvalid, mode)
+	}
+	if req.Rerun && req.RejectReviewedHead {
+		return TriggerOutcome{}, fmt.Errorf("%w: rerun cannot be combined with rejecting an already-reviewed head", ErrInvalid)
+	}
+	head := strings.ToLower(strings.TrimSpace(req.Head))
+	if head != "" && !validExpectedHead(head) {
+		return TriggerOutcome{}, fmt.Errorf("%w: --head must be 7 to 64 hexadecimal characters, got %q", ErrInvalid, req.Head)
+	}
+	if err := s.refreshPRs(ctx, workerID, strings.TrimSpace(req.PRURL), head != ""); err != nil {
+		return TriggerOutcome{}, err
+	}
+	prURL := strings.TrimSpace(req.PRURL)
+	if head != "" {
+		var err error
+		if prURL, err = s.checkExpectedHead(ctx, workerID, prURL, head); err != nil {
+			return TriggerOutcome{}, err
+		}
+	}
+	result, err := s.triggerWithOptions(ctx, workerID, reviewcore.TriggerOptions{
+		Harness:            req.Harness,
+		Config:             req.Config,
+		Source:             source,
+		InterfaceMode:      req.InterfaceMode,
+		PRURL:              prURL,
+		RejectReviewedHead: req.RejectReviewedHead,
+		Rerun:              req.Rerun,
+	})
+	if err != nil {
+		return TriggerOutcome{}, err
+	}
+	// A requested pass is deliberate direction: it ends a wait on the orchestrator.
+	if recorder, ok := s.store.(ports.SessionInteractionRecorder); ok {
+		_ = recorder.RecordSessionInteraction(ctx, workerID, "", s.clock()) // best effort: a missed stamp leaves the wait to its timeout
+	}
+	outcome := TriggerOutcome{TriggerResult: result}
+	if !req.EnableAutoInject {
+		return outcome, nil
+	}
+	// Only after a pass exists: a rejected or failed trigger must not change
+	// the session's feedback policy. Delivery reads the session's live setting
+	// when the result arrives, so turning it on now covers this pass.
+	session, ok, err := s.store.GetSession(ctx, workerID)
+	if err != nil {
+		return TriggerOutcome{}, err
+	}
+	if !ok {
+		return TriggerOutcome{}, fmt.Errorf("%w: worker session %q", ErrNotFound, workerID)
+	}
+	if session.AutoInjectReview {
+		return outcome, nil
+	}
+	updated, err := s.store.SetSessionAutoInjectReview(ctx, workerID, true, s.clock())
+	if err != nil {
+		return TriggerOutcome{}, fmt.Errorf("enable review auto-inject: %w", err)
+	}
+	outcome.AutoInjectEnabled = updated
+	return outcome, nil
+}
+
+// refreshPRs fetches the worker's PRs fresh from the provider before a
+// requested review, so the pass reviews the commit really on the PR rather than
+// whatever the SCM observer last saw. A named PR is attached first when Tallpine does
+// not track it yet; failing to fetch it is an error, because there is nothing
+// else to review. Refreshing already-tracked PRs is best effort: on failure the
+// trigger proceeds with the facts Tallpine has, and its same-commit checks still
+// report a push Tallpine has not observed.
+func (s *Service) refreshPRs(ctx context.Context, workerID domain.SessionID, prURL string, strict bool) error {
+	if s.prRefresher == nil {
+		return nil
+	}
+	if reviewcore.IsLocalTarget(prURL) {
+		return nil // a local branch has no provider to refresh from
+	}
+	ctx, cancel := context.WithTimeout(ctx, prRefreshTimeout)
+	defer cancel()
+	tracked, err := s.store.ListPRsBySession(ctx, workerID)
+	if err != nil {
+		return err
+	}
+	if prURL != "" {
+		known := false
+		for _, pr := range tracked {
+			if pr.URL == prURL || pr.HTMLURL == prURL {
+				known = true
+				break
+			}
+		}
+		if err := s.prRefresher.RefreshPR(ctx, workerID, prURL); err != nil && !known {
+			return err
+		} else if err != nil && strict {
+			return fmt.Errorf("refresh PR head before verifying --head: %w", err)
+		} else if err != nil {
+			slog.Default().WarnContext(ctx, "review trigger: refresh named PR failed; using stored facts", "session", workerID, "err", err)
+		}
+		return nil
+	}
+	open := 0
+	for _, pr := range tracked {
+		if !pr.Merged && !pr.Closed {
+			open++
+		}
+	}
+	if open == 0 {
+		// The SCM observer attributes new PRs only on its next poll, so a PR
+		// opened moments ago from another session branch is not tracked yet.
+		if d, ok := s.prRefresher.(PRDiscoverer); ok {
+			if err := d.DiscoverPRs(ctx, workerID); err != nil {
+				slog.Default().WarnContext(ctx, "review trigger: PR discovery failed", "session", workerID, "err", err)
+			}
+		}
+	}
+	for _, pr := range tracked {
+		if pr.Merged || pr.Closed {
+			continue
+		}
+		if err := s.prRefresher.RefreshPR(ctx, workerID, textutil.FirstNonBlank(pr.HTMLURL, pr.URL)); err != nil && strict {
+			return fmt.Errorf("refresh PR head before verifying --head: %w", err)
+		} else if err != nil {
+			slog.Default().WarnContext(ctx, "review trigger: refresh PR failed; using stored facts", "session", workerID, "err", err)
+		}
+	}
+	return nil
+}
+
+// validExpectedHead reports whether head is a plausible commit SHA prefix: a
+// shorter or non-hex value would match almost any PR head and defeat the check.
+func validExpectedHead(head string) bool {
+	if len(head) < 7 || len(head) > 64 {
+		return false
+	}
+	for _, r := range head {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// TriggerAuto starts a daemon-initiated review pass.
+func (s *Service) TriggerAuto(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness) (reviewcore.TriggerResult, error) {
+	return s.triggerWithOptions(ctx, workerID, reviewcore.TriggerOptions{Harness: harness, Source: domain.ReviewTriggerAuto})
+}
+
+// triggerWithOptions is the single instrumented trigger path. Every entry
+// point routes through it so an automatic pass is never invisible: before
+// this, only the manual Trigger emitted, which made auto-review
+// indistinguishable from manual review in every downstream funnel even though
+// the two answer completely different product questions.
+func (s *Service) triggerWithOptions(
+	ctx context.Context,
+	workerID domain.SessionID,
+	opts reviewcore.TriggerOptions,
+) (reviewcore.TriggerResult, error) {
+	harness, config := opts.Harness, opts.Config
+	if err := config.Validate(); err != nil {
+		err = fmt.Errorf("%w: reviewer config: %w", ErrInvalid, err)
+		return reviewcore.TriggerResult{}, err
+	}
+	usesCodex := s.codexReviewUsesCodex(ctx, workerID, harness)
+	var release func()
+	if usesCodex && s.codexOperationGate != nil {
+		var err error
+		release, err = s.codexOperationGate.AcquireSharedWait(ctx)
+		if err != nil {
+			return reviewcore.TriggerResult{}, err
+		}
+		defer release()
+	}
+	result, err := s.engineTrigger(ctx, workerID, opts)
+	// A trigger can fail passes: a stale or overdue reviewer, or a launch error.
+	s.wakeSweep()
+	if err != nil {
+		return result, err
+	}
+	// A created run or a restarted pass is an actual review. Reused and skipped
+	// automatic attempts can recur on every sweep and are not new reviews.
+	createdOrRestarted := result.Created || len(result.CreatedRuns) > 0
+	if !createdOrRestarted {
+		return result, nil
+	}
+	s.noticeRunsStarted(ctx, workerID, result)
+	return result, nil
+}
+
+// Cancel stops the live reviewer pane and marks running review passes as failed.
+func (s *Service) Cancel(ctx context.Context, workerID domain.SessionID) (reviewcore.CancelResult, error) {
+	result, err := s.engine.Cancel(ctx, workerID)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+// TerminateReviewer hard-destroys the reviewer pane for worker lifecycle
+// teardown and marks any running review runs as cancelled.
+func (s *Service) TerminateReviewer(ctx context.Context, workerID domain.SessionID, body string) error {
+	_, err := s.engine.TerminateReviewer(ctx, workerID, body)
+	return err
+}
+
+// TeardownReviewerTerminal removes reviewer panes during recovery-oriented
+// worker shutdown while preserving review rows and native reviewer session ids.
+func (s *Service) TeardownReviewerTerminal(ctx context.Context, workerID domain.SessionID) error {
+	return s.engine.TeardownReviewerTerminal(ctx, workerID)
+}
+
+// RestoreReviewer relaunches an idle reviewer pane after its worker has been restored.
+func (s *Service) RestoreReviewer(ctx context.Context, workerID domain.SessionID) error {
+	release, err := s.acquireReviewerCodexAdmission(ctx, workerID, "")
+	if err != nil {
+		return err
+	}
+	defer release()
+	_, err = s.engine.RestoreReviewer(ctx, workerID)
+	return err
+}
+
+// SwitchReviewer atomically persists a worker's reviewer preference and returns
+// the authoritative post-switch review state.
+func (s *Service) SwitchReviewer(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness, config domain.AgentConfig) (reviewcore.SessionReviews, error) {
+	release, err := s.acquireReviewerCodexAdmission(ctx, workerID, harness)
+	if err != nil {
+		return reviewcore.SessionReviews{}, err
+	}
+	defer release()
+	return s.engine.SwitchReviewer(ctx, workerID, harness, config)
+}
+
+func (s *Service) codexReviewUsesCodex(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness) bool {
+	if harness == domain.ReviewerCodex {
+		return true
+	}
+	if harness != "" {
+		return false
+	}
+	rec, ok, err := s.store.GetSession(ctx, workerID)
+	return err == nil && ok && (rec.Harness == domain.HarnessCodex || rec.ReviewerHarness == domain.ReviewerCodex)
+}
+
+func (s *Service) acquireReviewerCodexAdmission(ctx context.Context, workerID domain.SessionID, harness domain.ReviewerHarness) (func(), error) {
+	if s.codexOperationGate == nil || !s.codexReviewUsesCodex(ctx, workerID, harness) {
+		return func() {}, nil
+	}
+	return s.codexOperationGate.AcquireSharedWait(ctx)
+}
+
+// ActivitySignal is reviewer-owned hook metadata.
+type ActivitySignal struct {
+	Event          string
+	State          domain.ActivityState
+	AgentSessionID string
+	LaunchID       string
+}
+
+// ApplyReviewActivitySignal records reviewer-owned hook facts without touching
+// the worker session lifecycle row.
+func (s *Service) ApplyReviewActivitySignal(ctx context.Context, reviewSessionID string, signal ActivitySignal) error {
+	if reviewSessionID == "" {
+		return fmt.Errorf("%w: review session id is required", ErrInvalid)
+	}
+	review, ok, err := s.store.GetReviewByID(ctx, reviewSessionID)
+	if err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: review session %q", ErrNotFound, reviewSessionID)
+	}
+	if signal.AgentSessionID == "" && signal.State == "" {
+		return nil
+	}
+	updated, err := s.store.UpdateReviewActivity(ctx, reviewSessionID, signal.State, signal.AgentSessionID, signal.LaunchID)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		// A live reviewer row is reused across launches. Once it carries a launch
+		// generation, a delayed hook from an older reviewer must not clobber the
+		// replacement's activity state. Treat that as a successful no-op.
+		if review.ReviewerLaunchID != "" && signal.LaunchID != review.ReviewerLaunchID {
+			return nil
+		}
+		return fmt.Errorf("%w: review session %q", ErrNotFound, reviewSessionID)
+	}
+	return nil
+}
+
+// List returns a worker's review state.
+func (s *Service) List(ctx context.Context, workerID domain.SessionID) (reviewcore.SessionReviews, error) {
+	res, err := s.engine.List(ctx, workerID)
+	// Listing reconciles reviewers and can fail passes; announce them now.
+	s.wakeSweep()
+	return res, err
+}
+
+// ArchiveReviewer retires the reviewer surface while preserving its history.
+func (s *Service) ArchiveReviewer(ctx context.Context, workerID domain.SessionID) error {
+	return s.engine.ArchiveReviewer(ctx, workerID)
+}

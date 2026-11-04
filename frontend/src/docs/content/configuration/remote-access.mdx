@@ -1,0 +1,114 @@
+---
+title: Connections
+description: Pair your phone with Tallpine over pinned HTTPS, on the same Wi-Fi or over Tailscale.
+---
+
+**Settings → Connections** has two parts: **Phones**, for pairing the Tallpine phone app with this Mac, and **Other computers**. The phone connection is off until you turn it on.
+
+## Pair a phone
+
+1. Install the Tallpine phone app. On the Mac, open **Settings → Connections**.
+2. Turn on the phone connection. Tallpine shows a **pairing code** and a QR code. **Reachable from** tells you how a phone can reach this Mac: **Same Wi-Fi**, **Tailscale** or **Internet**.
+3. In the phone app, scan the QR code, or enter the name, address, port and pairing code by hand.
+4. The pairing code works once. The phone exchanges it for its own credential and pins this Mac's certificate.
+
+The phone then lists the Mac under **Computers**. On the Mac, paired phones appear under **Phones that can control this Mac**; **Unpair** removes one phone without affecting the others.
+
+## How the phone reaches the Mac
+
+- **Same Wi-Fi.** The phone connects to the Mac's local address.
+- **Tailscale.** If both devices are on your Tailscale network, the phone can reach the Mac from anywhere, with no port forwarding. When the Mac's tailnet offers HTTPS, Tallpine turns it on by itself.
+- **Cloudflare quick tunnel (optional).** Under **Advanced**, **Cloudflare quick tunnel** publishes the Mac through a temporary `trycloudflare.com` address. It is a separate opt-in and off by default. Cloudflare terminates TLS for this tunnel, so Cloudflare can see the traffic, including the pairing code. Prefer Same Wi-Fi or Tailscale. The address can change when the tunnel restarts.
+
+Test once with the phone off your home Wi-Fi before relying on remote access.
+
+## Security model
+
+- The phone connection is a separate listener. It does not exist until you turn it on, and turning it off closes it.
+- It serves HTTPS with a certificate the Mac creates for itself. The phone pins that certificate when it pairs, so it will not talk to anything else posing as your Mac. Plain HTTP from the network is refused; an old pairing is asked to pair again.
+- **Advanced** shows the full security code (the certificate fingerprint), so you can compare it with the phone.
+- Each phone gets its own credential from the one-time pairing code. Repeated failed attempts are locked out per source.
+- Only `GET /api/v1/identity` is public. It returns an opaque computer identity and version, which the phone checks before pairing.
+- Shutdown, phone-control and browser-control routes are not served on this listener.
+- {/* B176 */}Your own tools on the Mac (the desktop app, the CLI and agent hooks) use a separate Unix socket that only your user can open; no TCP port is open for local clients. See [Architecture](/architecture#network-boundaries).
+- Settings for the phone connection live in `~/.tallpine/data/mobile/` with mode `0600`. Only hashes of credentials are stored.
+
+Do not share pairing screenshots or codes. If a phone is lost, unpair it on the Mac.
+
+## What the phone app does
+
+See your workers and projects, chat with a session or open its terminal, answer approvals, read pull requests and reviews, queue backlog items and hand them to a worker, read the merge digest, and start a fresh orchestrator. Push notifications go through Expo and need notification permission on the phone.
+
+## Other computers
+
+**Other computers** lets one Mac open another's projects and sessions. The computer you connect to runs an authenticated listener and a Cloudflare tunnel; Cloudflare can read tunneled traffic. From the CLI on that computer:
+
+```bash
+tallpine remote-host status                 # show its address and access key
+tallpine remote-host enable --tunnel-only   # listen on loopback only, reach it through the tunnel
+```
+
+On the other Mac, open **Settings → Connections → Other computers → Add computer** and enter the address and **access key**. Treat both as credentials.
+
+## If the phone cannot connect
+
+| Symptom | Check |
+| --- | --- |
+| Stuck while connecting | Check that **Reachable from** lists a way the phone can use, then scan a fresh QR code. |
+| Works on Wi-Fi but not elsewhere | Put both devices on Tailscale, or turn on the Cloudflare quick tunnel knowing Cloudflare can read that traffic. |
+| "Code already used" | Pairing codes work once. Show a new code on the Mac. |
+| Asked to pair again for a secure connection | The phone was paired before HTTPS. Pair it again. |
+| Drops after sleep | Wake the Mac, or turn on **Keep this Mac awake** in Connections. **Quit Tallpine Completely** from the tray stops the server. |
+| No push alerts | Allow notifications on the phone and check it is still listed on the Mac. |
+
+## Keeping a MacBook reachable with its lid closed
+
+Ordinary **Keep this Mac awake** prevents idle sleep; normal lid sleep remains
+allowed. Eligible Apple Silicon MacBooks (macOS 13–27) with the bundled desktop
+helper can opt into **Keep awake with lid closed**. Enabling this mode also
+enables **Keep this Mac awake** in the same request. It starts while the phone
+connection is on and the listener is serving. Your phone does not need to maintain
+an active socket. Turning off mobile access, Keep awake or the lid option
+releases the request. Turning off Keep awake in desktop settings also turns off
+the lid option; turning off just the lid option keeps idle wake on.
+
+Explicit opt-in registers a local recovery helper without an administrator
+password. Short daemon leases and launchd restart recovery handle abandoned
+requests. The UI distinguishes saved intent, an armed native control, and
+safety/recovery stops. macOS authentication stays in effect; an external display
+is not required by the implementation.
+
+Keep the Mac on a ventilated surface, not in a closed bag. Lid wakefulness stops
+below 10% battery, on unknown battery state or at critical thermal pressure.
+After charging/cooling, turn the lid option off and on to restart. Do not run
+another lid utility concurrently; macOS's lid control is global.
+
+A reviewer verified basic lid-close operation and continued phone connectivity
+on one macOS 26 MacBook. Full physical compatibility validation, including crash
+recovery and macOS 27, is pending. A successful probe or "armed"
+status is not a connectivity guarantee on every OS/hardware combination. Test a
+short lid-closed session on your machine before relying on it unattended.
+[ADR 0005](https://github.com/justvibedev/tallpine/blob/main/docs/adr/0005-mobile-closed-lid-wake.md)
+records current evidence and the release gate.
+
+Helper versions, plist, leases and recovery journal live under `~/.tallpine/data/wake`,
+shared by Tallpine instances of the same login using the default `~/.tallpine/data` durable
+data root. Custom or scratch `TALLPINE_DATA_DIR` roots disable native lid control so
+isolated runs cannot affect production state or host power. Ordinary Keep awake
+remains available.
+Turning the feature off retains recovery registration but ends requests. To
+remove registration, open the lid, turn the option off in every Tallpine instance and
+wait for recovery to finish, then run
+`launchctl bootout gui/$(id -u)/ee.justdev.tallpine.mobile-wake`. Do not delete an
+unfinished recovery journal. Re-enabling the option registers the helper again.
+
+An existing compatible helper is reused across app builds, rather than replaced
+while sessions may be active. To upgrade that helper, use the removal steps above
+with the lid open, then enable the option again; fresh registration removes stale
+helper copies.
+
+Native protocol version 2 stores coordinator state inside the default durable
+data root. An existing version-1 registration is never replaced automatically;
+open the lid, stop all old wake sessions and unload its registration before
+opting in again. Retain any unfinished legacy recovery journal under
+`~/.tallpine/wake` until recovery has completed.

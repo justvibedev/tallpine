@@ -1,0 +1,295 @@
+---
+title: Projects
+description: Configure project workers, orchestrators, setup, reviews, and issue intake.
+---
+
+A project groups work in one repository, a multi-repository workspace, or a Tallpine-managed Scratch directory. Tallpine stores project settings in its database. There is no current `agent-orchestrator.yaml` project registry.
+
+To start, choose **Add project** in the desktop sidebar, select a repository, choose a worker agent in Project Settings, and create a small task. A worker implements the task in its own workspace. An orchestrator supervises workers. A reviewer is a separate agent run that checks a worker's pull request.
+
+Use Project Settings for interactive edits. The CLI's `set-config` focused flags merge into the existing configuration, `--config-json` replaces it, and the project-config mirror has limits described in [Update from the CLI](#update-from-the-cli).
+
+## Project kinds
+
+<span id="choose-the-workspace" />
+
+| Kind | Use it for |
+| --- | --- |
+| Single repository | A normal Git project. Each session gets an isolated worktree. |
+| Workspace | A root repository and its direct child repositories, managed together. |
+| Scratch | Work in a plain Tallpine-managed directory without Git branches or pull requests. |
+
+Add and manage projects in the desktop sidebar. The CLI equivalents are:
+
+```bash
+tallpine project add --path /absolute/path/to/repo
+tallpine project add --path /absolute/path/to/workspace --as-workspace
+tallpine project ls
+tallpine project get <project-id>
+tallpine project rm <project-id>
+```
+
+## Project settings
+
+<span id="local-reference" />
+
+### Configuration fields
+
+<span id="current-configuration-fields" />
+
+| Field | Purpose |
+| --- | --- |
+| `canonicalRepoURL` | Trusted upstream for numeric PR claims. It does not change where Tallpine checks out or pushes. |
+| `autoReview` | Default automatic-review setting copied to new worker sessions. |
+| `planAutoApprove` | Approves a submitted plan automatically, without the owner, recording the approver as `auto (project setting)`. For unattended throwaway test or benchmark projects only. Off by default. Only a person can turn it on: agents, including the project's own orchestrator, are refused on every route, and a managed `planner.autoApprove` of `off` locks it off. Set it with `tallpine project set-config <id> --plan-auto-approve` or the **Auto-approve plans** toggle under Settings → Project. |
+| `noCI` | Declares that the repository has no CI, so Tallpine review approval is the merge gate. When `true` and the provider reports no checks at all for a PR head, CI counts as passing for ready-to-merge state and `tallpine pr merge` only once a Tallpine review (`tallpine review trigger`) approved that exact head. A provider review approval does not count, because it is not tied to a commit. Until then the PR is not ready and `tallpine pr merge` reports `review_approval_required`, `ao_review_running` or `ao_changes_requested`. Failing or pending checks still block. Off by default, because a fresh push in a repository with CI can briefly have no registered checks. Set it with `tallpine project set-config <id> --no-ci` or the **No CI: review gates merge** toggle under Settings → Project → Pull requests. |
+| `defaultBranch` | Base branch for new Git worktrees. Defaults to `auto`. |
+| `sessionPrefix` | Prefix for generated session identifiers. |
+| `githubUser` | Signed-in `gh` account for this project. Leave empty and Tallpine picks the signed-in account that can push to the repository (the owner's own account first). It sets `GH_TOKEN` in the project's sessions and is used by the PR observer. `TALLPINE_GITHUB_USER` sets a default for every project, and a `GH_TOKEN`/`GITHUB_TOKEN` in project env, or `TALLPINE_GITHUB_TOKEN` in the daemon environment, always wins. An ambient `GH_TOKEN`/`GITHUB_TOKEN` in the daemon environment (for example inherited from a shell that launched the app) is ignored, so it cannot pin every project to one account. Settings shows which login the project's token really is and warns when it is another account or cannot see the repository. Set with `tallpine project set-config --github-user <login>`. |
+| `defaultSessionMode` | Interface new worker sessions start in when the spawn does not ask for one: `tui` or `chat`. Unset uses the app-wide default. This is not `agentConfig.mode`, which is the reasoning effort (`low`, `medium`, `high`, `ultra`). Set it with `tallpine project set-config <id> --default-session-mode chat`. |
+| `env` | Extra environment variables passed to agent runtimes. |
+| `symlinks` | Repository-relative paths linked into each session workspace. |
+| `postCreate` | Shell commands Tallpine runs after creating a workspace. A step whose first line is `# tallpine-timeout: <N>m` runs for at most N minutes (1 to 120). |
+| `preRemove` | Shell commands Tallpine runs before permanently removing a managed Git worktree. A step may set its own time limit the same way. |
+| `agentConfig` | Default model, permission, and effort settings. Set effort through Project Settings or the daemon API; CLI replacement drops it. |
+| `worker` | Worker harness and agent-config overrides. |
+| `orchestrator` | Tallpine harness and agent-config overrides. |
+| `agentRules` | Standing instructions for workers. |
+| `agentRulesFile` | Repository-relative instructions appended to worker instructions. |
+| `verifyCommand` | Optional single-line command (up to 500 characters) that worker instructions tell the worker to run, and pass, before pushing. Tallpine never runs it. |
+| `orchestratorRules` | Standing instructions for orchestrators. |
+| `reviewers` | Harnesses used for Tallpine review runs. |
+| `trackerIntake` | Opt-in, read-only issue intake that can start workers. Also requires `TALLPINE_TRACKER_INTAKE=on` in the daemon environment. |
+| `containerReap` | Project-wide opt-out from Tallpine's session-container cleanup. |
+
+`symlinks` and `agentRulesFile` must stay inside the repository. Tallpine rejects absolute paths and paths that traverse outside it. Scratch projects do not support Git-only fields such as `defaultBranch` or `symlinks`.
+
+### Choose a base branch
+
+The default `defaultBranch: "auto"` resolves each repository separately. Tallpine chooses the remote named by Git's `checkout.defaultRemote`, then `origin`, or the repository's only remote. It reads that remote's symbolic `HEAD` and fetches the advertised branch. When offline, Tallpine can use the same remote's cached `HEAD`.
+
+Tallpine does not guess from the checked-out branch, `main`, or `master`. If a repository has no authoritative remote default, or its remotes are ambiguous, spawning fails with `DEFAULT_BRANCH_UNRESOLVED`.
+
+For a single repository or workspace root, set `defaultBranch` explicitly. For a workspace child, configure its primary remote with `checkout.defaultRemote` when needed, then set its cached remote `HEAD` with `git remote set-head`. Tallpine-created repositories are an exception: Tallpine records their branch choice when it creates them and backfills the choice for older Tallpine-created repositories on first resolution.
+
+## Worker and orchestrator roles
+
+<span id="split-orchestrator-and-worker-roles" />
+
+Choose each role's harness and provider settings independently:
+
+```json
+{
+  "worker": {
+    "agent": "codex",
+    "agentConfig": { "model": "gpt-5.4", "permissions": "bypass-permissions" }
+  },
+  "orchestrator": {
+    "agent": "claude-code",
+    "agentConfig": { "model": "claude-opus-4" }
+  }
+}
+```
+
+Use the model names provided by the installed agent. Tallpine uses the provider CLI and its existing sign-in; project settings do not store provider tokens. The example's `bypass-permissions` mode lets provider tools act without their normal approval prompts. Choose it only when that behavior is intended. Available permission modes depend on the provider.
+
+## Choose Chat or Terminal UI
+
+<span id="session-interface" />
+
+Chat support depends on the harness and its installed version. See the [agent capability catalog](/plugins/agents#chat-versus-terminal-ui).
+
+Choose the default in **Settings → General**. A choice made for a new task or with `tallpine spawn --mode chat|tui` takes precedence. Otherwise, Tallpine uses its compatibility default, Terminal UI. `agentConfig.mode` selects a provider execution mode; it does not select Chat or Terminal UI.
+
+If you explicitly request Chat from an unsupported harness, spawning fails. An inherited Chat default can fall back to Terminal UI. Compatible Claude Code and Codex sessions can switch interfaces without changing the Tallpine session or worktree. For switch choices and history behavior, see [Switch interfaces](/dashboard#switch-interfaces).
+
+## Setup and rules
+
+<span id="prepare-each-session" />
+<span id="give-agents-project-rules" />
+
+Use `env`, `symlinks`, and `postCreate` for repeatable workspace setup. A failing `postCreate` command prevents the agent from starting, so keep setup commands deterministic. Symlink restrictions are described in [Configuration fields](#configuration-fields).
+
+Open **Project Settings → Scripts** to edit the **Setup** and **Cleanup** steps. Switching tabs keeps your edits. **Save changes** saves both lists. The scripts run automatically at their workspace lifecycle events.
+
+Setup steps run in order in separate shells. Each step has its own time limit: 30 minutes unless you set one from 1 to 120 minutes for the step in **Project settings > Scripts**. There is no separate total setup timeout. Existing session-start and request deadlines can stop setup sooner. New Chat sessions have a total start budget of 10 minutes plus the setup steps' limits, including workspace creation, setup, and agent start. A failed or cancelled step stops launch. Cancellation stops the shell and its child processes before workspace rollback.
+
+The same command list runs on every platform. Use `sh` syntax on macOS/Linux and `cmd` syntax on Windows. Quoting, variables, and command chaining differ. For a project used on multiple platforms, call a script that supports each platform, such as `node scripts/setup.mjs`.
+
+Cleanup steps use `preRemove`. They run in order after processes stop and before permanent worktree removal. They have no execution time limit unless you set one for a step (1 to 120 minutes); a step that runs out of time fails like any other. Daemon shutdown cancels them. A failed step preserves the worktree. Save a fix, then use **Retry cleanup** for terminated sessions. Dirty worktrees remain intact. Replacing an orchestrator is the exception: its cleanup gets 90 seconds, and Tallpine removes the old worktree even if a step fails or runs out of time. Cleanup does not run on ordinary agent exit or app quit, and it excludes scratch workspaces.
+
+Use `agentRules` or `agentRulesFile` for worker instructions and `orchestratorRules` for supervision instructions. If both worker fields are set, Tallpine combines the inline rules and file contents.
+
+A short pre-push self-review checklist works well in `agentRules` or `agentRulesFile`:
+
+```md
+Before you push:
+- Reread your full diff.
+- Run the relevant tests and the project checks, and note what you ran.
+- Make sure no unrelated files are changed.
+- State the tests run and any known risks in the PR description.
+```
+
+For example, these fields link local setup files, install dependencies, and load worker rules. This is a configuration fragment; keep any other existing fields when applying it:
+
+```json
+{
+  "symlinks": [".env"],
+  "postCreate": ["npm ci"],
+  "agentRulesFile": "AGENTS.md"
+}
+```
+
+For a reusable manual action, use a project **Cue**. An agent Cue sends a prompt to an eligible session or starts a worker. A command Cue runs the exact command in a fresh local terminal.
+
+### How project rules reach agents
+
+Worker rules arrive in the worker's system prompt under **Project Rules**. Tallpine rules arrive under **Project-Specific Tallpine Rules**. Rules are read when a session starts, so edit them before spawning; running sessions keep what they were given.
+
+| Field | Role | Notes |
+| --- | --- | --- |
+| `agentRules` | Workers | Inline text. Saving a value over 8 KiB is rejected; move the detail into a file. |
+| `agentRulesFile` | Workers | A repository-relative Markdown or text file, read from the project and appended to `agentRules`. |
+| `orchestratorRules` | Orchestrators | Standing instructions for supervision. |
+| `verifyCommand` | Workers | A single-line command the worker prompt tells the worker to run, and pass, before pushing. Tallpine never runs it. |
+
+The combined worker rules sent to a session are capped at 8 KiB. A longer set is truncated with a visible marker and the spawn still succeeds, so keep the file short and put the important rules first.
+
+From the CLI:
+
+```bash
+tallpine project set-config my-app --agent-rules-file AGENTS.md
+tallpine project set-config my-app --orchestrator-rules "Prefer small PRs. Ask before touching migrations."
+tallpine project set-config my-app --reviewer claude-code --reviewer codex
+```
+
+`--reviewer` and the other list flags replace the whole list; pass one empty value to clear it. See [Update from the CLI](#update-from-the-cli).
+
+### Docker containers a session starts
+
+Worker prompts tell agents to label any Docker container they start with `--label tallpine.session=$TALLPINE_SESSION_ID`. Tallpine force-removes containers carrying that label when the session is killed or otherwise terminates. A container that must outlive the session (a shared database, a registry) also gets `--label tallpine.spare=true` and is never removed. A container without the `tallpine.session` label is not tracked and is not cleaned up. Set `containerReap.disabled` to `true` to turn the cleanup off for a whole project; `tallpine.spare` is respected either way.
+
+## Reviewer agents
+
+<span id="choose-a-reviewer" />
+
+Choose reviewers separately in Project Settings. The [agent catalog](/plugins/agents) lists reviewer support and its limits. If you do not choose one, Tallpine reviews with the project's default worker agent, using that worker's model and effort, when it is Claude Code or Codex. Without a default worker agent, Tallpine uses the session's worker harness when it is one of those, and Claude Code otherwise. A saved reviewer that names a removed harness falls back to Claude Code. Worker permissions never carry over to a reviewer. Select another reviewer harness explicitly.
+
+These configuration fields choose a reviewer and enable automatic review for new workers. The JSON is a fragment, so keep other fields when using the API:
+
+```json
+{
+  "reviewers": [{ "harness": "codex" }],
+  "autoReview": true
+}
+```
+
+`autoReview` sets the default for new workers. Existing sessions have their own toggle. Automatic review waits for an eligible PR head and an idle worker. It does not merge the pull request.
+
+```bash
+tallpine review trigger <worker-session-id>
+tallpine review ls <worker-session-id>
+```
+
+## Update from the CLI
+
+`tallpine project set-config` focused flags (for example `--canonical-repo-url` or `--model`) merge into the existing project configuration: only the flags you pass change, and every other field, including ones with no flag, is kept. A scalar flag given an empty value removes that field, `--env` merges by key, `--symlink`, `--post-create` and `--reviewer` replace their whole list, and `--tracker-intake=false` disables intake. `--config-json` and `--clear` replace the entire configuration, so before using `--config-json` inspect the current settings and preserve every field you need:
+
+```bash
+tallpine project get <project-id> --json
+```
+
+The `--config-json` flag takes a JSON string, not a filename. The CLI silently ignores unknown keys, so a typo can replace the configuration with an empty object. The daemon API rejects unknown fields.
+
+The CLI's project-config mirror also has an `effort` limitation: `tallpine project get --json` cannot show the configured effort, and a `--config-json` replacement drops existing effort values (focused flags keep them). Use Project Settings in the desktop app or the daemon API to view or change effort. For other full-config CLI updates, include every field you want to keep and inspect the result afterward.
+
+For example, this command replaces the entire configuration with one worker choice; it does not keep setup, rules, reviewers, or effort:
+
+```bash
+tallpine project set-config <project-id> --config-json '{"worker":{"agent":"codex"}}'
+```
+
+For interactive edits, use Project Settings. For a complete CLI reference, use `tallpine project set-config --help`. The current fields are listed in [Configuration fields](#configuration-fields).
+
+## Choose a workspace or standalone directory
+
+Tallpine chooses isolation from the project kind. Git projects use worktrees. Workspace projects materialize the root and its child repositories together. Scratch projects use Tallpine-managed plain directories. There are no `workspace: clone` or `runtime: process` settings in the current configuration.
+
+For work without a project, start a standalone worker:
+
+```bash
+tallpine spawn --standalone --agent codex --name notes --prompt "Draft release notes"
+```
+
+Standalone workers require an explicit agent. Do not combine `--standalone` with project, branch, issue, PR, or orchestrator options.
+
+## Seed ignored files into worktrees
+
+Git worktrees start from tracked files only, so ignored files such as `.env` or `node_modules/` are missing in a new session. To seed them, add an optional `.worktreeinclude` file at the project root. It uses gitignore syntax:
+
+```text
+.env
+.env.local
+node_modules/
+```
+
+When a session worktree is created, Tallpine copies the paths in the main checkout that match the file and are also ignored by `.gitignore` (or other standard git excludes) into the new worktree. Tracked files and untracked-but-not-ignored files are never copied (they would leave the worktree dirty), missing paths are skipped, and `.git` and `.ao` entries are ignored. Symlinks that are absolute or point outside the repository are skipped. A missing `.worktreeinclude` does nothing. Copies are independent: later changes in either checkout are not synced.
+
+### Clone large directories instead of copying them
+
+On macOS with APFS, copying `node_modules/` file by file takes about a minute and a few gigabytes. Set `cloneWorktreeInclude` to seed the directories matched by `.worktreeinclude` with one copy-on-write clone per directory instead:
+
+```bash
+tallpine project set-config <project> --config-json '{"cloneWorktreeInclude": true, "postCreate": ["cd frontend && npm install --prefer-offline"]}'
+```
+
+`tallpine project set-config` replaces the whole config, so include your existing fields in `--config-json`.
+
+The setting is off by default and only affects directories matched by `.worktreeinclude`; individual files are still copied. Tallpine falls back to the normal copy, with no error, when the platform is not macOS, the source and the worktree are on different volumes or a volume without clone support, or the directory already exists in the worktree. It also falls back when the directory contains `.git` or `.ao` entries, absolute symlinks, symlinks that leave the repository, or special files. In that case the unsafe entries are skipped exactly as they are without the setting.
+
+A clone shares disk blocks with the main checkout until either side writes to them, and later edits never show through to the other copy. It is a snapshot of the main checkout at session start, so it can be stale against the branch's lockfile. Keep a cheap reconciliation step in `postCreate`; with a matching lockfile `npm install --prefer-offline` does almost nothing. If the main checkout has no `node_modules/`, nothing is cloned and the first session pays for a normal install. Do not start sessions while the main checkout is mid-install. Re-measure before enabling it for pnpm, whose store hardlinks are not re-pointed by a clone.
+
+## Tracker and source control
+
+<span id="tracker-and-scm" />
+
+Tallpine observes GitHub and GitLab repositories and can use their issue trackers. It resolves a repository from Git identity. The retired `tracker.plugin`, `scm.plugin`, `package`, and `path` settings are not used; see [Migration](/migration) for other old configuration examples. Linear is not supported.
+
+Set `canonicalRepoURL` when a numeric PR claim should use a particular upstream. It does not change checkout or push destinations. For issue spawning, select `--tracker-provider github|gitlab`. See [issue intake](/plugins/trackers) and [source-control setup](/plugins/scm), including self-managed GitLab hosts.
+
+Issue intake starts workers only when both the daemon has `TALLPINE_TRACKER_INTAKE=on` and the project has an enabled `trackerIntake` rule. Intake does not comment on or change issues.
+
+## Automations and Cues
+
+<span id="tune-automation-per-project" />
+
+Tallpine handles CI, review feedback, and merge conflicts through built-in lifecycle rules. Project settings do not accept a `reactions` override. See [Automation reference](/configuration/lifecycle-automation) for the rules and scheduling limits.
+
+Create recurring work in **Automations**. Create reusable prompts or shell commands in project **Cues**. They are saved resources, not project-configuration fields.
+
+## Resume or restore a session
+
+<span id="session-recovery" />
+
+Use **Resume agent** or `tallpine session resume-agent <id>` to restart a stopped controller in a session that is still active. Use **Restore** or `tallpine session restore <id>` to relaunch a terminated session when its harness supports recovery. `tallpine session kill <id>` terminates the session; `tallpine session exit-agent <id>` stops only its controller.
+
+Keep the harness installed and signed in. Recovery may restore the session, worktree, and supported provider conversation, but it cannot recreate arbitrary terminal screen history. Tallpine does not force-delete a dirty registered worktree. `orchestratorSessionStrategy` is not a current configuration field.
+
+## Common problems
+
+**The project does not appear in the dashboard.** Add it in the desktop app or run `tallpine project add --path /absolute/path/to/repo`. `tallpine start` opens the app; it does not register a repository. If the repository moved, remove and re-add it or relink it instead of editing `storageKey` manually.
+
+**The agent starts without environment variables.** Add `.env` or the relevant tool configuration directory to `symlinks`. Tallpine does not copy secrets into worktrees by default.
+
+**Setup fails before the agent starts.** Check `postCreate`. A failing command stops the session before the agent launches.
+
+**Two projects have confusing session names.** Set `sessionPrefix` in Project Settings or typed config. Do not include path separators or traversal components.
+
+**GitHub or GitLab calls fail.** Check that the corresponding CLI or token is signed in. Tallpine does not store provider tokens in project config.
+
+## Next steps
+
+<Cards>
+	<Card title="Per-role agents" href="/guides/per-role-agents" description="Choose worker and orchestrator harnesses." />
+	<Card title="Parallel work" href="/guides/parallel-issues" description="Start isolated sessions across projects." />
+</Cards>

@@ -1,0 +1,113 @@
+---
+title: Review loop
+description: Route GitHub feedback to workers, request a Tallpine review, wait for the verdict, and land the PR.
+---
+
+Tallpine supports two complementary review loops: observing feedback already posted on a claimed GitHub PR, and launching a Tallpine reviewer agent against a worker's PR.
+
+Start with a worker session that has a linked PR and a current head. Open that worker, then use the inspector's **Reviews** section. The reviewer runs against the worker's PR; it is not the worker agent and does not own the worker's branch. Use the [Dashboard review controls](/dashboard#pull-requests-and-reviews) to find the PR summary, review status, and Files view.
+
+## GitHub feedback
+
+The SCM observer records review state and unresolved comments. When changes are requested or unresolved feedback changes, lifecycle sends the focused unresolved comments to the owning worker. Resolved threads drop out of the next message.
+
+Delivery follows the session interface:
+
+- Chat receives a durable provider turn in the conversation.
+- Terminal UI receives the message through the running agent session.
+
+Feedback is signature-deduplicated. Tallpine does not repeat an unchanged comment set on every poll.
+
+If feedback does not arrive, confirm the PR is claimed by this worker, the repository host is authenticated, and the comment remains unresolved on the current head. A claim records ownership but does not check out the PR branch. Read the linked review on GitHub or GitLab before asking the worker to act on an older comment.
+
+<span id="tallpine-reviewer-agents" />
+## Tallpine reviewer agents
+
+Select reviewers independently in project settings; the [agent catalog](/plugins/agents) distinguishes reviewer support from worker and Chat support. Without an explicit reviewer, Tallpine reviews with the project's default worker agent and its model when that agent is Claude Code or Codex; otherwise it inherits one of those from the worker, or falls back to Claude Code. Other reviewer harnesses must be selected explicitly.
+
+From the desktop, open the worker and use the Reviews section in the inspector. From the CLI:
+
+```bash
+tallpine review trigger [worker-session-id]   # start a review pass
+tallpine review ls [worker-session-id]        # list passes and verdicts
+tallpine review wait [worker-session-id]      # block until the verdict
+tallpine review cancel [worker-session-id]    # stop every running pass
+```
+
+Each command defaults to the calling session, so a worker can run them without an argument. `--agent` (alias of `--harness`), `--model` and `--effort` on `trigger` choose the reviewer for one pass only. `--pr <url>` reviews just that pull request and attaches it to the session if it is not tracked yet (it never takes a PR from another active session); use it right after opening a PR.
+
+Reviewer runs are separate from worker sessions. Their verdict and body are recorded against the worker.
+
+### Reviews requested by agents
+
+A worker can request a review of its own PR: inside the worker, `tallpine review trigger` reviews the calling session. An orchestrator runs `tallpine review trigger <worker-session-id>` instead of spawning a worker to review. These runs are labelled **Requested by agent** in the inspector.
+
+- Reviews start from **Auto review** (`autoReview`) alone. When it is off, workers report the PR ready and the orchestrator decides. Old configs that still carry `workersRequestReview` load fine; the key is ignored and dropped on the next save.
+- A head that already has a review, or a review still running, is not reviewed again; the command says so. `--rerun` reviews the same commit again, and with a different `--agent` it adds a reviewer that runs alongside the first. Each live reviewer can be opened from the inspector.
+- The command turns on the session's review auto-inject unless `--no-inject` is passed. The reviewer posts an inline comment for each change it requires; with auto-inject on, Tallpine forwards those comments to the worker like any other review comments. Optional suggestions stay in the review summary. An approval adds no comments, so the worker checks `tallpine review ls` for the verdict. Tallpine's approval is never a GitHub approval.
+
+In the inspector, choose the reviewer harness (and offered model/mode), start the run, then open its Chat or terminal surface. Read the result, then use **Send to worker agent** in the review actions to send its findings to the worker. A reviewer harness can have different permissions from the worker; an experimental reviewer is not automatically sandboxed. If the trigger is unavailable, check the linked PR, reviewer readiness, and the reason shown by the UI. `tallpine review ls` shows the run state; `tallpine review cancel` stops a run that should not continue.
+
+Enable automatic review per session, or use the project `autoReview` default for future workers. It starts only for an eligible PR head while the worker is idle. In **Files**, inspect workspace or PR changes and available commits; local inspection does not automatically publish a review. The mobile review and reviewer views expose the corresponding session results.
+
+## Wait for the verdict
+
+`tallpine review wait [worker-session-id]` blocks until every review pass on the worker's open PR heads has ended, then prints one line per PR: the verdict, the PR number and the head SHA. `--pr <n>` waits on one PR and `--timeout` (default 30 minutes) bounds the wait. The exit status lets a script branch:
+
+| Exit status | Meaning |
+| --- | --- |
+| `0` | Approved. |
+| `10` | Changes requested. |
+| `11` | The pass failed or was cancelled without a verdict. |
+| `12` | Timed out. |
+| `13` | No review run exists for the open PR's current head. |
+
+A push makes a pass stale: a new head needs a new `tallpine review trigger`.
+
+## How a reviewer reports its result
+
+A reviewer agent records its result with `tallpine review submit --run <run-id> --verdict approved|changes_requested`. The body comes from `--body <file|->` (use `-` for standard input so nothing is written into the worktree); `--reviews` takes a JSON array or object of review results and `--review-id` the id of a GitHub review the reviewer already posted. You normally do not run this yourself; the reviewer agent does.
+
+## Deadlines and failures
+
+A pass that submits nothing is failed by the daemon rather than left running forever. Two daemon environment variables control it (a Go duration such as `45m`, or `off`):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TALLPINE_REVIEW_PASS_DEADLINE` | `45m` | How long a pass may run without submitting a result. Minimum `10m`. |
+| `TALLPINE_REVIEW_IDLE_GRACE` | `10m` | How long a terminal reviewer may sit idle at its prompt with a pass running before the pass fails. Minimum `1m`. |
+
+A failed pass sends the worker an `[auto] review_failed` [report](/guides/reports) and `tallpine review wait` exits with `11`. An approved head sends `[auto] review_approved`, which states that it is an internal approval and not permission to merge.
+
+## Repositories without CI
+
+Set `noCI` on a project (see [Projects](/configuration/projects)) when the repository has no checks. If the provider reports no checks at all for a PR head, CI then counts as passing, but the PR is ready to merge only once a Tallpine review approved that exact head. A provider approval does not count, because it is not tied to a commit. Until then `tallpine pr merge` reports `review_approval_required`, `ao_review_running` or `ao_changes_requested`. Failing or pending checks still block.
+
+## Best practices
+
+- Keep the PR claimed by the worker that should act on feedback.
+- Resolve addressed GitHub threads so later nudges contain only remaining work.
+- Use inline comments for localized changes and a top-level review body for design-level feedback.
+- Inspect the current PR head before replaying old feedback after a force-push.
+
+## Approval and merge
+
+A Tallpine reviewer result is not the same as a human or repository-host approval. Inspect remaining GitHub/GitLab threads and branch protection before requesting merge. Automatic review starts only on an eligible PR head while the worker is idle; it does not approve or merge by itself.
+
+Approval plus passing checks contributes to merge readiness. Tallpine creates a durable merge-ready notification but does not automatically merge from a reaction rule. Merge explicitly in the desktop or with:
+
+```bash
+tallpine pr merge <pr-number>
+```
+
+An orchestrator can land a worker's PR in one step with `tallpine pr land <pr-number>` (run from a checkout of the PR's repository). It finds the head of the latest approved review, accepts a changed head only when the rebased patch equals the approved patch, refuses unless GitHub reports the merge state as clean, and merges pinned to that head. `--dry-run` prints the decision without merging; `--kill-worker` ends the worker session afterwards.
+
+Resolve review comments explicitly when appropriate:
+
+```bash
+tallpine pr resolve-comments <pr-number> [comment-id...]
+```
+
+## Current limits
+
+There is no `tallpine review-check` command, configurable review polling throttle, `bugbot-comments` reaction, or YAML retry budget in the current rewrite. GitHub and GitLab have SCM observation; this page's thread-resolution examples describe GitHub. Provider review semantics differ, so inspect the repository host when an action is unavailable.

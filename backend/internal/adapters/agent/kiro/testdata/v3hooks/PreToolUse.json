@@ -1,0 +1,1 @@
+{"session_id":"sess_fixture","hook_event_name":"PreToolUse","cwd":"/work/project","tool_name":"list_directory","tool_input":{"path":"/work/project","explanation":"List workspace contents","depth":null}}

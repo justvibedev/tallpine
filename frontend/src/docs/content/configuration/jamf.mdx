@@ -1,0 +1,46 @@
+---
+title: Deploying with Jamf Pro
+description: Privacy (PPPC) and background-item profiles, the Jamf Custom Schema, and managed settings for Tallpine on managed Macs.
+---
+For administrators who roll Tallpine out to managed Macs. Nothing here is on by default: every policy stays off unless you set it.
+
+## What a release gives you
+
+Each GitHub release on `justvibedev/tallpine` carries three admin files next to the app:
+
+| Asset | Use |
+|---|---|
+| `Tallpine-PPPC.mobileconfig` | Privacy (PPPC) and background-item profile, generated from the signed build |
+| `tallpine-jamf-schema.json` | Jamf Custom Schema for the `ee.justdev.tallpine` preference domain |
+| the notarized `.zip` / `.dmg` | The app itself (deploy as a package or by policy) |
+
+The app is signed with a Developer ID and notarized, so Gatekeeper accepts it without a prompt. Notarization needs no MDM setting.
+
+## 1. Privacy permissions (PPPC)
+
+Upload `Tallpine-PPPC.mobileconfig` (Computers, Configuration Profiles, Upload), scope it to computers. It contains:
+
+- **Documents, Desktop and Downloads folders**: `Allow` for the app (`ee.justdev.tallpine`) and the daemon (`ee.justdev.tallpine.daemon`), each pinned by the code requirement `codesign` reports for that build. Agents run from the daemon, so without the daemon entry users see a folder prompt per project folder.
+- **Background item**: a `com.apple.servicemanagement` rule of type `TeamIdentifier` with your Team ID, so the daemon's login item is allowed silently (Login Items & Extensions shows no prompt).
+
+The profile never contains anything you must edit, and your Team ID is not stored in the repository. To build it yourself from a signed app: `scripts/release-local pppc /path/Tallpine.app --out Tallpine-PPPC.mobileconfig`. It refuses ad hoc, unsigned and Team-ID-less builds. `docs/examples/pppc.mobileconfig` is an annotated sample with a `<TEAMID>` placeholder.
+
+If you build the PPPC payload in the Jamf UI instead (Application & Custom Settings is not needed): Computers, Configuration Profiles, Privacy Preferences Policy Control, add app `ee.justdev.tallpine` with the app's code requirement (`codesign -d -r- Tallpine.app`) and Allow for SystemPolicyDocumentsFolder, SystemPolicyDesktopFolder and SystemPolicyDownloadsFolder, then repeat for `ee.justdev.tallpine.daemon` using `codesign -d -r- Tallpine.app/Contents/Resources/daemon/tallpine`.
+
+**Microphone and camera** cannot be pre-granted by MDM (it can only deny them), so they are not in the profile; users approve them on first use.
+
+## 2. Managed settings
+
+Keep this in a separate profile from the PPPC one. Use **Application & Custom Settings, Upload**, domain `ee.justdev.tallpine`, and upload `tallpine-jamf-schema.json` as the Jamf Custom Schema: Jamf then renders a form for `rules` (agent policy), `settings` (lockable settings) and the update keys `AutoUpdate`, `AutoUpdateChannel`, `AutoUpdatePinnedVersion`.
+
+Dictionary-valued settings (`app.cleanup.*`, `project.*`) show in Jamf as an empty object; set their contents through the plist as in the sample in the agent policy page.
+
+What each key does, and the sample profile, is in [Agent policy and managed config](/docs/configuration/agent-policy) ("Enabling policies for your organization", "Settings managed by your organization"). The schema and that table are generated from the settings registry and checked by tests, so they list the same keys.
+
+## 3. Check it worked
+
+On a managed Mac: `tallpine policy show` lists each setting with its source (`managed, locked`). For privacy, open a folder under Documents from a session; with the profile there is no prompt, and `log stream --predicate 'subsystem == "com.apple.TCC"'` shows the grant attributed to `ee.justdev.tallpine.daemon`.
+
+## Not covered
+
+Windows and Linux packaging, Intune and Kandji walkthroughs.

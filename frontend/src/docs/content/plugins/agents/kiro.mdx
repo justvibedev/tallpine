@@ -1,0 +1,22 @@
+---
+title: Kiro
+description: Built-in Terminal UI support for the user's Kiro CLI installation.
+---
+
+Tallpine uses the locally installed `kiro-cli` executable and Kiro-owned authentication. Install and sign in with Kiro before refreshing the Tallpine catalog.
+
+```bash
+tallpine agent ls --refresh
+tallpine spawn --project my-app --name kiro-task --agent kiro
+```
+
+## Interfaces
+
+- **Terminal UI:** runs the native Kiro CLI in the session worktree. Tallpine installs its activity hooks during workspace setup, so session status follows Kiro's own lifecycle events.
+- **Chat:** not supported. Kiro is Terminal UI-only.
+
+Kiro can also review pull requests as a reviewer. Use `tallpine agent ls --refresh --json` for install and authentication diagnostics.
+
+## Permissions and restore
+
+Worker prompts are delivered after Kiro starts, so Kiro's interactive terminal stays in use. Tallpine writes its permission mode into the generated agent profile as `permissions` rules (default reads the workspace, accept-edits also writes it, auto adds a shell allow-list of specific git, gh and report verbs and fixed build/test commands); only bypass uses `--trust-all-tools`. Anything not allowed still goes through Kiro's normal approval flow. A session restores with `kiro-cli chat --resume-id` using Kiro's own session id.

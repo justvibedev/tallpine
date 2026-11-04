@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stand-in for the claude CLI. The daemon only needs the binary to resolve and
+# report a version; chat turns are served by fake-claude-acp.mjs.
+case "$1" in
+	--version|-v) echo "2.0.0 (Claude Code)" ;;
+	*) echo ready; cat ;;
+esac

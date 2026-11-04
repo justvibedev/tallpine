@@ -1,0 +1,11 @@
+id: mer-7
+project: mer
+name: drift worker
+role: worker
+status: working
+activity: active
+harness: codex
+issue: ISS-9
+terminated: false
+created: 2026-11-02T10:00:00Z
+updated: 2026-11-02T10:00:00Z

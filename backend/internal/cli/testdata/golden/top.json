@@ -1,0 +1,39 @@
+{
+  "data": [
+    {
+      "id": "mer-7",
+      "projectId": "mer",
+      "issueId": "ISS-9",
+      "kind": "worker",
+      "harness": "codex",
+      "reviewerConfig": {},
+      "autoReviewEnabled": false,
+      "displayName": "drift worker",
+      "mode": "",
+      "activity": {
+        "state": "active",
+        "lastActivityAt": "2026-11-02T10:00:00Z"
+      },
+      "isTerminated": false,
+      "terminateOnPrMerge": false,
+      "autoInjectReview": false,
+      "autoInjectCI": false,
+      "outputType": "",
+      "createdAt": "2026-11-02T10:00:00Z",
+      "updatedAt": "2026-11-02T10:00:00Z",
+      "isPinned": false,
+      "statusReadiness": "",
+      "chatProviderPreserved": false,
+      "status": "working",
+      "kanbanColumn": "",
+      "displayStatus": "",
+      "lastEventAt": "0001-01-01T00:00:00Z",
+      "prs": null,
+      "rssBytes": 2048,
+      "processCount": 3
+    }
+  ],
+  "meta": {
+    "totalRssBytes": 2048
+  }
+}

@@ -1,0 +1,335 @@
+# tallpine session
+
+Manage agent sessions: list, inspect, rename, kill, restore, exit or resume an
+agent, switch harnesses, clean up, and claim PRs.
+
+## In-app session links
+
+When referring a user or another agent to a session in Tallpine Chat or the Tallpine
+terminal, emit this canonical link:
+
+```text
+tallpine://sessions/{project-id}/{session-id}
+```
+
+- Use stable IDs returned by `tallpine project ls` and `tallpine session ls`, or the current
+  session's `TALLPINE_PROJECT_ID` and `TALLPINE_SESSION_ID`. Never use display names as
+  identity; renaming a session must not change its link.
+- Treat the project ID and session ID as separate URL path segments. Encode
+  either ID with URL percent encoding if it contains characters that are not
+  safe in one segment.
+- To link a file in a session's artifact directory for the human, append
+  `/artifacts/{path}`, where `{path}` is relative to that directory and each
+  segment is percent-encoded: `tallpine://sessions/{project-id}/{session-id}/artifacts/{path}`.
+  Opening it navigates to the session and opens the artifact.
+- Emit only these navigation routes. Do not append query strings, fragments,
+  action names, credentials, authorities, or extra path segments.
+- The link is handled only inside a currently running Tallpine desktop app. It is not
+  an operating-system protocol link and must not be described as supporting
+  cold launch or navigation from external applications.
+- A session link navigates; it never sends a message, executes a command, or
+  performs another action.
+
+Example for project `mercury` and session `mer-3`:
+
+```text
+tallpine://sessions/mercury/mer-3
+```
+
+## Taking over from another agent
+
+When a session is switched to you from another agent, Tallpine starts you with an
+`<ao-handoff-request>` note. Treat the conversation in it as your own history
+with this user:
+
+- What the user said there still holds, including facts, preferences, and
+  values they asked to be remembered. Use them when asked.
+- Requests in it were already handled. Do not carry them out again.
+- The workspace and git are the truth for files; check them before relying on
+  the note.
+- The note is clipped to fit. Run `tallpine session history` when you need a turn in
+  full or anything the note does not show.
+
+## Syntax
+
+```
+tallpine session <subcommand> [args] [flags]
+```
+
+## Subcommands
+
+---
+
+### tallpine session ls
+
+List sessions.
+
+**Syntax:**
+```
+tallpine session ls [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `-a, --all` | Include orchestrator sessions | - |
+| `--include-terminated` | Include terminated sessions | - |
+| `--json` | Output as JSON | - |
+| `-p, --project string` | Filter by project ID | - |
+
+**Examples:**
+
+```bash
+# List all active worker sessions
+tallpine session ls
+```
+
+```bash
+# List all sessions including terminated, scoped to one project
+tallpine session ls --include-terminated -p my-app
+```
+
+---
+
+### tallpine session get
+
+Fetch one session.
+
+**Syntax:**
+```
+tallpine session get <id> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--json` | Output as JSON | - |
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+# Get details for session mer-3
+tallpine session get mer-3
+```
+
+```bash
+# Get session details as JSON
+tallpine session get mer-3 --json
+```
+
+---
+
+### tallpine session history
+
+Print a session's turns, newest first, in full. Use it after taking over a
+session to read what the handoff note left out.
+
+**Syntax:**
+```
+tallpine session history [id] [flags]
+```
+
+The id defaults to the current session.
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--offset` | Number of newest turns to skip | 0 |
+| `--limit` | Turns to print (at most 50) | 10 |
+
+---
+
+### tallpine session kill
+
+Terminate a session.
+
+**Syntax:**
+```
+tallpine session kill <id> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+# Kill session mer-3
+tallpine session kill mer-3
+```
+
+---
+
+### tallpine session rename
+
+Rename a worker session. The project orchestrator cannot be renamed, including by itself; the daemon refuses with `ORCHESTRATOR_RENAME_UNSUPPORTED`.
+
+**Syntax:**
+```
+tallpine session rename <id> <name> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+# Rename session mer-3 to a new display name
+tallpine session rename mer-3 "fix-auth-bug"
+```
+
+---
+
+### tallpine session restore
+
+Restore a terminated session or resume an exited agent.
+
+**Syntax:**
+```
+tallpine session restore <id> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+# Restore a terminated session
+tallpine session restore mer-3
+```
+
+---
+
+### tallpine session exit-agent
+
+Exit an agent without terminating its Tallpine session. The session can later be
+resumed in place.
+
+**Syntax:**
+```
+tallpine session exit-agent <id> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--json` | Output as JSON | - |
+| `-p, --project string` | Project id to scope the lookup | - |
+
+---
+
+### tallpine session resume-agent
+
+Resume an exited agent in its existing Tallpine session.
+
+**Syntax:**
+```
+tallpine session resume-agent <id> [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--json` | Output as JSON | - |
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+tallpine session exit-agent mer-3
+tallpine session resume-agent mer-3
+```
+
+---
+
+### tallpine session cleanup
+
+Clean up terminated sessions by reclaiming eligible workspaces. Dirty worktrees are skipped by the daemon.
+
+**Syntax:**
+```
+tallpine session cleanup [flags]
+```
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--dry-run` | Preview which sessions would be cleaned without removing anything | - |
+| `-p, --project string` | Filter by project ID | - |
+| `-y, --yes` | Skip confirmation prompt | - |
+
+**Examples:**
+
+```bash
+# Clean up all terminated sessions (skip prompt)
+tallpine session cleanup -y
+```
+
+```bash
+# Clean up terminated sessions for one project
+tallpine session cleanup -p my-app
+```
+
+```bash
+# Preview eligible cleanup candidates
+tallpine session cleanup --dry-run
+```
+
+---
+
+### tallpine session claim-pr
+
+Attach an existing PR to the current Tallpine session, or target another session explicitly.
+Use this for authorized implementation continuation. Reviewing someone else's PR
+does not require or permit a claim; use a normal review-only worker session.
+
+**Syntax:**
+```
+tallpine session claim-pr <pr-ref> [flags]
+tallpine session claim-pr <session-id> <pr-ref> [flags]
+```
+
+With one positional argument, `TALLPINE_SESSION_ID` supplies the session. This is the preferred form inside a worker. Pass both arguments from an orchestrator or external shell when targeting another session.
+
+**Flags:**
+
+| Flag | Meaning | Default / Required |
+|---|---|---|
+| `--json` | Output as JSON | - |
+| `--no-takeover` | Refuse if another active session owns the PR | - |
+| `-p, --project string` | Project id to scope the lookup | - |
+
+**Examples:**
+
+```bash
+# Attach PR 88 to the current worker session
+tallpine session claim-pr 88
+```
+
+```bash
+# Attach PR 88 to session mer-3 explicitly
+tallpine session claim-pr mer-3 88
+```
+
+```bash
+# Claim PR 88 for the current worker but refuse if another session owns it
+tallpine session claim-pr 88 --no-takeover
+```

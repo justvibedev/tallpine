@@ -1,0 +1,126 @@
+#!/bin/bash
+# scripts/security-e2e: one-command end-to-end check that a fenced (Security mode) orchestrator
+# and worker can do the whole workflow: spawn, send, branch, edit, commit, push, open a PR,
+# scripts/verify, native review and scripts/merge-gate --no-merge. Backlog B465.
+#
+#   scripts/security-e2e plain|hardened [--bin <tallpine>] [--repo <checkout>] [--keep]
+#   scripts/security-e2e stop plain|hardened
+#
+# It starts a SCRATCH daemon (private data dir, tmux socket and port; never ~/.tallpine) under
+# Security mode ("plain": TALLPINE_AGENT_SECURITY_MODE=on; "hardened": a managed policy with the
+# hardened profile), registers a clone of --repo, and spawns an orchestrator that spawns a worker.
+# Real Claude, real GitHub: the worker leaves a throwaway DRAFT PR in justvibedev/tallpine-dev
+# titled "do not merge"; close it afterwards. Results: ORCH_RESULT.md (orchestrator cwd) and
+# E2E_RESULT.md (worker worktree).
+#
+# Needs: gh logged in and CLAUDE_CODE_OAUTH_TOKEN in the environment (extract it from the
+# Keychain right before the run; it rotates within about 20 minutes). --bin defaults to a fresh
+# scripts/go build of this checkout.
+set -u
+here="$(cd "$(dirname "$0")/.." && pwd)"
+scratch="${TMPDIR:?TMPDIR must be set}/security-e2e"
+
+stop_phase() {
+	local r="$scratch/$1"
+	[ -f "$r/daemon.pid" ] || return 0
+	"$r/denv" tallpine stop >/dev/null 2>&1
+	kill "$(cat "$r/daemon.pid")" 2>/dev/null
+	tmux -L "tp-e2e-$1" kill-server 2>/dev/null
+	rm -f "$r/daemon.pid" "$r/.tok" "$r/.gh"
+}
+
+if [ "${1:-}" = stop ]; then
+	for p in "${@:2}"; do stop_phase "$p"; done
+	exit 0
+fi
+usage="usage: scripts/security-e2e plain|hardened [--bin <tallpine>] [--repo <checkout>] [--keep]"
+phase="${1:?$usage}"
+case "$phase" in plain | hardened) ;; *) echo "$usage" >&2; exit 2 ;; esac
+shift
+bin="" repo="$here" keep=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--bin) bin="$2"; shift 2 ;;
+	--repo) repo="$2"; shift 2 ;;
+	--keep) keep=1; shift ;;
+	*) echo "unknown argument $1" >&2; exit 2 ;;
+	esac
+done
+: "${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN (fresh; it rotates within ~20 minutes)}"
+GH_TOKEN="${GH_TOKEN:-$(gh auth token)}" || exit 1
+
+root="$scratch/$phase"
+mkdir -p "$root/bin" "$root/data"
+if [ -z "$bin" ]; then
+	bin="$root/bin/tallpine-built"
+	(cd "$here/backend" && "$here/scripts/go" build -o "$bin" ./cmd/tallpine) || exit 1
+fi
+# Remove first: overwriting a running-before binary in place keeps the kernel's cached code signature
+# and macOS kills the copy with SIGKILL (Code Signature Invalid).
+rm -f "$root/bin/tallpine"
+cp "$bin" "$root/bin/tallpine"
+if [ ! -d "$root/repo" ]; then
+	git clone -q --shared "$repo" "$root/repo" || exit 1
+	git -C "$root/repo" remote set-url origin https://github.com/justvibedev/tallpine-dev.git
+	git -C "$root/repo" fetch -q origin main && git -C "$root/repo" checkout -q -B main origin/main || exit 1
+fi
+port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+if [ "$phase" = hardened ]; then
+	printf '%s' '{"schemaVersion":2,"profile":"hardened","rules":{"envFilter":{"passthrough":["CLAUDE_CODE_OAUTH_TOKEN"]}}}' >"$root/managed.json"
+	mode_env="TALLPINE_MANAGED_POLICY_FILE=$root/managed.json"
+else
+	mode_env="TALLPINE_AGENT_SECURITY_MODE=on"
+fi
+# The scratch daemon's whole environment: nothing else leaks in. Tokens sit in 0600 files that
+# denv reads, so they are not written into denv itself (they are still in the daemon's environment).
+umask 077
+printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN" >"$root/.tok"
+printf '%s' "$GH_TOKEN" >"$root/.gh"
+# printf %q quotes each value, so paths with spaces survive; the tokens are read at exec time.
+{
+	echo '#!/bin/bash'
+	printf 'exec env -i HOME=%q USER=%q PATH=%q SHELL=/bin/zsh LANG=en_US.UTF-8 TMPDIR=%q \\\n' "$HOME" "$USER" "$root/bin:$PATH" "$TMPDIR"
+	printf '  TALLPINE_DATA_DIR=%q TALLPINE_RUN_FILE=%q TALLPINE_PORT=%q \\\n' "$root/data" "$root/running.json" "$port"
+	printf '  TALLPINE_TMUX_SOCKET_NAME=%q TALLPINE_TELEMETRY_REMOTE=off \\\n' "tp-e2e-$phase"
+	printf '  TALLPINE_GITHUB_TOKEN="$(cat %q)" CLAUDE_CODE_OAUTH_TOKEN="$(cat %q)" %s "$@"\n' "$root/.gh" "$root/.tok" "$mode_env"
+} >"$root/denv"
+chmod +x "$root/denv"
+[ "$keep" -eq 1 ] || trap 'stop_phase "$phase"; exit 130' INT TERM
+
+"$root/denv" tallpine daemon >"$root/daemon.log" 2>&1 &
+echo $! >"$root/daemon.pid"
+ready=0
+for _ in $(seq 150); do
+	if "$root/denv" tallpine status --json 2>/dev/null | grep -q '"state": "ready"'; then ready=1; break; fi
+	sleep 0.3
+done
+if [ "$ready" -ne 1 ]; then
+	echo "scratch daemon never became ready; tail of $root/daemon.log:" >&2
+	tail -n 20 "$root/daemon.log" >&2
+	stop_phase "$phase"
+	exit 1
+fi
+# $root/data persists across runs, so a re-run finds the path already registered: that is fine.
+if ! add_out=$("$root/denv" tallpine project add --path "$root/repo" --name "e2e-$phase" 2>&1) && [[ "$add_out" != *PATH_ALREADY_REGISTERED* ]]; then
+	echo "project add failed: $add_out" >&2
+	stop_phase "$phase"
+	exit 1
+fi
+pid=$("$root/denv" tallpine project ls --json | python3 -c 'import json,sys
+d=json.load(sys.stdin); d=d.get("projects",d) if isinstance(d,dict) else d
+print(next((p["id"] for p in d if p.get("name", p.get("displayName")) == sys.argv[1]), ""))' "e2e-$phase")
+if [ -z "$pid" ]; then
+	echo "no project named e2e-$phase after project add" >&2
+	stop_phase "$phase"
+	exit 1
+fi
+"$root/denv" tallpine project set-config "$pid" --orchestrator-agent claude-code --worker-agent claude-code --reviewer claude-code --permission bypass-permissions >/dev/null
+"$root/denv" tallpine policy show >"$root/policy-show.txt" 2>&1
+
+br="tp/secmode-e2e-$phase-$(date +%H%M)"
+worker_prompt="You are a test worker for Tallpine backlog B465 (Security mode end-to-end test, phase $phase). Do these steps in order, in your session worktree, and record EVERY step in a file E2E_RESULT.md at the worktree root (never commit that file): the exact command, its exit code, and the verbatim error text of any failure. Do not work around a failure beyond one obvious retry; record it and continue with the next step. Steps: (1) git switch -c $br origin/main. (2) Create the Go file backend/internal/testenv/secmode_probe_test.go (use your file-writing tool) declaring package testenv, importing testing, with the comment line // Security mode e2e probe ($phase). above an empty func TestSecModeProbe(t *testing.T) {}; make sure it is gofmt-formatted, then git add it. (3) git commit -am 'test(e2e): security-mode probe $phase (do not merge)'. (4) git push -u origin $br. (5) gh pr create -R justvibedev/tallpine-dev --base main --head $br --draft --title 'test(e2e): security-mode probe $phase (do not merge)' --body 'Throwaway PR from scripts/security-e2e. Will be closed.'. (6) scripts/verify --changed --base origin/main. (7) gh pr view <n> -R justvibedev/tallpine-dev --json headRefOid. (8) tallpine report --needs-input --pr-created <pr-url> --note 'PR ready'. Then end your turn and wait. When the orchestrator tells you the review is done, run (9) scripts/merge-gate <n> --tallpine-approved \$(git rev-parse HEAD) --no-merge, record its output line and, if it failed, the tail of the step log it names; then (10) tallpine report --done --note '<one-line summary of passes/failures>'."
+printf '%s' "$worker_prompt" >"$root/worker-prompt.txt"
+orch_prompt="You are a test orchestrator for Tallpine backlog B465 (Security mode end-to-end test, phase $phase). Record every step in ORCH_RESULT.md in your current directory: the exact command, exit code, and verbatim error text of any failure. Do not work around failures beyond one retry. Steps: (1) tallpine spawn --project $pid --name e2e-worker --prompt \"\$(cat $root/worker-prompt.txt)\". (2) tallpine send --session <worker-id> --message 'Orchestrator ping: please acknowledge with tallpine report --checkpoint --note pong, then continue your steps.' (3) Wait until the worker has opened its PR: poll 'tallpine session ls' every 60s, up to 40 minutes. (4) tallpine review trigger <worker-id> and then tallpine review wait <worker-id> (or poll tallpine review ls). Record the verdict. (5) tallpine send --session <worker-id> --message 'Review done; run your merge-gate step (9) now.' (6) Wait until the worker reports done (up to 40 minutes), then finish ORCH_RESULT.md with a one-line PASS/FAIL per step."
+"$root/denv" tallpine spawn --project "$pid" --kind orchestrator --name "e2e-orch-$phase" --mode tui --prompt "$orch_prompt" --skip-agent-check || { stop_phase "$phase"; exit 1; }
+echo "scratch daemon on port $port; root $root"
+echo "results: ORCH_RESULT.md (orchestrator cwd) and E2E_RESULT.md (worker worktree); stop: scripts/security-e2e stop $phase"

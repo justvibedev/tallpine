@@ -1,0 +1,127 @@
+[
+	{
+		"key": "app.cleanup.artifacts",
+		"plistKey": "settings.app.cleanup.artifacts",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.automatic",
+		"plistKey": "settings.app.cleanup.automatic",
+		"kind": "bool"
+	},
+	{
+		"key": "app.cleanup.backlog",
+		"plistKey": "settings.app.cleanup.backlog",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.branches",
+		"plistKey": "settings.app.cleanup.branches",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.containers",
+		"plistKey": "settings.app.cleanup.containers",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.goBuildCache",
+		"plistKey": "settings.app.cleanup.goBuildCache",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.harnessCaches",
+		"plistKey": "settings.app.cleanup.harnessCaches",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.sessionTemp",
+		"plistKey": "settings.app.cleanup.sessionTemp",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.systemTemp",
+		"plistKey": "settings.app.cleanup.systemTemp",
+		"kind": "object"
+	},
+	{
+		"key": "app.cleanup.worktrees",
+		"plistKey": "settings.app.cleanup.worktrees",
+		"kind": "object"
+	},
+	{
+		"key": "app.dynamicOrchestratorContext",
+		"plistKey": "settings.app.dynamicOrchestratorContext",
+		"kind": "bool"
+	},
+	{
+		"key": "app.mobile.enabled",
+		"plistKey": "settings.app.mobile.enabled",
+		"kind": "bool"
+	},
+	{
+		"key": "app.providerEventRetentionDays",
+		"plistKey": "settings.app.providerEventRetentionDays",
+		"kind": "int"
+	},
+	{
+		"key": "project.autoReview",
+		"plistKey": "settings.project.autoReview",
+		"kind": "bool"
+	},
+	{
+		"key": "project.models",
+		"plistKey": "settings.project.models",
+		"kind": "object"
+	},
+	{
+		"key": "project.orchestrator",
+		"plistKey": "settings.project.orchestrator",
+		"kind": "object"
+	},
+	{
+		"key": "project.planner",
+		"plistKey": "settings.project.planner",
+		"kind": "object"
+	},
+	{
+		"key": "project.reviewRisk",
+		"plistKey": "settings.project.reviewRisk",
+		"kind": "object"
+	},
+	{
+		"key": "project.reviewers",
+		"plistKey": "settings.project.reviewers",
+		"kind": "object"
+	},
+	{
+		"key": "project.terminateOnPrMerge",
+		"plistKey": "settings.project.terminateOnPrMerge",
+		"kind": "bool"
+	},
+	{
+		"key": "project.trackerIntake",
+		"plistKey": "settings.project.trackerIntake",
+		"kind": "object"
+	},
+	{
+		"key": "project.worker",
+		"plistKey": "settings.project.worker",
+		"kind": "object"
+	},
+	{
+		"key": "app.update.enabled",
+		"plistKey": "AutoUpdate",
+		"kind": "bool"
+	},
+	{
+		"key": "app.update.channel",
+		"plistKey": "AutoUpdateChannel",
+		"kind": "enum"
+	},
+	{
+		"key": "app.update.pinnedVersion",
+		"plistKey": "AutoUpdatePinnedVersion",
+		"kind": "string"
+	}
+]

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/justvibedev/tallpine/blob/main/CONTRIBUTING.md
+    about: How to claim issues, open PRs, and work with maintainers.

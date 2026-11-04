@@ -1,0 +1,97 @@
+{
+  "activeAccountId": "7a1c1f0e-5f3a-4a55-8d2b-1f6a0c9b3e11",
+  "accountRevision": 0,
+  "accounts": [
+    {
+      "id": "7a1c1f0e-5f3a-4a55-8d2b-1f6a0c9b3e11",
+      "label": "person@example.com",
+      "source": "managed",
+      "status": "valid",
+      "reasonCode": "account_valid",
+      "reason": "This Codex account is available.",
+      "active": false,
+      "authentication": {
+        "state": "unknown",
+        "freshness": "stale",
+        "checkedAt": null,
+        "attemptedAt": null,
+        "reasonCode": "not_checked",
+        "reason": "Authentication has not been checked yet."
+      },
+      "authMethod": "chatgpt",
+      "accountEmail": "person@example.com",
+      "capacity": {
+        "state": "unknown",
+        "freshness": "stale",
+        "reasonCode": "capacity_not_checked",
+        "reason": "Codex capacity has not been checked yet.",
+        "additionalBuckets": []
+      },
+      "createdAt": "2026-08-31T12:00:00Z"
+    },
+    {
+      "id": "bb1e9a5d-37ad-43f8-83bd-13de8168f8af",
+      "label": "Codex account",
+      "source": "managed",
+      "status": "signed_out",
+      "reasonCode": "account_signed_out",
+      "reason": "This Codex account is signed out.",
+      "active": false,
+      "authentication": {
+        "state": "unauthorized",
+        "freshness": "fresh",
+        "checkedAt": "2026-08-31T12:00:00Z",
+        "attemptedAt": "2026-08-31T12:00:00Z",
+        "reasonCode": "unauthorized",
+        "reason": "Sign in again to use this Codex account."
+      },
+      "authMethod": "api_key",
+      "capacity": {
+        "state": "unknown",
+        "freshness": "stale",
+        "reasonCode": "capacity_account_unavailable",
+        "reason": "This Codex account is unavailable, so capacity cannot be checked.",
+        "additionalBuckets": []
+      },
+      "createdAt": "2026-08-31T12:00:00Z"
+    }
+  ],
+  "capabilities": {
+    "accountRead": {
+      "state": "",
+      "reasonCode": "",
+      "reason": ""
+    },
+    "nativeLogin": {
+      "state": "",
+      "reasonCode": "",
+      "reason": ""
+    },
+    "capacityRead": {
+      "state": "",
+      "reasonCode": "",
+      "reason": ""
+    },
+    "usageRead": {
+      "state": "",
+      "reasonCode": "",
+      "reason": ""
+    },
+    "resetCreditConsume": {
+      "state": "",
+      "reasonCode": "",
+      "reason": ""
+    },
+    "globalSwitch": {
+      "state": "",
+      "reasonCode": "",
+      "reason": ""
+    }
+  },
+  "deviceReconciliation": {
+    "status": "",
+    "activeAccountVerified": false,
+    "reasonCode": "",
+    "retryable": false
+  }
+}

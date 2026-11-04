@@ -1,0 +1,56 @@
+package claudecode
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"tallpine.eu/tallpine/backend/pkg/agentcreds"
+)
+
+// localOAuthTokenPath is where Tallpine persists a captured Claude setup-token so the
+// credential authenticates local sessions. It lives under the Tallpine data
+// dir, never the user's ~/.claude. Written by the daemon's set-credential
+// endpoint; read here at launch.
+func localOAuthTokenPath(dataDir string) string {
+	return filepath.Join(dataDir, "harnesses", "claude-code", "oauth-token")
+}
+
+func readLocalOAuthToken(dataDir string) string {
+	data, err := os.ReadFile(localOAuthTokenPath(dataDir))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// AugmentRuntimeEnv injects Tallpine's captured setup-token as CLAUDE_CODE_OAUTH_TOKEN
+// for local sessions -- but ONLY when the machine has no native Claude login, so
+// it can NEVER shadow a user's existing keychain / ~/.claude/.credentials.json
+// login (CLAUDE_CODE_OAUTH_TOKEN sits at the top of agentcreds' resolution
+// ladder, so an unconditional inject would beat a healthy native login -- the
+// #5878 stale-credential-wins failure mode).
+//
+// The whole method is inert unless the user opted into the unified flow: no
+// captured token on disk -> immediate return, zero change for existing users.
+func (p *Plugin) AugmentRuntimeEnv(env map[string]string, dataDir string) {
+	// An account launch signs in through its own config folder only.
+	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(env[claudeConfigDirEnv]) != "" {
+		return
+	}
+	token := readLocalOAuthToken(dataDir)
+	if token == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	// A cheap presence resolve (no network): env vars, ~/.claude/.credentials.json,
+	// and the keychain. If any native first-party credential is present, defer to
+	// it and do not inject.
+	if _, found := agentcreds.ResolveLocal(ctx, agentcreds.ProviderFirstParty, launchResolveOptions("", env)); found {
+		return
+	}
+	env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+}

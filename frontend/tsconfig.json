@@ -1,0 +1,14 @@
+{
+	// Solution file: `tsc -b` (npm run typecheck) builds every frontend project
+	// below in dependency order, incrementally. Editors resolve each file to the
+	// project that includes it. Shared options live in tsconfig.base.json.
+	"files": [],
+	"references": [
+		{ "path": "./tsconfig.shared.json" },
+		{ "path": "./tsconfig.main.json" },
+		{ "path": "./tsconfig.preload.json" },
+		{ "path": "./tsconfig.renderer.json" },
+		{ "path": "./tsconfig.test.json" },
+		{ "path": "./tsconfig.tooling.json" }
+	]
+}

@@ -1,0 +1,6 @@
+# Ignored paths seeded from the main checkout into each new session worktree
+# (gitignore syntax; only paths .gitignore also ignores are seeded).
+# With the project's `cloneWorktreeInclude` on, each matched directory is one
+# APFS clonefile(2) instead of a file-by-file copy; pair it with a postCreate
+# `npm install --prefer-offline` to reconcile a branch's lockfile.
+node_modules/

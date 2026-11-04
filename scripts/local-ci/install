@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# scripts/local-ci/install: copies scripts/local-ci/loop.sh to the directory launchd runs it from
+# (default ~/.tallpine/local-ci; --dir or TALLPINE_LOCAL_CI_DIR overrides).
+#
+#   scripts/local-ci/install            # install; refuses when the installed copy has local edits
+#   scripts/local-ci/install --force    # overwrite local edits (the old copy is kept as loop.sh.bak-<time>)
+#
+# It records the hash it installed in .loop.sh.installed. If the installed loop.sh differs from both that
+# record and the repo copy, someone edited it by hand and the install stops. It never restarts the
+# loop: after installing, restart it yourself (launchctl kickstart -k gui/$UID/ee.justdev.tallpine.local-ci).
+set -euo pipefail
+
+src="$(cd "$(dirname "$0")" && pwd)/loop.sh"
+dir="${TALLPINE_LOCAL_CI_DIR:-$HOME/.tallpine/local-ci}" force=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--force) force=1 ;;
+	--dir) dir="${2:?--dir needs a path}"; shift ;;
+	-h | --help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
+	*) echo "install: unknown argument $1" >&2; exit 2 ;;
+	esac
+	shift
+done
+
+hash() { shasum -a 256 "$1" | cut -d' ' -f1; }
+dest="$dir/loop.sh" record="$dir/.loop.sh.installed"
+mkdir -p "$dir"
+new="$(hash "$src")"
+if [ -f "$dest" ]; then
+	cur="$(hash "$dest")"
+	if [ "$cur" = "$new" ]; then
+		echo "install: $dest is already up to date"
+		echo "$new" >"$record"
+		exit 0
+	fi
+	if [ "$force" = 0 ] && [ "$cur" != "$(cat "$record" 2>/dev/null)" ]; then
+		echo "install: $dest has local edits (it is not what this script last installed). Not overwriting." >&2
+		echo "  diff -u $dest $src" >&2
+		echo "  Re-run with --force to replace it (a backup is kept)." >&2
+		exit 1
+	fi
+	bak="$dest.bak-$(date +%Y%m%d-%H%M%S)"
+	cp -p "$dest" "$bak"
+	echo "install: kept the previous copy as $bak"
+fi
+cp "$src" "$dest.tmp" && chmod +x "$dest.tmp" && mv "$dest.tmp" "$dest"
+echo "$new" >"$record"
+echo "install: wrote $dest. The loop was NOT restarted; restart it to pick this up."

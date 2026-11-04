@@ -1,0 +1,163 @@
+#!/bin/sh
+# scripts/go: run the repo's pinned Go toolchain, installing it once on first use.
+#
+#   scripts/go version                  # any go subcommand
+#   export PATH="$PWD/scripts/bin:$PATH" # from the repo root: plain `go` / `gofmt`
+#   scripts/go --goroot                 # print the toolchain's GOROOT
+#
+# Every checkout and agent worktree shares one copy under the user cache
+# (macOS: ~/Library/Caches/vo-dev/toolchains/go<version>), so nobody downloads
+# a private toolchain into /tmp or runs Go in Docker. The official go.dev
+# archive is verified against the SHA-256 pinned below.
+#
+# GOCACHE, GOMODCACHE and the npm cache are one machine-wide copy per user: they
+# resolve from the account's real home directory (the passwd entry), not from
+# $HOME, so a run under a scratch HOME (`env -i HOME=$(mktemp -d) scripts/go
+# test ...`) neither re-downloads the toolchain and modules nor fills the scratch
+# dir with a private build cache (set TALLPINE_REAL_HOME when the account has no
+# passwd entry, e.g. a container uid). With the real HOME nothing is overridden, so
+# the user's `go env -w` settings keep working.
+#
+# Bump GO_VERSION together with the `go` line in backend/go.mod and go.work and
+# the checksums (https://go.dev/dl/?mode=json&include=all).
+set -eu
+
+GO_VERSION=1.27.3
+
+case "$(uname -s)-$(uname -m)" in
+Darwin-arm64) platform=darwin-arm64 sum=dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2 ;;
+Darwin-x86_64) platform=darwin-amd64 sum=b6f8e931e4ab497fcde6da8ae4499a58f9d258e55c8a80824a516eae5950a750 ;;
+Linux-x86_64) platform=linux-amd64 sum=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40 ;;
+Linux-aarch64 | Linux-arm64) platform=linux-arm64 sum=a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49 ;;
+*)
+	echo "scripts/go: no pinned Go $GO_VERSION archive for $(uname -s)-$(uname -m); install it from https://go.dev/dl/" >&2
+	exit 1
+	;;
+esac
+
+# TALLPINE_REAL_HOME names the shared home explicitly, for runs where the passwd
+# lookup cannot (a container uid with no account): without it the fallback
+# below is the scratch $HOME and the caches would land inside it.
+real_home="${TALLPINE_REAL_HOME:-}"
+[ -d "$real_home" ] || real_home="$(eval "printf %s ~$(id -un)" 2>/dev/null || true)"
+[ -d "$real_home" ] || real_home="$HOME"
+if [ -n "${XDG_CACHE_HOME:-}" ]; then
+	cache="$XDG_CACHE_HOME"
+elif [ "$(uname -s)" = Darwin ]; then
+	cache="$real_home/Library/Caches"
+else
+	cache="$real_home/.cache"
+fi
+toolchains="$cache/vo-dev/toolchains"
+goroot="$toolchains/go$GO_VERSION.$platform"
+
+install_go() {
+	staging="$(mktemp -d "$toolchains/.go$GO_VERSION.XXXXXX")"
+	archive="go$GO_VERSION.$platform.tar.gz"
+	echo "scripts/go: installing Go $GO_VERSION into $goroot (one time)" >&2
+	curl -fsSL --retry 3 -o "$staging/$archive" "https://go.dev/dl/$archive"
+	got="$(shasum -a 256 "$staging/$archive" | cut -d' ' -f1)"
+	if [ "$got" != "$sum" ]; then
+		echo "scripts/go: checksum mismatch for $archive: got $got, want $sum" >&2
+		rm -rf "$staging"
+		return 1
+	fi
+	tar -xzf "$staging/$archive" -C "$staging"
+	rm -rf "$goroot"
+	mv "$staging/go" "$goroot"
+	rm -rf "$staging"
+}
+
+if [ ! -x "$goroot/bin/go" ]; then
+	mkdir -p "$toolchains"
+	# Concurrent first runs (parallel agents) install once: the mkdir lock
+	# admits one installer and the others wait for it.
+	lock="$goroot.lock"
+	waited=0
+	until mkdir "$lock" 2>/dev/null; do
+		if [ "$waited" -ge 600 ]; then
+			echo "scripts/go: still locked after 10 minutes; remove $lock if no install is running" >&2
+			exit 1
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+	[ -x "$goroot/bin/go" ] || install_go
+	rmdir "$lock"
+	trap - EXIT
+fi
+
+if [ "${1:-}" = "--goroot" ]; then
+	echo "$goroot"
+	exit 0
+fi
+
+# GOTOOLCHAIN=local stops go from switching to another toolchain on its own.
+GOTOOLCHAIN=local
+export GOTOOLCHAIN
+# Only a scratch HOME needs help: with the real HOME, Go resolves everything
+# itself, including the user's `go env -w` settings. Under a scratch HOME, ask
+# the toolchain for the values it has for the real home (GOENV file included)
+# and pin them, so the caches stay shared and the scratch dir stays small.
+if [ "$HOME" != "$real_home" ]; then
+	if [ "$(basename "$0")" != gofmt ]; then
+		# Go telemetry otherwise spawns a background writer that fills the
+		# scratch HOME after we exit, racing with the caller deleting it.
+		"$goroot/bin/go" telemetry off >/dev/null 2>&1 || true
+		pinned="$(HOME="$real_home" "$goroot/bin/go" env GOENV GOCACHE GOMODCACHE GOPATH)"
+		GOENV="$(printf '%s\n' "$pinned" | sed -n 1p)"
+		GOCACHE="$(printf '%s\n' "$pinned" | sed -n 2p)"
+		GOMODCACHE="$(printf '%s\n' "$pinned" | sed -n 3p)"
+		GOPATH="$(printf '%s\n' "$pinned" | sed -n 4p)"
+		export GOENV GOCACHE GOMODCACHE GOPATH
+	fi
+	if [ -z "${npm_config_cache:-}" ]; then
+		npm_config_cache="$real_home/.npm"
+		export npm_config_cache
+	fi
+fi
+tool="$(basename "$0")"
+[ "$tool" = gofmt ] || tool=go
+
+# Cap the shared build cache. Every worktree's tests and lint share it and Go
+# only trims entries unused for five days, so with many agents it grew past
+# 100 GB. At most once an hour, a run measures it and, when it is over
+# TALLPINE_GOCACHE_MAX_GB (default 30, 0 disables), empties it with
+# `go clean -cache`, but only while no other go command is running.
+cap_gocache() {
+	max_gb="${TALLPINE_GOCACHE_MAX_GB:-30}"
+	case "$max_gb" in '' | *[!0-9]*) return 0 ;; esac
+	[ "$max_gb" -gt 0 ] || return 0
+	stamp="$toolchains/.gocache-checked"
+	[ -z "$(find "$stamp" -mmin -60 2>/dev/null)" ] || return 0
+	# A run killed mid-check leaves the lock behind; one older than the
+	# check interval is stale.
+	[ -z "$(find "$stamp.lock" -maxdepth 0 -mmin +60 2>/dev/null)" ] || rmdir "$stamp.lock" 2>/dev/null || true
+	mkdir "$stamp.lock" 2>/dev/null || return 0
+	trap 'rmdir "$stamp.lock" 2>/dev/null || true' EXIT INT TERM
+	touch "$stamp"
+	dir="${GOCACHE:-$("$goroot/bin/go" env GOCACHE 2>/dev/null)}"
+	if [ -d "$dir" ] && [ -f "$dir/README" ]; then
+		kb="$(du -sk "$dir" 2>/dev/null | cut -f1)"
+		if [ "${kb:-0}" -gt $((max_gb * 1024 * 1024)) ] && [ -z "$(pgrep -x go 2>/dev/null | grep -vx "$$")" ]; then
+			echo "scripts/go: Go build cache $dir is $((kb / 1024 / 1024)) GB (cap ${max_gb} GB); cleaning it" >&2
+			"$goroot/bin/go" clean -cache >/dev/null 2>&1 || true
+		fi
+	fi
+	rmdir "$stamp.lock" 2>/dev/null || true
+	trap - EXIT INT TERM
+}
+[ "$tool" != go ] || [ "${1:-}" = env ] || cap_gocache
+
+# A broad `go test` (a package tree: ./... or dir/...) queues for the machine-wide test slot pool
+# (B363); a single package or a nested run inside a held slot runs directly.
+if [ "$tool" = go ] && [ "${1:-}" = test ]; then
+	self="$0"
+	[ ! -L "$self" ] || self="$(dirname "$self")/$(readlink "$self")"
+	slot="$(cd "$(dirname "$self")" && pwd)/test-slot"
+	if [ -x "$slot" ]; then
+		exec "$slot" --throttle-if '\.\.\.$' -- "$goroot/bin/go" "$@"
+	fi
+fi
+exec "$goroot/bin/$tool" "$@"
