@@ -1,25 +1,14 @@
 import { app, type IpcMain, type WebContents } from "electron";
-import { MacUpdater } from "electron-updater";
-import { ElectronAppAdapter } from "electron-updater/out/ElectronAppAdapter";
 import path from "node:path";
-import { createAutoUpdater, type AutoUpdaterController, type UpdaterLike } from "./auto-updater";
+import { createAutoUpdater, type AutoUpdaterController } from "./auto-updater";
+import { createMacUpdater } from "./mac-updater";
+import { createUpdaterLog } from "./updater-log";
 import { agentsBusy } from "./idle-agents";
 import { readBuildDirty, readBuildKind, readSigningTeam } from "./update-eligibility";
 import { readManagedUpdatePolicy } from "./update-policy";
 import { coerceUpdateSettings, type UpdatePreferences, type UpdateStatus } from "./update-settings";
 
 export const UPDATE_STATUS_CHANNEL = "appUpdates:status";
-
-/**
- * electron-updater keeps its download cache under the OS cache dir by default;
- * Tallpine keeps all of its state under the state root, so the adapter points
- * the cache there. Everything else is electron-updater's own Electron adapter.
- */
-function createMacUpdater(stateDir: string): UpdaterLike {
-	const adapter = new ElectronAppAdapter();
-	Object.defineProperty(adapter, "baseCachePath", { get: () => path.join(stateDir, "caches") });
-	return new MacUpdater(undefined, adapter) as unknown as UpdaterLike;
-}
 
 /** The .app bundle of the running executable (…/Tallpine.app). */
 function bundlePath(): string {
@@ -41,9 +30,11 @@ export function initAppUpdates(options: { ipcMain: Pick<IpcMain, "handle">; stat
 	ipcMain.handle("appUpdates:installWhenIdle", () => controller?.installWhenIdle() ?? false);
 	ipcMain.handle("appUpdates:cancelInstallWhenIdle", () => controller?.cancelInstallWhenIdle());
 	if (!stateDir) return;
+	const updaterLog = createUpdaterLog(stateDir, (line) => console.warn(`updater: ${line.trimEnd()}`));
 	controller = createAutoUpdater({
 		stateDir,
-		createUpdater: () => createMacUpdater(stateDir),
+		log: updaterLog.log,
+		createUpdater: () => createMacUpdater(stateDir, updaterLog.logger),
 		environment: async () => {
 			const packaged = app.isPackaged;
 			return {

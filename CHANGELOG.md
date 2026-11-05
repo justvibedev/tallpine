@@ -4,6 +4,14 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.6]
+
+### Changed
+- Updater errors are written to `~/.tallpine/logs/updater.log` (#1037).
+
+### Fixed
+- The in-app updater no longer fails with "Cannot read properties of null (reading request)" on every update check (#1037). This affected 0.13.4 and 0.13.5. Installs on those versions must update to 0.13.6 manually once; after that, automatic updates work.
+
 ## [0.13.5]
 
 ### Added

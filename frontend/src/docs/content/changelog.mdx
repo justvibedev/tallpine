@@ -5,6 +5,14 @@ description: Read current Tallpine product updates and release notes.
 
 Release notes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and are sourced from Tallpine's merged pull requests. Tallpine is a fork of Agent Orchestrator; notes from before the fork are upstream's.
 
+## [0.13.6]
+
+### Changed
+- Updater errors are written to `~/.tallpine/logs/updater.log` (#1037).
+
+### Fixed
+- The in-app updater no longer fails with "Cannot read properties of null (reading request)" on every update check (#1037). This affected 0.13.4 and 0.13.5. Installs on those versions must update to 0.13.6 manually once; after that, automatic updates work.
+
 ## [0.13.5]
 
 ### Added
