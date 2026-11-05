@@ -40,8 +40,10 @@ tallpine project rm <project-id>
 | Field | Purpose |
 | --- | --- |
 | `canonicalRepoURL` | Trusted upstream for numeric PR claims. It does not change where Tallpine checks out or pushes. |
-| `autoReview` | Default automatic-review setting copied to new worker sessions. |
+| `autoReview` | Default automatic-review setting copied to new worker sessions. A project that sets none follows the app default in **Settings > Reviews**. |
 | `planAutoApprove` | Approves a submitted plan automatically, without the owner, recording the approver as `auto (project setting)`. For unattended throwaway test or benchmark projects only. Off by default. Only a person can turn it on: agents, including the project's own orchestrator, are refused on every route, and a managed `planner.autoApprove` of `off` locks it off. Set it with `tallpine project set-config <id> --plan-auto-approve` or the **Auto-approve plans** toggle under Settings → Project. |
+| `claudePlugins` | Per-role Claude Code plugin overrides, keyed by role (`orchestrator`, `worker`, `reviewer`) then `name@marketplace` plugin to on/off. A role you leave out loads the account's plugins unchanged. Applies to terminal and Chat sessions. |
+| `claudeAutoMemory` | Per-role Claude Code auto-memory on/off, keyed by role. A role you leave out inherits the account setting. |
 | `noCI` | Declares that the repository has no CI, so Tallpine review approval is the merge gate. When `true` and the provider reports no checks at all for a PR head, CI counts as passing for ready-to-merge state and `tallpine pr merge` only once a Tallpine review (`tallpine review trigger`) approved that exact head. A provider review approval does not count, because it is not tied to a commit. Until then the PR is not ready and `tallpine pr merge` reports `review_approval_required`, `ao_review_running` or `ao_changes_requested`. Failing or pending checks still block. Off by default, because a fresh push in a repository with CI can briefly have no registered checks. Set it with `tallpine project set-config <id> --no-ci` or the **No CI: review gates merge** toggle under Settings → Project → Pull requests. |
 | `defaultBranch` | Base branch for new Git worktrees. Defaults to `auto`. |
 | `sessionPrefix` | Prefix for generated session identifiers. |
@@ -184,7 +186,7 @@ These configuration fields choose a reviewer and enable automatic review for new
 }
 ```
 
-`autoReview` sets the default for new workers. Existing sessions have their own toggle. Automatic review waits for an eligible PR head and an idle worker. It does not merge the pull request.
+`autoReview` sets the default for new workers (unset follows the app default in **Settings > Reviews**). Existing sessions have their own toggle. Automatic review waits for an eligible PR head and an idle worker. It does not merge the pull request.
 
 ```bash
 tallpine review trigger <worker-session-id>

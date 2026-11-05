@@ -1056,11 +1056,11 @@ The daemon runs two independent HTTP listeners sharing the same chi router:
    (dir 0700, socket 0600, peer uid checked), token-gated (`X-VO-Token`). The CLI,
    hooks and the desktop app use it: Electron main serves the renderer's
    `http://127.0.0.1:3101/...` and `<label>.<id>.localhost:3101` URLs over it, and
-   carries the renderer's `/mux` and stream WebSockets over IPC (B176). `3101`
+   carries the renderer's `/mux` and stream WebSockets over IPC. `3101`
    (`TALLPINE_PORT`) is then only the origin the app names; **no loopback TCP
    port is open by default.** `TALLPINE_LOOPBACK_TCP=1` re-opens
    `127.0.0.1:3101` with the same router and token check, for clients that cannot
-   dial a socket (an external browser, `npm run dev:web`). With it off, the app disables "Open in browser" on local preview and render URLs (B180) with a hint instead of leaving a dead link. Without a socket
+   dial a socket (an external browser, `npm run dev:web`). With it off, the app disables "Open in browser" on local preview and render URLs with a hint instead of leaving a dead link. Without a socket
    (Windows, bind failure) the daemon listens on TCP regardless.
 2. **LAN Listener (Connect Mobile):** An opt-in second listener that binds
    `0.0.0.0:3011` (or an ephemeral fallback) **only when explicitly enabled**

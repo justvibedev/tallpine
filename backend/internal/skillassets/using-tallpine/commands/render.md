@@ -2,7 +2,10 @@
 
 Show a self-contained HTML page inline in the current **chat** session's
 thread, above your final reply. Use it when a chart, table, diagram, image
-collage, or mockup says more than prose.
+collage, or mockup says more than prose, and whenever the user asks to see
+screenshots or images: put one `<img src="/abs/shot.png">` per image in the
+page. Never answer with only local file paths; the user may be on the phone,
+where those paths cannot be opened.
 
 In a chat session, the `html_preview` and `html_render` tools do the same as
 `tallpine render --check` and `tallpine render`. They work without shell access to the

@@ -1,4 +1,4 @@
-# Auto-closing finished workers (B407)
+# Auto-closing finished workers
 
 A worker session ends on its own once its pull requests are done. The close is
 the same teardown as an explicit kill (a user kill); a closed
@@ -20,7 +20,7 @@ is no separate poller:
   count as done, but a session whose PRs were all closed unmerged stays);
 - the agent is idle: not working and not waiting on the person;
 - no message is queued for it. A queued message holds the close, and the idle
-  signal after the queue has drained retries it (B431).
+  signal after the queue has drained retries it.
 
 The owning orchestrator (the worker's lane orchestrator, else the project's)
 gets `[auto] session_closed: <session id> ended on its own ...`.

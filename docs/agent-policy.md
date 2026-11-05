@@ -166,7 +166,7 @@ It runs in the daily full cleanup pass. Every delete is a small batch under the 
 
 ## Planner (`planner.*`)
 
-The planner (B205) is a read-only agent that explores the repository, asks the owner at most five questions with recommended answers, and submits a plan the owner approves before an implementer builds it. It is **on by default**; `TALLPINE_PLANNER=off` on the daemon is a kill switch for development, not a product setting.
+The planner is a read-only agent that explores the repository, asks the owner at most five questions with recommended answers, and submits a plan the owner approves before an implementer builds it. It is **on by default**; `TALLPINE_PLANNER=off` on the daemon is a kill switch for development, not a product setting.
 
 Each project chooses in its own config: `planningMode` is `auto` (default; the orchestrator decides, and the owner can say "plan this" or "just do it"), `always` (starting work on an item without an approved plan is refused: `tallpine plan start <ref>` or `--force`), or `off`. The planner's agent is the project's `planner` override (`harness`, `agentConfig.model`), else the project's orchestrator, else its worker. It never defaults to a vendor or to the strongest model.
 
@@ -177,7 +177,7 @@ The managed layer can pin these for every project. All three fields are empty by
 | `planner.mode` | `""`, `off`, `auto`, `always` | `""` | Overrides every project's `planningMode`. |
 | `planner.harness` | string | `""` | Pins the planner's agent harness (for example `claude-code`); set it together with `model`, since a locked model alone drops the inherited harness. |
 | `planner.model` | string | `""` | Pins the planner's model. |
-| `planner.autoApprove` | `""`, `off` | `""` | `off` locks the per-project `planAutoApprove` setting off in every project (see below). An invalid managed value also locks it off. Managed file or environment only; the user layer ignores it (B525). |
+| `planner.autoApprove` | `""`, `off` | `""` | `off` locks the per-project `planAutoApprove` setting off in every project (see below). An invalid managed value also locks it off. Managed file or environment only; the user layer ignores it. |
 | `planner.inPlace` | `""`, `off` | `""` | `off` locks the per-project `planInPlace` setting off in every project. An invalid managed value also locks it off. |
 
 `planAutoApprove` (project config, default off) approves a submitted plan at once, with the same side effects as an owner approval, and records the approver as `auto (project setting)`. It exists for unattended throwaway test and benchmark projects. Only a person can turn it on (Settings → Project, or `tallpine project set-config <id> --plan-auto-approve`): every agent write path refuses it, including the project's own orchestrator, and `planner.autoApprove` = `off` locks it off.

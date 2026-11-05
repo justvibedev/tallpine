@@ -222,10 +222,23 @@ func (m *Manager) tallpineSkillPointer(chat bool) string {
 		"## Showing pages in chat\n\n" +
 		"When a chart, table, diagram, or mockup is clearer than text, call `html_preview`, then `html_render`. " +
 		"If you cannot see them, search your tools for them. " +
+		chatToolsDeferredHint +
 		"If you find nothing, read `" + renderFile + "` and use `tallpine render`. " +
 		"Do not use a built-in visualize skill. " +
-		"To show screenshots or local images, render them by absolute path (`<img src=\"/abs/shot.png\">`); never claim you cannot show images."
+		"To show screenshots or local images, render them by absolute path (`<img src=\"/abs/shot.png\">`); never claim you cannot show images. " +
+		chatImageRequestRule
 }
+
+// chatToolsDeferredHint covers harnesses that list MCP tools by name only
+// (Claude Code's deferred tools): the agent "sees" html_render yet cannot call
+// it, and an agent that never loads it falls back to listing file paths.
+const chatToolsDeferredHint = "If they are listed only as deferred tools, load them first " +
+	"(Claude Code: ToolSearch `select:mcp__tallpine__html_preview,mcp__tallpine__html_render`). "
+
+// chatImageRequestRule names the request itself, so "send me screenshots"
+// reaches html_render rather than a list of paths the phone cannot open.
+const chatImageRequestRule = "When asked for screenshots or images, call `html_render` with one `<img>` per image; it shows them on desktop and mobile. " +
+	"Never reply with only local paths: the phone cannot open them."
 
 func (m *Manager) workspaceProjectPrompt(ctx context.Context, kind domain.SessionKind, projectID domain.ProjectID) (string, error) {
 	project, err := m.loadProject(ctx, projectID)

@@ -155,7 +155,7 @@ with tests in `cross_project_test.go` and `agent_create_test.go`:
 - **Created-project ownership.** An orchestrator may register a project and then
   change that project's config. Creator rows record ownership; it cannot touch
   projects a person registered, and cannot adopt or revive any existing id.
-- **Eval projects (B335).** A created project the creating orchestrator marks
+- **Eval projects.** A created project the creating orchestrator marks
   `eval` (config `eval: true`; only the user or that orchestrator may set it) is
   one the orchestrator may also drive from its own project, and only when
   crossProjectOrchestration is on: the project's backlog (list, add, show, state,

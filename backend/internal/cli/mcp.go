@@ -276,8 +276,9 @@ var mcpTools = []map[string]any{
 	{
 		"name":  "html_render",
 		"title": "Render HTML",
-		"description": "Show a finished HTML page (chart, table, diagram, image collage, mockup) inline in this chat thread, " +
-			"above your final reply. Preview it with html_preview first, then call this before you write the reply. " +
+		"description": "Show a finished HTML page (chart, table, diagram, screenshots, image collage, mockup) inline in this chat thread, " +
+			"above your final reply. This is how the user sees your screenshots and images, on desktop and mobile: " +
+			"a local file path in your reply cannot be opened from the phone. Preview it with html_preview first, then call this before you write the reply. " +
 			"The reader already sees the page, so the reply must not announce it, say where it is, or restate it: " +
 			"add only what the page does not say. Use this tool, not a built-in visualize skill: Tallpine does not show those. " +
 			mcpPageRules + " " + mcpLayoutGuide + " " + mcpThemeGuide,

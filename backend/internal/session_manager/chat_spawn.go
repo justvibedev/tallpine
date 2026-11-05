@@ -132,6 +132,11 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 	// Chat Service retains this unprivileged base environment. The bearer is
 	// minted inside its per-session launch gate and is never cached for reuse.
 	env := m.runtimeEnv(id, in.record.ProjectID, in.record.IssueID, in.project.Config.Env)
+	// The driver builds session/new settings from this env, not from the
+	// launch-only one PrepareControllerEnv returns, so it must carry them too.
+	// Pinned for any starting harness: a provider switch to Claude clones this
+	// env, and other drivers ignore the variable.
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, in.record.Kind, in.project.Config)
 	if agent, ok := m.agents.Agent(in.cfg.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 		// Chat launches go through the same workspace preparation as terminal

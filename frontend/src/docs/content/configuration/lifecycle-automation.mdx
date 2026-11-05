@@ -74,7 +74,7 @@ Repository observation and Tallpine reviewer agents are related but separate:
 - The GitHub/GitLab observer watches a claimed pull request or merge request and records CI, review, and merge data.
 - A Tallpine review run starts a configured reviewer against a worker's pull request. Use **Reviews** in the desktop app or `tallpine review trigger`, `tallpine review ls`, and `tallpine review cancel`.
 
-`autoReview` is a project default copied to new worker sessions. Each session also has its own toggle. Automatic review waits for an eligible pull-request revision and an idle worker. It does not merge the pull request or publish every workspace inspection as a review. See the [agent catalog](/plugins/agents) for reviewer support.
+`autoReview` is a project default copied to new worker sessions; a project that sets none follows the app default in **Settings > Reviews**. Each session also has its own toggle. Automatic review waits for an eligible pull-request revision and an idle worker. It does not merge the pull request or publish every workspace inspection as a review. See the [agent catalog](/plugins/agents) for reviewer support.
 
 <Cards>
 	<Card title="CI recovery" href="/guides/ci-recovery" description="Follow the built-in CI feedback loop." />

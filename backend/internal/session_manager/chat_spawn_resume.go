@@ -364,6 +364,7 @@ func awakeReconnectTarget(rec domain.SessionRecord, reconnectOnly bool, awakeTar
 // chatRuntimeEnv is the environment handed to a resumed chat controller.
 func (m *Manager) chatRuntimeEnv(rec domain.SessionRecord, project domain.ProjectRecord) map[string]string {
 	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, rec.Kind, project.Config) // see spawnChat: session/new reads this env; any harness, for a later switch to Claude
 	if agent, ok := m.agents.Agent(rec.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 	}

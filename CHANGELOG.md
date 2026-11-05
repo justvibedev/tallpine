@@ -4,9 +4,42 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
-No tagged Tallpine release exists yet; everything below is on `main` and ships with the first one.
+## [0.13.1]
 
-## [Unreleased]
+### Added
+- Pin projects to the top of the sidebar (#985).
+- Settings > Reviews holds app-wide defaults that projects inherit: automatic review, planning mode and plan auto-approve; a project can still override each (#958, #959).
+- `tallpine project set-config --plan-auto-approve-inherit` clears a project's own plan auto-approve value so it follows the app default (#959).
+- Claude Code: per-role plugins and auto-memory settings for orchestrator, worker and reviewer sessions; models the installed Claude Code is too old for are gated (#994, #982); Chat sessions get the same per-role settings, including after a provider switch, and rarely used skills are listed by name only (#1001).
+- Update the Codex and Claude Code casks while sessions are running (#984).
+- An open local artifact refreshes live when its file changes (#988).
+- Mobile: browse, comment on and restore a session's artifacts; paste images into the chat and reviewer composers (#987, #986).
+- `tallpine send --relay-owner-message last` passes an owner message between sessions, verified by the daemon (#972).
+- `tallpine session land` squashes an approved branch onto its target; a native review also works on a session branch that has no PR (#965, #961).
+- Adding a project no longer requires a Git remote (#963).
+
+### Changed
+- Auto planning mode plans only work that splits into several PRs; single-PR work goes straight to a worker (#966).
+- Local-only projects get prompts that name the local base and never push to a local-folder remote (#960).
+- Local builds never self-update (#978).
+- Bypass permissions is marked as a risk in the chat composer, and only the selected composer submenu closes (#992).
+
+### Fixed
+- The desktop app respawns the daemon after an unexpected exit (#977).
+- Stay Awake responds faster and recovers after charging (#993).
+- Session cleanup is idempotent, with a reconcile pass and session delete (#983).
+- Killing a session waits behind automatic recovery and names the holder (#967); salvaged worktrees are removed (#962).
+- Claude Code: tasks start on a renewable expired login and the banner clears once login works; a refused login is shown instead of a silent wait; the "Teach auto mode" dialog is dismissed before launch (#981, #954, #950).
+- No "ended on its own" notice for sessions already killed, and no stale app-restart notice for sessions already working again (#998, #997).
+- Long conversations load and render within bounds (#980).
+- A failed manual review shows its stored reason (#979).
+- `tallpine project set-config --config-json` no longer drops fields the CLI does not know (#996).
+- A fresh project inherits the daemon default agent (#968).
+- Mobile: the closed iOS drawer no longer eats header taps and the app launches on Projects; bubble images open in a viewer that does not freeze iOS taps; the orchestrator composer placeholder names the orchestrator (#973, #991, #990).
+- Chat agents load `html_render` and show requested screenshots in chat (#1002).
+- Stuck reports no longer press Ctrl-C in terminal orchestrators (#976); chat screenshot requests are routed to render (#975); the orchestrator does owner git chores (#957).
+
+## [0.13.0]
 
 ### Added
 - Settings shows which GitHub login a project's token really is and warns when it is another account or cannot see the repo (#889).

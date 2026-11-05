@@ -8,7 +8,7 @@ In a controlled benchmark, workflows that collected the owner's real decisions b
 
 ## When Tallpine plans
 
-Each project has a planning mode (Settings, Project, or `planningMode` in the project config):
+Each project has a planning mode (Settings, Project, or `planningMode` in the project config); a project that sets none follows the app default in Settings > Reviews:
 
 | Mode | Behaviour |
 | --- | --- |

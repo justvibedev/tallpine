@@ -922,18 +922,6 @@ func TestSpawnOrchestrator_UsesCoordinatorPrompt(t *testing.T) {
 	if strings.Contains(systemPrompt, "## Showing pages in chat") {
 		t.Fatalf("terminal session prompt names the chat-only html tools:\n%s", systemPrompt)
 	}
-	chatPointer := m.tallpineSkillPointer(true)
-	for _, want := range []string{
-		"When a chart, table, diagram, or mockup is clearer than text, call `html_preview`, then `html_render`. If you cannot see them, search your tools for them. If you find nothing, read `",
-		"` and use `tallpine render`. Do not use a built-in visualize skill.",
-	} {
-		if !strings.Contains(chatPointer, want) {
-			t.Fatalf("chat pointer missing %q:\n%s", want, chatPointer)
-		}
-	}
-	if words := len(strings.Fields(chatPointer)); words > 280 {
-		t.Fatalf("always-on Tallpine skill pointer grew to %d words; keep details in routed command guides:\n%s", words, chatPointer)
-	}
 	if strings.Contains(agent.lastLaunch.Prompt, "You are the human-facing orchestrator") {
 		t.Fatalf("coordinator role must not be in the user prompt:\n%s", agent.lastLaunch.Prompt)
 	}

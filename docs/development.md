@@ -14,7 +14,7 @@ Additional runtime dependencies for the daemon:
 
 - **git** (for worktree creation and agent integration)
 - **A running agent CLI** (Claude Code, Codex, or Kiro). See [the installation
-  guide](https://docs.orchestrator.inc/installation).
+  guide](https://docs.tallpine.eu/installation).
 
 For source terminal runs on macOS, install/configure tmux; packaged builds
 bundle it. New macOS/Linux sessions use detached native PTY hosts, while old

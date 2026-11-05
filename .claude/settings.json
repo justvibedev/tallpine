@@ -6,6 +6,15 @@
     "anthropic-skills:artifact-emulator": "off",
     "anthropic-skills:built-in-browser": "off",
     "anthropic-skills:chrome-browser": "off",
-    "anthropic-skills:computer-use": "off"
+    "anthropic-skills:computer-use": "off",
+    "claude-api": "name-only",
+    "anthropic-skills:deep-research": "name-only",
+    "anthropic-skills:skill-creator": "name-only",
+    "grill-me": "name-only",
+    "workflow-authoring": "name-only",
+    "plugin-authoring": "name-only",
+    "keybindings-help": "name-only",
+    "schedule": "name-only",
+    "init": "name-only"
   }
 }

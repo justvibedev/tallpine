@@ -50,7 +50,7 @@ The hook installers write only `tallpine hooks ...` entries and never modify or 
 - **Removed:** the legacy TypeScript-AO import feature.
 - **Security:** a per-install daemon token on the loopback listener (`daemon.token`, header `X-VO-Token`) and a localhost `Host` allowlist.
 - **Reports:** per-project report delivery fix (one orphaned project can no longer stall the others) and automatic `turn_ended` / `exited` notifications for workers.
-- **Harnesses:** limited to `claude-code`, `codex`, and `kiro`.
+- **Harnesses:** limited to `claude-code`, `codex`, `kiro`, and `deepseek-harness`.
 - **Review:** the native reviewer receives the task intent (as untrusted context).
 - **Projects:** a prompt-only `verifyCommand`; `done` reports without evidence are soft-verified (annotated as unverified).
 - **Workspaces:** `.worktreeinclude` seeds ignored files into new worktrees, with APFS `clonefile` seeding for large directories; workspace observation reports a read-only `merged` flag.
@@ -108,8 +108,9 @@ Unsigned local builds are fine for personal use, but on macOS packaging refuses 
 GitHub Actions are disabled on this repository. Run the checks locally:
 
 ```bash
-npm run lint                  # backend go test ./... + golangci-lint
-npm run frontend:typecheck    # tsc --noEmit
+npm run lint                  # backend golangci-lint
+npm run test:go               # backend go test ./...
+npm run frontend:typecheck    # tsc -b
 cd frontend && npm test       # vitest
 ```
 

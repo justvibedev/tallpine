@@ -19,6 +19,7 @@ type mcpReply struct {
 		ServerInfo      struct{ Name string }      `json:"serverInfo"`
 		Tools           []struct {
 			Name        string
+			Description string
 			InputSchema struct {
 				Properties map[string]map[string]any
 				Required   []string
@@ -106,6 +107,19 @@ func TestMCPListsBothTools(t *testing.T) {
 	if got := tools[1].InputSchema.Required; !slices.Equal(got, []string{"html", "title"}) || tools[1].InputSchema.Properties["height"] == nil ||
 		tools[1].InputSchema.Properties["artifact"]["type"] != "boolean" {
 		t.Errorf("html_render schema: required %q, properties %v", got, tools[1].InputSchema.Properties)
+	}
+}
+
+// B559: a Claude Code agent sees MCP tools by name and finds them by keyword
+// search, so html_render's own description must claim screenshot requests
+// and say a local path is no substitute on the phone.
+func TestMCPHTMLRenderDescriptionClaimsScreenshots(t *testing.T) {
+	tools := runMCP(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)[0].Result.Tools
+	desc := tools[1].Description
+	for _, want := range []string{"screenshots", "This is how the user sees your screenshots and images, on desktop and mobile", "cannot be opened from the phone"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("html_render description missing %q:\n%s", want, desc)
+		}
 	}
 }
 
