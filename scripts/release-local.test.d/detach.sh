@@ -45,6 +45,21 @@ check "b327: slow quit fails the install" '[[ ${rc} -ne 0 ]] && grep -q "did not
 check "b327: the undo relaunched the app" 'grep -q "launch chain:" "${b}/chain.out" && bwait && [[ "$(plutil -extract pid raw -o - "${bst}/running.json")" != "${before}" ]] && [[ "$(binst)" == "${D}" ]]'
 check "b327: the failed install was reported" 'grep -q "^send|--session|orch-b|--message|\[release\] install of ${C:0:10} FAILED: .*did not quit.*; log ${T}/b.log|" "${bnrc}"'
 
+# B585: the app was already relaunched (a healthy new daemon) while the old app process is still exiting: the undo
+# must not wait for that exit or launch a second app, and still reports the failure.
+: >"${bnrc}"; : >"${b}/chain.out"; before="$(plutil -extract pid raw -o - "${bst}/running.json")"
+(
+  for i in $(seq 1 50); do [[ -f "${bst}/running.json" ]] || break; sleep 0.05; done
+  python3 "${T}/fake_daemon.py" "${bst}" "${D}" "${service}" >/dev/null 2>&1 &
+) &
+TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl install "${b}/newer/${product}.app" --notify orch-b --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
+wait
+check "b585: the undo sees the app is already running again" '[[ ${rc} -ne 0 ]] && grep -q "is already running again; not relaunching it" "${T}/out" && ! grep -q "Launching" "${T}/out"'
+check "b585: the undo launched nothing and the install failure was reported" '[[ ! -s "${b}/chain.out" ]] && grep -q "^send|--session|orch-b|--message|\[release\] install of ${C:0:10} FAILED: .*did not quit" "${bnrc}"'
+# Back to a normal app: stop the stand-in daemon, let the old app process finish exiting, start the app.
+bwait && kill -TERM "$(plutil -extract pid raw -o - "${bst}/running.json")"; sleep 4
+"${T}/launch" "${bapps}/${product}.app"; bwait || bad "b585: app did not come back"
+
 # Same for rollback.
 : >"${bnrc}"; : >"${b}/chain.out"; before="$(plutil -extract pid raw -o - "${bst}/running.json")"
 TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl rollback --notify orch-b --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?

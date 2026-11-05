@@ -24250,6 +24250,10 @@ components:
         cacheReadTokens:
           format: int64
           type: integer
+        contextPercent:
+          type:
+          - "null"
+          - number
         credits:
           format: double
           type: number

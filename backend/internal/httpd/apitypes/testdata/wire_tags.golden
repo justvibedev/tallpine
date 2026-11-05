@@ -68,7 +68,7 @@ ListSessionPRsResponse: linkedPrs prs sessionId
 ListSessionsResponse: archived,omitempty nextCursor,omitempty sessions
 MergePRRequest: expectedHeadSha prUrl
 MergePRResponse: method ok prNumber state stateChangedAt
-ModelUsagePayload: cacheCreationTokens cacheReadTokens credits inputTokens model outputTokens turns
+ModelUsagePayload: cacheCreationTokens cacheReadTokens contextPercent,omitempty credits inputTokens model outputTokens turns
 PendingApproval: createdAt decisions detail,omitempty requestId summary
 PendingApprovalDecision: id kind,omitempty label
 PendingApprovalsResponse: approvals inputs sessionId

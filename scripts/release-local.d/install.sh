@@ -12,45 +12,6 @@ move_entries() {
   done
 }
 
-# Fails early, before anything is stopped, when APFS cloning does not work
-# between the data dir and the releases dir.
-preflight_clone() {
-  local probe_src="${releases_dir}/.clone-probe-src" probe_dst="${releases_dir}/.clone-probe"
-  if [[ -f "${data_dir}/ao.db" ]]; then probe_src="${data_dir}/ao.db"; else printf 'probe\n' >"${probe_src}"; fi
-  if ! cp -c "${probe_src}" "${probe_dst}" 2>/dev/null; then
-    rm -f "${probe_dst}" "${releases_dir}/.clone-probe-src"
-    die "cp -c (APFS clone) from ${data_dir} to ${releases_dir} failed; both must be on the same APFS volume; nothing was changed"
-  fi
-  rm -f "${probe_dst}" "${releases_dir}/.clone-probe-src"
-}
-
-is_excluded() {
-  [[ "${snapshot_excludes}" == *" $1 "* || "$1" == *.log ]]
-}
-
-# Clones the stopped data dir (minus the excludes) and app-state.json into
-# <dest>/data and <dest>/app-state.json; on_exit removes a partial one.
-snapshot_data() {
-  local dest="$1" entry name
-  mkdir -p "${dest}/data" || return 1
-  if [[ -d "${data_dir}" ]]; then
-    for entry in "${data_dir}"/* "${data_dir}"/.[!.]*; do
-      [[ -e "${entry}" || -L "${entry}" ]] || continue
-      name="$(basename "${entry}")"
-      is_excluded "${name}" && continue
-      cp -c -R -p "${entry}" "${dest}/data/" || return 1
-    done
-    for name in ao.db ao.db-wal; do
-      if [[ -f "${data_dir}/${name}" ]]; then
-        cmp -s "${data_dir}/${name}" "${dest}/data/${name}" || { printf 'snapshot of %s does not match\n' "${name}" >&2; return 1; }
-      fi
-    done
-  fi
-  if [[ -f "${state_dir}/app-state.json" ]]; then
-    cp -c -p "${state_dir}/app-state.json" "${dest}/app-state.json" || return 1
-  fi
-}
-
 # Moves every data entry a snapshot would cover into <discard>/data, then
 # clones <point>/data back into the data dir.
 # Rollback swaps data in steps that on_exit can undo in reverse:
@@ -283,7 +244,7 @@ This quits ${product_name}: every running agent (orchestrator and workers) stops
 
   point="$(unique_path "${releases_dir}/${stamp}-$(short "${prev_commit:-unknown}")")"
   cur_point="${point}"
-  old_pid="$(current_daemon_pid)"
+  old_pid="$(current_daemon_pid)"; stopped_daemon_pid="${old_pid}"
 
   # From here on, any failure or Ctrl-C is undone by on_exit.
   phase=install-stopped
@@ -389,7 +350,7 @@ cmd_rollback() {
   confirm "Rolling back from $(short "${current_commit:-unknown}") to $(short "${target_commit:-unknown}") using $(basename "${point}") (created $(meta_get "${point}" created)${age}).
 Data written since then (sessions, chats, reports) leaves the app and is kept in ${discard}; worktrees stay.
 This quits ${product_name}: every running agent (orchestrator and workers) stops and resumes on its next message, and unsent chat drafts are discarded."
-  old_pid="$(current_daemon_pid)"
+  old_pid="$(current_daemon_pid)"; stopped_daemon_pid="${old_pid}"
 
   # From here on, any failure or Ctrl-C is undone by on_exit.
   cur_discard="${discard}"

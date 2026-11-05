@@ -31,8 +31,9 @@ const TurnInterruptEvent = "interrupt"
 // turnFailureHarnesses are the harnesses whose terminal turn can end without
 // firing a hook. Codex runs its Stop hook only after a successful turn, so a
 // turn that fails or is interrupted reports nothing; Claude Code reports a
-// failed turn through StopFailure but fires no hook for an Esc interrupt.
-var turnFailureHarnesses = []domain.AgentHarness{domain.HarnessCodex, domain.HarnessClaudeCode}
+// failed turn through StopFailure but fires no hook for an Esc interrupt; Kiro
+// fires neither Stop nor any failure hook when a model request errors.
+var turnFailureHarnesses = []domain.AgentHarness{domain.HarnessCodex, domain.HarnessClaudeCode, domain.HarnessKiro}
 
 // turnFailureSource lists the sessions worth checking: live terminal sessions
 // of one harness that are in a turn and have a native transcript path.

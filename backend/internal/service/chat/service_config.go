@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
@@ -92,6 +93,9 @@ func (s *Service) SetConfigOption(
 	if !ok {
 		return nil, ErrConfigOptionsUnsupported
 	}
+	if isWithheldConfigOption(ctx, record.Harness, configurer, configID) {
+		return nil, fmt.Errorf("%w: %s's %q option is fixed for the chat; restart the chat to change it", ports.ErrChatConfigOptionInvalid, record.Harness, configID)
+	}
 	// A provider-owned model menu changes the model through this route, so the
 	// project's model policy applies here as it does to the turn-settings route.
 	if isModelConfigOption(ctx, configurer, configID) {
@@ -137,6 +141,25 @@ func (s *Service) SetConfigOption(
 // isModelConfigOption reports whether configID is the provider's model option,
 // matched the way settingsFromConfigOptions reads it (id or category "model").
 // If the options cannot be listed, the conventional id decides.
+// isWithheldConfigOption applies withheldConfigOption to the option configID
+// names, taking its category from the live catalog so an option the catalog
+// filter hides by category cannot be set under another id.
+func isWithheldConfigOption(ctx context.Context, harness domain.AgentHarness, configurer ports.ChatConfigOptionController, configID string) bool {
+	if withheldConfigOption(harness, configID, "") {
+		return true
+	}
+	options, err := configurer.ListConfigOptions(ctx)
+	if err != nil {
+		return false
+	}
+	for _, option := range options {
+		if option.ID == configID && withheldConfigOption(harness, option.ID, option.Category) {
+			return true
+		}
+	}
+	return false
+}
+
 func isModelConfigOption(ctx context.Context, configurer ports.ChatConfigOptionController, configID string) bool {
 	if configID == "model" {
 		return true

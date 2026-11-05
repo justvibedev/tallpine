@@ -14,8 +14,19 @@ import (
 
 // permissionConfigOptions annotates only provider controls whose semantics are
 // known. In particular, plan and dontAsk are not Tallpine approval policies.
+//
+// Kiro's `mode` option lists its custom agents, and Tallpine fixes the agent at
+// launch (the profile that carries the permission rules). Offering that list
+// would replace the approval picker, so the option is withheld and the chat is
+// governed by Tallpine's four approval modes.
 func permissionConfigOptions(harness domain.AgentHarness, options []ports.ChatConfigOption) []ports.ChatConfigOption {
-	out := append([]ports.ChatConfigOption(nil), options...)
+	out := make([]ports.ChatConfigOption, 0, len(options))
+	for _, option := range options {
+		if withheldConfigOption(harness, option.ID, option.Category) {
+			continue
+		}
+		out = append(out, option)
+	}
 	for i := range out {
 		out[i].Choices = append([]ports.ChatConfigOptionChoice(nil), out[i].Choices...)
 		for j := range out[i].Choices {
@@ -40,6 +51,13 @@ func permissionConfigOptions(harness domain.AgentHarness, options []ports.ChatCo
 		}
 	}
 	return out
+}
+
+// withheldConfigOption reports whether a harness's config option is one
+// Tallpine never offers or accepts: Kiro's agent selector, whose agent is fixed
+// at launch. The catalog filter and SetConfigOption share this one predicate.
+func withheldConfigOption(harness domain.AgentHarness, id, category string) bool {
+	return harness == domain.HarnessKiro && (id == "mode" || category == "mode")
 }
 
 func truncateUTF8Head(text string, limit int) string {

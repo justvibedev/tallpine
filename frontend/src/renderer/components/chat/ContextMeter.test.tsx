@@ -40,6 +40,15 @@ function fill(): SVGCircleElement {
 }
 
 describe("ContextMeter", () => {
+	it("reads a percentage-only provider as a percentage, not tokens", async () => {
+		render(<ContextMeter percentOnly usage={usage({ contextUsed: 3, contextWindow: 100 })} />);
+		expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuetext", "3%");
+		await userEvent.hover(screen.getByRole("progressbar"));
+		const tooltip = await screen.findByRole("tooltip");
+		expect(tooltip).toHaveTextContent("3% used");
+		expect(tooltip).not.toHaveTextContent("tokens");
+	});
+
 	it("reports exact accessible values with compact numbers on hover", async () => {
 		render(<ContextMeter usage={usage({ cost: 0.4594, currency: "USD" })} />);
 		expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "7");

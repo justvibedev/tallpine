@@ -71,6 +71,15 @@ check "abort leaves no new rollback point" '[[ "$(ls -1d "${state}/releases"/2* 
 chmod 600 "${state}/data/unreadable" && rm -f "${state}/data/unreadable"
 wait_alive
 
+# B585: a write to ao.db while the snapshot is taken (a relaunched app's daemon) aborts with a message naming
+# the cause, and the undo relaunches the current release.
+points_before="$(ls -1d "${state}/releases"/2* | wc -l | tr -d ' ')"
+if TALLPINE_RELEASE_TEST_DURING_SNAPSHOT='sleep 1; touch "${data_dir}/ao.db"' rl install "${T}/build-d/${product}.app" >"${T}/out" 2>&1; then bad "install aborts when ao.db is written during the snapshot"; else ok "install aborts when ao.db is written during the snapshot"; fi
+check "the abort names the database change" 'grep -q "changed while it was being snapshotted" "${T}/out"'
+check_relaunch "ao.db write abort keeps B installed and relaunched" '[[ "$(installed)" == "${B}" ]] && wait_up && kill -0 "$(daemon_pid)"'
+check "ao.db write abort leaves no new rollback point" '[[ "$(ls -1d "${state}/releases"/2* | wc -l | tr -d " ")" == "${points_before}" ]]'
+wait_alive
+
 # A failure to move the current app aside leaves no data-only point behind.
 chmod 555 "${apps}"
 if rl install "${T}/build-d/${product}.app" >"${T}/out" 2>&1; then bad "install aborts when the app can not move"; else ok "install aborts when the app can not move"; fi

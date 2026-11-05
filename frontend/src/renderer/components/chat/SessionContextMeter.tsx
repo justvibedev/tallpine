@@ -1,5 +1,6 @@
 import { useContextDetails } from "../../hooks/useContextDetails";
 import type { ConversationCompaction, ConversationRateLimits, ConversationUsage, TurnSettings } from "../../types/conversation";
+import { isPercentContextHarness } from "../../lib/context-view";
 import { ContextMeter } from "./ContextMeter";
 
 /**
@@ -36,5 +37,5 @@ export function SessionContextMeter({
 	lastCompaction?: ConversationCompaction;
 }) {
 	const { details, compactsAt } = useContextDetails({ sessionId, hostId, harness, model, modelLabel, settings, onChooseSettings, compactedAt, rateLimits, lastCompaction });
-	return <ContextMeter usage={usage} compactsAt={compactsAt} details={details} />;
+	return <ContextMeter usage={usage} compactsAt={compactsAt} details={details} percentOnly={isPercentContextHarness(harness)} />;
 }

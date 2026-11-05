@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { ChevronRight, Folder, FolderOpen } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, MessageCircleQuestion } from "lucide-react";
 import { type MouseEvent } from "react";
 import { type WorkspaceSummary } from "../../types/workspace";
 import { SidebarMenuButton } from "../ui/sidebar";
@@ -9,7 +9,7 @@ import { NAV_ROW_HIGHLIGHT_HOST_CLASS, NavRowHighlight } from "../NavRowHighligh
 import { NAV_ROW_CLASS, SIDEBAR_ROW_CLASS } from "./constants";
 import { useProjectPin } from "./useProjectPin";
 
-export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandalone, expanded, dashboardActive, projectActive, projectIsDragging, projectDragInProgress, onProjectClick, onFolderClick }: { workspace: WorkspaceSummary; hostLabel?: string; nameWithHost: string; isStandalone: boolean; expanded: boolean; dashboardActive: boolean; projectActive: boolean; projectIsDragging: boolean; projectDragInProgress: boolean; onProjectClick: () => void; onFolderClick: (event: MouseEvent) => void }) {
+export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandalone, expanded, dashboardActive, projectActive, needsYou, projectIsDragging, projectDragInProgress, onProjectClick, onFolderClick }: { workspace: WorkspaceSummary; hostLabel?: string; nameWithHost: string; isStandalone: boolean; expanded: boolean; dashboardActive: boolean; projectActive: boolean; needsYou: boolean; projectIsDragging: boolean; projectDragInProgress: boolean; onProjectClick: () => void; onFolderClick: (event: MouseEvent) => void }) {
 	const { t } = useTranslation();
 	const { isPinned } = useProjectPin(workspace, isStandalone);
 	return (
@@ -80,6 +80,16 @@ export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandal
 										>
 											{workspace.name}
 										</span>
+										{needsYou && (
+											<span
+												className="relative z-[1] inline-flex shrink-0 text-status-needs-you-dot group-data-[collapsible=icon]:hidden"
+												data-project-needs-you=""
+												title={t("shell.orchestratorNeedsYou")}
+											>
+												<MessageCircleQuestion aria-hidden="true" className="size-icon-sm" strokeWidth={1.75} />
+												<span className="sr-only">{t("shell.orchestratorNeedsYou")}</span>
+											</span>
+										)}
 										{hostLabel && <Badge variant="outline" className="sidebar-expanded-chrome relative z-[1] h-4 shrink-0 px-1.5 text-2xs group-data-[collapsible=icon]:hidden">{hostLabel}</Badge>}
 									</SidebarMenuButton>
 									{/* Folder disclosure toggle: sibling of the nav button, absolutely positioned over

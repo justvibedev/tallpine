@@ -10,6 +10,7 @@ export function ModelUsageSection({ sessionId, hostId }: { sessionId: string; ho
 	const { models } = useModelUsage(sessionId, hostId);
 	if (models.length === 0) return null;
 	const showCredits = models.some((m) => m.credits > 0);
+	const showContext = models.some((m) => m.contextPercent != null);
 	return (
 		<div className="mt-3 border-t border-border pt-3">
 			<p className="mb-1.5 font-medium">{t("contextMeter.usage.title")}</p>
@@ -22,6 +23,7 @@ export function ModelUsageSection({ sessionId, hostId }: { sessionId: string; ho
 						<th className="text-right font-normal">{t("contextMeter.usage.cacheRead")}</th>
 						<th className="text-right font-normal">{t("contextMeter.usage.output")}</th>
 						{showCredits && <th className="text-right font-normal">{t("contextMeter.usage.credits")}</th>}
+						{showContext && <th className="text-right font-normal">{t("contextMeter.usage.context")}</th>}
 					</tr>
 				</thead>
 				<tbody>
@@ -33,6 +35,7 @@ export function ModelUsageSection({ sessionId, hostId }: { sessionId: string; ho
 							<td className="text-right">{tokens(m.cacheReadTokens)}</td>
 							<td className="text-right">{tokens(m.outputTokens)}</td>
 							{showCredits && <td className="text-right">{m.credits.toFixed(2)}</td>}
+							{showContext && <td className="text-right">{m.contextPercent == null ? "" : `${Math.round(m.contextPercent)}%`}</td>}
 						</tr>
 					))}
 				</tbody>

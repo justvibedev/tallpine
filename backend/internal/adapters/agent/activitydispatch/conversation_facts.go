@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"tallpine.eu/tallpine/backend/internal/adapters/agent/kiro"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/textutil"
 )
@@ -82,6 +83,13 @@ func hookConversationFacts(agent domain.AgentHarness, event string, payload []by
 		// Kiro v3's Stop payload carries no reply text; read it from the session log.
 		finalMessage = kiroFinalReply(p.SessionID)
 	}
+	transcriptPath := textutil.FirstTrimmed(p.TranscriptPath, p.TranscriptPathCamel)
+	if agent == domain.HarnessKiro && decodeErr == nil && transcriptPath == "" && strings.TrimSpace(p.SubagentID) == "" {
+		// Kiro's payloads carry no transcript path. Record its session log so the
+		// failed-turn observer can see a turn that ended on an error, which fires
+		// no hook (kiro.LastTurnFailure).
+		transcriptPath = kiro.SessionLogPath(p.SessionID)
+	}
 	// The terminal turn history takes a main turn's text from every agent, under
 	// whichever name its hook uses, but only from a payload that decoded cleanly.
 	// A worker report or session send Tallpine delivered is a request in that history,
@@ -103,7 +111,7 @@ func hookConversationFacts(agent domain.AgentHarness, event string, payload []by
 		TurnUserRequest:       capHookText(turnRequest, maxHookInteractionLen),
 		CheckpointOrigin:      origin,
 		CoordinationID:        coordinationID,
-		TranscriptPath:        capHookText(textutil.FirstTrimmed(p.TranscriptPath, p.TranscriptPathCamel), maxHookTranscriptPath),
+		TranscriptPath:        capHookText(transcriptPath, maxHookTranscriptPath),
 	}
 }
 

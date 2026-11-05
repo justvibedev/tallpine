@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useUiStore } from "../../stores/ui-store";
 import { toggleModelFavorite } from "../../lib/model-favorites";
 import { AgentModelPicker, type PendingAgentSwitch, type PickerSource } from "./AgentSwitchPicker";
 
@@ -169,6 +170,17 @@ describe("AgentModelPicker", () => {
 		await user.click(screen.getByRole("menuitem", { name: /Agent/ }));
 		fireEvent.click(await screen.findByRole("menuitemradio", { name: "Codex" }));
 		expect(onPendingChange).toHaveBeenCalledWith({ harness: "codex" });
+	});
+
+	it("opens Settings > Harness when Manage agents is chosen from the agent submenu", async () => {
+		const user = userEvent.setup();
+		const openGlobalSettings = vi.fn();
+		useUiStore.setState({ openGlobalSettings });
+		open();
+		await user.click(screen.getByRole("button", { name: /Agent, model and reasoning effort/ }));
+		await user.click(screen.getByRole("menuitem", { name: /Agent/ }));
+		fireEvent.click(await screen.findByRole("menuitem", { name: /Manage agents/i }));
+		await vi.waitFor(() => expect(openGlobalSettings).toHaveBeenCalledWith("harness", expect.objectContaining({ preserveProject: true })));
 	});
 
 	it("leaves out a chat agent whose chat adapter is missing", async () => {

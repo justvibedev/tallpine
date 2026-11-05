@@ -299,6 +299,10 @@ func (m *Manager) harnessStartupSignalGatesInput(harness domain.AgentHarness) bo
 var (
 	rawSlashCommands      = map[string]bool{"/context": true, "/cost": true}
 	rawSlashNonClaudeOnly = map[string]bool{"/usage": true}
+	// rawSlashKiroOnly are commands verified on kiro-cli 3.0.0 only: /compact
+	// opens the command picker, one Enter runs it inline and the composer
+	// returns. Wrapped in a delivery envelope it would reach the model as text.
+	rawSlashKiroOnly = map[string]bool{"/compact": true}
 )
 
 // isSlashCommand reports whether message is a single-line raw-eligible
@@ -309,7 +313,8 @@ func isSlashCommand(message string, harness domain.AgentHarness) bool {
 		return false
 	}
 	token := strings.Fields(m)[0]
-	return rawSlashCommands[token] || (rawSlashNonClaudeOnly[token] && harness != domain.HarnessClaudeCode)
+	return rawSlashCommands[token] || (rawSlashNonClaudeOnly[token] && harness != domain.HarnessClaudeCode) ||
+		(rawSlashKiroOnly[token] && (harness == domain.HarnessKiro || harness == ""))
 }
 
 // unprefixOrchestratorSlash drops the CLI's "[from <sender>] " prefix from an

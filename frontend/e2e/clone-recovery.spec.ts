@@ -35,6 +35,10 @@ test.beforeEach(async ({ page }) => {
 			await route.fulfill({ json: { remoteUrl, path: checkout, exists: false, canUseExisting: false } });
 		} else if (pathname === "/api/v1/imports/validate") {
 			await route.fulfill({ json: validation });
+		} else if (pathname === "/api/v1/health/silent-failures") {
+			await route.fulfill({ json: { healthy: true, chatNotAttached: [], reportBatches: [], turnFallbacks: [] } });
+		} else if (pathname.endsWith("/agent-policy")) {
+			await route.fulfill({ json: { schemaVersion: 1, rules: [], managedPath: "", securityMode: { enabled: false, locked: false, source: "default" }, warnings: [] } });
 		} else {
 			await route.fulfill({ json: { status: "ok" } });
 		}

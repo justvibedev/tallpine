@@ -47,12 +47,22 @@ func TestPermissionConfigOptions(t *testing.T) {
 		if input[0].Choices[0].PermissionMode != "" {
 			t.Fatal("mutated provider catalog")
 		}
-		if other := permissionConfigOptions(domain.HarnessKiro, input); other[0].Choices[0].PermissionMode != "" {
-			t.Fatal("mapped unknown provider")
+		if other := permissionConfigOptions(domain.HarnessKiro, input); len(other) != 0 {
+			t.Fatal("Kiro's agent list must not surface as the permission mode option")
 		}
 		input[0].ID = "model"
 		if model := permissionConfigOptions(domain.HarnessClaudeCode, input); model[0].Choices[0].PermissionMode != "" {
 			t.Fatal("mapped model choice")
 		}
+	}
+}
+
+func TestPermissionConfigOptionsKeepsKiroModelOption(t *testing.T) {
+	t.Parallel()
+
+	input := []ports.ChatConfigOption{{ID: "mode"}, {ID: "model"}}
+	got := permissionConfigOptions(domain.HarnessKiro, input)
+	if len(got) != 1 || got[0].ID != "model" {
+		t.Fatalf("Kiro options = %+v, want only model", got)
 	}
 }

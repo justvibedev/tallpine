@@ -1,4 +1,6 @@
 {"id":"u1","timestamp":"2026-11-01T16:54:28.296Z","payload":{"type":"user","content":"hello"}}
 {"id":"t1-usage","timestamp":"2026-11-01T16:54:48.506Z","payload":{"type":"usage_summary","promptTurnSummaries":[{"unit":"credit","unitPlural":"credits","usage":0.049232757877280264,"usedTools":["execute_bash"]}],"elapsedTime":19929,"status":"success","executionId":"t1","turnId":"t1"}}
+{"id":"m1","timestamp":"2026-11-01T16:54:48.400Z","payload":{"type":"session_metadata","key":"contextUsage","value":{"usagePercentage":1.6350999},"executionId":"t1"}}
 {"id":"t2-usage","timestamp":"2026-11-01T16:58:00.000Z","payload":{"type":"usage_summary","promptTurnSummaries":[{"unit":"credit","unitPlural":"credits","usage":0.5},{"unit":"credit","unitPlural":"credits","usage":0.25}],"status":"success","executionId":"t2","turnId":"t2"}}
+{"id":"m2","timestamp":"2026-11-01T16:58:00.100Z","payload":{"type":"session_metadata","key":"contextUsage","value":{"usagePercentage":4.25},"executionId":"t2"}}
 not json

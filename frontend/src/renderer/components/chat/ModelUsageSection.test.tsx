@@ -32,4 +32,16 @@ describe("ModelUsageSection", () => {
 		expect(screen.getByText("Credits")).toBeInTheDocument();
 		expect(screen.getByText("1.50")).toBeInTheDocument();
 	});
+
+	it("shows the context fill next to credits only when reported", () => {
+		const row = { model: "auto", inputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, outputTokens: 0, credits: 0.05, turns: 1 };
+		state = { models: [{ ...row, contextPercent: 4.25 }] };
+		const { unmount } = render(<ModelUsageSection sessionId="s1" />);
+		expect(screen.getByText("Context")).toBeInTheDocument();
+		expect(screen.getByText("4%")).toBeInTheDocument();
+		unmount();
+		state = { models: [row] };
+		render(<ModelUsageSection sessionId="s1" />);
+		expect(screen.queryByText("Context")).not.toBeInTheDocument();
+	});
 });

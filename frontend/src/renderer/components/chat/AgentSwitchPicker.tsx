@@ -464,7 +464,7 @@ export function AgentModelPicker({
 												</OptionMenuItem>
 											))}
 										</div>
-										<OptionMenuItem className={cn(DIVIDER, "text-xs text-foreground")} onSelect={management.requestManagement}>
+										<OptionMenuItem className={cn(DIVIDER, "text-xs text-foreground")} onSelect={() => { management.requestManagement(); setOpen(false); }}>
 											{t("agentSelector.manage")}
 										</OptionMenuItem>
 									</OptionMenuSubContent>

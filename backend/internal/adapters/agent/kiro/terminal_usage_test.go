@@ -18,6 +18,10 @@ func TestTerminalModelUsageSumsUsageSummaries(t *testing.T) {
 		if got[0].Model != "qwen3-coder-next" || got[0].Turns != 2 || got[0].Credits < 0.7992 || got[0].Credits > 0.7993 {
 			t.Fatalf("%s: unexpected usage %+v", id, got[0])
 		}
+		// The last contextUsage record wins, not the first.
+		if got[0].ContextPercent == nil || *got[0].ContextPercent != 4.25 {
+			t.Fatalf("%s: context percent %v, want 4.25", id, got[0].ContextPercent)
+		}
 	}
 }
 
@@ -67,6 +71,15 @@ func TestTerminalModelUsagePrefersNewestWorkspaceHash(t *testing.T) {
 	p := &Plugin{sessionsRoot: root}
 	got, ok, err := p.TerminalModelUsage(context.Background(), "dup")
 	if err != nil || !ok || len(got) != 1 || got[0].Credits != 2 {
+		t.Fatalf("got %+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestTerminalModelUsageNoContextRecordLeavesPercentNil(t *testing.T) {
+	root := t.TempDir()
+	writeTranscript(t, root, "h1", "sess_plain", time.Now(), "1")
+	got, ok, err := (&Plugin{sessionsRoot: root}).TerminalModelUsage(context.Background(), "plain")
+	if err != nil || !ok || len(got) != 1 || got[0].ContextPercent != nil {
 		t.Fatalf("got %+v ok=%v err=%v", got, ok, err)
 	}
 }

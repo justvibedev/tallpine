@@ -1,0 +1,40 @@
+         ⠙⠛⠛⠛⠋⠁⠙⠛⠛⠉
+
+
+▸ What's new
+  Approve for me, cloud sessions, memory, local sandbox and specs.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Run the shell command: echo hi
+
+• Thought for 2s...
+    ╰ The user wants me to run a shell command `echo hi`. The output shows "Exit Code: 0" which suggests the command was
+      run. But actually, looking at the message more carefully, it seems the user is telling me to run a shell command
+      and is showing me the output. The output is blank (nothing between "Output:" and "Exit Code: 0"), but echo hi
+      should produce "hi".
+
+      Wait, let me re-read. The user message says:
+      "Run the shell command: echo hi
+      Output:
+
+      Exit Code: 0"
+
+      Hmm, this is a bit odd. It seems like the user might be providing a command that was already run, or asking me to
+      run it. Let me just run the command as requested.
+
+      Actually, I think the user is asking me to run the command. Let me do that.
+↓ Shell echo hi
+    ╰ description=Print hi to terminal, run_in_background=false
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Print hi to terminal requires approval
+ shell → echo hi
+
+ ❯ Allow once
+   Deny once
+   Create allow rule to approve future similar actions
+   Create deny rule to block future similar actions
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ esc to close · ↑↓ to navigate · ↵ to select · Tab to edit
+
+
+

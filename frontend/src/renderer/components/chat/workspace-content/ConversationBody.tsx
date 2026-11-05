@@ -9,6 +9,7 @@ import { ChatHostId, ChatPromptSender } from "../ChatTimelineItems";
 import { ChatLinkProvider } from "../ChatMarkdown";
 import { ChatImageSourceProvider } from "../chat-image-source";
 import { ChatComposer } from "../ChatComposer";
+import { isPercentContextHarness } from "../../../lib/context-view";
 import { ContextMeter } from "../ContextMeter";
 import { ComposerModeItems } from "../turn-settings/composer-menu";
 import { McpServerBanner } from "../ChatStatusBanners";
@@ -276,7 +277,7 @@ export function ConversationBody({ props, v }: { props: ChatWorkspaceContentProp
 										onContinue={canContinue && !queueEdit ? onContinueTurn : undefined}
 										commandError={queueDraftError ?? (queueEdit && !queueEdit.clientMessageId && !queuedMessages.some((entry) => entry.turnId === queueEdit.turnId) ? "chat.draft.queueMissing" : commandError)}
 										settings={<>
-											{agentSwitch ? null : <ContextMeter usage={snapshot.usage} compactsAt={compactsAt} />}
+											{agentSwitch ? null : <ContextMeter usage={snapshot.usage} compactsAt={compactsAt} percentOnly={isPercentContextHarness(snapshot.harness)} />}
 											{composerSettings}
 										</>}
 										addMenuItems={agentSwitch ? (

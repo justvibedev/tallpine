@@ -67,3 +67,11 @@ export function resolveContextView(usage: ConversationUsage, details?: ContextDe
 
 	return { capacity, windowKnown, percent, threshold, left: threshold === undefined ? undefined : threshold - contextUsed, compactsAt };
 }
+
+/**
+ * Kiro's ACP reports context as a percentage only; its driver sends it as
+ * used=<pct> of a window of 100, which is not a token count.
+ */
+export function isPercentContextHarness(harness?: string): boolean {
+	return harness === "kiro";
+}

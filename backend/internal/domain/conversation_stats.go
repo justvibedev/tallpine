@@ -276,6 +276,9 @@ type ModelUsage struct {
 	// Credits is the provider-billed spend for harnesses that report credits
 	// instead of tokens (Kiro); zero otherwise.
 	Credits float64 `json:"credits"`
+	// ContextPercent is how full the context window is (0-100) when the
+	// harness reported it; nil otherwise.
+	ContextPercent *float64 `json:"contextPercent,omitempty"`
 	// Turns counts the prompt responses that reported this model.
 	Turns int64 `json:"turns"`
 }

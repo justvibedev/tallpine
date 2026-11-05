@@ -12,6 +12,7 @@ import { ProjectRowActions } from "./ProjectRowActions";
 import { ProjectRowButton } from "./ProjectRowButton";
 import { ProjectSessionsList } from "./ProjectSessionsList";
 import { type ProjectItemProps, projectItemPropsEqual } from "./project-item-props";
+import { useOrchestratorNeedsYou } from "./orchestratorNeedsYou";
 import { useProjectOrchestrator } from "./useProjectOrchestrator";
 import { useProjectRemoval } from "./useProjectRemoval";
 import { useProjectSessions } from "./useProjectSessions";
@@ -69,6 +70,8 @@ export const ProjectItem = memo(function ProjectItem({
 		onToggle(workspace.id);
 	};
 	const { orchestrator, isSpawning, openOrchestrator } = useProjectOrchestrator({ workspace, selection, expanded, toggleDisclosure, onOpenOrchestrator, isProjectProvisioning, isProjectRestarting });
+	// Hidden while that chat is open: the owner is already reading the reply.
+	const needsYou = useOrchestratorNeedsYou(orchestrator, !orchestratorActive);
 
 	// Expanded + already on the project board → collapse. Expanded + on a
 	// session (orchestrator or worker) → board. Collapsed → expand + board.
@@ -143,6 +146,7 @@ export const ProjectItem = memo(function ProjectItem({
 								expanded={expanded}
 								dashboardActive={dashboardActive}
 								projectActive={projectActive}
+								needsYou={needsYou}
 								projectIsDragging={projectIsDragging}
 								projectDragInProgress={projectDragInProgress}
 								onProjectClick={onProjectClick}

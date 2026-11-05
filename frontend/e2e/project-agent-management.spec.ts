@@ -5,7 +5,7 @@ import { installFakeAgent } from "./support/fake-bridge";
 
 for (const role of ["Worker agent", "Orchestrator agent"] as const) {
 	test(`renderer: ${role} management releases the clone backdrop and preserves setup @T0`, async ({ page }) => {
-		await installFakeAgent(page);
+		await installFakeAgent(page, { projectId: "existing", projectName: "existing", workers: [] });
 		const cleanupRequests: unknown[] = [];
 		await page.route("http://127.0.0.1:8080/api/v1/**", async (route) => {
 			const pathname = new URL(route.request().url()).pathname;
@@ -34,8 +34,12 @@ for (const role of ["Worker agent", "Orchestrator agent"] as const) {
 					importKind: "project", isValid: true, blockingErrors: [], nextStep: "continue",
 					root: { repoPath: "/repos/example", isRepo: true, hasCommit: true, hasOrigin: true, isEmptyFolder: false, needsGitInit: false, requiredActions: [], blockingErrors: [] },
 				} });
+			} else if (pathname.endsWith("/agent-policy")) {
+				await route.fulfill({ json: { schemaVersion: 1, rules: [], managedPath: "", securityMode: { enabled: false, locked: false, source: "default" }, warnings: [] } });
+			} else if (pathname === "/api/v1/health/silent-failures") {
+				await route.fulfill({ json: { healthy: true, chatNotAttached: [], reportBatches: [], turnFallbacks: [] } });
 			} else {
-				await route.fulfill({ json: {} });
+				await route.fulfill({ json: { status: "ok" } });
 			}
 		});
 		await page.goto("/#/");

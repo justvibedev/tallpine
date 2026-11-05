@@ -115,7 +115,12 @@ func launchSessionOptions(cfg acpdriver.LaunchConfig) []acpdriver.SessionOption 
 }
 
 // sessionOptions maps the per-turn model onto Kiro's `model` option. Kiro v3
-// advertises no reasoning-effort option, so effort is not sent.
+// advertises no reasoning-effort option (probed against kiro-cli 3.0.0: no
+// effort/thought-level select at session/new or after a model change, and
+// session/set_config_option for "effort"/"thought_level" is silently ignored),
+// so effort is not sent. `acp --help` lists --effort, but the v3 engine exits 2
+// with "not supported with --agent-engine=v3: --effort". Revisit if a later
+// kiro-cli advertises an effort option.
 func sessionOptions(settings ports.ChatTurnSettings) []acpdriver.SessionOption {
 	if model := strings.TrimSpace(settings.Model); model != "" {
 		return []acpdriver.SessionOption{{ID: "model", Value: model}}

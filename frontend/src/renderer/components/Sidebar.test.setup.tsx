@@ -367,7 +367,7 @@ export function renderSidebar({
 		});
 	}
 	seed?.(queryClient);
-	render(
+	const tree = () => (
 		<QueryClientProvider client={queryClient}>
 			<TooltipProvider>
 				<SidebarProvider defaultOpen={initialOpen}>
@@ -386,10 +386,16 @@ export function renderSidebar({
 					/>
 				</SidebarProvider>
 			</TooltipProvider>
-		</QueryClientProvider>,
+		</QueryClientProvider>
 	);
+	const view = render(tree());
+	// Re-renders the same tree, so a test can change the mocked route params and watch the sidebar follow.
+	lastRerender = () => view.rerender(tree());
 	return onRemoveProject;
 }
+
+let lastRerender: () => void = () => {};
+export const rerenderSidebar = () => lastRerender();
 
 
 export function mockAgentReadinessResponse(response: {

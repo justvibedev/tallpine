@@ -214,12 +214,25 @@ relaunch_if_quit() {
   as_prev _relaunch_if_quit
   return 0
 }
+# daemon_back: a daemon other than the one the install stopped is alive and answering.
+# stopped_daemon_pid is set by install/rollback; unset, any live answering daemon counts as back.
+daemon_back() {
+  local pid
+  pid="$(current_daemon_pid)"
+  [[ -n "${pid}" && "${pid}" != "${stopped_daemon_pid:-}" ]] && pid_alive "${pid}" && probe "$(json_get "${run_file}" port)" /healthz >/dev/null
+}
 _relaunch_if_quit() {
   [[ "${app_was_running}" -eq 1 && -d "${app_path}" ]] || return 0
   # An undo that fires while the app is still shutting down (the SIGTERM we sent it) must wait for
   # that exit and then relaunch; checking once would leave the human with no app (B327).
   local waited=0 relaunch_wait="${TALLPINE_RELEASE_RELAUNCH_WAIT:-${stop_timeout}}"
   while [[ -n "$(app_pids)" ]]; do
+    # Someone already relaunched the app (its daemon is back): waiting for an exit that will not come
+    # held the undo, and its --notify, for stop_timeout (B585).
+    if daemon_back; then
+      say "${product_name} is already running again; not relaunching it"
+      return 0
+    fi
     if [[ "${waited}" -ge "$(poll_budget "${relaunch_wait}")" ]]; then
       warn "the app is still running after ${relaunch_wait}s; not relaunching it"
       return 0

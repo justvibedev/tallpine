@@ -4,6 +4,26 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.5]
+
+### Added
+- Kiro chats detect a failed turn from the session log and report it instead of showing it as complete (#1031).
+- A Kiro terminal session shows context usage as a percentage, read from the session directory next to credits (#1033).
+- `/compact` is delivered to a Kiro terminal as a raw slash command (#1035).
+
+### Changed
+- The sidebar shows a yellow icon for an unanswered orchestrator Needs-you reply (#1025).
+- Kiro chats send no effort setting, because kiro-cli 3.0.0 advertises no effort option (#1021).
+
+### Fixed
+- Kiro chats can select auto and bypass modes again (#1023).
+- A started Kiro chat switches to the terminal UI (#1027).
+- The Kiro context meter shows a percentage, not a token count (#1029).
+- Manage agents in the agent picker opens Settings > Harnesses (#1022).
+- Scrolling the mouse wheel over a long harness model list scrolls that list instead of the page (#1024).
+- The desktop app explains a daemon that waits for or is refused the data-dir lock (#1020).
+- The local release installer no longer aborts when the app relaunches during the database snapshot, and its undo no longer waits minutes when the daemon is already back (#1034).
+
 ## [0.13.4]
 
 ### Fixed

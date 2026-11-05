@@ -52,9 +52,9 @@ export interface ConversationQueryResult {
 	loadOlder: () => void;
 }
 
-export async function fetchConversationPage(sessionId: string, hostId?: string, beforeSequence?: number): Promise<ConversationSnapshot> {
+export async function fetchConversationPage(sessionId: string, hostId?: string, beforeSequence?: number, limit = CONVERSATION_PAGE_SIZE): Promise<ConversationSnapshot> {
 	const { data, error } = await clientForSessionHost(hostId).GET("/api/v1/sessions/{sessionId}/conversation", {
-		params: { path: { sessionId }, query: { beforeSequence, limit: CONVERSATION_PAGE_SIZE } },
+		params: { path: { sessionId }, query: { beforeSequence, limit } },
 	});
 	if (error) throw error;
 	return toSnapshot(data as WireSnapshot);

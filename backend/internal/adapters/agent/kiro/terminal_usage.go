@@ -19,19 +19,17 @@ import (
 // <sessions root>/<workspace hash>/<session id>/messages.jsonl carries
 // payload.promptTurnSummaries = [{unit: "credit", usage: <float>}]. The session
 // id is the native id Tallpine's hooks recorded (with or without the `sess_`
-// prefix of the directory). ok is false when no transcript is found.
+// prefix of the directory). The context window fill comes from the last
+// `session_metadata` record with key "contextUsage"
+// (value.usagePercentage, already a 0-100 percentage). ok is false when no transcript is found.
 func (p *Plugin) TerminalModelUsage(ctx context.Context, agentSessionID string) ([]domain.ModelUsage, bool, error) {
 	agentSessionID = strings.TrimSpace(agentSessionID)
 	if agentSessionID == "" {
 		return nil, false, nil
 	}
-	root := p.sessionsRoot
-	if root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, false, err
-		}
-		root = filepath.Join(home, ".kiro", "sessions")
+	root, err := p.kiroSessionsRoot()
+	if err != nil {
+		return nil, false, err
 	}
 	dir := findSessionDir(root, agentSessionID)
 	if dir == "" {
@@ -45,6 +43,7 @@ func (p *Plugin) TerminalModelUsage(ctx context.Context, agentSessionID string) 
 
 	var credits float64
 	var turns int64
+	var contextPercent *float64
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -54,10 +53,25 @@ func (p *Plugin) TerminalModelUsage(ctx context.Context, agentSessionID string) 
 		var line struct {
 			Payload struct {
 				Type    string              `json:"type"`
+				Key     string              `json:"key"`
+				Value   json.RawMessage     `json:"value"`
 				Summary []PromptTurnSummary `json:"promptTurnSummaries"`
 			} `json:"payload"`
 		}
-		if json.Unmarshal(scanner.Bytes(), &line) != nil || line.Payload.Type != "usage_summary" {
+		if json.Unmarshal(scanner.Bytes(), &line) != nil {
+			continue
+		}
+		if line.Payload.Type == "session_metadata" && line.Payload.Key == "contextUsage" {
+			// Each turn appends one; the last is the current fill.
+			var v struct {
+				Pct *float64 `json:"usagePercentage"`
+			}
+			if json.Unmarshal(line.Payload.Value, &v) == nil && v.Pct != nil {
+				contextPercent = v.Pct
+			}
+			continue
+		}
+		if line.Payload.Type != "usage_summary" {
 			continue
 		}
 		if turn, ok := CreditsFromSummaries(line.Payload.Summary); ok {
@@ -77,7 +91,7 @@ func (p *Plugin) TerminalModelUsage(ctx context.Context, agentSessionID string) 
 			model = meta.ModelID
 		}
 	}
-	return []domain.ModelUsage{{Model: model, Credits: credits, Turns: turns}}, true, nil
+	return []domain.ModelUsage{{Model: model, Credits: credits, ContextPercent: contextPercent, Turns: turns}}, true, nil
 }
 
 // findSessionDir returns the transcript directory of the session, or "". The id
@@ -85,7 +99,22 @@ func (p *Plugin) TerminalModelUsage(ctx context.Context, agentSessionID string) 
 // glob pattern) and only when it is a plain identifier. When the same session
 // directory exists under several workspace hashes the most recently written
 // transcript wins, so the result does not depend on directory order.
+// kiroSessionsRoot is ~/.kiro/sessions, where Kiro v3 keeps one directory per
+// conversation for both `kiro-cli chat` and `kiro-cli acp`.
+func (p *Plugin) kiroSessionsRoot() (string, error) {
+	if p.sessionsRoot != "" {
+		return p.sessionsRoot, nil
+	}
+	return defaultSessionsRoot()
+}
+
 func findSessionDir(root, agentSessionID string) string {
+	return findSessionDirWith(root, agentSessionID, "messages.jsonl")
+}
+
+// findSessionDirWith is findSessionDir for any file Kiro writes into a session
+// directory (messages.jsonl once a turn ran, session.json from session/new).
+func findSessionDirWith(root, agentSessionID, file string) string {
 	if !sessionIDPattern.MatchString(agentSessionID) {
 		return ""
 	}
@@ -98,7 +127,7 @@ func findSessionDir(root, agentSessionID string) string {
 				continue
 			}
 			dir := filepath.Join(root, hash.Name(), name)
-			info, err := os.Stat(filepath.Join(dir, "messages.jsonl"))
+			info, err := os.Stat(filepath.Join(dir, file))
 			if err != nil || !info.Mode().IsRegular() {
 				continue
 			}

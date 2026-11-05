@@ -80,6 +80,7 @@ export function ContextMeter({
 	rateLimits,
 	compactsAt,
 	details,
+	percentOnly,
 	className,
 }: {
 	usage?: ConversationUsage;
@@ -88,6 +89,8 @@ export function ContextMeter({
 	compactsAt?: string;
 	/** What the click-through popover shows; without it the circle is hover-only. */
 	details?: ContextDetails;
+	/** The provider reports a 0..100 percentage, not tokens (Kiro): read it as one. */
+	percentOnly?: boolean;
 	className?: string;
 }) {
 	const quota = rateLimits ? worstWindow(rateLimits) : undefined;
@@ -104,7 +107,7 @@ export function ContextMeter({
 		// throws rather than degrading.
 		<TooltipProvider>
 			<div className={cn("flex shrink-0 items-center gap-2", className)}>
-				{usage && hasContext ? <ContextReadout usage={usage} compactsAt={compactsAt} details={details ? { rateLimits, ...details } : undefined} /> : null}
+				{usage && hasContext ? <ContextReadout usage={usage} compactsAt={compactsAt} percentOnly={percentOnly} details={!percentOnly && details ? { rateLimits, ...details } : undefined} /> : null}
 				{showQuota && quota ? <QuotaWarning quota={quota} limits={rateLimits} /> : null}
 			</div>
 		</TooltipProvider>
@@ -121,7 +124,7 @@ function openOnKey(open: () => void) {
 	};
 }
 
-function ContextReadout({ usage, compactsAt, details }: { usage: ConversationUsage; compactsAt?: string; details?: ContextDetails }) {
+function ContextReadout({ usage, compactsAt, details, percentOnly }: { usage: ConversationUsage; compactsAt?: string; details?: ContextDetails; percentOnly?: boolean }) {
 	const { t } = useTranslation();
 	const [detailsOpen, setDetailsOpen] = useState(false);
 	// The tooltip stays short and steps aside while the details are open.
@@ -181,8 +184,8 @@ function ContextReadout({ usage, compactsAt, details }: { usage: ConversationUsa
 	const fraction = Math.min(1, Math.max(0, contextUsed / contextWindow));
 	const percent = Math.round(fraction * 100);
 	const severity = contextSeverity(fraction);
-	const exactUsage = `${contextUsed.toLocaleString()} / ${contextWindow.toLocaleString()}`;
-	const compactUsage = `${formatTokenCount(contextUsed).replace(/ tok$/, "")} / ${formatTokenCount(contextWindow).replace(/ tok$/, "")}`;
+	const exactUsage = percentOnly ? `${percent}%` : `${contextUsed.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${percent}%)`;
+	const compactUsage = percentOnly ? `${percent}% used` : `${formatTokenCount(contextUsed).replace(/ tok$/, "")} / ${formatTokenCount(contextWindow).replace(/ tok$/, "")} tokens (${percent}%)`;
 
 	return wrap(
 				<div
@@ -198,7 +201,7 @@ function ContextReadout({ usage, compactsAt, details }: { usage: ConversationUsa
 					aria-valuemax={100}
 					aria-valuenow={percent}
 					aria-label="Context window used"
-					aria-valuetext={`${exactUsage} tokens (${percent}%)`}
+					aria-valuetext={exactUsage}
 				>
 					<svg aria-hidden="true" className="size-5 -rotate-90" viewBox="0 0 24 24">
 						<circle cx="12" cy="12" fill="none" r="9" stroke="currentColor" strokeWidth="3" className="text-border" />
@@ -214,7 +217,7 @@ function ContextReadout({ usage, compactsAt, details }: { usage: ConversationUsa
 				</div>,
 			<TooltipContent className={tooltipSurface}>
 				<p className="font-medium">Context window</p>
-				<p className="tabular-nums">{compactUsage} tokens ({percent}%)</p>
+				<p className="tabular-nums">{compactUsage}</p>
 				{compactsLine}
 				{severity !== "normal" ? (
 					<p className="mt-1">

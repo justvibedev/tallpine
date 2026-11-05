@@ -8242,6 +8242,7 @@ export interface components {
             cacheCreationTokens: number;
             /** Format: int64 */
             cacheReadTokens: number;
+            contextPercent?: null | number;
             /** Format: double */
             credits: number;
             /** Format: int64 */

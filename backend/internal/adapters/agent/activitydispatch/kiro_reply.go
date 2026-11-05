@@ -4,29 +4,20 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
-)
 
-var kiroSessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
+	"tallpine.eu/tallpine/backend/internal/adapters/agent/kiro"
+)
 
 // kiroFinalReply returns the assistant text of the latest turn of a Kiro v3
 // session. v3's Stop hook payload has no reply text, but the session log at
 // ~/.kiro/sessions/<cwd-hash>/<session_id>/messages.jsonl records each "Say".
 func kiroFinalReply(sessionID string) string {
-	if !kiroSessionIDPattern.MatchString(sessionID) {
+	path := kiro.SessionLogPath(sessionID)
+	if path == "" {
 		return ""
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	matches, err := filepath.Glob(filepath.Join(home, ".kiro", "sessions", "*", sessionID, "messages.jsonl"))
-	if err != nil || len(matches) == 0 {
-		return ""
-	}
-	file, err := os.Open(matches[0])
+	file, err := os.Open(path)
 	if err != nil {
 		return ""
 	}

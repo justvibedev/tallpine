@@ -211,7 +211,7 @@ token_file="$(dirname "${run_file}")/daemon.token"
 # The command code lives in release-local.d/, sourced in this order (definitions only, no side effects).
 # shellcheck source=/dev/null
 . "${script_dir}/lib/notify.sh"
-for part in common daemons lock notary pppc pkg build install; do
+for part in common daemons lock notary pppc pkg build snapshot install; do
   # shellcheck source=/dev/null
   . "${script_dir}/release-local.d/${part}.sh"
 done

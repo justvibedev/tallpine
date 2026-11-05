@@ -89,3 +89,9 @@ func explicit(env map[string]string, key string) bool {
 	}
 	return strings.TrimSpace(os.Getenv(key)) != ""
 }
+
+// HomeDir returns defaultDir under the HOME a launch sees, for providers whose
+// state root has no environment override (Kiro's ~/.kiro).
+func HomeDir(env map[string]string, defaultDir string) (string, error) {
+	return homeDefault(env, defaultDir)
+}

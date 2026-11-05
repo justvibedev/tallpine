@@ -376,11 +376,17 @@ export function useSessionInterfaceSwitch(sessionId: string, session: WorkspaceS
 	const chatHarnesses = settings?.chatHarnesses ?? [];
 	const unsupported = interfaceSwitch.status?.reasonCode === "CHAT_UNSUPPORTED" ||
 		(target === "chat" && session !== undefined && chatHarnesses.length > 0 && !chatHarnesses.includes(session.provider));
-	const blockedReason = interfaceSwitch.status?.reasonCode === "INTERFACE_HANDOFF_UNSUPPORTED"
-		? t("session.interfaceHandoffUnsupported", {
-			defaultValue: "This agent can't switch a running terminal session to chat. Start a new chat session instead.",
-		})
-		: undefined;
+	// Name the direction the user is asking for: a Chat session switches to the
+	// terminal, so the terminal-to-chat wording would describe the wrong move.
+	const blockedReason = interfaceSwitch.status?.reasonCode !== "INTERFACE_HANDOFF_UNSUPPORTED"
+		? undefined
+		: target === "tui"
+			? t("session.interfaceHandoffToTerminalUnsupported", {
+				defaultValue: "This agent can't continue a chat in the terminal. Start a new terminal session instead.",
+			})
+			: t("session.interfaceHandoffUnsupported", {
+				defaultValue: "This agent can't switch a running terminal session to chat. Start a new chat session instead.",
+			});
 	const showAction = Boolean(!unsupported && (interfaceSwitch.status || interfaceSwitch.isLoading || interfaceSwitch.statusError));
 	const disabledReason = interfaceSwitch.isLoading
 		? "Checking whether this agent can switch interfaces…"
