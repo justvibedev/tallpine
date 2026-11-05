@@ -131,6 +131,14 @@ export function CommandOutput({
 	// Memoized per row: the timeline re-renders once a second while a turn runs, and
 	// only the rows a reader has opened pay for this at all.
 	const output = useMemo(() => stripAnsi(raw), [raw]);
+	// A scroll container still lays out all its text. Bound both a single long
+	// line and newline-heavy logs before Chromium measures the expanding row.
+	const preview = useMemo(() => {
+		let tail = output.slice(-64 * 1024);
+		const first = tail.charCodeAt(0);
+		if (first >= 0xdc00 && first <= 0xdfff) tail = tail.slice(1);
+		return tail.split("\n").slice(-400).join("\n");
+	}, [output]);
 	const streaming = activity.status === "running";
 
 	useEffect(() => {
@@ -154,8 +162,11 @@ export function CommandOutput({
 						: "border border-border bg-background px-2.5 py-2 text-caption",
 				)}
 			>
-				{output}
+				{preview}
 			</pre>
+			{preview.length < output.length ? (
+				<p className="px-2.5 py-1 text-xs text-muted-foreground">Showing the end of this large output.</p>
+			) : null}
 			{detail?.outputTruncated ? (
 				<p className="text-xs leading-relaxed text-warning">
 					This command printed more than {PRODUCT_NAME} stores, so the output above stops early. Open a shell in

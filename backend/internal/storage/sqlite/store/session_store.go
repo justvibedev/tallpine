@@ -105,12 +105,20 @@ func (s *Store) createSessionLocked(ctx context.Context, rec domain.SessionRecor
 	prefix := string(rec.ProjectID)
 	if rec.ProjectID == "" {
 		num, err = s.qw.NextStandaloneSessionNum(ctx)
-		prefix = "standalone"
+		prefix = standaloneSessionIDPrefix
 	} else {
 		num, err = s.qw.NextSessionNum(ctx, optionalProjectID(rec.ProjectID))
 	}
 	if err != nil {
 		return domain.SessionRecord{}, false, fmt.Errorf("next session num for %s: %w", rec.ProjectID, err)
+	}
+	// A deleted session's number (and so its id and branch) is never reused.
+	floor, err := s.sessionNumFloor(ctx, prefix)
+	if err != nil {
+		return domain.SessionRecord{}, false, fmt.Errorf("session num floor for %s: %w", rec.ProjectID, err)
+	}
+	if num <= floor {
+		num = floor + 1
 	}
 	for {
 		rec.ID = domain.SessionID(fmt.Sprintf("%s-%d", prefix, num))

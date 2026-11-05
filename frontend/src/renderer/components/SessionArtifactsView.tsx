@@ -6,6 +6,7 @@ import { ChevronDown, ChevronLeft, Copy, FileText, FolderOpen, Globe, Maximize2,
 import type { OpenArtifactsTargetId } from "../../shared/editor-handoff";
 import { useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
 import { useRestoreArtifactVersion } from "../hooks/useArtifactVersions";
+import { useArtifactFileChanges } from "../hooks/useArtifactFileChanges";
 import { useOpenArtifactPreview } from "../hooks/useOpenArtifactPreview";
 import { deleteSessionArtifactFile, sessionArtifactFileQueryOptions } from "../hooks/useSessionWorkspaceFiles";
 import { workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
@@ -377,6 +378,8 @@ export function SessionArtifactsView({
 	const [previewVersion, setPreviewVersion] = useState<number | null>(null);
 	const openArtifactPreview = useOpenArtifactPreview(session.id, hostId);
 	const uiKey = sessionUiKey(session.id, hostId);
+	// A file the agent rewrites while it is open shows the new content.
+	useArtifactFileChanges(session.id, Boolean(selectedPath) && !hostId);
 
 	useEffect(() => setSelectedPath(null), [uiKey]);
 	// History is per file: opening another one starts on its live content.

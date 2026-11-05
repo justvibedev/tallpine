@@ -4,9 +4,9 @@ export function composerDeliveryRoute(intent: ComposerDeliveryIntent, steerEligi
 	return intent === "steer" && steerEligible ? "steer" : "queue";
 }
 
-export function composerDeliveryPresentation(state: { active: boolean; canSteer: boolean; hasDraft: boolean; hasAttachments: boolean; hasQueued: boolean }) {
+export function composerDeliveryPresentation(state: { orchestrator?: boolean; active: boolean; canSteer: boolean; hasDraft: boolean; hasAttachments: boolean; hasQueued: boolean }) {
 	return {
-		placeholder: state.active ? "Send after this…" : "Message this worker…",
+		placeholder: state.active ? "Send after this…" : state.orchestrator ? "Message the orchestrator…" : "Message this worker…",
 		showQueueNote: state.active,
 		showSteerAction: state.active && state.canSteer && state.hasDraft && !state.hasAttachments && !state.hasQueued,
 	};

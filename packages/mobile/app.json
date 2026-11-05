@@ -14,7 +14,7 @@
 		"ios": {
 			"icon": "./assets/icon.png",
 			"supportsTablet": true,
-			"buildNumber": "11",
+			"buildNumber": "13",
 			"bundleIdentifier": "ee.justdev.tallpine.mobile",
 			"config": {
 				"usesNonExemptEncryption": false

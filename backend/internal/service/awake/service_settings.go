@@ -172,6 +172,16 @@ func (s *Service) refresh(ctx context.Context) {
 	observation.ObservedAt = s.now()
 	s.observation = observation
 }
+
+// batteryRecovered requires a current reading above the stop threshold, with
+// one percent of hysteresis to avoid repeatedly restarting at the boundary.
+func (s *Service) batteryRecovered() bool {
+	o := s.observation
+	return !o.ObservedAt.IsZero() && s.now().Sub(o.ObservedAt) < 15*time.Second &&
+		o.OnBattery != nil && (!*o.OnBattery || (o.BatteryPercent != nil && *o.BatteryPercent > s.doc.Settings.StopBatteryPercent)) &&
+		(o.Thermal == "nominal" || o.Thermal == "fair" || o.Thermal == "serious")
+}
+
 func (s *Service) safety() string {
 	if s.observation.Thermal == "critical" {
 		return "critical_heat"

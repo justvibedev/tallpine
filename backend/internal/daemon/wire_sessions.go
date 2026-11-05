@@ -154,6 +154,26 @@ func (b *boot) wireSessionManagerHooks() {
 	}
 	wireAgentPolicy(b.agentPolicySvc, b.sessMgr, b.log)
 	b.sessionSvc.SetComputerLoginCheck(b.agentAccountSvc.RunsOnComputerLogin)
+	// A chat refused its credentials keeps asking for a sign-in until a reading
+	// of its own account finds the login working again, however it came back.
+	b.agentAccountSvc.SetLoginConfirmed(func(account domain.AgentAccount, at time.Time) {
+		go func() {
+			waiting, err := b.store.ConversationsAwaitingLogin(b.ctx)
+			if err != nil {
+				b.log.Warn("list chats awaiting sign-in", "error", err)
+				return
+			}
+			for _, conversation := range waiting {
+				id, err := b.agentAccountSvc.SessionAccountID(b.ctx, conversation.SessionID, conversation.Harness)
+				if err != nil || id != account.ID {
+					continue
+				}
+				if _, err := b.store.ConfirmConversationLogin(b.ctx, conversation.ConversationID, at, time.Now().UTC()); err != nil {
+					b.log.Warn("clear chat sign-in demand", "conversation", conversation.ConversationID, "error", err)
+				}
+			}
+		}()
+	})
 	b.accountAdoptSvc = newAccountAdopt(b.ctx, b.sessMgr, b.store, b.agentAccountSvc, b.log)
 	if b.accountAdoptSvc != nil {
 		// The batch runners stop with ctx; wait so they do not write to a closed store.

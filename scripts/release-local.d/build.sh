@@ -216,6 +216,8 @@ cmd_build() {
   git -C "${repo_root}" worktree add --quiet --detach "${dir}" "${sha}"
 
   version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' "${dir}/frontend/package.json" | head -n 1)"
+  # Non-notarized builds are local: a dev suffix plus VOBuildKind=local keep the updater off.
+  if [[ -n "${notary}" ]]; then unset TALLPINE_BUILD_KIND; else export TALLPINE_BUILD_KIND=local; version="${version:-0.0.0}-dev.${sha:0:8}"; fi
   export TALLPINE_BUILD_VERSION="${version:-dev}" TALLPINE_BUILD_COMMIT="${sha}" TALLPINE_BUILD_DIRTY=false
   TALLPINE_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   export TALLPINE_BUILD_DATE

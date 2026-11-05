@@ -54,7 +54,9 @@ export function useProjectDragReorder(projectIds: string[]) {
 		const row = event.currentTarget;
 		const rect = row.getBoundingClientRect();
 		const placement: ProjectDropPlacement = event.clientY <= rect.top + rect.height / 2 ? "before" : "after";
-		if (reorderAtProjectBoundary(projectIds, activeId, overId, placement) === null) {
+		// Pinned and unpinned projects reorder only within their own group.
+		const pinned = useSidebarOrderStore.getState().pinnedProjectIds;
+		if (pinned.includes(activeId) !== pinned.includes(overId) || reorderAtProjectBoundary(projectIds, activeId, overId, placement) === null) {
 			clearProjectDropIndicator();
 			return;
 		}

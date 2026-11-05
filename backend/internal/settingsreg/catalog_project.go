@@ -97,6 +97,8 @@ func projectSettings() []Setting {
 		byCreator(p("noCI", KindBool, false, "The project has no CI; workers do not wait for it.")),
 		lockable(p("models", KindObject, nil, "Models allowed in the project.")),
 		p("promptCacheTTL", KindObject, nil, "Prompt cache TTL per session role."),
+		p("claudePlugins", KindObject, nil, "Claude Code enabledPlugins override per session role (orchestrator, worker, reviewer); an unset role keeps the account's plugins."),
+		p("claudeAutoMemory", KindObject, nil, "Claude Code auto-memory per session role; false turns it off for that role, unset inherits."),
 		p("chatHibernation", KindObject, nil, "Project override of Chat hibernation."),
 	}
 }

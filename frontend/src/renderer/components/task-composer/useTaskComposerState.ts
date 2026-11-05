@@ -10,7 +10,7 @@ import { cacheAgentReadiness, ensureAgentReadiness, useAgentReadinessQuery } fro
 import { useFileAttachments } from "../../hooks/useFileAttachments";
 import { useSettings } from "../../hooks/useSettings";
 import { useOfferedModels } from "../../hooks/useOfferedModels";
-import { isConcreteModelID, modelChoiceLabel, splitClaudeModels } from "../../lib/agent-model-choices";
+import { isConcreteModelID, isModelSelectable, modelChoiceLabel, splitClaudeModels } from "../../lib/agent-model-choices";
 import { collapseModelVariants, findModelVariant, listsModelVariants, pickModelVariant } from "../../lib/model-variants";
 import { fallbackEffort } from "../../lib/effort";
 import { buildRankedAgentOptions, DEFAULT_AGENT_PRIORITY_RANK, isLaunchableAgent, isReadyAgent } from "../../lib/agent-select-options";
@@ -305,27 +305,30 @@ export function useTaskComposerState(props: TaskComposerProps) {
 		: undefined;
 	// An unmarked first row is not evidence of what the provider will run.
 	const catalogModels = offeredModels.filter((item) => isConcreteModelID(item.id));
+	// Automatic choices never land on a model the picker shows as unavailable.
+	const selectableModels = catalogModels.filter(isModelSelectable);
 	const catalogDefaultOption =
-		catalogModels.find((item) => item.isDefault)?.id ?? "";
+		selectableModels.find((item) => item.isDefault)?.id ?? "";
 	const catalogDefaultHidden = Boolean(modelCatalogQuery.data?.models?.some(
 		(item) => item.isDefault && isConcreteModelID(item.id) && !catalogModels.some((offered) => offered.id === item.id),
 	));
 	const catalogUsesModes = modelCatalogQuery.data?.selectionMode === "mode";
 	// The model this user ran most recently.
 	const lastUsedOption =
-		catalogModels
+		selectableModels
 			.filter((item) => item.lastUsedAt)
 			.sort((a, b) => Date.parse(b.lastUsedAt ?? "") - Date.parse(a.lastUsedAt ?? ""))[0]?.id ?? "";
 	// With nothing remembered, run, or configured, Claude Code opens on the newest Opus.
 	const claudeFallbackOption =
 		selectedAgent === "claude-code" && !catalogUsesModes
-			? (splitClaudeModels(catalogModels).current.find((item) => /opus/i.test(modelChoiceLabel(item)))?.id ?? "")
+			? (splitClaudeModels(selectableModels).current.find((item) => /opus/i.test(modelChoiceLabel(item)))?.id ?? "")
 			: "";
 	const rememberedConfigForSelectedAgent = agentDrafts[selectedAgent];
 	const rememberedModel = rememberedConfigForSelectedAgent?.model ?? "";
 	const rememberedMode = rememberedConfigForSelectedAgent?.mode ?? "";
 	const rememberedModelIsValid =
 		isConcreteModelID(rememberedModel) &&
+		!catalogModels.some((item) => item.id === rememberedModel && !isModelSelectable(item)) &&
 		Boolean(
 			modelCatalogQuery.data &&
 				(modelCatalogQuery.data.allowCustom || catalogModels.some((item) => item.id === rememberedModel)),
@@ -340,7 +343,7 @@ export function useTaskComposerState(props: TaskComposerProps) {
 		claudeFallbackOption ||
 		// Only replace a default the catalog identified and Settings hid. An
 		// unreported default must keep the native model/provider selection.
-		(!catalogUsesModes && catalogDefaultHidden ? catalogModels[0]?.id ?? "" : "");
+		(!catalogUsesModes && catalogDefaultHidden ? selectableModels[0]?.id ?? "" : "");
 	const defaultModeForSelectedAgent =
 		(rememberedModeIsValid ? rememberedMode : "") ||
 		(isConcreteModelID(projectModeForSelectedAgent) ? projectModeForSelectedAgent : "") ||

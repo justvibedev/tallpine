@@ -107,7 +107,15 @@ func (c *commandContext) previewCleanupSessions(ctx context.Context, project str
 	if err := c.getJSON(ctx, apiPath("sessions", params), &res); err != nil {
 		return nil, err
 	}
-	return filterAndSortSessions(res.Sessions, true), nil
+	// A session whose workspace is already released (or never existed) has
+	// nothing left to clean, so the preview leaves it out.
+	pending := make([]apitypes.SessionView, 0, len(res.Sessions))
+	for _, sess := range res.Sessions {
+		if !sess.WorkspaceCleanup.Settled() {
+			pending = append(pending, sess)
+		}
+	}
+	return filterAndSortSessions(pending, true), nil
 }
 
 func cleanupLabels(sessions []apitypes.SessionView, scopedProject string) []string {
@@ -138,7 +146,12 @@ func confirmSessionCleanup(cmd *cobra.Command, count int, project string) (bool,
 	if project != "" {
 		scope = fmt.Sprintf(" in project %q", project)
 	}
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Clean %d terminated session%s%s? Type yes to confirm: ", count, pluralS(count), scope); err != nil {
+	return confirmTyped(cmd, fmt.Sprintf("Clean %d terminated session%s%s? Type yes to confirm: ", count, pluralS(count), scope))
+}
+
+// confirmTyped prints prompt and reports whether the user typed "yes".
+func confirmTyped(cmd *cobra.Command, prompt string) (bool, error) {
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), prompt); err != nil {
 		return false, err
 	}
 	reader := bufio.NewReader(cmd.InOrStdin())

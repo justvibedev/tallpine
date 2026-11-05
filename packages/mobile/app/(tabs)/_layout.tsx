@@ -2,7 +2,7 @@ import { Tabs } from "expo-router";
 import { SidebarNavigationShell } from "../../lib/sidebar-navigation-shell";
 
 // expo-router 58 drops the initialRouteName prop on <Tabs>; route config lives here.
-export const unstable_settings = { initialRouteName: "index" };
+export const unstable_settings = { initialRouteName: "projects" };
 
 export default function SidebarLayout() {
 	return (

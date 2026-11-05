@@ -7,7 +7,7 @@ const unpaired = readFileSync(new URL("./UnpairedState.tsx", import.meta.url), "
 describe("Workers route", () => {
 	it("is the tabs group's default screen", () => {
 		const layout = readFileSync(new URL("../app/(tabs)/_layout.tsx", import.meta.url), "utf8");
-		expect(layout).toContain('initialRouteName: "index"');
+		expect(layout).toContain('initialRouteName: "projects"');
 	});
 	it("never shows a bare spinner while loading", () => {
 		expect(index).not.toContain("<ActivityIndicator");

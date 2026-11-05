@@ -258,4 +258,7 @@ var shippedMigrations = map[int64]string{
 	20261103140000000: "20261103140000000_backlog_plan_notify_session.sql",
 	20261104100000000: "20261104100000000_workflow_defaults.sql",
 	20261104110000000: "20261104110000000_planner_lock_to_default.sql",
+	20261105100000000: "20261105100000000_session_num_floors.sql",
+	20261105100000001: "20261105100000001_deleted_session_account_usage.sql",
+	20261105100000002: "20261105100000002_session_delete_cdc.sql",
 }

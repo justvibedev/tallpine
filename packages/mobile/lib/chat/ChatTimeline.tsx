@@ -9,7 +9,7 @@ import { useTheme, useThemedStyles } from "../ThemeProvider";
 import { FoldBody, FoldLayout } from "./TurnFoldMotion";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { RenderFrame } from "./RenderFrame";
-import { notifyRenderViewport, readRenderRef } from "./renderFrameModel";
+import { artifactRenderRef, notifyRenderViewport, readArtifactRef, readRenderRef } from "./renderFrameModel";
 import { jumpToLatestColors } from "./chatChrome";
 import { errorActivityDuplicatesTurn } from "./providerError";
 import { editableMessageText, stagedAttachmentParts } from "./messageAttachments";
@@ -26,7 +26,7 @@ import { humanVisibleText, latestWorkerUpdateKeys, piggybackedUpdates, relayedVi
 import { SessionStartupStatus } from "./SessionStartup";
 import type { SessionStartupView } from "../session/sessionStartup";
 import { activityRuns, deliveryCopy } from "./timeline/format";
-import { EmptyConversation, OriginMessage, StagedAttachments, SystemSignal } from "./timeline/attachments";
+import { EmptyConversation, ImageViewerHost, OriginMessage, StagedAttachments, SystemSignal } from "./timeline/attachments";
 import { ActivityRow, ActivityRun, CompactionMarker, ErrorActivity } from "./timeline/activityRows";
 import { TurnStatusRow, TurnSummary } from "./timeline/turnParts";
 import { ApprovalCard, UserInputCard } from "./timeline/requestCards";
@@ -194,6 +194,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 		<WorkerSessionsProvider>
 			<ConversationHarness.Provider value={snapshot.harness}>
 				<LatestWorkerUpdates.Provider value={latestUpdates}>
+					<ImageViewerHost>
 					<View style={styles.timelineWrap}>
 						<FlatList<ConversationGroup>
 							ref={listRef}
@@ -257,6 +258,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 						</View> : null}
 						{showJump ? <Pressable accessibilityRole="button" accessibilityLabel="Jump to latest message" onPress={() => { haptics.tap(); followsTail.current = true; setShowJump(false); scrollToLatest(true); }} style={styles.jump}><Feather name="arrow-down" size={15} color={jumpToLatestColors(t).foregroundColor} /><Text style={styles.jumpText}>Latest</Text></Pressable> : null}
 					</View>
+					</ImageViewerHost>
 				</LatestWorkerUpdates.Provider>
 			</ConversationHarness.Provider>
 		</WorkerSessionsProvider>
@@ -427,6 +429,10 @@ export const TimelineItem = memo(function TimelineItem({
 	// A page the agent published with html_render / tallpine render.
 	const render = item.activityKind === "system" ? readRenderRef(item.detail) : undefined;
 	if (render) return <RenderFrame render={render} />;
+	// An HTML page the agent reported with tallpine report --artifact, in the same frame.
+	const artifact = item.activityKind === "system" ? readArtifactRef(item.detail) : undefined;
+	const artifactPage = artifact ? artifactRenderRef(sessionId, artifact) : undefined;
+	if (artifact && artifactPage) return <RenderFrame render={artifactPage} artifact={{ sessionId, path: artifact.path }} />;
 	if (item.detail?.event === "model.rerouted") return <SystemSignal icon="shuffle" title={`Answered by ${item.detail.toModel || "another model"}`} detail={item.detail.fromModel ? `Instead of ${item.detail.fromModel}${item.detail.reason ? ` · ${item.detail.reason}` : ""}` : item.detail.reason} />;
 	if (item.detail?.event === "auth.reauth_required") return <SystemSignal icon="key" danger title="The provider asked you to sign in again" detail={item.detail.reason} />;
 	if (item.detail?.event === "account.switched") return <SystemSignal icon="repeat" title="Switched account" detail={accountSwitchedDetail(item.detail.accountId)} />;

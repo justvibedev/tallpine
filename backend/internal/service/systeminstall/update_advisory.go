@@ -68,6 +68,9 @@ type UpdateAdvisory struct {
 	// maintenanceCask records that MaintenanceMethod upgrades a Homebrew cask,
 	// which replaces the running release instead of keeping it like a formula.
 	maintenanceCask bool
+	// maintenancePackage is the package MaintenanceMethod upgrades, as the
+	// binary's installation receipt names it.
+	maintenancePackage string
 	// binaryIdentity fingerprints the binary the check probed, so a launch can
 	// notice it was replaced outside Tallpine.
 	binaryIdentity binaryIdentity
@@ -235,9 +238,13 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 	// user installed outside Tallpine are covered as well as Tallpine-installed ones.
 	var source Plan
 	managedCopy := s.isManagedPath(verified.ResolvedPath)
+	managedOfficial := false
 	if record, ok := s.readManagedRecord(target); ok && managedCopy {
 		// Tallpine's versioned install has no package-manager receipt to read; its
-		// record names the method and package that installed it.
+		// record names the method and package that installed it. A release
+		// the vendor's installer put there has no package: the record alone
+		// says that installer maintains it, wherever the user's copy is.
+		managedOfficial = record.Method == "official-installer"
 		for _, candidate := range plans {
 			if candidate.Method == record.Method && packageWithoutLatest(candidate.Package) == record.Package {
 				source = candidate
@@ -275,6 +282,11 @@ func (s *Service) computeUpdateAdvisory(ctx context.Context, target Target) (Upd
 	if source.Package != "" {
 		advisory.MaintenanceMethod = source.Method
 		advisory.maintenanceCask = source.PackageCask
+		advisory.maintenancePackage = source.Package
+	} else if managedOfficial || verified.ResolvedPath != "" && vendorLayout(target, layout) && s.officialManagedUpdate(plans) {
+		// The update installs a release of Tallpine's own, so it needs neither
+		// the harness's own update command nor the user's copy in a known place.
+		advisory.MaintenanceMethod = "official-installer"
 	} else if vendorMaintainable(target, verified.ResolvedPath) {
 		advisory.MaintenanceMethod = "official-installer"
 	}

@@ -131,14 +131,24 @@ export function claudeChoiceModel<T extends { id: string; label: string }>(catal
 	};
 }
 
-/** A configured family alias ("sonnet") duplicates that family's newest model, so mark that model as the default instead. */
-export function foldClaudeAliasDefault<T extends { id: string; label: string; isDefault?: boolean }>(models: T[]): T[] {
+type ModelAvailability = { requiresVersion?: string; unavailableReason?: string };
+
+/** Whether a model can be chosen now. The daemon marks models the installed agent CLI is too old to run. */
+export function isModelSelectable(model: ModelAvailability): boolean {
+	return !model.unavailableReason;
+}
+
+/**
+ * A configured family alias ("sonnet") duplicates that family's newest model, so mark that model as the default instead.
+ * When the installed CLI cannot run that newest model the alias stays the default: the CLI resolves it to a model it can run.
+ */
+export function foldClaudeAliasDefault<T extends { id: string; label: string; isDefault?: boolean } & ModelAvailability>(models: T[]): T[] {
 	const alias = models.find((model) => model.isDefault && CLAUDE_FAMILIES.includes(model.id));
 	if (!alias) return models;
 	const rest = models.filter((model) => model !== alias);
 	const family = CLAUDE_FAMILIES.indexOf(alias.id);
 	const newest = splitClaudeModels(rest).current.find((model) => claudeFamilyVersion(model)?.family === family && claudeVariant(model) === "");
-	return newest ? rest.map((model) => (model === newest ? { ...model, isDefault: true } : model)) : models;
+	return newest && isModelSelectable(newest) ? rest.map((model) => (model === newest ? { ...model, isDefault: true } : model)) : models;
 }
 
 /** A recorded model id by its name in the agent's list, however that agent's chat spells the id. */

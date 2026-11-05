@@ -186,6 +186,15 @@ type ProjectConfig struct {
 	// (reviewer 5m, others unset); an explicit empty value leaves the variable
 	// unset for that role.
 	PromptCacheTTL map[string]string `json:"promptCacheTTL,omitempty"`
+	// ClaudePlugins maps a session role ("orchestrator", "worker", "reviewer")
+	// to the Claude Code enabledPlugins override ("name@marketplace" -> on/off)
+	// that role's sessions launch with. A role absent from the map loads the
+	// account's plugins unchanged.
+	ClaudePlugins map[string]map[string]bool `json:"claudePlugins,omitempty"`
+	// ClaudeAutoMemory maps a session role to whether Claude Code auto-memory
+	// is on for it. A role absent from the map inherits the account setting;
+	// false starts that role's sessions with autoMemoryEnabled off.
+	ClaudeAutoMemory map[string]bool `json:"claudeAutoMemory,omitempty"`
 
 	// ChatHibernation is the project-level opt-out for idle Chat hibernation.
 	// A pointer so an unset opt-out is omitted from the stored config.
@@ -502,16 +511,4 @@ func validateRepoRelative(p string) error {
 		}
 	}
 	return nil
-}
-
-// PromptCacheTTLFor returns the CLAUDE_CODE_PROMPT_CACHE_TTL value for a role,
-// or "" when the variable should stay unset.
-func (c ProjectConfig) PromptCacheTTLFor(role string) string {
-	if v, ok := c.PromptCacheTTL[role]; ok {
-		return strings.TrimSpace(v)
-	}
-	if role == RoleReviewer {
-		return "5m"
-	}
-	return ""
 }

@@ -61,6 +61,14 @@ type AgentLaunchOptions struct {
 	// The session manager fills it at launch so a percent window can become a
 	// token count; it is not stored.
 	ModelContextWindow int64 `json:"-"`
+	// EnabledPlugins is the Claude Code enabledPlugins override from the
+	// project's claudePlugins setting for the session's role, as a JSON object
+	// (a string keeps the options comparable). Filled at launch, not stored;
+	// empty leaves the account's plugins unchanged.
+	EnabledPlugins string `json:"-"`
+	// AutoMemoryOff starts Claude Code with auto-memory off (the project's
+	// claudeAutoMemory setting for the session's role). Filled at launch.
+	AutoMemoryOff bool `json:"-"`
 	// HandoffNote is a terminal switch target's note, kept until the target has
 	// started. A relaunch that finds it follows a switch cut short by a daemon
 	// stop or crash, and delivers the note in place of the session's task.

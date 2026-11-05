@@ -1,3 +1,4 @@
+import { parseArtifacts, sortArtifacts } from "../artifacts";
 import { CI_STATES, MERGEABILITY_STATES, PULL_REQUEST_STATES, REVIEW_DECISIONS } from "@tallpine/product-ui/scm-models";
 import type { components } from "@tallpine/shared/api/schema";
 import type { DashboardPR, DashboardSession, OrchestratorLink, ProjectInfo } from "./sessions";
@@ -77,6 +78,9 @@ export function mapSession(s: WireSession): DashboardSession {
 	const prs = (s.prs ?? []).map(mapPR);
 	return {
 		id: s.id,
+		// Only the single-session read lists the files; a board row carries hasArtifacts.
+		artifacts: s.artifactFiles === undefined ? undefined : sortArtifacts(parseArtifacts(s.artifactFiles)),
+		hasArtifacts: s.hasArtifacts === true || (s.artifactFiles?.length ?? 0) > 0,
 		// "" rather than undefined: every consumer treats the id as a string, and
 		// `shortLabel(undefined)` threw inside render and took the whole board down.
 		projectId: s.projectId ?? "",

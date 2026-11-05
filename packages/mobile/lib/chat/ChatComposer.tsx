@@ -33,6 +33,7 @@ import { afterDraftWrites } from "./pendingSend";
 import { Attachment } from "./composerAttachments";
 import { changesAccessibilityLabel, makeStyles } from "./chatComposerStyles";
 import { useComposerActions } from "./useComposerActions";
+import { useImagePaste } from "./useImagePaste";
 import { useReviewCardMotion } from "./useReviewCardMotion";
 
 export function ChatComposer({
@@ -80,6 +81,7 @@ export function ChatComposer({
 	onRestoreRequest,
 	openingTurnId,
 	startingAgentName,
+	orchestrator,
 }: {
 	quoteRequest?: ResponseQuoteRequest;
 	onQuoteHandled?(id: string): void;
@@ -141,6 +143,8 @@ export function ChatComposer({
 	openingTurnId?: string;
 	/** Set while the session starts, for the placeholder. */
 	startingAgentName?: string;
+	/** An orchestrator chat: the placeholder names it, not a worker. */
+	orchestrator?: boolean;
 }) {
 	const t = useTheme();
 	const router = useRouter();
@@ -183,7 +187,7 @@ export function ChatComposer({
 	const hasDraft = Boolean(text.trim() || quotes.length);
 	const primaryAction = composerPrimaryAction({ active, hasDraft, hasAttachments: attachments.length > 0 });
 	const steerEligible = Boolean(canSteer && hasDraft && attachments.length === 0 && quotes.length === 0);
-	const deliveryPresentation = composerDeliveryPresentation({ active, canSteer: Boolean(canSteer && quotes.length === 0), hasDraft, hasAttachments: attachments.length > 0, hasQueued: visibleQueuedMessages.length > 0 });
+	const deliveryPresentation = composerDeliveryPresentation({ orchestrator, active, canSteer: Boolean(canSteer && quotes.length === 0), hasDraft, hasAttachments: attachments.length > 0, hasQueued: visibleQueuedMessages.length > 0 });
 	const stopped = snapshot.controller.state === "stopped";
 	const draftKey = config ? `ao.chat.draft.${machineIdentity(config)}.${sessionId}` : null;
 	const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -258,7 +262,8 @@ export function ChatComposer({
 	}, [completedRetry, draftKey, onAcknowledgeSend]);
 
 	const voice = useVoiceInput({ onTranscript: useCallback((spoken: string) => setText((old) => old ? `${old} ${spoken}` : spoken), []) });
-	const { submit, addImage, addFile, openPicker } = useComposerActions({ submitting, pending, disabled, draftKey, draftLoaded, text, quotes, attachments, setLocalError, setSubmitting, draftTimer, steerEligible, onSteer, onSend, latestText, latestQuotes, onAcknowledgeSend, setText, setFieldHeight, setQuotes, setAttachments, pickerGate, onLoadSkills, skills, onLoadFiles, filePaths, filePathsTruncated, latestCursor, router, setCursor });
+	const { submit, addImage, pasteImages, addFile, openPicker } = useComposerActions({ submitting, pending, disabled, draftKey, draftLoaded, text, quotes, attachments, setLocalError, setSubmitting, draftTimer, steerEligible, onSteer, onSend, latestText, latestQuotes, onAcknowledgeSend, setText, setFieldHeight, setQuotes, setAttachments, pickerGate, onLoadSkills, skills, onLoadFiles, filePaths, filePathsTruncated, latestCursor, router, setCursor });
+	const pasteLayout = useImagePaste(stopped || submitting ? null : pasteImages);
 	useEffect(() => {
 		const suggestion = findComposerSuggestion(text, cursor);
 		if (!suggestion) {
@@ -405,6 +410,7 @@ export function ChatComposer({
 					<ChatAttachmentMenu disabled={stopped || submitting} canAttachFile={Boolean(canEmbedFiles)} onChoosePhoto={() => void addImage()} onChooseFile={() => void addFile()} onChooseSkill={() => void openPicker("skills")} />
 					<TextInput
 						ref={inputRef}
+						onLayout={pasteLayout}
 						accessibilityLabel="Message the agent"
 						editable={!stopped && !submitting}
 						value={text}

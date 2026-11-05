@@ -69,28 +69,6 @@ export const NOTICE_LABELS: Record<AutomationNotice, string> = {
 	reviewTask: "Gave this reviewer its review task",
 };
 
-/**
- * Where a reported artifact sits in its session's artifact folder, the path the
- * daemon's artifact route serves. Reports name artifacts absolutely
- * (`…/artifacts/<session>/report.md`) or relative to that folder; a path outside
- * it has no entry and is not opened.
- */
-export function artifactEntry(path: string, sessionId: string | undefined): string | undefined {
-	const trimmed = path.trim().replace(/\\/g, "/");
-	if (!trimmed || !sessionId) return undefined;
-	let entry = trimmed;
-	if (trimmed.startsWith("/") || /^[A-Za-z]:\//.test(trimmed)) {
-		const marker = `/artifacts/${sessionId}/`;
-		const at = trimmed.lastIndexOf(marker);
-		if (at < 0) return undefined;
-		entry = trimmed.slice(at + marker.length);
-	}
-	// The entry is joined into an authenticated daemon URL, so it may only name
-	// something inside the folder: no parent steps, whichever form the path took.
-	const segments = entry.split("/").filter((segment) => segment !== "" && segment !== ".");
-	return segments.length > 0 && !segments.includes("..") ? segments.join("/") : undefined;
-}
-
 export type InlineRun = { text: string; href?: string; code?: boolean; strong?: boolean };
 
 // A markdown link, a bare web or session link, inline code, or bold: the inline

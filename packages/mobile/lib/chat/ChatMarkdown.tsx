@@ -8,6 +8,7 @@ import { openGitHub } from "../openGitHub";
 import type { Theme } from "../theme";
 import { useTheme, useThemedStyles } from "../ThemeProvider";
 import { textSelectionColors } from "../textSelection";
+import { imageSourceForPlatform } from "../imageSource";
 import { useAndroidResponseSelection } from "./useAndroidResponseSelection";
 import { HighlightedCodeText } from "./HighlightedCodeText";
 import { allowsUnderscoreEmphasis } from "./inlineEmphasis";
@@ -64,31 +65,53 @@ export function ChatLinkProvider({ onLinkOpen, onAddToChat, sessionName, onSessi
  * readable text; the renderer never hides content because a provider used
  * syntax it does not know.
  */
-export const ChatMarkdown = memo(function ChatMarkdown({ text, streaming = false, continuousSelection = false, selectionSource }: { text: string; streaming?: boolean; continuousSelection?: boolean; selectionSource?: Omit<ChatExcerpt, "text"> }) {
+export const ChatMarkdown = memo(function ChatMarkdown({ text, streaming = false, continuousSelection = false, selectionSource, onAddSelection, resolveImage, imagesInPlace = false }: {
+	text: string;
+	streaming?: boolean;
+	continuousSelection?: boolean;
+	selectionSource?: Omit<ChatExcerpt, "text">;
+	/**
+	 * Offers the text-selection menu's "Add to chat" outside a conversation (an
+	 * artifact), handing it the selected text. Needs `continuousSelection`.
+	 */
+	onAddSelection?: (text: string) => void;
+	/**
+	 * Turns an image reference into what to load: a relative path in a
+	 * document resolves against its folder, with the connection's headers.
+	 * Undefined means the image cannot be loaded.
+	 */
+	resolveImage?: (url: string) => MarkdownImageSource | undefined;
+	/** Draws each image where the document places it, rather than after the text. */
+	imagesInPlace?: boolean;
+}) {
 	const t = useTheme();
 	const styles = useThemedStyles(makeStyles);
 	const selectionColor = textSelectionColors(t).selectionColor;
-	const blocks = parseBlocks(text);
+	const blocks = parseBlocks(text, { relativeImages: Boolean(resolveImage) });
 	if (continuousSelection) {
 		// Native selection cannot cross sibling views. Keep consecutive text blocks
 		// in one text surface; tables render as real scrollable tables between runs.
-		const images = blocks.filter((block): block is Extract<MarkdownBlock, { kind: "image" }> => block.kind === "image");
+		const images = imagesInPlace ? [] : blocks.filter((block): block is Extract<MarkdownBlock, { kind: "image" }> => block.kind === "image");
 		const parts: ReactNode[] = [];
 		let run: MarkdownBlock[] = [];
 		const flushRun = () => {
-			if (run.length) parts.push(<SelectableResponseText key={`run-${parts.length}`} blocks={run} source={selectionSource} />);
+			if (run.length) parts.push(<SelectableResponseText key={`run-${parts.length}`} blocks={run} source={selectionSource} onSelect={onAddSelection} />);
 			run = [];
 		};
 		for (const block of blocks) {
 			if (block.kind === "table") {
 				flushRun();
 				parts.push(<MarkdownTable key={`table-${parts.length}`} headers={block.headers} rows={block.rows} selectionColor={selectionColor} />);
+			} else if (imagesInPlace && block.kind === "image") {
+				// A document places each image where it sits, breaking the text run.
+				flushRun();
+				parts.push(<MarkdownImage key={`image-${parts.length}`} alt={block.alt} url={block.url} selectionColor={selectionColor} resolve={resolveImage} />);
 			} else run.push(block);
 		}
 		flushRun();
 		return <View style={styles.root}>
 			{parts}
-			{images.map((image, index) => <MarkdownImage key={`${image.url}-${index}`} alt={image.alt} url={image.url} selectionColor={selectionColor} showCaption={false} />)}
+			{images.map((image, index) => <MarkdownImage key={`${image.url}-${index}`} alt={image.alt} url={image.url} selectionColor={selectionColor} showCaption={false} resolve={resolveImage} />)}
 		</View>;
 	}
 	const content: ReactNode[] = [];
@@ -110,7 +133,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text, streaming = false
 		flushProse();
 		const index = content.length;
 		if (block.kind === "code") content.push(<CodeBlock key={index} {...block} streaming={streaming} />);
-		else if (block.kind === "image") content.push(<MarkdownImage key={index} alt={block.alt} url={block.url} selectionColor={selectionColor} />);
+		else if (block.kind === "image") content.push(<MarkdownImage key={index} alt={block.alt} url={block.url} selectionColor={selectionColor} resolve={resolveImage} />);
 		else if (block.kind === "table") content.push(<MarkdownTable key={index} headers={block.headers} rows={block.rows} selectionColor={selectionColor} />);
 		else if (block.kind === "rule") content.push(<View key={index} style={styles.rule} />);
 		else if (block.kind === "quote") content.push(<View key={index} style={styles.quote}><SelectableInlineText value={block.text} selectionColor={selectionColor} style={styles.quoteText} styles={styles} /></View>);
@@ -134,15 +157,20 @@ function SelectableProseGroup({ blocks, selectionColor, styles }: { blocks: Arra
 	</Text>;
 }
 
+/** What a markdown image loads: its URL, with headers when it needs the connection's credential. */
+export type MarkdownImageSource = { uri: string; headers?: Record<string, string> };
+
 /** One native text surface for selecting across every part of a response. */
-export function SelectableResponseText({ text, blocks, source }: { text?: string; blocks?: MarkdownBlock[]; source?: Omit<ChatExcerpt, "text"> }) {
+export function SelectableResponseText({ text, blocks, source, onSelect }: { text?: string; blocks?: MarkdownBlock[]; source?: Omit<ChatExcerpt, "text">; onSelect?: (text: string) => void }) {
 	const t = useTheme();
 	const addToChat = useContext(AddResponseToChat);
-	const select = useCallback((selected: string) => source ? addToChat?.(selected, source) : addToChat?.(selected), [addToChat, source]);
-	const onLayout = useAndroidResponseSelection(addToChat && source ? select : null);
+	// In a conversation, only a finished message (one with a source) can be quoted.
+	const enabled = Boolean(onSelect || (addToChat && source));
+	const select = useCallback((selected: string) => onSelect ? onSelect(selected) : source ? addToChat?.(selected, source) : addToChat?.(selected), [addToChat, onSelect, source]);
+	const onLayout = useAndroidResponseSelection(enabled ? select : null);
 	const styles = useThemedStyles(makeStyles);
 	const selectionColor = textSelectionColors(t).selectionColor;
-	return <Text selectable uiTextView selectionColor={selectionColor} style={styles.body} onLayout={onLayout} addToChatEnabled={Boolean(addToChat && source)} onAddToChat={(event) => select(event.nativeEvent.text)}>
+	return <Text selectable uiTextView selectionColor={selectionColor} style={styles.body} onLayout={onLayout} addToChatEnabled={enabled} onAddToChat={(event) => select(event.nativeEvent.text)}>
 		{(blocks ?? parseBlocks(text ?? "")).map((block, index) => {
 			const separator = index > 0 ? "\n\n" : "";
 			if (block.kind === "heading") return <Text key={index} style={[styles.heading, block.level > 2 && styles.smallHeading]}>{separator}{inline(block.text, styles)}</Text>;
@@ -167,11 +195,12 @@ function SelectableInlineText({ value, selectionColor, style, styles }: { value:
 
 let preferredCodeWrap = false;
 
-function MarkdownImage({ alt, url, selectionColor, showCaption = true }: { alt: string; url: string; selectionColor: string; showCaption?: boolean }) {
+function MarkdownImage({ alt, url, selectionColor, showCaption = true, resolve }: { alt: string; url: string; selectionColor: string; showCaption?: boolean; resolve?: (url: string) => MarkdownImageSource | undefined }) {
 	const styles = useThemedStyles(makeStyles);
 	const [failed, setFailed] = useState(false);
-	if (failed) return <Text selectable uiTextView selectionColor={selectionColor} style={styles.imageFallback}>Image unavailable: {alt || url}</Text>;
-	return <View style={styles.imageCard}><Image accessibilityLabel={alt || "Conversation image"} accessibilityIgnoresInvertColors source={{ uri: url }} resizeMode="contain" onError={() => setFailed(true)} style={styles.image} />{alt && showCaption ? <Text selectable uiTextView selectionColor={selectionColor} style={styles.imageCaption}>{alt}</Text> : null}</View>;
+	const source = resolve ? resolve(url) : { uri: url };
+	if (failed || !source) return <Text selectable uiTextView selectionColor={selectionColor} style={styles.imageFallback}>Image unavailable: {alt || url}</Text>;
+	return <View style={styles.imageCard}><Image accessibilityLabel={alt || "Conversation image"} accessibilityIgnoresInvertColors source={source.headers ? imageSourceForPlatform(source) : source} resizeMode="contain" onError={() => setFailed(true)} style={styles.image} />{alt && showCaption ? <Text selectable uiTextView selectionColor={selectionColor} style={styles.imageCaption}>{alt}</Text> : null}</View>;
 }
 
 function MarkdownTable({ headers, rows, selectionColor }: { headers: string[]; rows: string[][]; selectionColor: string }) {

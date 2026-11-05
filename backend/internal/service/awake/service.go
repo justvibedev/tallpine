@@ -73,6 +73,9 @@ type Service struct {
 	// Reconciliation keeps failed document changes in memory; retry until durable.
 	reconcileSavePending   bool
 	powerAuthorizationBusy bool
+	// Only resume rules that this daemon paused for a battery stop. A restart
+	// keeps persisted rules paused rather than guessing their previous intent.
+	resumeBatteryRules bool
 }
 
 // ErrValidation identifies invalid wake requests.

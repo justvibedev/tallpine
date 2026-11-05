@@ -91,6 +91,9 @@ type projectConfig struct {
 	PlanInPlace bool `json:"planInPlace,omitempty"`
 	// Eval round-trips for the same reason (B335).
 	Eval bool `json:"eval,omitempty"`
+	// ClaudePlugins and ClaudeAutoMemory round-trip for the same reason.
+	ClaudePlugins    map[string]map[string]bool `json:"claudePlugins,omitempty"`
+	ClaudeAutoMemory map[string]bool            `json:"claudeAutoMemory,omitempty"`
 }
 
 // setConfigRequest mirrors the daemon's SetConfigInput body for
@@ -184,7 +187,7 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				req = setConfigRequest{Config: config}
+				req = map[string]any{"config": config}
 			} else {
 				merged, err := ctx.mergeProjectConfigFlags(cmd.Context(), id, cmd.Flags().Changed, opts)
 				if err != nil {
@@ -237,13 +240,18 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 // modes: --clear empties the config and --config-json supplies the whole
 // object. Field flags are not handled here; they merge into the stored config
 // (see mergeProjectConfigFlags). The daemon validates the values.
-func buildProjectConfig(opts projectSetConfigOptions) (projectConfig, error) {
+func buildProjectConfig(opts projectSetConfigOptions) (map[string]any, error) {
+	cfg := map[string]any{}
 	if opts.clear {
-		return projectConfig{}, nil
+		return cfg, nil
 	}
-	var cfg projectConfig
+	// Decode into a generic map, not projectConfig, so a key the CLI mirror
+	// struct lacks is sent to the daemon instead of silently dropped.
 	if err := json.Unmarshal([]byte(opts.configJSON), &cfg); err != nil {
-		return projectConfig{}, usageError{fmt.Errorf("--config-json is not a valid JSON object: %w", err)}
+		return nil, usageError{fmt.Errorf("--config-json is not a valid JSON object: %w", err)}
+	}
+	if cfg == nil {
+		return nil, usageError{errors.New("--config-json is not a valid JSON object: got null")}
 	}
 	return cfg, nil
 }

@@ -162,7 +162,7 @@ func TestAllowlistChatSwitchUsesTargetHarnessNotStoredOne(t *testing.T) {
 	m := envFilterManager(t, allowlist(), &fakeGitHubTokens{})
 	rec := domain.SessionRecord{ID: "w-1", ProjectID: "mer", Harness: domain.HarnessClaudeCode}
 	m.store.(*fakeStore).sessions["w-1"] = rec
-	_, env, err := m.prepareChatControllerEnv(context.Background(), rec, nil, rec.ControllerOwner(), domain.HarnessCodex)
+	_, env, err := m.prepareChatControllerEnv(context.Background(), rec, domain.ProjectConfig{}, rec.ControllerOwner(), domain.HarnessCodex)
 	if err != nil {
 		t.Fatal(err)
 	}

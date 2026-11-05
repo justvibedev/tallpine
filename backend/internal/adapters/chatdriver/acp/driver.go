@@ -144,8 +144,18 @@ type Config struct {
 	// vendor's format.
 	UsageRateLimits func(meta map[string]any) *ports.ChatRateLimits
 	// PromptResponseFailure lets a provider binding interpret its own structured
-	// terminal metadata after a nominally successful ACP prompt response.
-	PromptResponseFailure func(acpsdk.PromptResponse) error
+	// terminal metadata after a nominally successful ACP prompt response. model
+	// is the session's selected model when the turn ran, or "" when unknown.
+	PromptResponseFailure func(response acpsdk.PromptResponse, model string) error
+	// ServedModel optionally reports the model that actually answered the turn
+	// that just completed, when it differs from selectedModel in a way worth
+	// showing (for example an alias resolving to a concrete model). It returns
+	// "" when there is nothing to report. Optional.
+	ServedModel func(ctx context.Context, cfg LaunchConfig, sessionID, selectedModel string) (served, reason string)
+	// ValidateModel optionally rejects a model the binding knows the running
+	// agent cannot use (for example one its CLI version predates) before Tallpine
+	// asks the agent to switch to it. It returns nil when the model may be tried.
+	ValidateModel func(ctx context.Context, cfg LaunchConfig, model string) error
 	// SessionPromptResponseFailure is PromptResponseFailure given the provider
 	// session, for a binding that reads the failure from the agent's own record,
 	// and whether the turn brought any reply text or tool call.

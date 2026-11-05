@@ -417,6 +417,7 @@ export function ChatSessionScreen({ session: boardSession }: { session: MobileCh
 					restingInset={chatKeyboard.restingInset}
 					dockRiseOverride={chatKeyboard.dockRiseOverride}
 					openingTurnId={startupView?.openingTurnId}
+					orchestrator={"kind" in session && session.kind === "orchestrator"}
 					startingAgentName={startupShown && !startupView?.failed ? startupView?.agentName : undefined}
 				/>
 			</View>

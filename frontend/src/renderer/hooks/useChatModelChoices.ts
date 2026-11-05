@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { claudeChoiceModel } from "../lib/agent-model-choices";
-import type { ChatConfigOption, ChatModel } from "../types/conversation";
+import type { ChatConfigChoice, ChatConfigOption, ChatModel } from "../types/conversation";
 import { agentModelsQueryOptions } from "./useAgentModelsQuery";
 import { useOfferedModels } from "./useOfferedModels";
 
@@ -40,8 +40,19 @@ export function useChatModelChoices(
 				id: model.id,
 				displayName: model.label || model.id,
 				default: Boolean(model.isDefault),
+				...(model.unavailableReason ? { unavailableReason: model.unavailableReason } : {}),
 			}));
 	}, [showSavedCatalog, savedCatalog, controllerModels]);
+	// A concrete model id the installed CLI is too old for. Aliases ("opus") are never
+	// marked: each CLI resolves them to a model it can run.
+	const unavailableReasons = useMemo(() => {
+		if (!isClaude) return undefined;
+		const reasons = new Map<string, string>();
+		for (const model of savedCatalog?.models ?? []) {
+			if (model.unavailableReason) reasons.set(model.id, model.unavailableReason);
+		}
+		return reasons.size > 0 ? reasons : undefined;
+	}, [isClaude, savedCatalog]);
 	const providerModelChoices = useMemo(
 		() => providerModelOption?.choices.map((choice) => ({ id: choice.value, name: choice.name })),
 		[providerModelOption],
@@ -66,9 +77,14 @@ export function useChatModelChoices(
 	const configOptions = useMemo(() => {
 		if (!providerModelOption) return options;
 		const offered = new Set(offeredProviderModels.map((choice) => choice.id));
+		const markUnavailable = (choice: ChatConfigChoice): ChatConfigChoice => {
+			// A context variant may be gated on its own, or through its base model.
+			const reason = unavailableReasons?.get(choice.value) ?? unavailableReasons?.get(choice.value.replace(/\[.*\]$/, ""));
+			return reason ? { ...choice, unavailableReason: reason } : choice;
+		};
 		return options?.map((option) => option === providerModelOption
-			? { ...option, choices: option.choices.filter((choice) => offered.has(choice.value)) }
+			? { ...option, choices: option.choices.filter((choice) => offered.has(choice.value)).map(markUnavailable) }
 			: option);
-	}, [options, offeredProviderModels, providerModelOption]);
+	}, [options, offeredProviderModels, providerModelOption, unavailableReasons]);
 	return { models, configOptions };
 }

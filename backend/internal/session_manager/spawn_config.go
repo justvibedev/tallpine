@@ -145,11 +145,31 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, decision agentpolicy.D
 		// family, whether or not that model takes an effort setting.
 		selected = newestClaudeFamilyModel(catalog.Models, modelID, false)
 	}
+	// An expired access token Claude Code renews itself must not block the
+	// launch. With no account-scoped list (the built-in fallback, no last
+	// success) an unlisted model is left to the CLI; against the account's own
+	// last-known list it is more likely a typo, so it still fails below.
+	unlistedToCLI := cfg.Harness == domain.HarnessClaudeCode && catalog.Stale &&
+		catalog.WarningCode == ports.ModelCatalogWarningAuthExpired && catalog.LastSuccessAt == nil
+	if unlistedToCLI && validateClaudeModel && selected == nil {
+		// The CLI owns per-model capabilities, but a level no Claude model
+		// accepts is still refused here rather than after the session starts.
+		if resolved.Effort != "" && !containsString(claudeEffortLevels, resolved.Effort) {
+			return ports.AgentConfig{}, fmt.Errorf("%w %q for model %q", ports.ErrUnsupportedEffort, resolved.Effort, modelID)
+		}
+		return resolved, nil
+	}
 	if validateClaudeModel && selected == nil && catalog.Stale {
 		return ports.AgentConfig{}, fmt.Errorf("%w: model %q is not in the stale provider catalog and refresh did not produce a fresh one", ports.ErrModelCapabilitiesUnavailable, modelID)
 	}
 	if validateClaudeModel && selected == nil {
 		return ports.AgentConfig{}, fmt.Errorf("%w: model %q is not in the active provider catalog", ErrUnsupportedModel, modelID)
+	}
+	if exactMatch && selected.RequiresVersion != "" {
+		// Launching would only fail on the first turn with the provider's
+		// claude_code_version_too_old rejection; say so before spawning.
+		// Family aliases are never gated: the CLI resolves them itself.
+		return ports.AgentConfig{}, fmt.Errorf("%w: model %q: %s", ErrUnsupportedModel, modelID, selected.UnavailableReason)
 	}
 	if exactMatch && len(selected.Efforts) == 0 && cfg.Harness == domain.HarnessClaudeCode {
 		// A family alias ("opus") carries no capabilities of its own; the CLI
@@ -177,6 +197,7 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, decision agentpolicy.D
 
 var (
 	claudeFamilyAliases = []string{"fable", "opus", "sonnet", "haiku"}
+	claudeEffortLevels  = []string{"low", "medium", "high", "xhigh", "max"}
 	claudeVersionNumber = regexp.MustCompile(`\d+`)
 	claudeVersionNoise  = regexp.MustCompile(`\(.*?\)|\[.*?\]`)
 )

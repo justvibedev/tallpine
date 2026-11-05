@@ -38,6 +38,7 @@ import { configuredLoginShell } from "../shell-env-host";
 import { rendererUrl } from "../window/renderer-assets";
 import { buildDesktopDaemonEnv, daemonLaunchEnv as daemonLaunchEnvFor, resolveDaemonPort } from "./daemon-env";
 import { daemonIdentityError as daemonIdentityErrorFor, processAlive, readDaemonProbe } from "./daemon-probe";
+import { cancelDaemonAutoRestart } from "./daemon-auto-restart-host";
 import { startDaemonInner } from "./daemon-start";
 
 export const SIDE_STATE_BACKSTOP_MS = 5_000;
@@ -253,7 +254,7 @@ export async function refreshDaemonStatus(): Promise<DaemonStatus> {
 	return ctx.daemonStatus;
 }
 
-export async function startDaemon(options: { forceReplaceAdopted?: boolean } = {}): Promise<DaemonStatus> {
+export async function startDaemon(options: { forceReplaceAdopted?: boolean; autoRestart?: boolean } = {}): Promise<DaemonStatus> {
 	// Sticky, not a parameter of the in-flight call: the renderer's first
 	// daemon.getStatus() can attach while boot is still awaiting the shell
 	// environment, so a forced replacement requested in that window must be
@@ -267,13 +268,21 @@ export async function startDaemon(options: { forceReplaceAdopted?: boolean } = {
 	if (ctx.browserQuitRequested) {
 		return ctx.daemonStatus;
 	}
+	// An explicit start must not inherit an in-flight automatic respawn, which
+	// stands down instead of attaching to an existing daemon: supersede it.
+	if (!options.autoRestart && ctx.daemonStartIsAutoRestart) {
+		ctx.daemonStartEpoch += 1;
+		ctx.daemonStartPromise = null;
+	}
 	if (ctx.daemonStartPromise) {
 		return ctx.daemonStartPromise;
 	}
 	const startEpoch = ctx.daemonStartEpoch;
-	const promise = startDaemonInner(startEpoch).finally(() => {
+	ctx.daemonStartIsAutoRestart = options.autoRestart === true;
+	const promise = startDaemonInner(startEpoch, options.autoRestart === true).finally(() => {
 		if (ctx.daemonStartPromise === promise) {
 			ctx.daemonStartPromise = null;
+			ctx.daemonStartIsAutoRestart = false;
 		}
 	});
 	ctx.daemonStartPromise = promise;
@@ -307,9 +316,11 @@ export async function repairDevAcpRuntime(): Promise<void> {
 export function stopDaemon(): DaemonStatus {
 	ctx.daemonStartEpoch += 1;
 	ctx.daemonStartPromise = null;
+	ctx.daemonStartIsAutoRestart = false;
 	// An explicit stop (or a newer restart request) cancels any deferred restart
 	// left waiting for a previously slow child to exit.
 	ctx.daemonRestartAfterExitProcess = null;
+	cancelDaemonAutoRestart();
 	if (!ctx.daemonProcess) {
 		setDaemonStatus({ state: "stopped" });
 		return ctx.daemonStatus;
@@ -346,6 +357,8 @@ export async function startDaemonForRestart(): Promise<DaemonStatus> {
 }
 
 export async function restartDaemon(): Promise<DaemonStatus> {
+	// A manual restart supersedes any pending automatic respawn.
+	cancelDaemonAutoRestart();
 	const child = ctx.daemonProcess;
 	if (!child) return startDaemonForRestart();
 	await captureSideChatState().catch((error) => console.warn("Tallpine: pre-restart side snapshot failed", error));

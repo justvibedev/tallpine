@@ -146,7 +146,7 @@ export function MoreOptionsSubmenu({
 	onChange: (optionId: string, value: ChatConfigOptionValue) => void;
 }) {
 	return (
-		<OptionMenuSub>
+		<OptionMenuSub closeOnSelect>
 			<OptionMenuSubTrigger label="More" />
 			<OptionMenuSubContent className={CHAT_MENU_CLASS}>
 				{options.map((option) => (
@@ -173,7 +173,7 @@ export function OptionSubmenu({
 }) {
 	const current = optionCurrentLabel(option);
 	return (
-		<OptionMenuSub>
+		<OptionMenuSub closeOnSelect>
 			<OptionMenuSubTrigger label={label ?? option.name} value={current} />
 			<OptionMenuSubContent
 				scrollable={scrollable}
@@ -201,6 +201,7 @@ export function ConfigOptionPicker({
 	disabled,
 	footer,
 	leadIcon,
+	showCaret,
 	groupClaude,
 }: {
 	option: ChatConfigOption;
@@ -210,6 +211,8 @@ export function ConfigOptionPicker({
 	disabled?: boolean;
 	footer?: ReactNode;
 	leadIcon?: LucideIcon;
+	/** Set on the permission control only. */
+	showCaret?: boolean;
 	groupClaude?: boolean;
 }) {
 	return (
@@ -218,6 +221,7 @@ export function ConfigOptionPicker({
 			title={title || option.description || option.name}
 			disabled={disabled}
 			leadIcon={leadIcon}
+			showCaret={showCaret}
 			onFocus={isModelOption(option) ? focusModelSearch : undefined}
 		>
 			{isModelOption(option) ? (

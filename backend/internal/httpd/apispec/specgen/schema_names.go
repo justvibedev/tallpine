@@ -67,6 +67,7 @@ var schemaNames = map[string]string{ // #nosec G101 -- Public OpenAPI type names
 	"ControllersAdoptAgentAccountRequest":                  "AdoptAgentAccountRequest",
 	"ControllersAgentAccountListQuery":                     "AgentAccountListQuery",
 	"ControllersAgentAccountUsageQuery":                    "AgentAccountUsageQuery",
+	"ControllersDeleteSessionQuery":                        "DeleteSessionQuery",
 	"ControllersAgentAccountResponse":                      "AgentAccountResponse",
 	"ControllersAgentAccountsResponse":                     "AgentAccountsResponse",
 	"ControllersStartAgentAccountLoginRequest":             "StartAgentAccountLoginRequest",

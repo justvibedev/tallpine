@@ -118,6 +118,7 @@ var lanRouteTable = []lanRouteRule{
 	mobile(readOnly, "/api/v1/sessions/*/preview/file-url"),
 	mobile(readOnly, "/api/v1/sessions/*/preview/files/**"),
 	mobile(readOnly, "/api/v1/sessions/*/artifact-files/**"),
+	mobile(readOnly, "/api/v1/sessions/*/artifact-events"),
 	mobile(readOnly, "/api/v1/sessions/*/artifact-versions"),
 	mobile(readOnly, "/api/v1/sessions/*/artifact-versions/*"),
 	mobile(readOnly, "/api/v1/sessions/*/renders/*"),

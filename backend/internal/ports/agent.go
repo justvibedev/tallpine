@@ -18,6 +18,9 @@ var (
 	// ErrNativeHistoryUnavailable means an interactive native restorer has no
 	// saved conversation yet; ordinary restore may launch fresh in its workspace.
 	ErrNativeHistoryUnavailable = errors.New("agent native history unavailable")
+	// ErrAgentVersionTooOld means the provider rejected the selected model
+	// because the installed agent CLI predates it; updating the CLI fixes it.
+	ErrAgentVersionTooOld = errors.New("agent CLI is too old for the selected model")
 )
 
 // ErrAgentBinaryNotFound is returned by agent adapters when neither PATH nor

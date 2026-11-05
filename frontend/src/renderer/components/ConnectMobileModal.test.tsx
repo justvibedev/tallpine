@@ -52,9 +52,9 @@ const { mobileStatus } = vi.hoisted(() => ({
 
 // This suite exercises the mobile UI; shared desktop/mobile ownership is
 // covered with the real useAwake hook in AwakeControl.test.tsx.
-vi.mock("../hooks/useAwake", () => ({
+vi.mock("../hooks/useAwake", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../hooks/useAwake")>()),
 	useAwake: () => ({ state: { sessions: [], rules: [], capabilities: [{ id: "idle", available: true }] }, actAsync: vi.fn().mockResolvedValue({ active: true }), busy: false }),
-	awakeCapability: () => ({ available: true }),
 }));
 
 vi.mock("../lib/api-client", () => ({

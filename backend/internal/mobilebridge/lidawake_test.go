@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"tallpine.eu/tallpine/backend/internal/brand"
 )
 
 func TestLidStatusRequiresFreshOwnLease(t *testing.T) {
@@ -247,6 +249,17 @@ func TestLidStopDoesNotBlockStatus(t *testing.T) {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("stop did not observe acknowledgement")
+	}
+}
+
+func TestDefaultDataDirectoryDoesNotReportIsolated(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// An empty helper path exits without probing or registering any host job.
+	l := NewLidAwake(os.Getpid(), "", filepath.Join(home, brand.HomeDirName, "data"))
+	_, _, reason := l.Status()
+	if reason == "isolated_data_dir" {
+		t.Fatal("normal app data directory was classified as isolated")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/google/uuid"
@@ -76,6 +77,9 @@ func (c *conversation) SendTurn(ctx context.Context, msg ports.ChatUserMessage) 
 	if busy {
 		return ports.ChatTurnRef{}, errors.New("ACP conversation already has a turn in flight")
 	}
+	if err := c.checkModelSwitch(ctx, msg.Settings.Model); err != nil {
+		return ports.ChatTurnRef{}, err
+	}
 	if err := c.applyTurnSettings(ctx, msg.Settings); err != nil {
 		return ports.ChatTurnRef{}, err
 	}
@@ -90,6 +94,54 @@ func (c *conversation) SendTurn(ctx context.Context, msg ports.ChatUserMessage) 
 	id := uuid.NewString()
 	c.prepared = &preparedTurn{id: id, clientMessageID: msg.ClientMessageID, prompt: prompt}
 	return ports.ChatTurnRef{ProviderTurnID: id}, nil
+}
+
+// checkModelSwitch refuses a switch to a model the binding knows the agent
+// cannot use. Only a change is checked: a session already on such a model must
+// still open, so the user can pick another one.
+func (c *conversation) checkModelSwitch(ctx context.Context, model string) error {
+	if c.validateModel == nil || model == "" || model == c.configOptionCurrent("model") {
+		return nil
+	}
+	if err := c.validateModel(ctx, model); err != nil {
+		return fmt.Errorf("%w: %w", ports.ErrChatConfigOptionInvalid, err)
+	}
+	return nil
+}
+
+// reportServedModel tells the client which model actually answered when the
+// binding can see it and it differs from the selection, such as an alias that
+// the installed CLI resolves to an older concrete model. Each distinct
+// (selection, served) pair is reported once rather than on every turn.
+// selected is the model the turn started with, not the current selection.
+func (c *conversation) reportServedModel(turnID, selected string) {
+	if c.servedModel == nil {
+		return
+	}
+	c.mu.Lock()
+	sessionID := c.sessionID
+	c.mu.Unlock()
+	if selected == "" || sessionID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	served, reason := c.servedModel(ctx, sessionID, selected)
+	if served == "" || served == selected {
+		return
+	}
+	key := selected + "\x00" + served
+	c.mu.Lock()
+	if c.lastServedModel == key {
+		c.mu.Unlock()
+		return
+	}
+	c.lastServedModel = key
+	c.mu.Unlock()
+	c.emit(ports.ChatEvent{
+		Kind: ports.ChatEventModelRerouted, ProviderTurnID: turnID,
+		Reroute: &ports.ChatModelReroute{FromModel: selected, ToModel: served, Reason: reason},
+	})
 }
 
 func (c *conversation) DiscardDeferredTurn(providerTurnID string) {
@@ -124,6 +176,8 @@ func (c *conversation) StartDeferredTurn(providerTurnID string) error {
 		c.preambleSpent = true
 	}
 	c.activeTurn = turn.id
+	c.turnModelID = turn.id
+	c.turnModel = c.configOptionCurrentLocked("model")
 	c.settlingTurn = ""
 	turnCtx, cancel := context.WithCancel(context.Background())
 	c.turnCancel = cancel
@@ -188,6 +242,12 @@ func (c *conversation) finishPrompt(
 	interrupt := c.interrupt
 	isCompaction := c.compactingTurnID != "" && c.compactingTurnID == turnID
 	answered := len(c.messages) > 0 || len(c.tools) > 0
+	// "" when the turn started before this controller (a reattached durable
+	// turn): its model is unknown, and the current selection may not be it.
+	turnModel := ""
+	if c.turnModelID == turnID {
+		turnModel = c.turnModel
+	}
 	c.mu.Unlock()
 	c.settleOpenItems(turnID)
 	interruptedLocally := false
@@ -210,7 +270,7 @@ func (c *conversation) finishPrompt(
 	} else {
 		state = turnState(resp.StopReason)
 		if c.promptResponseFailure != nil && state != domain.TurnStateInterrupted && !interruptedLocally {
-			if failure := c.promptResponseFailure(resp); failure != nil {
+			if failure := c.promptResponseFailure(resp, turnModel); failure != nil {
 				state = domain.TurnStateFailed
 				turnErr = failure
 			}
@@ -275,6 +335,7 @@ func (c *conversation) finishPrompt(
 		if recovered {
 			c.emit(ports.ChatEvent{Kind: ports.ChatEventAccountChanged, Account: &ports.ChatAccount{ReauthRecovered: true}})
 		}
+		c.reportServedModel(turnID, turnModel)
 	}
 	if isCompaction {
 		if state == domain.TurnStateCompleted {

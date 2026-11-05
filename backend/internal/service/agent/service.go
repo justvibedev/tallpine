@@ -93,40 +93,8 @@ type Service struct {
 	// updates wait for it; reads of the saved catalog never do.
 	readinessWarm     chan struct{}
 	readinessWarmOnce sync.Once
-}
-
-// Deps contains optional durable dependencies for the agent catalog service.
-type Deps struct {
-	// Registry lists the shipped agent adapters. Nil means no agents.
-	Registry          ports.AgentRegistry
-	Cache             ports.AgentModelCatalogCache
-	Discoverer        ports.AgentModelDiscoverer
-	ModelDiscoveryDir string
-	// ModelDiscoveryEnv returns the account environment a new local session of
-	// the agent would use. Credential-scoped cloud discovery bypasses it.
-	ModelDiscoveryEnv func(context.Context, string) (map[string]string, error)
-	// ModelDiscoveryFingerprintEnv is ModelDiscoveryEnv for fingerprint checks,
-	// which must not write to the account folder. Falls back to ModelDiscoveryEnv.
-	ModelDiscoveryFingerprintEnv func(context.Context, string) (map[string]string, error)
-	Sessions                     SessionUsageLookup
-	Context                      context.Context
-	Logger                       *slog.Logger
-	CodexAccountRoot             string
-	CodexPendingRoot             string
-	CodexSwitchStagingRoot       string
-	CodexGlobalHome              string
-	CodexAccounts                ports.CodexAccountClientFactory
-	CodexAccountSwitches         ports.CodexAccountSwitchStore
-	CodexAccountStore            ports.CodexAccountRegistryStore
-	CodexOperationGate           ports.CodexOperationGate
-	// Clock overrides time.Now for deterministic account-bootstrap retry tests.
-	Clock func() time.Time
-}
-
-// SessionUsageLookup provides durable session facts used to rank agent choices.
-// The SQLite store satisfies this narrow read boundary.
-type SessionUsageLookup interface {
-	ListAllSessions(ctx context.Context) ([]domain.SessionRecord, error)
+	// modelGate adjusts every catalog read; see ModelGate.
+	modelGate ModelGate
 }
 
 // New returns an agent service with no adapters (tests); the daemon passes Deps.Registry.
@@ -153,6 +121,7 @@ func NewWithDeps(deps Deps) *Service {
 	if deps.Logger != nil {
 		svc.logger = deps.Logger
 	}
+	svc.modelGate = deps.ModelGate
 	svc.codexAccounts = codex.NewService(codex.Deps{
 		Context: deps.Context, Logger: deps.Logger, Clock: deps.Clock,
 		AccountRoot: deps.CodexAccountRoot, PendingRoot: deps.CodexPendingRoot,
@@ -341,7 +310,7 @@ func (s *Service) Models(ctx context.Context, agentID, scope string, refresh boo
 	if err != nil {
 		return catalog, err
 	}
-	return s.withModelUsage(ctx, agentID, catalog), nil
+	return s.gateModels(ctx, agentID, s.withModelUsage(ctx, agentID, catalog)), nil
 }
 
 // ModelCatalog returns the persisted catalog without session-history enrichment.
@@ -350,7 +319,11 @@ func (s *Service) Models(ctx context.Context, agentID, scope string, refresh boo
 // checks, which run in the background. A scope with no persisted catalog still
 // needs its first discovery.
 func (s *Service) ModelCatalog(ctx context.Context, agentID, projectID string, refresh bool) (ports.AgentModelCatalog, error) {
-	return s.modelCatalog(ctx, agentID, projectID, refresh)
+	catalog, err := s.modelCatalog(ctx, agentID, projectID, refresh)
+	if err != nil {
+		return catalog, err
+	}
+	return s.gateModels(ctx, agentID, catalog), nil
 }
 
 func (s *Service) modelCatalog(ctx context.Context, agentID, scope string, refresh bool) (ports.AgentModelCatalog, error) {
@@ -624,7 +597,7 @@ func (s *Service) RevalidateModels(ctx context.Context, agentID, scope string) (
 	if err != nil {
 		return catalog, err
 	}
-	return s.withModelUsage(ctx, agentID, catalog), nil
+	return s.gateModels(ctx, agentID, s.withModelUsage(ctx, agentID, catalog)), nil
 }
 
 // revalidateModels is the unstamped variant for background callers that discard

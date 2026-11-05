@@ -27,6 +27,11 @@ describe("mobile chat delivery", () => {
 		});
 	});
 
+	it("names the orchestrator in its idle placeholder", () => {
+		const base = { active: false, canSteer: false, hasDraft: false, hasAttachments: false, hasQueued: false };
+		expect(composerDeliveryPresentation({ ...base, orchestrator: true }).placeholder).toBe("Message the orchestrator…");
+	});
+
 	it("uses the primary composer control to stop only when active and empty", () => {
 		expect(composerPrimaryAction({ active: true, hasDraft: false, hasAttachments: false })).toBe("stop");
 		expect(composerPrimaryAction({ active: true, hasDraft: true, hasAttachments: false })).toBe("send");

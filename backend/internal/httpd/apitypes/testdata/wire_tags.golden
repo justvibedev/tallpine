@@ -52,6 +52,7 @@ CreateBacklogRequest: agentNotes,omitempty doneWhen,omitempty excerpt,omitempty 
 CreateReportRequest: defer,omitempty message,omitempty note,omitempty outputs,omitempty sessionId state,omitempty
 CueDefinitionRequest: command,omitempty name prompt,omitempty type
 CueResponse: command,omitempty createdAt id name projectId prompt,omitempty type updatedAt
+DeleteSessionResponse: ok sessionId
 DevImportProjectsRequest: dryRun sourceDataDir
 EndLaneRequest: dryRun,omitempty lane,omitempty projectId,omitempty sessionId,omitempty
 EndLaneResponse: notifyFailed orchestrator removed workers
@@ -91,7 +92,7 @@ RestoreSessionResponse: ok restoreMode session sessionId
 ResumeAgentResponse: ok resumeMode session sessionId
 ReviewRunResponse: review reviewerHandleId reviews
 RollbackSessionResponse: deleted,omitempty killed,omitempty ok sessionId
-SendSessionMessageRequest: attachment,omitempty message senderSessionId,omitempty userAuthored,omitempty
+SendSessionMessageRequest: attachment,omitempty message relayOwnerMessage,omitempty senderSessionId,omitempty userAuthored,omitempty
 SendSessionMessageResponse: deliveryId,omitempty message ok outcome,omitempty sessionId waitingOnInput,omitempty
 SessionActivityResponse: current,omitempty recent
 SessionArchiveSummary: byProject total

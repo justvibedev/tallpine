@@ -54,6 +54,13 @@ type AgentModelInfo struct {
 	// is this model. It is derived from session history on every read, never
 	// stored on the cached catalog, and absent for a model no session ran.
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	// RequiresVersion is the oldest agent CLI version that can use this model.
+	// It is set only when the installed CLI is older, so a picker can show the
+	// model as unavailable instead of letting a launch fail.
+	RequiresVersion string `json:"requiresVersion,omitempty"`
+	// UnavailableReason is display text explaining why the model cannot be
+	// selected right now and how to fix it.
+	UnavailableReason string `json:"unavailableReason,omitempty"`
 }
 
 // AgentModelCatalog is Tallpine's normalized model-picker response.

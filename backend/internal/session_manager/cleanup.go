@@ -39,7 +39,9 @@ func (m *Manager) Cleanup(ctx context.Context, project domain.ProjectID) (Cleanu
 		Skipped:     []CleanupSkip{},
 	}
 	for _, rec := range recs {
-		if !rec.IsTerminated {
+		// A workspace already released (or never created) for the session's
+		// current generation is not revisited, so repeat runs report nothing.
+		if !rec.IsTerminated || m.WorkspaceCleanupSettled(ctx, rec) {
 			continue
 		}
 		m.cleanupTerminated(ctx, rec, &result, m.cleanupCheck)
@@ -170,6 +172,7 @@ func (m *Manager) cleanupTerminated(ctx context.Context, rec domain.SessionRecor
 	if ws.Path == "" {
 		m.cleanupAgentWorkspace(ctx, rec, "")
 		m.cleanupSystemPromptDir(rec.ID)
+		m.recordSettledWorkspaceCleanup(ctx, rec, domain.DispositionNotApplicable)
 		return
 	}
 	// Runtime teardown is keyed on the terminated session's own handle, not
@@ -218,11 +221,17 @@ func (m *Manager) cleanupWorkspaceUnderGate(ctx context.Context, rec domain.Sess
 		}
 	}
 	reclaim, reason := m.cleanupOne(ctx, rec, ws, check)
-	if tracked {
+	switch {
+	case tracked:
 		if err := m.recordWorkspaceCleanupResult(ctx, rec, reason); err != nil {
 			m.logger.Error("record retried workspace cleanup", "sessionID", rec.ID, "error", err)
 			return reclaim, "workspace teardown failed"
 		}
+	case reason == "":
+		// A sweep-found session gets only a released record, never a failure,
+		// so an old preserved worktree does not start showing a cleanup error
+		// in the app; later runs skip the released one.
+		m.recordSettledWorkspaceCleanup(ctx, rec, domain.DispositionRemoved)
 	}
 	return reclaim, reason
 }
@@ -360,6 +369,9 @@ func cleanupSkipReason(err error) string {
 	}
 	if errors.Is(err, ports.ErrWorkspaceDirty) {
 		return "workspace has uncommitted changes"
+	}
+	if errors.Is(err, ports.ErrWorkspaceLocked) {
+		return "worktree is locked; run git worktree unlock to clean it up"
 	}
 	if errors.Is(err, ports.ErrWorkspaceDeferred) {
 		return "worktree is in use; will retry on a later run"

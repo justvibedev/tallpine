@@ -24,6 +24,7 @@ import { textSelectionColors } from "../textSelection";
 import { useTheme, useThemedStyles } from "../ThemeProvider";
 import { font, fontScaleCap, iconSize, press, radius, space, touchTarget, type } from "../tokens";
 import type { WorkspaceFileStatus } from "./api";
+import { ComposerIconButton } from "./ComposerIconButton";
 import { fileIconSvg, folderIconSvg } from "./fileTypeIcon";
 import { changeAccessibilityLabel, plural, sectionLabel, splitPath, statusLabel, type ChangeEntry, type DisplayRow, type LineRow } from "./model";
 import type { ReviewComment } from "./reviewStore";
@@ -306,7 +307,8 @@ export function SelectionComposer({
 	error?: string;
 	initialText?: string;
 	onAction: (action: ComposerAction, text: string) => void;
-	onCopy: () => void;
+	/** Copies what the comment is about; without it there is no copy button. */
+	onCopy?: () => void;
 	onClose: () => void;
 }) {
 	const t = useTheme();
@@ -326,12 +328,8 @@ export function SelectionComposer({
 				<View style={styles.composerMeta}>
 					<Feather name="message-square-text" size={iconSize.sm} color={t.textTertiary} />
 					<Text accessibilityRole="header" maxFontSizeMultiplier={fontScaleCap.chrome} numberOfLines={1} style={styles.composerLabel}>{label}</Text>
-					<Pressable accessibilityRole="button" accessibilityLabel="Copy selected lines" hitSlop={6} onPress={() => { haptics.success(); onCopy(); }} style={({ pressed }) => [styles.composerIcon, pressed && { opacity: press.opacity }]}>
-						<Feather name="copy" size={iconSize.md} color={t.textSecondary} />
-					</Pressable>
-					<Pressable accessibilityRole="button" accessibilityLabel="Clear selection" hitSlop={6} onPress={() => { haptics.tap(); onClose(); }} style={({ pressed }) => [styles.composerIcon, pressed && { opacity: press.opacity }]}>
-						<Feather name="x" size={iconSize.md} color={t.textSecondary} />
-					</Pressable>
+					{onCopy ? <ComposerIconButton label="Copy selected lines" icon="copy" onPress={() => { haptics.success(); onCopy(); }} /> : null}
+					<ComposerIconButton label="Clear selection" icon="x" onPress={() => { haptics.tap(); onClose(); }} />
 				</View>
 				{error ? <Text accessibilityRole="alert" style={styles.composerError}>{error}</Text> : null}
 				{/* The session composer's capsule: same radius, same glass, same 44-point controls. */}

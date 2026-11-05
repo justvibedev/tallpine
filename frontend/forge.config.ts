@@ -160,6 +160,7 @@ const config: ForgeConfig = {
 		// the .node binary outside app.asar.
 		ignore: ignoreFromVitePackage,
 		appBundleId: BUNDLE_ID,
+		appVersion: buildInfo.version,
 		name: PRODUCT_NAME,
 		executableName: EXECUTABLE_NAME,
 		afterCopyExtraResources: [
@@ -172,6 +173,7 @@ const config: ForgeConfig = {
 			VOBuildCommit: buildInfo.commit,
 			VOBuildDate: buildInfo.date,
 			VOBuildDirty: buildInfo.dirty,
+			TallpineBuildKind: buildInfo.kind,
 		},
 		// App icon. electron-packager appends the per-platform extension
 		// (.icns on macOS, .ico on Windows); Linux menu icons come from the

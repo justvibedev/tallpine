@@ -644,20 +644,6 @@ func TestLoadReviewIdleGrace(t *testing.T) {
 	}
 }
 
-func TestLoadPhaseThreeToggles(t *testing.T) {
-	t.Setenv("TALLPINE_TUI_VERSION_REFRESH", "")
-	t.Setenv("TALLPINE_WINDOWS_UPDATE_WHEN_IDLE", "")
-	cfg, err := Load()
-	if err != nil || !cfg.TUIVersionRefresh || !cfg.WindowsUpdateWhenIdle {
-		t.Fatalf("defaults: tui=%t windows=%t err=%v", cfg.TUIVersionRefresh, cfg.WindowsUpdateWhenIdle, err)
-	}
-	t.Setenv("TALLPINE_TUI_VERSION_REFRESH", "off")
-	t.Setenv("TALLPINE_WINDOWS_UPDATE_WHEN_IDLE", "off")
-	if cfg, err = Load(); err != nil || cfg.TUIVersionRefresh || cfg.WindowsUpdateWhenIdle {
-		t.Fatalf("off: tui=%t windows=%t err=%v", cfg.TUIVersionRefresh, cfg.WindowsUpdateWhenIdle, err)
-	}
-}
-
 func TestLoadManagedHarnessInstallsToggle(t *testing.T) {
 	t.Setenv("TALLPINE_MANAGED_HARNESS_INSTALLS", "")
 	cfg, err := Load()

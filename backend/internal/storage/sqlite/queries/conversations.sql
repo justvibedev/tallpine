@@ -1418,6 +1418,8 @@ WHERE conversation_messages.conversation_id = sqlc.arg(conversation_id)
   ))
 ORDER BY conversation_messages.sequence;
 
+-- Budget IDs and byte lengths before loading payload columns. A single
+-- oversized row remains readable so every page cursor can advance.
 -- name: SelectConversationMessagesPage :many
 WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     SELECT conversations.active_branch_id, CAST(NULL AS INTEGER)
@@ -1433,8 +1435,10 @@ WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     FROM active_path AS path
     JOIN conversation_branches AS branch ON branch.id = path.branch_id
     WHERE branch.parent_branch_id IS NOT NULL
-)
-SELECT conversation_messages.* FROM conversation_messages
+), page_candidates AS (
+SELECT conversation_messages.id, conversation_messages.sequence,
+       length(CAST(conversation_messages.text AS BLOB)) + length(CAST(conversation_messages.delivery_content_json AS BLOB)) AS row_bytes
+FROM conversation_messages
 JOIN active_path AS path ON path.branch_id = conversation_messages.branch_id
 WHERE conversation_messages.conversation_id = sqlc.arg(conversation_id)
   AND conversation_messages.sequence < sqlc.arg(before_sequence)
@@ -1449,7 +1453,17 @@ WHERE conversation_messages.conversation_id = sqlc.arg(conversation_id)
         )
   ))
 ORDER BY conversation_messages.sequence DESC
-LIMIT sqlc.arg(page_limit);
+LIMIT sqlc.arg(page_limit)
+), page_budget(id, sequence, total_bytes, row_position) AS (
+    SELECT id, sequence,
+           SUM(row_bytes) OVER (ORDER BY sequence DESC ROWS UNBOUNDED PRECEDING) AS total_bytes,
+           ROW_NUMBER() OVER (ORDER BY sequence DESC) AS row_position
+    FROM page_candidates
+)
+SELECT conversation_messages.* FROM conversation_messages
+JOIN page_budget AS budget ON conversation_messages.id = budget.id
+WHERE budget.total_bytes <= CAST(sqlc.arg(page_bytes) AS INTEGER) OR budget.row_position = 1
+ORDER BY budget.sequence DESC;
 
 -- branch_id is the conversation's active branch, written by the INSERT itself so
 -- conversation_activities_branch_insert has nothing to do. That trigger only acts
@@ -1670,6 +1684,8 @@ WHERE conversation_activities.conversation_id = sqlc.arg(conversation_id)
   ))
 ORDER BY conversation_activities.sequence;
 
+-- Budget IDs and byte lengths before loading payload columns. A single
+-- oversized row remains readable so every page cursor can advance.
 -- name: SelectConversationActivitiesPage :many
 WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     SELECT conversations.active_branch_id, CAST(NULL AS INTEGER)
@@ -1685,8 +1701,10 @@ WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     FROM active_path AS path
     JOIN conversation_branches AS branch ON branch.id = path.branch_id
     WHERE branch.parent_branch_id IS NOT NULL
-)
-SELECT conversation_activities.* FROM conversation_activities
+), page_candidates AS (
+SELECT conversation_activities.id, conversation_activities.sequence,
+       length(CAST(conversation_activities.summary AS BLOB)) + length(CAST(conversation_activities.detail_json AS BLOB)) + length(CAST(conversation_activities.command_output AS BLOB)) + length(CAST(conversation_activities.streamed_text AS BLOB)) AS row_bytes
+FROM conversation_activities
 JOIN active_path AS path ON path.branch_id = conversation_activities.branch_id
 WHERE conversation_activities.conversation_id = sqlc.arg(conversation_id)
   AND conversation_activities.sequence < sqlc.arg(before_sequence)
@@ -1700,7 +1718,17 @@ WHERE conversation_activities.conversation_id = sqlc.arg(conversation_id)
         )
   ))
 ORDER BY conversation_activities.sequence DESC
-LIMIT sqlc.arg(page_limit);
+LIMIT sqlc.arg(page_limit)
+), page_budget(id, sequence, total_bytes, row_position) AS (
+    SELECT id, sequence,
+           SUM(row_bytes) OVER (ORDER BY sequence DESC ROWS UNBOUNDED PRECEDING) AS total_bytes,
+           ROW_NUMBER() OVER (ORDER BY sequence DESC) AS row_position
+    FROM page_candidates
+)
+SELECT conversation_activities.* FROM conversation_activities
+JOIN page_budget AS budget ON conversation_activities.id = budget.id
+WHERE budget.total_bytes <= CAST(sqlc.arg(page_bytes) AS INTEGER) OR budget.row_position = 1
+ORDER BY budget.sequence DESC;
 
 -- Push a provider thread title into the session label, without ever overwriting a
 -- name a person chose.
@@ -2010,6 +2038,14 @@ WHERE t.conversation_id = sqlc.arg(conversation_id)
 ORDER BY t.completed_at DESC LIMIT 1;
 
 
+-- Session conversations still waiting for the user to sign in again, with the
+-- harness each session runs, so a confirmed login can be matched to them.
+-- name: SelectConversationsAwaitingLogin :many
+SELECT conversations.id AS conversation_id, sessions.id AS session_id, sessions.harness
+FROM conversations
+JOIN sessions ON sessions.id = conversations.current_session_id
+WHERE json_extract(conversations.account_json, '$.reauthRequiredAt') IS NOT NULL;
+
 -- Queued work stays held behind a failed source until its retry succeeds.
 -- name: SelectLatestAutoResumeConversationTurn :one
 WITH RECURSIVE active_path(branch_id, max_sequence) AS (
@@ -2060,3 +2096,79 @@ ON CONFLICT (conversation_id, model) DO UPDATE SET
 
 -- name: ListConversationModelUsage :many
 SELECT * FROM conversation_model_usage WHERE conversation_id = ? ORDER BY model;
+
+-- Existence-only probe (no payload columns) for rows older than a cursor.
+-- name: HasConversationMessagesBefore :one
+WITH RECURSIVE active_path(branch_id, max_sequence) AS (
+    SELECT conversations.active_branch_id, CAST(NULL AS INTEGER)
+    FROM conversations
+    WHERE conversations.id = sqlc.arg(conversation_id)
+    UNION ALL
+    SELECT branch.parent_branch_id,
+           CASE
+               WHEN path.max_sequence IS NULL THEN branch.fork_after_sequence
+               WHEN branch.fork_after_sequence < path.max_sequence THEN branch.fork_after_sequence
+               ELSE path.max_sequence
+           END
+    FROM active_path AS path
+    JOIN conversation_branches AS branch ON branch.id = path.branch_id
+    WHERE branch.parent_branch_id IS NOT NULL
+)
+SELECT 1 AS found
+FROM conversation_messages
+JOIN active_path AS path ON path.branch_id = conversation_messages.branch_id
+WHERE conversation_messages.conversation_id = sqlc.arg(conversation_id)
+  AND conversation_messages.sequence < sqlc.arg(before_sequence)
+  AND (path.max_sequence IS NULL OR conversation_messages.sequence <= path.max_sequence)
+  AND (conversation_messages.turn_id IS NULL OR conversation_messages.turn_id NOT IN (
+      SELECT discarded.id FROM conversation_turns AS discarded
+      WHERE discarded.conversation_id = sqlc.arg(conversation_id)
+        AND (
+          discarded.rolled_back_at IS NOT NULL
+          OR (discarded.promoted_to_turn_id IS NOT NULL AND discarded.batched_input = 0)
+          OR discarded.state = 'cancelled'
+        )
+  ))
+LIMIT 1;
+
+-- Existence-only probe (no payload columns) for rows older than a cursor.
+-- name: HasConversationActivitiesBefore :one
+WITH RECURSIVE active_path(branch_id, max_sequence) AS (
+    SELECT conversations.active_branch_id, CAST(NULL AS INTEGER)
+    FROM conversations
+    WHERE conversations.id = sqlc.arg(conversation_id)
+    UNION ALL
+    SELECT branch.parent_branch_id,
+           CASE
+               WHEN path.max_sequence IS NULL THEN branch.fork_after_sequence
+               WHEN branch.fork_after_sequence < path.max_sequence THEN branch.fork_after_sequence
+               ELSE path.max_sequence
+           END
+    FROM active_path AS path
+    JOIN conversation_branches AS branch ON branch.id = path.branch_id
+    WHERE branch.parent_branch_id IS NOT NULL
+)
+SELECT 1 AS found
+FROM conversation_activities
+JOIN active_path AS path ON path.branch_id = conversation_activities.branch_id
+WHERE conversation_activities.conversation_id = sqlc.arg(conversation_id)
+  AND conversation_activities.sequence < sqlc.arg(before_sequence)
+  AND (path.max_sequence IS NULL OR conversation_activities.sequence <= path.max_sequence)
+  AND (conversation_activities.turn_id IS NULL OR conversation_activities.turn_id NOT IN (
+      SELECT discarded.id FROM conversation_turns AS discarded
+      WHERE discarded.conversation_id = sqlc.arg(conversation_id)
+        AND (
+          discarded.rolled_back_at IS NOT NULL
+          OR discarded.state = 'cancelled'
+        )
+  ))
+LIMIT 1;
+
+-- The newest turn a session's controller ran to a normal end. A turn cut off by
+-- a restart is interrupted or recovered, not completed, so it never counts.
+-- name: SelectLatestCompletedTurnBySession :one
+SELECT * FROM conversation_turns
+WHERE handled_by_session_id = ? AND state = 'completed'
+  AND completed_at IS NOT NULL AND rolled_back_at IS NULL
+ORDER BY completed_at DESC
+LIMIT 1;

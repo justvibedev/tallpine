@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { GitBranch, MoreVertical, Plus, Settings, Trash2 } from "lucide-react";
+import { GitBranch, MoreVertical, Pin, PinOff, Plus, Settings, Trash2 } from "lucide-react";
 import { type WorkspaceSession, type WorkspaceSummary } from "../../types/workspace";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
@@ -8,11 +8,13 @@ import { cn } from "../../lib/utils";
 import { useUiStore } from "../../stores/ui-store";
 import { HOVER_ACTION_CLASS, ROW_ACTIONS_CLASS } from "./constants";
 import { type Selection } from "./types";
+import { useProjectPin } from "./useProjectPin";
 
 export function ProjectRowActions({ workspace, isStandalone, nameWithHost, selection, orchestrator, orchestratorActive, isSpawning, isProjectProvisioning, isProjectRestarting, isRemoving, projectDragInProgress, openOrchestrator, removeProject }: { workspace: WorkspaceSummary; isStandalone: boolean; nameWithHost: string; selection: Selection; orchestrator: WorkspaceSession | undefined; orchestratorActive: boolean; isSpawning: boolean; isProjectProvisioning: boolean; isProjectRestarting: boolean; isRemoving: boolean; projectDragInProgress: boolean; openOrchestrator: () => Promise<void>; removeProject: () => void }) {
 	const { t } = useTranslation();
 	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const requestLane = useUiStore((state) => state.requestLaneOrchestrator);
+	const { canPin, isPinned, setPinned } = useProjectPin(workspace, isStandalone);
 	return (
 		<>
 		{!isStandalone && <div
@@ -27,6 +29,22 @@ export function ProjectRowActions({ workspace, isStandalone, nameWithHost, selec
 				onClick={(event) => event.stopPropagation()}
 				onPointerDown={(event) => event.stopPropagation()}
 			>
+				{isPinned ? (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<button
+								aria-label={t("shell.unpinProject")}
+								className={HOVER_ACTION_CLASS}
+								data-project-pinned=""
+								onClick={() => setPinned(false)}
+								type="button"
+							>
+								<Pin aria-hidden="true" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent>{t("shell.unpinProject")}</TooltipContent>
+					</Tooltip>
+				) : null}
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<span className="inline-flex">
@@ -83,7 +101,13 @@ export function ProjectRowActions({ workspace, isStandalone, nameWithHost, selec
 								{t("shell.newLane")}
 							</DropdownMenuItem>
 						) : null}
-		<DropdownMenuItem onSelect={() => selection.goSettings(workspace.id)}>
+						{canPin ? (
+							<DropdownMenuItem onSelect={() => setPinned(!isPinned)}>
+								{isPinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+								{isPinned ? t("shell.unpinProject") : t("shell.pinProject")}
+							</DropdownMenuItem>
+						) : null}
+						<DropdownMenuItem onSelect={() => selection.goSettings(workspace.id)}>
 							<Settings aria-hidden="true" />
 							{t("shell.projectSettings")}
 						</DropdownMenuItem>

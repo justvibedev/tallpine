@@ -471,8 +471,8 @@ func TestWorkspaceIntegrationDestroyRefusesLockedWorktree(t *testing.T) {
 	runGit(t, git, repo, "worktree", "lock", info.Path)
 
 	err = ws.Destroy(ctx, info)
-	if err == nil || !strings.Contains(err.Error(), "still registered") {
-		t.Fatalf("destroy locked error = %v, want still registered refusal", err)
+	if !errors.Is(err, ports.ErrWorkspaceLocked) {
+		t.Fatalf("destroy locked error = %v, want ports.ErrWorkspaceLocked", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(info.Path, "README.md")); statErr != nil {
 		t.Fatalf("locked worktree was not preserved: %v", statErr)

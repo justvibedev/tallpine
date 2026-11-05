@@ -46,6 +46,8 @@ func (c *conversation) CompactWithInstructions(ctx context.Context, instructions
 	before := c.contextTokens
 	id := uuid.NewString()
 	c.activeTurn = id
+	c.turnModelID = id
+	c.turnModel = c.configOptionCurrentLocked("model")
 	c.compactingTurnID = id
 	c.compactionBefore = before
 	c.compactionSummary = ""

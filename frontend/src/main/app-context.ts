@@ -56,6 +56,7 @@ export const ctx = {
 	daemonRestartAfterExitProcess: (null) as ChildProcess | null,
 	daemonStartPromise: (null) as Promise<DaemonStatus> | null,
 	daemonStartEpoch: 0,
+	daemonStartIsAutoRestart: false,
 	daemonStatus: ({ state: "stopped" }) as DaemonStatus,
 	daemonAttachmentGeneration: 0,
 	daemonOutput: "",

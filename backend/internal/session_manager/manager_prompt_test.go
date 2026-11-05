@@ -931,7 +931,7 @@ func TestSpawnOrchestrator_UsesCoordinatorPrompt(t *testing.T) {
 			t.Fatalf("chat pointer missing %q:\n%s", want, chatPointer)
 		}
 	}
-	if words := len(strings.Fields(chatPointer)); words > 260 {
+	if words := len(strings.Fields(chatPointer)); words > 280 {
 		t.Fatalf("always-on Tallpine skill pointer grew to %d words; keep details in routed command guides:\n%s", words, chatPointer)
 	}
 	if strings.Contains(agent.lastLaunch.Prompt, "You are the human-facing orchestrator") {

@@ -225,6 +225,19 @@ func pinPromptCacheTTL(env map[string]string, harness domain.AgentHarness, kind 
 	}
 }
 
+// pinClaudeRoleSettings hands a claude-code Chat session its role's plugin and
+// auto-memory overrides (claudePlugins, claudeAutoMemory); the chat driver
+// merges them into the session's SDK settings. A role with none sets nothing.
+func pinClaudeRoleSettings(env map[string]string, harness domain.AgentHarness, kind domain.SessionKind, cfg domain.ProjectConfig) {
+	delete(env, domain.EnvClaudeRoleSettings)
+	if env == nil || harness != domain.HarnessClaudeCode {
+		return
+	}
+	if settings := cfg.ClaudeRoleSettingsJSON(domain.SessionRoleFor(kind)); settings != "" {
+		env[domain.EnvClaudeRoleSettings] = settings
+	}
+}
+
 func (m *Manager) launchRuntimeEnv(id domain.SessionID, project domain.ProjectID, issue domain.IssueID, projectEnv map[string]string) (map[string]string, string, error) {
 	return m.launchRuntimeEnvAs(id, project, issue, projectEnv, "")
 }
@@ -284,14 +297,15 @@ func (m *Manager) prepareWorkerLaunchEnv(
 func (m *Manager) prepareChatControllerEnv(
 	ctx context.Context,
 	rec domain.SessionRecord,
-	projectEnv map[string]string,
+	project domain.ProjectConfig,
 	expected domain.SessionControllerOwner,
 	harness domain.AgentHarness,
 ) (domain.SessionRecord, map[string]string, error) {
-	env, verifier, err := m.launchRuntimeEnvAs(rec.ID, rec.ProjectID, rec.IssueID, projectEnv, harness)
+	env, verifier, err := m.launchRuntimeEnvAs(rec.ID, rec.ProjectID, rec.IssueID, project.Env, harness)
 	if err != nil {
 		return rec, nil, err
 	}
+	pinClaudeRoleSettings(env, harness, rec.Kind, project)
 	rec, err = m.persistBrowserCapabilityVerifier(ctx, rec, expected, verifier)
 	if err != nil {
 		return rec, nil, fmt.Errorf("persist browser capability verifier: %w", err)

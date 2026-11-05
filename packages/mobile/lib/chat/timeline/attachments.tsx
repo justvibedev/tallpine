@@ -1,5 +1,5 @@
 import { Feather } from "../../icons";
-import { useState } from "react";
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { Image, Platform, Pressable, Text, View } from "react-native";
 import { authHeaders, httpBase } from "../../config";
 import { haptics } from "../../haptics";
@@ -42,6 +42,25 @@ export function StagedAttachments({ sessionId, paths, spaced }: { sessionId: str
 	</View>;
 }
 
+type OpenImage = (name: string, source: AttachmentImageSource) => void;
+const ImageViewerHostContext = createContext<OpenImage | undefined>(undefined);
+
+/**
+ * Owns the one full-screen viewer for a timeline. User bubbles sit inside the iOS
+ * native context menu (MenuView); an RN Modal mounted inside that SwiftUI host
+ * presents invisibly, the bubble vanishes and the overlay swallows every touch.
+ * Rendering the Modal here, outside the list rows, keeps it on a normal RN parent.
+ */
+export function ImageViewerHost({ children }: { children: ReactNode }) {
+	const [viewing, setViewing] = useState<{ name: string; source: AttachmentImageSource }>();
+	const open = useCallback<OpenImage>((name, source) => setViewing({ name, source }), []);
+	const close = useCallback(() => setViewing(undefined), []);
+	return <ImageViewerHostContext.Provider value={open}>
+		{children}
+		{viewing ? <ImageViewer visible name={viewing.name} source={viewing.source} onClose={close} /> : null}
+	</ImageViewerHostContext.Provider>;
+}
+
 export function StagedAttachment({ name, source, tileSize }: { name: string; source?: AttachmentImageSource; tileSize: number }) {
 	const t = useTheme();
 	const styles = useThemedStyles(makeStyles);
@@ -49,16 +68,17 @@ export function StagedAttachment({ name, source, tileSize }: { name: string; sou
 	// or a rotated password retries on its own; tapping the chip retries in place.
 	const [failedLoad, setFailedLoad] = useState<AttachmentImageSource>();
 	const [viewerOpen, setViewerOpen] = useState(false);
+	const hostOpen = useContext(ImageViewerHostContext);
 	if (!source) {
 		return <View style={styles.attachmentChip}><Feather name="file-text" size={12} color={t.textTertiary} /><Text numberOfLines={1} style={styles.attachmentName}>{name}</Text></View>;
 	}
 	if (!isSameAttachmentLoad(failedLoad, source)) {
 		// Cover-cropping a square reads as a deliberate thumbnail; the viewer shows the whole image.
 		return <>
-			<Pressable accessibilityRole="imagebutton" accessibilityLabel={`Open ${name}`} onPress={() => { haptics.tap(); setViewerOpen(true); }} style={[styles.attachmentTile, { width: tileSize, height: tileSize }]}>
+			<Pressable accessibilityRole="imagebutton" accessibilityLabel={`Open ${name}`} onPress={() => { haptics.tap(); if (hostOpen) hostOpen(name, source); else setViewerOpen(true); }} style={[styles.attachmentTile, { width: tileSize, height: tileSize }]}>
 				<Image accessibilityIgnoresInvertColors source={Platform.OS === "android" ? [source] : source} resizeMode="cover" onError={() => setFailedLoad(source)} style={styles.attachmentTileImage} />
 			</Pressable>
-			<ImageViewer visible={viewerOpen} name={name} source={source} onClose={() => setViewerOpen(false)} />
+			{!hostOpen && viewerOpen ? <ImageViewer visible name={name} source={source} onClose={() => setViewerOpen(false)} /> : null}
 		</>;
 	}
 	return <Pressable accessibilityRole="button" accessibilityLabel={`Retry loading ${name}`} hitSlop={6} onPress={() => { haptics.tap(); setFailedLoad(undefined); }} style={styles.attachmentChip}>

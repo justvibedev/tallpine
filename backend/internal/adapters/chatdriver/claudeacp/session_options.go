@@ -1,11 +1,13 @@
 package claudeacp
 
 import (
+	"encoding/json"
 	"runtime"
 
 	"tallpine.eu/tallpine/backend/internal/adapters/agent/claudecode"
 	acpdriver "tallpine.eu/tallpine/backend/internal/adapters/chatdriver/acp"
 	"tallpine.eu/tallpine/backend/internal/contextwindow"
+	"tallpine.eu/tallpine/backend/internal/domain"
 )
 
 // sessionGOOS is the host OS the session fence is decided for; tests swap it.
@@ -24,6 +26,7 @@ func claudeSDKOptions(cfg acpdriver.LaunchConfig) map[string]any {
 		options["disallowedTools"] = []string{"mcp__*"}
 	}
 	addProtectStateFence(options, cfg)
+	addRoleSettings(options, cfg)
 	return options
 }
 
@@ -43,4 +46,26 @@ func addProtectStateFence(options map[string]any, cfg acpdriver.LaunchConfig) {
 		options["settings"] = fence
 		options["settingSources"] = []string{"user"}
 	}
+}
+
+// addRoleSettings merges the session role's plugin and auto-memory overrides
+// (domain.EnvClaudeRoleSettings, set by the session manager) into the SDK
+// settings layer, keeping any protectState fence keys already there.
+func addRoleSettings(options map[string]any, cfg acpdriver.LaunchConfig) {
+	raw := cfg.Env[domain.EnvClaudeRoleSettings]
+	if raw == "" {
+		return
+	}
+	var role map[string]any
+	if json.Unmarshal([]byte(raw), &role) != nil || len(role) == 0 {
+		return
+	}
+	settings, _ := options["settings"].(map[string]any)
+	if settings == nil {
+		settings = map[string]any{}
+	}
+	for k, v := range role {
+		settings[k] = v
+	}
+	options["settings"] = settings
 }

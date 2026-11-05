@@ -12,6 +12,12 @@ const STREAM_MIN_FRAME_MS = 32;
 
 const STREAM_MAX_FRAME_DELTA_MS = 100;
 
+// Long open Markdown blocks are reparsed on each reveal. Beyond this size,
+// coalesce provider snapshots rather than adding intermediate renders.
+const STREAM_SMOOTH_MAX_CHARS = 4000;
+
+const STREAM_LONG_UPDATE_MS = 100;
+
 // No frame for this long means the tab was occluded or throttled: nobody watched the
 // animation, so show the current text instead of replaying it.
 const STREAM_STALL_MS = 1000;
@@ -35,23 +41,25 @@ function reconciledStreamPrefix(visibleText: string, targetGraphemes: string[]) 
 }
 
 export function useSmoothStreamingText(message: ConversationMessage): string {
+	const [reducedMotion, setReducedMotion] = useState(
+		() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+	);
+	const smooth = message.streaming && !reducedMotion && message.text.length <= STREAM_SMOOTH_MAX_CHARS;
 	// A snapshot can first reach the renderer after the provider has already emitted
 	// text. Keep that first durable burst visible; only later deltas need smoothing.
 	const [visibleText, setVisibleText] = useState(() => message.text);
 	const visibleRef = useRef(visibleText);
 	const targetRef = useRef(message.text);
 	const targetGraphemes = useMemo(
-		() => message.streaming ? streamGraphemes(message.text) : [],
-		[message.text, message.streaming],
+		() => smooth ? streamGraphemes(message.text) : [],
+		[message.text, smooth],
 	);
 	const visibleGraphemeCountRef = useRef(targetGraphemes.length);
 	const targetGraphemesRef = useRef(targetGraphemes);
 	const messageIdRef = useRef(message.id);
 	const frameRef = useRef<number | undefined>(undefined);
 	const lastFrameAtRef = useRef<number | undefined>(undefined);
-	const [reducedMotion, setReducedMotion] = useState(
-		() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-	);
+	const snapshotTimerRef = useRef<number | undefined>(undefined);
 
 	useEffect(() => {
 		const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -61,6 +69,10 @@ export function useSmoothStreamingText(message: ConversationMessage): string {
 	}, []);
 
 	const cancelDrain = useCallback(() => {
+		if (snapshotTimerRef.current !== undefined) {
+			window.clearTimeout(snapshotTimerRef.current);
+			snapshotTimerRef.current = undefined;
+		}
 		if (frameRef.current !== undefined) {
 			window.cancelAnimationFrame(frameRef.current);
 			frameRef.current = undefined;
@@ -139,6 +151,21 @@ export function useSmoothStreamingText(message: ConversationMessage): string {
 			visibleRef.current = message.text;
 			visibleGraphemeCountRef.current = targetGraphemes.length;
 			setVisibleText(message.text);
+			return;
+		}
+		if (message.text.length > STREAM_SMOOTH_MAX_CHARS) {
+			if (frameRef.current !== undefined) cancelDrain();
+			if (visibleRef.current === message.text) return;
+			if (visibleRef.current.length <= STREAM_SMOOTH_MAX_CHARS) {
+				visibleRef.current = message.text;
+				setVisibleText(message.text);
+			} else if (snapshotTimerRef.current === undefined) {
+				snapshotTimerRef.current = window.setTimeout(() => {
+					snapshotTimerRef.current = undefined;
+					visibleRef.current = targetRef.current;
+					setVisibleText(targetRef.current);
+				}, STREAM_LONG_UPDATE_MS);
+			}
 			return;
 		}
 		// A later combining mark or ZWJ can merge the last visible grapheme into a

@@ -67,6 +67,16 @@ func (s *Service) SetDefaultChanged(changed func(domain.AgentAccountProvider)) {
 	s.defaultChanged = changed
 }
 
+// SetLoginConfirmed late-binds what must hear that a reading found an
+// account's login working, with the time the reading began: chat sessions on
+// it that were refused their credentials can stop asking for a sign-in, however
+// the login came back (Tallpine's sign-in, the CLI's own, or a renewed token).
+func (s *Service) SetLoginConfirmed(confirmed func(domain.AgentAccount, time.Time)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loginConfirmed = confirmed
+}
+
 func (s *Service) notifyDefaultChanged(p domain.AgentAccountProvider) {
 	s.mu.Lock()
 	changed := s.defaultChanged

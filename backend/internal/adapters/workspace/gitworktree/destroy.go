@@ -159,6 +159,11 @@ func (w *Workspace) destroy(ctx context.Context, info ports.WorkspaceInfo) (port
 		return reclaim, err
 	}
 	_, removeErr := w.run(ctx, w.binary, worktreeRemoveArgs(repo, path)...)
+	// The lift reads the registration's lock from porcelain output rather
+	// than matching the remove error's text.
+	if removeErr != nil && w.liftStaleAddLock(ctx, repo, path) {
+		_, removeErr = w.run(ctx, w.binary, worktreeRemoveArgs(repo, path)...)
+	}
 	if _, err := w.run(ctx, w.binary, worktreePruneArgs(repo)...); err != nil {
 		return reclaim, fmt.Errorf("gitworktree: worktree prune: %w", err)
 	}
@@ -166,10 +171,10 @@ func (w *Workspace) destroy(ctx context.Context, info ports.WorkspaceInfo) (port
 	if err != nil {
 		return reclaim, err
 	}
-	if _, ok := findWorktree(records, path); ok {
+	if rec, ok := findWorktree(records, path); ok {
 		if removeErr != nil {
-			if isLockedWorktreeRemoveError(removeErr) {
-				return reclaim, fmt.Errorf("gitworktree: refusing to remove %q: path is still registered after git worktree prune (worktree remove: %w)", path, removeErr)
+			if rec.Locked || isLockedWorktreeRemoveError(removeErr) {
+				return reclaim, fmt.Errorf("gitworktree: refusing to remove %q: %w (worktree remove: %w)", path, ports.ErrWorkspaceLocked, removeErr)
 			}
 			// Distinguish the dirty-worktree refusal (uncommitted agent work)
 			// from other registration leftovers (e.g. a locked worktree) so the

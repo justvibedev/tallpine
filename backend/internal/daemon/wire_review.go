@@ -92,7 +92,7 @@ func (b *boot) wireReview() error {
 		Reviewers:                 b.store,
 		DisableUpdateChecks:       !b.cfg.HarnessUpdateChecks,
 		DisableUpdateWhileRunning: !b.cfg.UpdateWhileRunning,
-		WindowsUpdateWhenIdle:     b.cfg.WindowsUpdateWhenIdle,
+		UpdateWhenIdle:            b.cfg.UpdateWhenIdle,
 		ManagedRoot:               managedHarnessRoot(b.cfg),
 		Releases:                  b.store,
 	})

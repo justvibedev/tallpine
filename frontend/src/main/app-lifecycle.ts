@@ -28,6 +28,7 @@ import { rewriteCookiesForEncryption } from "./cookie-encryption-migration";
 import { keepDaemonAlive } from "./daemon-owner";
 import { installDaemonProtocol } from "./daemon-protocol";
 import { shouldShutdownDaemonForUpdate, shutdownDaemonForUpdate } from "./daemon-update-shutdown";
+import { cancelDaemonAutoRestart } from "./daemon/daemon-auto-restart-host";
 import { runFilePath, startDaemon, stopDaemon } from "./daemon/daemon-lifecycle";
 import { remoteRegistry } from "./ipc/app-ipc";
 import { refreshGitHubOwners } from "./ipc/github-ipc";
@@ -377,6 +378,8 @@ export function registerAppLifecycle(): void {
 			return;
 		}
 		ctx.browserQuitRequested = true;
+		// Never respawn the daemon while the app is shutting down.
+		cancelDaemonAutoRestart();
 		disposeBrowserRuntimeLink();
 		disposeBrowserStreamLink();
 		trayLifecycle.dispose();

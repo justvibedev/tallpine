@@ -140,12 +140,15 @@ func (cfg *Config) loadRuntimeToggles() error {
 		}
 		cfg.SessionGradleHome = v
 	}
-	if raw, present := brand.LookupEnv("WINDOWS_UPDATE_WHEN_IDLE"); present && strings.TrimSpace(raw) != "" {
-		v, err := parseToggleEnv("TALLPINE_WINDOWS_UPDATE_WHEN_IDLE", raw)
-		if err != nil {
-			return err
+	// The older Windows-only name is read first so the current one wins.
+	for _, suffix := range []string{"WINDOWS_UPDATE_WHEN_IDLE", "UPDATE_WHEN_IDLE"} {
+		if raw, present := brand.LookupEnv(suffix); present && strings.TrimSpace(raw) != "" {
+			v, err := parseToggleEnv("TALLPINE_"+suffix, raw)
+			if err != nil {
+				return err
+			}
+			cfg.UpdateWhenIdle = v
 		}
-		cfg.WindowsUpdateWhenIdle = v
 	}
 	if raw, present := brand.LookupEnv("MANAGED_HARNESS_INSTALLS"); present && strings.TrimSpace(raw) != "" {
 		v, err := parseToggleEnv("TALLPINE_MANAGED_HARNESS_INSTALLS", raw)

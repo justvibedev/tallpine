@@ -9,6 +9,14 @@ import (
 func (s *Service) reconcile(ctx context.Context) error {
 	now := s.now()
 	changed := s.reconcileSavePending
+	// Battery stops are temporary. Only fresh, complete observations may
+	// restore the existing owners; expiry and binding checks still run below.
+	recoveredBattery := s.doc.StopReason == "low_battery" && s.batteryRecovered()
+	if recoveredBattery {
+		s.doc.StopReason = ""
+		s.doc.Paused = !s.resumeBatteryRules
+		changed = true
+	}
 	count := 0
 	unknownBinding := false
 	lid := false
@@ -94,10 +102,15 @@ func (s *Service) reconcile(ctx context.Context) error {
 	}
 	_, _, nativeReason := s.host.LidStatus()
 	reason := s.safety()
-	if reason == "" && (nativeReason == "critical_heat" || nativeReason == "low_battery" || nativeReason == "battery_unknown") {
+	// A recovered battery stop creates a new lease; the helper may still
+	// report the old lease's latch until its next scan.
+	if reason == "" && (nativeReason != "low_battery" || !recoveredBattery) && (nativeReason == "critical_heat" || nativeReason == "low_battery" || nativeReason == "battery_unknown") {
 		reason = nativeReason
 	}
-	if reason != "" {
+	if reason != "" && (count > 0 || s.doc.StopReason != "") {
+		if reason == "low_battery" && s.doc.StopReason != "low_battery" {
+			s.resumeBatteryRules = !s.doc.Paused
+		}
 		changed = changed || s.doc.StopReason != reason || !s.doc.Paused
 		s.doc.Paused = true
 		s.doc.StopReason = reason

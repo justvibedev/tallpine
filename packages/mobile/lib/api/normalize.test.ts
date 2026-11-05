@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapPR } from "./normalize";
+import { mapPR, mapSession } from "./normalize";
 
 const base = { url: "https://github.com/o/r/pull/1", number: 1 };
 
@@ -44,5 +44,21 @@ describe("mapPR", () => {
 			unresolvedThreads: 1,
 		});
 		expect(mapPR(base)).toMatchObject({ mergeability: { state: "unknown", mergeable: false }, unresolvedThreads: 0 });
+	});
+});
+
+describe("mapSession artifacts", () => {
+	it("leaves artifacts unknown for a board row that omits the file list, and flags hasArtifacts", () => {
+		const row = mapSession({ id: "w-1", hasArtifacts: true } as never);
+		expect(row.artifacts).toBeUndefined();
+		expect(row.hasArtifacts).toBe(true);
+	});
+
+	it("lists the files a single-session read carries", () => {
+		const file = { path: "a.md", name: "a.md", kind: "markdown", size: 1, updatedAt: "2026-11-01T00:00:00Z" };
+		const read = mapSession({ id: "w-1", artifactFiles: [file] } as never);
+		expect(read.artifacts).toEqual([file]);
+		expect(read.hasArtifacts).toBe(true);
+		expect(mapSession({ id: "w-1", artifactFiles: [] } as never)).toMatchObject({ artifacts: [], hasArtifacts: false });
 	});
 });

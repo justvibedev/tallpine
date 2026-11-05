@@ -3104,7 +3104,8 @@ export interface paths {
         get: operations["getSession"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Permanently delete a terminated session whose workspace is released */
+        delete: operations["deleteSession"];
         options?: never;
         head?: never;
         /** Rename a session display name */
@@ -3156,6 +3157,23 @@ export interface paths {
         };
         /** Read the agent policy decision a session's latest launch was made under */
         get: operations["getSessionAgentPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{sessionId}/artifact-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream changes to the files in a session's artifact directory */
+        get: operations["streamSessionArtifactChanges"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5912,7 +5930,9 @@ export interface components {
             /** Format: date-time */
             lastUsedAt?: null | string;
             provider?: string;
+            requiresVersion?: string;
             supportsFast?: boolean;
+            unavailableReason?: string;
         };
         AgentModelsResponse: {
             agentId: string;
@@ -7658,6 +7678,10 @@ export interface components {
             warnings?: string[];
             workerId: string;
         };
+        DeleteSessionResponse: {
+            ok: boolean;
+            sessionId: string;
+        };
         DesktopArtifactLocationResponse: {
             artifactDir: string;
             sessionId: string;
@@ -8492,6 +8516,14 @@ export interface components {
             autoReviewOnReport?: null | boolean;
             canonicalRepoURL?: string;
             chatHibernation?: components["schemas"]["ChatHibernationConfig"];
+            claudeAutoMemory?: {
+                [key: string]: boolean;
+            };
+            claudePlugins?: {
+                [key: string]: {
+                    [key: string]: boolean;
+                };
+            };
             cloneWorktreeInclude?: boolean;
             containerReap?: components["schemas"]["ContainerReapConfig"];
             defaultBranch?: string;
@@ -8923,6 +8955,7 @@ export interface components {
         SendSessionMessageRequest: {
             attachment?: components["schemas"]["AttachmentInput"];
             message: string;
+            relayOwnerMessage?: string;
             senderSessionId?: string;
             userAuthored?: boolean;
         };
@@ -22347,6 +22380,68 @@ export interface operations {
             };
         };
     };
+    deleteSession: {
+        parameters: {
+            query?: {
+                /** @description When true, a worktree that is still on disk is cleaned up first, the way session cleanup does it; a dirty or locked worktree is never forced and refuses the delete. */
+                cleanup?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Session identifier, e.g. project-1. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteSessionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     renameSession: {
         parameters: {
             query?: never;
@@ -22609,6 +22704,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionPolicyDecisionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    streamSessionArtifactChanges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session identifier, e.g. project-1. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description Not Found */

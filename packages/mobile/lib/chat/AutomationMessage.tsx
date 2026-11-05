@@ -14,6 +14,7 @@
  * Text that matches none of them keeps the generic card.
  */
 
+import { artifactEntry } from "../artifacts";
 import { router } from "expo-router";
 import { createContext, memo, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle } from "react-native";
@@ -33,7 +34,6 @@ import { userMessageSurfaceStyle } from "./chatChrome";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { readSession, sessionReadKey } from "./sessionLookup";
 import {
-	artifactEntry,
 	automationOf,
 	forgeURL,
 	GIT_ACTION_LABELS,
@@ -320,7 +320,7 @@ function ArtifactLine({ path, update, hostId }: { path: string; update: WorkerUp
 		<Pressable
 			accessibilityRole="link"
 			accessibilityLabel={`Open ${name}`}
-			onPress={() => { haptics.tap(); router.push({ pathname: "/artifact/[sessionId]", params: { sessionId, entry, hostId: hostId ?? config?.hostId } }); }}
+			onPress={() => { haptics.tap(); router.push({ pathname: "/artifact/[sessionId]", params: { sessionId, path: entry, hostId: hostId ?? config?.hostId } }); }}
 			style={({ pressed }) => [styles.artifact, pressed && styles.pressed]}
 		>
 			{content}

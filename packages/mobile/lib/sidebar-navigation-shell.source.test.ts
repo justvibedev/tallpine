@@ -48,6 +48,12 @@ describe("sidebar page separation", () => {
 		expect(androidSource).not.toContain("paddingBottom: insets.bottom + 76");
 	});
 
+	it("closed drawer takes no touches, so it cannot swallow header taps", () => {
+		for (const shell of [source, androidSource]) {
+			expect(shell).toContain('pointerEvents={open ? "auto" : "none"}');
+		}
+	});
+
 	it("keeps swipe-action pins upright", () => {
 		expect(railAndroid).not.toContain("rotate");
 		expect(railIos).not.toContain("rotationEffect");

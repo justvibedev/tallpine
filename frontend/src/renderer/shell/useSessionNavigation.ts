@@ -23,11 +23,12 @@ export function useSessionNavigation({ t, navigate, workspacesRef, remoteWorkspa
 	// user's drag order, scratchpad), not the daemon's raw list, so "next" always
 	// means the row below the current one on screen.
 	const sidebarSessionOrder = useCallback(() => {
-		const { projectOrder, sessionOrders } = useSidebarOrderStore.getState();
+		const { projectOrder, pinnedProjectIds, sessionOrders } = useSidebarOrderStore.getState();
 		return buildSidebarSessionOrder({
 			workspaces: workspacesRef.current,
 			remoteWorkspaces: remoteWorkspacesRef.current,
 			projectOrder,
+			pinnedProjectIds,
 			sessionOrders,
 		});
 	}, []);

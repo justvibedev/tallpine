@@ -1,9 +1,17 @@
 package shellterm
 
 import (
+	"os"
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/testenv"
 )
 
-func TestMain(m *testing.M) { testenv.Main(m) }
+// TestMain gives the package a SHELL when the host has none (env -i), so
+// OpenShellTerminal tests do not depend on the host environment.
+func TestMain(m *testing.M) {
+	if os.Getenv("SHELL") == "" {
+		os.Setenv("SHELL", "/bin/sh")
+	}
+	testenv.Main(m)
+}

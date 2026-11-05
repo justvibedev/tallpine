@@ -27,7 +27,9 @@ export function resolveBuildInfo({ env = process.env, cwd = frontendRoot, now = 
 		dirty = status ? "true" : "false";
 	}
 	const date = env.TALLPINE_BUILD_DATE || now.toISOString().replace(/\.\d{3}Z$/, "Z");
-	return { version, commit, date, dirty };
+	// "local" marks a non-public build (release-local without --notarize): it never self-updates.
+	const kind = env.TALLPINE_BUILD_KIND === "local" ? "local" : "release";
+	return { version, commit, date, dirty, kind };
 }
 
 const GITHUB_REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;

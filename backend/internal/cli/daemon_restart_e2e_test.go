@@ -321,7 +321,12 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 	waitFor("the orchestrator to take the pending reports", func() bool {
 		return count("REPORT-needs-w1") >= 1 && count("REPORT-done-w2") >= 1
 	})
-	waitFor("the restart resume notes", func() bool { return count("came from the restart, not the user") >= 3 })
+	// B558: a session that finished a turn after the restart (the orchestrator
+	// taking its pending reports, w2 running its queued send) gets no note, so
+	// which of those two are noted depends on whether the pass or that turn came
+	// first. w1 has no pending work and is always noted.
+	const restartNote = "came from the restart, not the user"
+	waitFor("w1's restart resume note", func() bool { return count(restartNote, "repo-2") >= 1 })
 
 	// (5) A worker turn fails after the restart while a send is queued behind
 	// it (#142): the failed turn must still yield exactly one notice.
@@ -363,15 +368,23 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 		}
 		// w2's delivered queued send ends a turn of its own, so w2 owes the
 		// orchestrator one turn_ended notice too; each must arrive exactly once.
+		// The second w2 turn is its resume note, or the idle-worker wake
+		// (restartresume.WakeMessage) when B558 skipped the note.
+		w2Notes := count(restartNote, "repo-3")
+		orchNotes := count(restartNote, "repo-orchestrator")
+		if w2Notes > 1 || orchNotes > 1 {
+			t.Errorf("%s: restart note sent more than once (w2 %d, orchestrator %d)", stage, w2Notes, orchNotes)
+		}
 		for _, c := range []struct {
 			what string
 			subs []string
 			want int
 		}{
 			// w2 now ends two turns after the restart: the resume note and the queued send.
-			// B218: the three turns in flight at the (installer-style) stop each get
-			// exactly one restart note; the idle probes below got none.
-			{"(6) restart resume note", []string{"came from the restart, not the user"}, 3},
+			// B218: w1, with nothing pending, gets exactly one restart note; w2 and
+			// the orchestrator got at most one (checked above), none when a turn of
+			// theirs ended after the restart first (B558). The idle probes got none.
+			{"(6) w1 restart resume note", []string{restartNote, "repo-2"}, 1},
 			{"(3) needs_input report", []string{"REPORT-needs-w1"}, 1},
 			{"(3) done report", []string{"REPORT-done-w2"}, 1},
 			{"(4) queued send", []string{"QUEUED-behind-w2"}, 1},

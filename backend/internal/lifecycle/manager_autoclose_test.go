@@ -230,3 +230,24 @@ func TestAutoClose_HoldStateResetsWhenWorkerResumes(t *testing.T) {
 		t.Fatalf("notices=%v kills=%d, want a fresh hold with no bound notice", hooks.held, term.calls)
 	}
 }
+
+// liveOnlyTerm reports the session as already ended by someone else.
+type liveOnlyTerm struct{ calls int }
+
+func (f *liveOnlyTerm) Kill(context.Context, domain.SessionID) (bool, error) { return true, nil }
+func (f *liveOnlyTerm) KillIfLive(context.Context, domain.SessionID) (bool, error) {
+	f.calls++
+	return false, nil
+}
+
+// B554: a session an orchestrator already killed is not announced as having
+// "ended on its own".
+func TestAutoClose_AlreadyKilledSessionSendsNoNotice(t *testing.T) {
+	m, _, hooks := autoCloseSetup(idleWorker("ac-k"))
+	term := &liveOnlyTerm{}
+	m.SetCompletionTerminator(term)
+	observeMerged(t, m, "ac-k")
+	if term.calls != 1 || len(hooks.closed) != 0 {
+		t.Fatalf("kills=%d notices=%v, want one attempt and no notice", term.calls, hooks.closed)
+	}
+}

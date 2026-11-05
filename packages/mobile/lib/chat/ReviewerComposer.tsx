@@ -1,7 +1,7 @@
 import { Feather } from "../icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
@@ -15,6 +15,8 @@ import { useVoiceInput } from "../voice/useVoiceInput";
 import { ChatAttachmentMenu } from "./ChatAttachmentMenu";
 import { ComposerGlass } from "./composer-glass";
 import { COMPOSER_FIELD_HEIGHT, COMPOSER_FIELD_MAX_HEIGHT, COMPOSER_RADIUS, composerStyleRules } from "./composerStyles";
+import { addComposerImages, type ComposerImageAsset, type PasteOverflow } from "./composerImages";
+import { useImagePaste } from "./useImagePaste";
 import type { ChatImage, ChatResource } from "./types";
 
 type Attachment =
@@ -23,9 +25,6 @@ type Attachment =
 
 const MAX_ATTACHMENTS = 8;
 const MAX_FILE_BYTES = 500_000;
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_IMAGE_BYTES_TOTAL = 25 * 1024 * 1024;
-const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/bmp"]);
 
 /** Reviewer-only composer: send/attachments/interrupt, deliberately no session actions. */
 export function ReviewerComposer({ busy, stopped, attachmentsEnabled = true, onSend, onAcknowledgeSend, completedRetry, onInterrupt, restingInset, dockRiseOverride }: {
@@ -56,30 +55,22 @@ export function ReviewerComposer({ busy, stopped, attachmentsEnabled = true, onS
 		void onAcknowledgeSend(completedRetry.id).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not clear the sent reply."));
 	}, [completedRetry, onAcknowledgeSend, text]);
 
+	const latestAttachments = useRef(attachments);
+	latestAttachments.current = attachments;
+	const addImages = (assets: readonly ComposerImageAsset[], overflow?: PasteOverflow) => {
+		const added = addComposerImages(latestAttachments.current, assets, overflow);
+		latestAttachments.current = added.items;
+		setAttachments(added.items);
+		setError(added.error ?? "");
+		if (added.added > 0) haptics.tap();
+	};
+	const pasteLayout = useImagePaste(stopped || submitting || !attachmentsEnabled ? null : addImages);
 	const addPhoto = async () => {
 		setError("");
 		try {
 			const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], base64: true, quality: 0.82, allowsMultipleSelection: true, selectionLimit: 4 });
 			if (result.canceled) return;
-			const errors = new Set<string>();
-			const next = result.assets.flatMap((asset): Attachment[] => {
-				const mimeType = (asset.mimeType || "image/jpeg").toLowerCase();
-				if (!asset.base64) { errors.add("Some images couldn't be read and were skipped."); return []; }
-				if (!IMAGE_TYPES.has(mimeType)) { errors.add("Only PNG, JPEG, GIF, WebP, and BMP images are supported."); return []; }
-				const bytes = asset.fileSize ?? Math.floor(asset.base64.length * 0.75);
-				if (bytes > MAX_IMAGE_BYTES) { errors.add("Each image must be under 10 MB."); return []; }
-				return [{ id: `${asset.assetId || asset.uri}-${Date.now()}`, kind: "image", name: asset.fileName || "Image", bytes, image: { mimeType, data: asset.base64 } }];
-			});
-			const accepted = [...attachments];
-			let imageBytes = accepted.reduce((sum, item) => sum + (item.kind === "image" ? item.bytes : 0), 0);
-			for (const item of next) {
-				if (accepted.length >= MAX_ATTACHMENTS) { errors.add(`You can attach up to ${MAX_ATTACHMENTS} items.`); break; }
-				if (item.kind === "image" && imageBytes + item.bytes > MAX_IMAGE_BYTES_TOTAL) { errors.add("Images must total under 25 MB."); break; }
-				accepted.push(item);
-				if (item.kind === "image") imageBytes += item.bytes;
-			}
-			setAttachments(accepted);
-			if (errors.size) setError([...errors].join(" "));
+			addImages(result.assets);
 		} catch (cause) { setError(cause instanceof Error ? cause.message : "Could not attach this photo."); }
 	};
 
@@ -129,6 +120,7 @@ export function ReviewerComposer({ busy, stopped, attachmentsEnabled = true, onS
 			<View style={styles.composerRow}>
 				<ChatAttachmentMenu disabled={stopped || submitting || !attachmentsEnabled} canAttachFile onChoosePhoto={() => void addPhoto()} onChooseFile={() => void addFile()} />
 				<TextInput
+					onLayout={pasteLayout}
 					accessibilityLabel="Reply to reviewer"
 					value={text}
 					onChangeText={setText}

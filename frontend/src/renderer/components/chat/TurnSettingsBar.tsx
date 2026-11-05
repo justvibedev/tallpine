@@ -14,7 +14,8 @@ import { supportsAutoCompact } from "../../lib/auto-compact";
 import { providerQualifiedChoice } from "../../lib/model-variants";
 import type { ApprovalMode, ChatConfigOption, ChatConfigOptionValue } from "../../types/conversation";
 import { claudeChoiceLabels, dedupeChoicesByName, acpFallbackEffort, EffortOptionSubmenu, ModelEffortPicker, ClubbedConfigPicker } from "./turn-settings/model-pickers";
-import { isModelOption, partitionConfigOptions, isPlanBinary, isPlanMode, isPlanChoice, isFastOption, isThinkingToggle, optionIsEnabled, setConfigToggle, optionCurrentLabel, toggleConfigOption } from "./turn-settings/config-options";
+import { isModelOption, partitionConfigOptions, isPlanBinary, isPlanMode, isPlanChoice, isFastOption, isThinkingToggle, optionIsEnabled, setConfigToggle, optionCurrentLabel } from "./turn-settings/config-options";
+import { applyModelSetup } from "./turn-settings/apply-model-setup";
 import { CODEX_APPROVAL_COPY, APPROVAL_COPY, CODEX_APPROVAL_ORDER, APPROVAL_ORDER, TRIGGER_CLASS } from "./turn-settings/approval-copy";
 import { ULTRACODE, Picker } from "./turn-settings/composer-menu";
 import { OptionSubmenu, MoreOptionsSubmenu, restoreComposerFocus, ExecutionModePicker, ConfigOptionPicker } from "./turn-settings/config-pickers";
@@ -110,8 +111,11 @@ export function TurnSettingsBar({
 		: modelLabel;
 	const grouped = partitionConfigOptions(displayConfigOptions, true);
 	const optionDisabled = Boolean(disabled || configPending || rememberPermissionsPending);
+	// A choice the installed CLI is too old for is shown, disabled, but never sent.
+	const choiceUnavailable = (optionId: string, id: unknown) =>
+		Boolean(configOptions?.find((option) => option.id === optionId)?.choices.find((choice) => choice.value === id)?.unavailableReason);
 	const applyOption = (optionId: string, value: ChatConfigOptionValue) => {
-		if (!onChangeConfigOption) return;
+		if (!onChangeConfigOption || ("value" in value && choiceUnavailable(optionId, value.value))) return;
 		void Promise.resolve(onChangeConfigOption(optionId, value)).catch(() => {});
 	};
 	const nativeModelMenu = Boolean(onChange && displayModels.length > 0 && grouped.model.length === 0);
@@ -217,14 +221,18 @@ export function TurnSettingsBar({
 	);
 	const autoCompactSupport = supportsAutoCompact(harness, primaryModelOption?.currentValue, false);
 	const offersAutoCompact = Boolean(autoCompact) && autoCompactSupport !== "no";
+	// A model the installed CLI is too old for is shown, disabled, but never sent.
+	const changeNativeModel = (next: typeof settings) => {
+		if (!displayModels.find((model) => model.id === next.model)?.unavailableReason) onChange?.(next);
+	};
 	const current: PickerSource = nativeModelMenu && onChange
 		? {
 			models: (harness === "claude-code" ? displayModels.filter((model) => model.id !== "default") : displayModels)
-				.map((model) => ({ id: model.id, label: model.displayName })),
+				.map((model) => ({ id: model.id, label: model.displayName, unavailableReason: model.unavailableReason })),
 			modelId: settings.model ?? fallback?.id,
 			modelLabel,
 			// Fast mode is kept only where the newly picked model offers it.
-			onPickModel: (id) => onChange({
+			onPickModel: (id) => changeNativeModel({
 				...settings,
 				model: id,
 				reasoningEffort: undefined,
@@ -233,7 +241,7 @@ export function TurnSettingsBar({
 			efforts: efforts.map((value) => ({ value, label: formatEffortLabel(value, t) })),
 			effort: effortLabel,
 			onPickEffort: (value) => onChange({ ...settings, reasoningEffort: value }),
-			onPickSetup: (setup) => onChange({
+			onPickSetup: (setup) => changeNativeModel({
 				...settings,
 				model: setup.model,
 				reasoningEffort: setup.effort,
@@ -243,7 +251,11 @@ export function TurnSettingsBar({
 		}
 		: {
 			models: (primaryModelOption?.choices ?? [])
-				.map((choice) => ({ id: choice.value, label: choice.name, group: choice.groupName || choice.group, aliases: (choice as ChatConfigOption["choices"][number] & { aliases?: string[] }).aliases })),
+				.map((choice) => ({
+					id: choice.value, label: choice.name, group: choice.groupName || choice.group,
+					aliases: (choice as ChatConfigOption["choices"][number] & { aliases?: string[] }).aliases,
+					unavailableReason: choice.unavailableReason,
+				})),
 			modelId: primaryModelOption?.currentValue,
 			modelLabel: primaryModelOption ? optionCurrentLabel(primaryModelOption) : agentLabel(harness ?? ""),
 			onPickModel: primaryModelOption && onChangeConfigOption ? (id) => applyOption(primaryModelOption.id, { value: id }) : undefined,
@@ -252,24 +264,9 @@ export function TurnSettingsBar({
 			// model's. Fast is set either way, so a saved setup without it turns a paid Fast off.
 			onPickSetup: primaryModelOption && onChangeConfigOption
 				? (setup) => {
+					if (choiceUnavailable(primaryModelOption.id, setup.model)) return;
 					ultracode?.onChange(false);
-					let catalog = configOptions ?? [];
-					const write = async (optionId: string, value: ChatConfigOptionValue) => {
-						const next = await onChangeConfigOption(optionId, value);
-						if (Array.isArray(next)) catalog = next as ChatConfigOption[];
-					};
-					const current = () => partitionConfigOptions(catalog, true);
-					void (async () => {
-						await write(primaryModelOption.id, { value: setup.model });
-						const effortOption = current().effort.at(0);
-						if (setup.effort && effortOption?.choices.some((choice) => choice.value === setup.effort)) {
-							await write(effortOption.id, { value: setup.effort });
-						}
-						const thinking = current().toggles.find(isThinkingToggle);
-						if (thinking && setup.thinking !== undefined) await toggleConfigOption(thinking, setup.thinking, write);
-						const fast = current().toggles.find(isFastOption);
-						if (fast) await toggleConfigOption(fast, Boolean(setup.fast), write);
-					})().catch(() => {});
+					applyModelSetup(configOptions ?? [], primaryModelOption.id, setup, onChangeConfigOption);
 				}
 				: undefined,
 			efforts: [
@@ -394,6 +391,7 @@ export function TurnSettingsBar({
 								title={startsInNote ?? `Approval policy for ${pendingAgent}`}
 								disabled={optionDisabled}
 								leadIcon={permissionIcon(permissionLook(pending.harness, pendingMode))}
+								showCaret
 								alert={Boolean(startsInNote)}
 							>
 								{startsInNote ? (
@@ -421,6 +419,7 @@ export function TurnSettingsBar({
 								onChange={(value) => applyOption(shownModeOption.id, value)}
 								footer={rememberAction}
 								leadIcon={unified ? permissionIcon(shownModeOption.choices.find((choice) => choice.value === shownModeOption.currentValue)?.permissionMode) : undefined}
+								showCaret
 							/>
 						) : showApprovalMode && onChange ? (
 							<Picker
@@ -428,6 +427,7 @@ export function TurnSettingsBar({
 													title="Approval policy for the next turn"
 													disabled={optionDisabled}
 								leadIcon={unified ? permissionIcon(permissionLook(harness, settings.approvalMode ?? "default")) : undefined}
+								showCaret
 							>
 								{approvalOrder.filter((mode) => !approvalModes || approvalModes.includes(mode)).map((mode) => (
 									unified ? (

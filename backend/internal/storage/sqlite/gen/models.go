@@ -609,6 +609,16 @@ type Cue struct {
 	UpdatedAt time.Time
 }
 
+type DeletedSessionAccountUsage struct {
+	AccountID          string
+	Day                string
+	ModelID            string
+	InputTokens        int64
+	CachedInputTokens  int64
+	OutputTokens       int64
+	EstimatedCostNanos int64
+}
+
 type EndedLaneOrchestrator struct {
 	SessionID string
 }
@@ -1043,6 +1053,11 @@ type SessionLastAssistantMessage struct {
 	SessionID string
 	Message   string
 	At        time.Time
+}
+
+type SessionNumFloor struct {
+	IDPrefix string
+	MaxNum   int64
 }
 
 type SessionPolicyDecision struct {

@@ -220,6 +220,7 @@ func (s *Service) StopAll(ctx context.Context) error {
 		}
 	}
 	s.doc.Paused = true
+	s.doc.StopReason = ""
 	if err := s.save(ctx); err != nil {
 		s.doc = previous
 		return err

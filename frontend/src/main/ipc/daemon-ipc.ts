@@ -11,6 +11,7 @@ import { ctx } from "../app-context";
 import { daemonWsBridge, getShellWebContents, ipcMain, RENDERER_ORIGIN } from "../app-runtime-state";
 import { appRunId } from "../bundled-runtime-staging";
 import { closedSideChats, refreshDaemonStatus, rememberSideLaunchState, reportDaemonRestartFailure, restartDaemon, startDaemon, stopDaemon } from "../daemon/daemon-lifecycle";
+import { cancelDaemonAutoRestart } from "../daemon/daemon-auto-restart-host";
 import { originOf } from "../ipc-guard";
 
 
@@ -48,7 +49,10 @@ export function registerDaemonIpc(): void {
 
 	app.once("will-quit", () => daemonWsBridge.closeAll());
 
-	ipcMain.handle("daemon:start", () => startDaemon());
+	ipcMain.handle("daemon:start", () => {
+		cancelDaemonAutoRestart();
+		return startDaemon();
+	});
 
 	ipcMain.handle("daemon:stop", () => stopDaemon());
 

@@ -29,6 +29,8 @@ import { TERMINAL_ENHANCE_JS } from "./terminalEnhanceScript";
 import { statusColorFor, terminalInterfacePhaseLabel } from "./terminalPhase";
 import { makeStyles } from "./terminalStyles";
 import { TerminalHeaderActions } from "./TerminalHeaderActions";
+import { hasLivePreview } from "./hasLivePreview";
+import { useTerminalArtifacts } from "./useTerminalArtifacts";
 import { useTerminalInterfaceSwitch } from "./useTerminalInterfaceSwitch";
 import { useTerminalSessionActions } from "./useTerminalSessionActions";
 import { useTerminalBridge } from "./useTerminalBridge";
@@ -97,14 +99,8 @@ export default function TerminalScreen({ session: resolved }: { session?: RouteS
 		requestInterfaceSwitch, retryInterfaceCheck, requestInterfaceFailureRecovery,
 	} = useTerminalInterfaceSwitch({ activeConfig, shellOnly, sessionId, refresh, known, setBanner });
 	const dead = notFound || (!shellOnly && known ? isRuntimeGone(known) : false);
-	// What counts as a live preview: any file the daemon surfaces (an .html build, or
-	// a generated doc like plan.md / a report) EXCEPT a repo's README, which the
-	// detector's markdown fallback always matches on a fresh checkout. Filtering the
-	// README out keeps the globe's green dot meaningful — it means "there's something
-	// the agent produced to view", not just "this repo has a README".
-	const previewBase = (preview?.entry ?? "").split("/").pop() ?? "";
-	const isReadme = /^readme\.(md|markdown)$/i.test(previewBase);
-	const hasPreview = !!preview && !isReadme;
+	const hasPreview = hasLivePreview(preview);
+	const { hasArtifacts, openArtifacts } = useTerminalArtifacts({ known, shellOnly, sessionId, title: params.title, hostId: params.hostId });
 
 	const { kbHeight, kbVisible } = useTerminalKeyboard();
 
@@ -212,10 +208,11 @@ export default function TerminalScreen({ session: resolved }: { session?: RouteS
 					transitionActive={interfaceTransitionActive} interfaceSupported={interfaceSwitch.status?.supported}
 					hasPreview={hasPreview} onInterface={() => void requestInterfaceSwitch()} onPreview={toggleBrowser}
 					onFiles={() => { haptics.tap(); router.push(filesRoute(sessionId, params.hostId, params.title)); }}
+					hasArtifacts={hasArtifacts} onArtifacts={openArtifacts}
 				/>
 			),
 		});
-	}, [headerRightReady, navigation, hasPreview, toggleBrowser, styles, t, shellOnly, interfaceTransitionActive, interfaceSwitch.starting, rechecking, interfaceSwitch.status?.supported, requestInterfaceSwitch, router, sessionId, params.hostId, params.title]);
+	}, [headerRightReady, navigation, hasPreview, toggleBrowser, styles, t, shellOnly, interfaceTransitionActive, interfaceSwitch.starting, rechecking, interfaceSwitch.status?.supported, requestInterfaceSwitch, router, sessionId, params.hostId, params.title, hasArtifacts, openArtifacts]);
 
 
 

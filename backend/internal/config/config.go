@@ -200,11 +200,11 @@ type Config struct {
 	// under the data dir, so Gradle caches agents create can be removed with
 	// the project (TALLPINE_SESSION_GRADLE_HOME=off keeps Gradle's own default).
 	SessionGradleHome bool
-	// WindowsUpdateWhenIdle lets a Windows harness update wait until the
-	// harness's sessions are idle, then stop them, update and resume them,
-	// instead of refusing while they run (TALLPINE_WINDOWS_UPDATE_WHEN_IDLE=off
-	// disables it).
-	WindowsUpdateWhenIdle bool
+	// UpdateWhenIdle lets a harness update that cannot run beside its sessions
+	// wait until they are idle, then stop them, update and resume them,
+	// instead of refusing while they run (TALLPINE_UPDATE_WHEN_IDLE=off disables
+	// it; the older TALLPINE_WINDOWS_UPDATE_WHEN_IDLE is still read).
+	UpdateWhenIdle bool
 	// ManagedHarnessInstalls installs npm, Bun, uv and pipx harness updates
 	// side by side under the Tallpine data dir and switches to them atomically, so
 	// no update touches files a running session uses
@@ -301,7 +301,7 @@ func Load() (Config, error) {
 		ReviewIdleGrace:        DefaultReviewIdleGrace,
 		TUIVersionRefresh:      true,
 		SessionGradleHome:      true,
-		WindowsUpdateWhenIdle:  true,
+		UpdateWhenIdle:         true,
 		ManagedHarnessInstalls: true,
 	}
 

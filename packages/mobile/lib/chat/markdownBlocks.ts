@@ -9,7 +9,11 @@ export type MarkdownBlock =
 	| { kind: "rule" };
 
 /** Pure GFM-shaped block parser; unknown syntax remains readable paragraph text. */
-export function parseBlocks(input: string): MarkdownBlock[] {
+/**
+ * `relativeImages` also reads `![alt](path/to.png)`, a link to a file beside a
+ * document (an artifact), as an image; a chat reply keeps to web images.
+ */
+export function parseBlocks(input: string, { relativeImages = false }: { relativeImages?: boolean } = {}): MarkdownBlock[] {
 	const lines = input.replace(/\r/g, "").split("\n");
 	const blocks: MarkdownBlock[] = [];
 	let paragraph: string[] = [];
@@ -33,7 +37,7 @@ export function parseBlocks(input: string): MarkdownBlock[] {
 			blocks.push({ kind: "heading", level: heading[1].length, text: heading[2] });
 			continue;
 		}
-		const image = /^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)\s*$/.exec(line.trim());
+		const image = (relativeImages ? /^!\[([^\]]*)\]\(([^\s)]+)\)\s*$/ : /^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)\s*$/).exec(line.trim());
 		if (image) {
 			flushParagraph();
 			blocks.push({ kind: "image", alt: image[1], url: image[2] });

@@ -130,13 +130,28 @@ func (s *Store) GetSessionAgentAccount(ctx context.Context, id domain.SessionID,
 	return accountID, true, nil
 }
 
-// AgentAccountUsageSince sums model usage per account, UTC day and model.
+// AgentAccountUsageSince sums model usage per account, UTC day and model,
+// including the spend of sessions deleted since (counted from since's UTC
+// day). An account, day and model may appear twice (live and deleted);
+// callers sum.
 func (s *Store) AgentAccountUsageSince(ctx context.Context, since time.Time) ([]domain.AgentAccountUsage, error) {
-	rows, err := s.qr.AgentAccountUsageSince(ctx, sql.NullTime{Time: since.UTC(), Valid: true})
+	since = since.UTC()
+	rows, err := s.qr.AgentAccountUsageSince(ctx, gen.AgentAccountUsageSinceParams{Since: sql.NullTime{Time: since, Valid: true}})
 	if err != nil {
 		return nil, fmt.Errorf("read agent account usage: %w", err)
 	}
-	out := make([]domain.AgentAccountUsage, 0, len(rows))
+	deleted, err := s.qr.DeletedSessionAccountUsageSince(ctx, since.Format(time.DateOnly))
+	if err != nil {
+		return nil, fmt.Errorf("read deleted sessions' agent account usage: %w", err)
+	}
+	out := make([]domain.AgentAccountUsage, 0, len(rows)+len(deleted))
+	for _, row := range deleted {
+		out = append(out, domain.AgentAccountUsage{
+			AccountID: row.AccountID, Day: row.Day, Model: row.ModelID,
+			InputTokens: row.InputTokens, CachedInputTokens: row.CachedInputTokens, OutputTokens: row.OutputTokens,
+			CostNanos: row.EstimatedCostNanos,
+		})
+	}
 	for _, row := range rows {
 		out = append(out, domain.AgentAccountUsage{
 			AccountID: row.AccountID, Day: row.Day, Model: row.ModelID,

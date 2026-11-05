@@ -90,6 +90,12 @@ func newScopeFixture(t *testing.T) scopeFixture { return newScopeFixtureWith(t, 
 // policy (nil: no engine), so rules such as devMode are decided for real.
 func newScopeFixtureWith(t *testing.T, policy map[string]map[string]any) scopeFixture {
 	t.Helper()
+	return newScopeFixtureDeps(t, policy, nil)
+}
+
+// newScopeFixtureDeps is newScopeFixtureWith with a hook that adjusts the API deps.
+func newScopeFixtureDeps(t *testing.T, policy map[string]map[string]any, adjust func(*httpd.APIDeps)) scopeFixture {
+	t.Helper()
 	svc := &fakeSessionService{sessions: map[domain.SessionID]domain.Session{}}
 	for _, row := range []struct {
 		id, project string
@@ -112,6 +118,9 @@ func newScopeFixtureWith(t *testing.T, policy map[string]map[string]any) scopeFi
 	if policy != nil {
 		engine, _ := policytest.Engine(t, policy)
 		deps.AgentPolicy = engine
+	}
+	if adjust != nil {
+		adjust(&deps)
 	}
 	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil,
 		deps, httpd.ControlDeps{DaemonToken: scopeInstallToken}))

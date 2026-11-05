@@ -113,7 +113,12 @@ func (b *boot) wireAgents() error {
 		CodexAccountStore:      b.store,
 		CodexAccounts:          codexAccounts,
 		CodexOperationGate:     b.codexOperationGate,
+		ModelGate:              claudeModelGate,
 	}
+	// Minimum Claude Code versions the API has reported per model persist
+	// across restarts so a model stays marked unavailable until the CLI updates.
+	claudecodeagent.ConfigureModelVersionRequirements(
+		filepath.Join(b.cfg.StateDir, "harnesses", "claude-code", "model-versions.json"))
 	b.agentSvc = agentsvc.NewWithDeps(agentDeps)
 	b.agentSvc.WarmModelCatalogs(b.ctx)
 

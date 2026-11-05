@@ -99,7 +99,7 @@ func (m *Manager) resumeChatController(
 		ExpectedControllerOwner: rec.ControllerOwner(),
 		PrepareControllerEnv: func(launchCtx context.Context, expected domain.SessionControllerOwner, harness domain.AgentHarness) (map[string]string, error) {
 			prepared, launchEnv, prepareErr := m.prepareChatControllerEnv(
-				launchCtx, rec, project.Config.Env, expected, harness,
+				launchCtx, rec, project.Config, expected, harness,
 			)
 			if prepareErr != nil {
 				return nil, prepareErr

@@ -111,7 +111,8 @@ export function useConversationActionsMenu({
 				if (route) openPage(route);
 				else router.push({ pathname: "/(tabs)/prs", params: { hostId: currentHostId, projectId: session.projectId } });
 			},
-			onArtifacts: () => router.push({ pathname: "/artifacts", params: { sessionId: session.id, hostId: currentHostId } }),
+			artifactCount: "projectName" in session ? undefined : session.artifacts?.length,
+			onArtifacts: () => router.push({ pathname: "/artifacts/[sessionId]", params: { sessionId: session.id, title, hostId: currentHostId } }),
 			onSettings: () => void openTurnSettings(),
 			onSwitchInterface: requestInterfaceSwitch,
 			onCompact: () => void conversation.compact().catch(() => {}),

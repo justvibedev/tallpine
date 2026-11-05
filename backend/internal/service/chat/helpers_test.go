@@ -110,29 +110,6 @@ type deferredConversation struct {
 	start func(string) error
 }
 
-type stuckConversation struct {
-	*fakeConversation
-	closeErr error
-}
-
-func (s *stuckConversation) Close() error { return s.closeErr }
-
-type terminatingConversation struct {
-	*fakeConversation
-	terminated atomic.Bool
-}
-
-func (c *terminatingConversation) Terminate() error {
-	c.terminated.Store(true)
-	return c.Close()
-}
-
-func (c *terminatingConversation) PreservesProviderOnClose() bool { return true }
-
-type liveReconnectedConversation struct{ *nativeHistoryConversation }
-
-func (c *liveReconnectedConversation) ReconnectedLive() bool { return true }
-
 func (f *deferredConversation) StartDeferredTurn(providerTurnID string) error {
 	return f.start(providerTurnID)
 }
@@ -433,8 +410,10 @@ type harness struct {
 	hostStops atomic.Int32
 	// accountChecks counts requests to read the session's account again.
 	accountChecks atomic.Int32
-	renders       *attachmentstore.Store
-	rendersDir    string
+	// accountRechecks counts turns asking to read the account again.
+	accountRechecks atomic.Int32
+	renders         *attachmentstore.Store
+	rendersDir      string
 	// reconciled lists the sessions whose output type a save asked to update;
 	// reconcileErr is what that update returns.
 	reconciled   []domain.SessionID
@@ -541,6 +520,9 @@ func newHarnessWithConversationAndStoreForHarness(
 		Log:      slog.New(slog.NewTextHandler(h.logs, nil)),
 		OnAccountChanged: func(domain.SessionID, string, domain.AgentHarness) {
 			h.accountChecks.Add(1)
+		},
+		RecheckAccount: func(domain.SessionID, domain.AgentHarness) {
+			h.accountRechecks.Add(1)
 		},
 		NewID: func() string {
 			counterMu.Lock()

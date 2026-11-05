@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { Keyboard } from "react-native";
 import { haptics } from "../haptics";
 import { type ChatExcerpt, type ChatImage, type ChatResource, type ChatSkill } from "./types";
@@ -13,7 +13,8 @@ import { composerDeliveryRoute, type ComposerDeliveryIntent } from "./composerDe
 import { userFacingError } from "../connectionError";
 import { encodeResponseDraft, responseReplyText, responseExcerpts, type ResponseQuote } from "./responseQuotes";
 import { afterDraftWrites } from "./pendingSend";
-import { Attachment, MAX_ATTACHMENTS, MAX_EMBEDDED_FILE_BYTES, MAX_IMAGE_BYTES, MAX_IMAGE_BYTES_TOTAL, SUPPORTED_IMAGE_TYPES } from "./composerAttachments";
+import { Attachment, MAX_ATTACHMENTS, MAX_EMBEDDED_FILE_BYTES } from "./composerAttachments";
+import { addComposerImages, type ComposerImageAsset, type PasteOverflow } from "./composerImages";
 import { RequestGate } from "./requestGate";
 
 export function useComposerActions({
@@ -125,30 +126,25 @@ export function useComposerActions({
 		} finally { setSubmitting(false); }
 	}, [text, quotes, attachments, steerEligible, onSteer, onSend, onAcknowledgeSend, draftKey, draftLoaded, submitting, pending, disabled]);
 
+	const latestAttachments = useRef(attachments);
+	latestAttachments.current = attachments;
+	const addImages = (assets: readonly ComposerImageAsset[], overflow?: PasteOverflow) => {
+		// Reads the latest list, so a pick or paste that outlives this render still lands.
+		const added = addComposerImages(latestAttachments.current, assets, overflow);
+		latestAttachments.current = added.items;
+		setAttachments(added.items);
+		setLocalError(added.error);
+		return added.added > 0;
+	};
+	const pasteImages = (assets: readonly ComposerImageAsset[], overflow?: PasteOverflow) => {
+		if (addImages(assets, overflow)) haptics.tap();
+	};
 	const addImage = async () => {
 		setLocalError(undefined);
 		try {
 			const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], base64: true, quality: 0.82, allowsMultipleSelection: true, selectionLimit: 4 });
 			if (result.canceled) return;
-			const errors = new Set<string>();
-			const next = result.assets.flatMap((asset): Attachment[] => {
-				if (!asset.base64) { errors.add("Some images couldn't be read and were skipped."); return []; }
-				const mimeType = (asset.mimeType || "image/jpeg").toLowerCase();
-				if (!SUPPORTED_IMAGE_TYPES.has(mimeType)) { errors.add("Only PNG, JPEG, GIF, WebP, and BMP images are supported."); return []; }
-				const bytes = asset.fileSize ?? Math.floor(asset.base64.length * 0.75);
-				if (bytes > MAX_IMAGE_BYTES) { errors.add("Each image must be under 10 MB."); return []; }
-				return [{ id: `${asset.assetId ?? asset.uri}-${Date.now()}`, kind: "image", name: asset.fileName || "Image", bytes, image: { mimeType, data: asset.base64 } }];
-			});
-			const accepted = [...attachments];
-			let imageBytes = accepted.filter((item) => item.kind === "image").reduce((sum, item) => sum + item.bytes, 0);
-			for (const item of next) {
-				if (accepted.length >= MAX_ATTACHMENTS) { errors.add(`You can attach up to ${MAX_ATTACHMENTS} items.`); break; }
-				if (imageBytes + item.bytes > MAX_IMAGE_BYTES_TOTAL) { errors.add("Images must total under 25 MB."); break; }
-				accepted.push(item);
-				imageBytes += item.bytes;
-			}
-			setAttachments(accepted);
-			setLocalError(errors.size ? [...errors].join(" ") : undefined);
+			addImages(result.assets);
 		} catch (cause) {
 			setLocalError(userFacingError(cause, "Couldn't open your photo library."));
 		}
@@ -192,5 +188,5 @@ export function useComposerActions({
 		} }));
 	}, [filePaths, filePathsTruncated, onLoadFiles, onLoadSkills, pickerGate, router, skills]);
 
-	return { submit, addImage, addFile, openPicker };
+	return { submit, addImage, pasteImages, addFile, openPicker };
 }

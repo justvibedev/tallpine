@@ -229,6 +229,7 @@ type Controller struct {
 	newID                  IDFactory
 	now                    Clock
 	onAccountChanged       func(domain.SessionID, string, domain.AgentHarness)
+	recheckAccount         func(domain.SessionID, domain.AgentHarness)
 	onUsageLimitPaused     func(domain.SessionID, domain.AgentHarness) // asks the service to fail over
 	pauseWake              *time.Timer                                 // guarded by mu; re-drains the queue after a usage-limit pause
 	onAsyncTask            func(domain.SessionID, ports.ChatAsyncTask)
@@ -445,6 +446,7 @@ func newController(
 	newID IDFactory,
 	now Clock,
 	onAccountChanged func(domain.SessionID, string, domain.AgentHarness),
+	recheckAccount func(domain.SessionID, domain.AgentHarness),
 	onCodexCapacityChanged func(domain.SessionID, string, ports.CodexCapacityObservation),
 	reader SnapshotReader,
 ) *Controller {
@@ -462,6 +464,7 @@ func newController(
 		newID:                  newID,
 		now:                    now,
 		onAccountChanged:       onAccountChanged,
+		recheckAccount:         recheckAccount,
 		onCodexCapacityChanged: onCodexCapacityChanged,
 		state:                  ports.ChatControllerReady,
 		settings:               conversation.Settings,
@@ -483,20 +486,6 @@ func newController(
 		c.mcpServers[server.Name] = server
 	}
 	return c
-}
-
-func reviewOwnerID(owner domain.ConversationOwner) string {
-	if owner.Kind == domain.ConversationOwnerReview {
-		return owner.ID
-	}
-	return ""
-}
-
-func (c *Controller) owner() domain.ConversationOwner {
-	if c.reviewID != "" {
-		return domain.ReviewConversationOwner(c.reviewID)
-	}
-	return domain.SessionConversationOwner(c.sessionID)
 }
 
 // start begins live provider consumption after any durable native history has

@@ -114,7 +114,16 @@ export function useComposerProps({
 
 	const stableRateLimits = useStableValue(snapshot.rateLimits);
 
-	const stableModelReroute = useStableValue(snapshot.modelReroute);
+	// A reroute describes the model it was recorded against; once the user picks a
+	// different model it no longer says anything about the next turn.
+	const currentModelReroute =
+		snapshot.modelReroute &&
+		(!snapshot.modelReroute.fromModel ||
+			!snapshot.settings.model ||
+			snapshot.modelReroute.fromModel === snapshot.settings.model)
+			? snapshot.modelReroute
+			: undefined;
+	const stableModelReroute = useStableValue(currentModelReroute);
 
 	const stablePendingApproval = useStableValue(pendingApproval);
 

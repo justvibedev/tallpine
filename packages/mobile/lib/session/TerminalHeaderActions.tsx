@@ -15,10 +15,12 @@ type Props = {
 	onInterface: () => void;
 	onPreview: () => void;
 	onFiles: () => void;
+	hasArtifacts?: boolean;
+	onArtifacts?: () => void;
 };
 
 /** Right-hand nav actions: Chat interface switch, preview and session files. */
-export function TerminalHeaderActions({ t, styles, rechecking, starting, transitionActive, interfaceSupported, hasPreview, onInterface, onPreview, onFiles }: Props) {
+export function TerminalHeaderActions({ t, styles, rechecking, starting, transitionActive, interfaceSupported, hasPreview, onInterface, onPreview, onFiles, hasArtifacts = false, onArtifacts }: Props) {
 	return (
 	<View style={styles.headerActions}>
 		<Pressable
@@ -68,6 +70,17 @@ export function TerminalHeaderActions({ t, styles, rechecking, starting, transit
 		>
 			<Feather name="file-diff" size={iconSize.lg} color={t.textSecondary} />
 		</Pressable>
+		{hasArtifacts ? (
+			<Pressable
+				hitSlop={10}
+				accessibilityRole="button"
+				accessibilityLabel={"Artifacts"}
+				onPress={onArtifacts}
+				style={({ pressed }) => [styles.headerBrowserBtn, pressed && { opacity: press.opacity }]}
+			>
+				<Feather name="layers" size={iconSize.md} color={t.textSecondary} />
+			</Pressable>
+		) : null}
 	</View>
 	);
 }

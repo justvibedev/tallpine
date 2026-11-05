@@ -254,8 +254,19 @@ func (m *Manager) terminateCompletedSession(ctx context.Context, id domain.Sessi
 	if terminator == nil {
 		return false, fmt.Errorf("terminate completed session %s: session terminator is not configured", id)
 	}
-	if _, err := terminator.Kill(ctx, id); err != nil {
+	// Auto-close must not claim a session another caller (an orchestrator's
+	// explicit kill) ended first: that would send a false "ended on its own"
+	// notice (B554).
+	kill := terminator.Kill
+	if lo, ok := terminator.(liveOnlyTerminator); ok {
+		kill = lo.KillIfLive
+	}
+	freed, err := kill(ctx, id)
+	if err != nil {
 		return false, fmt.Errorf("terminate completed session %s: %w", id, err)
+	}
+	if _, ok := terminator.(liveOnlyTerminator); ok {
+		return freed, nil
 	}
 	return true, nil
 }

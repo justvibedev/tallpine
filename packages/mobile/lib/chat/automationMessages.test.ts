@@ -3,13 +3,13 @@
  * from the shared formatter, the daemon's nudges as fixed samples of
  * lifecycle's formatters.
  */
+import { artifactEntry } from "../artifacts";
 import { LEGACY_LINK_SCHEMES } from "../brand";
 import { describe, expect, it } from "vitest";
 import { formatFileAnnotationMessage, formatFileAnnotationMessages } from "@tallpine/shared/files/file-annotations";
 import {
 	NOTICE_LABELS,
 	REVIEWER_LABEL,
-	artifactEntry,
 	reportBlocks,
 	safeLink,
 	safeMarkdown,
@@ -238,6 +238,7 @@ describe("opening a report's links and artifacts", () => {
 		expect(artifactEntry("/tmp/audit.md", "tallpine-230")).toBeUndefined();
 		expect(artifactEntry("/a/artifacts/tallpine-230/../secrets", "tallpine-230")).toBeUndefined();
 		expect(artifactEntry("audit.md", undefined)).toBeUndefined();
+		expect(artifactEntry("//cdn.example.com/artifacts/tallpine-230/a.png", "tallpine-230")).toBeUndefined();
 		// A relative path may not climb out of the folder either, however it is spelled.
 		expect(artifactEntry("../../etc/passwd", "tallpine-230")).toBeUndefined();
 		expect(artifactEntry("shots/../../x", "tallpine-230")).toBeUndefined();

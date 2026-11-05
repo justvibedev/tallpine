@@ -7,9 +7,11 @@ import { Badge } from "../ui/badge";
 import { cn } from "../../lib/utils";
 import { NAV_ROW_HIGHLIGHT_HOST_CLASS, NavRowHighlight } from "../NavRowHighlight";
 import { NAV_ROW_CLASS, SIDEBAR_ROW_CLASS } from "./constants";
+import { useProjectPin } from "./useProjectPin";
 
 export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandalone, expanded, dashboardActive, projectActive, projectIsDragging, projectDragInProgress, onProjectClick, onFolderClick }: { workspace: WorkspaceSummary; hostLabel?: string; nameWithHost: string; isStandalone: boolean; expanded: boolean; dashboardActive: boolean; projectActive: boolean; projectIsDragging: boolean; projectDragInProgress: boolean; onProjectClick: () => void; onFolderClick: (event: MouseEvent) => void }) {
 	const { t } = useTranslation();
+	const { isPinned } = useProjectPin(workspace, isStandalone);
 	return (
 		<>
 								<div>
@@ -28,7 +30,7 @@ export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandal
 											// Projects header so icons and labels share one left edge.
 											SIDEBAR_ROW_CLASS,
 											!workspace.hostId && "cursor-grab active:cursor-grabbing",
-											"pr-sidebar-project-actions",
+											isPinned ? "pr-sidebar-project-actions-pinned" : "pr-sidebar-project-actions",
 											"transition-none",
 											projectIsDragging && "!cursor-grabbing",
 											projectDragInProgress && "hover:text-muted-foreground active:text-muted-foreground",

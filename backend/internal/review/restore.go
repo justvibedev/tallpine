@@ -266,7 +266,7 @@ func (e *Engine) restoreReviewerLocked(
 		ProjectID:            worker.ProjectID,
 		ProjectEnv:           projectEnv,
 		Harness:              harness,
-		AgentConfig:          config,
+		AgentConfig:          e.withReviewerLaunch(ctx, worker.ProjectID, config),
 		WorkspacePath:        worker.Metadata.WorkspacePath,
 		AgentSessionID:       agentSessionID,
 		RequireNativeHistory: harness == domain.ReviewerCodex && strings.TrimSpace(agentSessionID) != "",

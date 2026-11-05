@@ -104,7 +104,7 @@ export function ModelEffortPicker({
 					) : null}
 				</OptionMenuTrigger>
 			<OptionMenuContent align="start" className={CHAT_MENU_CLASS} onCloseAutoFocus={restoreComposerFocus}>
-				<OptionMenuSub>
+				<OptionMenuSub closeOnSelect>
 					<OptionMenuSubTrigger label="Model" value={modelLabel} />
 					{/* Scroll on an inner strip: the surface utility caps height but wheel
 					    events do not reliably reach an outer overflow on nested submenus. */}
@@ -128,7 +128,7 @@ export function ModelEffortPicker({
 				</OptionMenuSub>
 
 				{efforts.length > 0 || savedEffort ? (
-					<OptionMenuSub>
+					<OptionMenuSub closeOnSelect>
 						<OptionMenuSubTrigger
 							label={t("settings.models.effort")}
 							value={effortDisplayLabel({ value: savedEffort, choices: effortChoices, followLabel: t("settings.models.effort"), t, defaultEffort })}
@@ -294,7 +294,7 @@ export function EffortOptionSubmenu({
 	const { t } = useTranslation();
 	const followLabel = t("settings.models.effort");
 	return (
-		<OptionMenuSub>
+		<OptionMenuSub closeOnSelect>
 			<OptionMenuSubTrigger label={followLabel} value={effortDisplayLabel({ ...acpEffortProps(option), followLabel, t })} />
 			<OptionMenuSubContent className={CHAT_MENU_CLASS}>
 				<EffortMenuItems {...acpEffortMenuProps(option)} compact onChange={(value) => onChange(option.id, { value })} />

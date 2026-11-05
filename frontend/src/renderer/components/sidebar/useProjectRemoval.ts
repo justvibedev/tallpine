@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { type WorkspaceSummary } from "../../types/workspace";
 import { type Selection } from "./types";
+import { useSidebarOrderStore } from "../../stores/sidebar-order-store";
 
 export function useProjectRemoval({ workspace, selection, onRemoveProject }: { workspace: WorkspaceSummary; selection: Selection; onRemoveProject: (projectId: string) => Promise<void> }) {
 	const { t } = useTranslation();
@@ -23,6 +24,9 @@ export function useProjectRemoval({ workspace, selection, onRemoveProject }: { w
 		if (selection.activeProjectId === workspace.id) selection.goHome();
 		try {
 			await onRemoveProject(workspace.id);
+			// Project ids come from the folder name, so a stale pin would come
+			// back if the same folder is added again.
+			useSidebarOrderStore.getState().setProjectPinned(workspace.id, false);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : t("shell.couldNotRemoveProject");
 			setRemoveError(message);

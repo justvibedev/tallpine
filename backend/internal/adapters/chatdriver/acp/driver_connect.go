@@ -107,6 +107,18 @@ func (d *Driver) initialize(
 		conv.onAuthRejected = func() { onRejected(cfg) }
 	}
 	conv.promptResponseFailure = d.cfg.PromptResponseFailure
+	if d.cfg.ServedModel != nil {
+		servedModel := d.cfg.ServedModel
+		conv.servedModel = func(ctx context.Context, sessionID, selectedModel string) (string, string) {
+			return servedModel(ctx, cfg, sessionID, selectedModel)
+		}
+	}
+	if d.cfg.ValidateModel != nil {
+		validateModel := d.cfg.ValidateModel
+		conv.validateModel = func(ctx context.Context, model string) error {
+			return validateModel(ctx, cfg, model)
+		}
+	}
 	conv.turnUsage = d.cfg.TurnUsage
 	conv.usageRateLimits = d.cfg.UsageRateLimits
 	conv.infoContextUsage = d.cfg.InfoContextUsage

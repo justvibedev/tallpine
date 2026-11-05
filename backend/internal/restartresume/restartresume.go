@@ -45,6 +45,12 @@ type Store interface {
 	GetSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool, error)
 }
 
+// TurnLog is the optional read of when a session last finished a turn. The
+// store provides it; a store without it falls back to the activity checks.
+type TurnLog interface {
+	LastCompletedTurnAt(ctx context.Context, id domain.SessionID) (time.Time, bool, error)
+}
+
 // Sender delivers a message to a session's agent (chat or terminal).
 type Sender interface {
 	Send(ctx context.Context, id domain.SessionID, message string, attachment *ports.SpawnAttachment) error
@@ -211,6 +217,12 @@ func (t *Tracker) pass(ctx context.Context, sender Sender) int {
 			keep = append(keep, e)
 			continue
 		}
+		if ok && t.completedTurnSince(ctx, e) {
+			// A turn finished normally after the interruption, so the agent has
+			// resumed and moved on; the note would claim a cut-off that is over.
+			slog.Default().InfoContext(ctx, "restart resume: skipped, turn completed since the restart", "session", e.SessionID)
+			continue
+		}
 		if !ok || !resumable(rec.Kind) || rec.IsTerminated || rec.Activity.State == domain.ActivityExited ||
 			rec.Activity.State == domain.ActivityActive && rec.Activity.LastActivityAt.After(e.InterruptedAt) {
 			slog.Default().InfoContext(ctx, "restart resume: skipped", "session", e.SessionID, "found", ok, "terminated", rec.IsTerminated, "state", rec.Activity.State)
@@ -261,6 +273,22 @@ func (t *Tracker) pass(ctx context.Context, sender Sender) int {
 		slog.Default().WarnContext(ctx, "restart resume: could not save pending set", "err", err)
 	}
 	return len(remaining)
+}
+
+// completedTurnSince reports whether the session finished a turn after the
+// interruption. Unlike activity timestamps, which the restart itself bumps,
+// this only moves when a turn ends.
+func (t *Tracker) completedTurnSince(ctx context.Context, e Entry) bool {
+	log, ok := t.store.(TurnLog)
+	if !ok {
+		return false
+	}
+	at, found, err := log.LastCompletedTurnAt(ctx, e.SessionID)
+	if err != nil {
+		slog.Default().WarnContext(ctx, "restart resume: could not read last completed turn; not skipping", "session", e.SessionID, "err", err)
+		return false
+	}
+	return found && at.After(e.InterruptedAt)
 }
 
 // resumable reports whether a session kind is woken after a restart: workers

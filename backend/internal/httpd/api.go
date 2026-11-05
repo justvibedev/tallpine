@@ -54,6 +54,8 @@ type APIDeps struct {
 	BackgroundTasks    BackgroundTaskTracker
 	UsageLimits        controllers.UsageLimitReader
 	MessageSent        controllers.MessageSentFunc
+	// OwnerMessages backs `tallpine send --relay-owner-message`; nil refuses it.
+	OwnerMessages      controllers.OwnerMessageLookup
 	SessionSteps       controllers.SessionStepsReader
 	PRs                prsvc.ActionManager
 	Reviews            reviewsvc.Manager
@@ -275,6 +277,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		},
 		sessions: &controllers.SessionsController{
 			Routes:                   routeNoticer(deps.Reports),
+			OwnerMessages:            deps.OwnerMessages,
 			Policy:                   policyDecider(deps.AgentPolicy),
 			Svc:                      deps.Sessions,
 			Backlog:                  deps.BacklogSpawner,

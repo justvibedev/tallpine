@@ -1,6 +1,6 @@
 /** Composer menu rows, mode items and the generic picker. */
 import { type FocusEvent } from "react";
-import { Check, ListTodo, SlidersHorizontal, TriangleAlert, Zap, type LucideIcon } from "lucide-react";
+import { Check, ListTodo, ShieldAlert, SlidersHorizontal, TriangleAlert, Zap, type LucideIcon } from "lucide-react";
 import { OptionMenu, OptionMenuContent, OptionMenuItem, OptionMenuTrigger } from "../../ui/option-menu";
 import { cn } from "../../../lib/utils";
 import type { ChatConfigOption, ChatConfigOptionValue, ChatModel, TurnSettings } from "../../../types/conversation";
@@ -119,6 +119,7 @@ export function Picker({
 	children,
 	onFocus,
 	leadIcon: LeadIcon,
+	showCaret = Boolean(LeadIcon),
 	alert,
 }: {
 	label: string;
@@ -128,6 +129,8 @@ export function Picker({
 	alert?: boolean;
 	/** Set on the permission control when it leads the row: marked with this, with a caret, opening rightwards. */
 	leadIcon?: LucideIcon;
+	/** Show the menu caret; defaults to on whenever a lead icon marks the permission control. */
+	showCaret?: boolean;
 	/** A note that belongs on the trigger, e.g. the model that was overridden. */
 	badge?: React.ReactNode;
 	children: React.ReactNode;
@@ -136,14 +139,14 @@ export function Picker({
 	return (
 		<OptionMenu>
 				<OptionMenuTrigger
-					showCaret={Boolean(LeadIcon)}
+					showCaret={showCaret}
 					aria-label={title}
 					title={title}
 					disabled={disabled}
 					className={cn(TRIGGER_CLASS, LeadIcon ? "px-2" : undefined, alert ? "text-destructive" : undefined)}
 				>
 					{alert ? <TriangleAlert aria-hidden="true" className="size-3.5 shrink-0 text-destructive" />
-						: LeadIcon ? <LeadIcon aria-hidden="true" className="size-3.5 shrink-0" /> : null}
+						: LeadIcon ? <LeadIcon aria-hidden="true" className={cn("size-3.5 shrink-0", LeadIcon === ShieldAlert && "text-warning")} /> : null}
 					<span className="min-w-0 max-w-[16ch] truncate">{label}</span>
 					{badge}
 				</OptionMenuTrigger>

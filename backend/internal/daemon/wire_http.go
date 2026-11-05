@@ -113,6 +113,7 @@ func (b *boot) wireHTTP() error {
 		BackgroundTasks:      b.bgTasks,
 		UsageLimits:          b.chatSvc,
 		MessageSent:          b.turnNotifier.MessageSent,
+		OwnerMessages:        b.store,
 		SessionSteps:         b.lcStack.LCM,
 		Mobile:               b.mc,
 		MobileFeatureEnabled: func() bool {

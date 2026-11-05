@@ -192,7 +192,7 @@ func (p *triggerPass) spawnReviewer() error {
 	if err != nil {
 		return p.rollbackReplacement(err)
 	}
-	launchSpec := e.reviewLaunchSpec(ctx, worker, harness, p.config, p.launchRun, p.queue, 0, p.launchAgentSessionID, launchID)
+	launchSpec := e.reviewLaunchSpec(ctx, worker, harness, p.config, p.launchRun, p.queue, p.launchAgentSessionID, launchID)
 	launchSpec.ProjectEnv = projectEnv
 	launchSpec.InterfaceMode = p.selectedMode
 	launchSpec.DeferInitialMessage = p.deferInitialMessage
@@ -216,7 +216,7 @@ func (p *triggerPass) spawnReviewer() error {
 
 // notifyReviewer hands the new queue to the live reviewer pane.
 func (p *triggerPass) notifyReviewer() error {
-	launchSpec := p.e.reviewLaunchSpec(p.ctx, p.worker, p.harness, p.config, p.launchRun, p.queue, 0, p.reviewRow.AgentSessionID, p.reviewRow.ReviewerLaunchID)
+	launchSpec := p.e.reviewLaunchSpec(p.ctx, p.worker, p.harness, p.config, p.launchRun, p.queue, p.reviewRow.AgentSessionID, p.reviewRow.ReviewerLaunchID)
 	launchSpec.InterfaceMode = p.selectedMode
 	if err := p.e.launcher.Notify(p.ctx, p.handleID, launchSpec); err != nil {
 		return p.failRuns(fmt.Errorf("notify reviewer: %w", err))
@@ -285,7 +285,7 @@ func (p *triggerPass) retirePreviousReviewer() error {
 	}
 	p.previousStopped = true
 	if p.deferInitialMessage {
-		launchSpec := e.reviewLaunchSpec(ctx, p.worker, p.harness, p.config, p.launchRun, p.queue, 0, p.persistedAgentSessionID, p.reviewRow.ReviewerLaunchID)
+		launchSpec := e.reviewLaunchSpec(ctx, p.worker, p.harness, p.config, p.launchRun, p.queue, p.persistedAgentSessionID, p.reviewRow.ReviewerLaunchID)
 		launchSpec.InterfaceMode = p.selectedMode
 		if err := e.launcher.Notify(ctx, p.handleID, launchSpec); err != nil {
 			return p.rollbackReplacement(fmt.Errorf("notify replacement reviewer: %w", err))

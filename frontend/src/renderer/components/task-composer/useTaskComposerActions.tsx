@@ -70,7 +70,12 @@ export function useTaskComposerActions(props: TaskComposerProps, state: ReturnTy
 			preserveProject: true,
 		});
 	}, [hostId, openGlobalSettings, selectedAgent]);
-	const modelWarning = modelAuthIssue ? (
+	// An expired login whose refresh token is still in date needs nothing from
+	// the user on this computer: its daemon lets the task start and the agent
+	// renews the token as it launches. A remote host may run an older daemon
+	// that still rejects the spawn, so keep the notice there.
+	const loginRenewsItself = modelAuthIssue === "expired" && !hostId;
+	const modelWarning = modelAuthIssue && !loginRenewsItself ? (
 		<ModelCatalogNotice
 			agentLabel={selectedAgentLabel}
 			issue={modelAuthIssue}
@@ -78,7 +83,7 @@ export function useTaskComposerActions(props: TaskComposerProps, state: ReturnTy
 			onLogin={startAgentLogin}
 			onRetry={refreshSelectedModels}
 		/>
-	) : modelWarningText;
+	) : modelAuthIssue ? undefined : modelWarningText;
 	useEffect(() => {
 		if (!agentTouched) setAgent(defaultWorkerAgent);
 	}, [agentTouched, defaultWorkerAgent]);

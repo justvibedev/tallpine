@@ -23,6 +23,13 @@ import (
 func (b *boot) wireChat() error {
 	b.wireChatSettings()
 	b.wireChatNotifiers()
+	// The session's own account (a saved one, or this computer's login) is read
+	// again off the chat path; the CLI probe can take seconds.
+	recheckSessionAccount := func(sessionID domain.SessionID, harness domain.AgentHarness) {
+		if accounts := b.agentAccountSvc; accounts != nil {
+			go accounts.RecheckSessionAccount(b.ctx, sessionID, harness)
+		}
+	}
 	b.chatSvc = chatsvc.New(chatsvc.Options{
 		Store:                      b.store,
 		Sessions:                   b.store,
@@ -88,12 +95,11 @@ func (b *boot) wireChat() error {
 		OnAsyncTasksGone: b.bgTasks.Clear,
 		Log:              b.log,
 		NewID:            uuid.NewString,
+		RecheckAccount:   recheckSessionAccount,
 		OnAccountChanged: func(sessionID domain.SessionID, generation string, harness domain.AgentHarness) {
 			// The session's own account (a saved one, or this computer's login) is
 			// read again off the chat path; the CLI probe can take seconds.
-			if accounts := b.agentAccountSvc; accounts != nil {
-				go accounts.RecheckSessionAccount(b.ctx, sessionID, harness)
-			}
+			recheckSessionAccount(sessionID, harness)
 			if harness != domain.HarnessCodex || b.agentSvc == nil || b.agentSvc.Codex().CodexAccountSwitchInProgress() {
 				return
 			}

@@ -49,25 +49,7 @@ func (m *Manager) recordTermination(ctx context.Context, id domain.SessionID, dr
 	return nil
 }
 
-// KillResult distinguishes accepted cleanup from a preserved workspace.
-type KillResult struct {
-	Freed          bool
-	CleanupPending bool
-}
-
-// Kill waits for workspace retirement for internal callers that depend on it.
-func (m *Manager) Kill(ctx context.Context, id domain.SessionID) (bool, error) {
-	result, err := m.kill(ctx, id, false)
-	return result.Freed, err
-}
-
-// RequestKill stops the agent and persists terminal intent before returning.
-// Configured cleanup commands use the daemon's existing background workers.
-func (m *Manager) RequestKill(ctx context.Context, id domain.SessionID) (KillResult, error) {
-	return m.kill(ctx, id, true)
-}
-
-func (m *Manager) kill(ctx context.Context, id domain.SessionID, backgroundCleanup bool) (KillResult, error) {
+func (m *Manager) kill(ctx context.Context, id domain.SessionID, backgroundCleanup, onlyIfLive bool) (KillResult, error) {
 	// Teardown deliberately stops riding the caller's context. Kill runs a
 	// sequence (stop the agent, tear the controller down, mark the row
 	// terminated, drop the worktree) where being cancelled partway leaves a session
@@ -111,6 +93,9 @@ func (m *Manager) kill(ctx context.Context, id domain.SessionID, backgroundClean
 	}
 	if !ok {
 		return KillResult{}, nil // already gone: benign race
+	}
+	if onlyIfLive && rec.IsTerminated {
+		return KillResult{AlreadyTerminated: true}, nil
 	}
 	workspaceProjectRows, workspaceProject, err := m.prepareKillTeardown(ctx, rec)
 	if err != nil {
@@ -210,6 +195,13 @@ func (m *Manager) kill(ctx context.Context, id domain.SessionID, backgroundClean
 		if err := m.recordTermination(ctx, id, true); err != nil {
 			return KillResult{}, err
 		}
+	}
+	// Record the outcome so `tallpine session cleanup` and its dry-run skip a
+	// workspace this kill already settled.
+	if freed {
+		m.recordSettledWorkspaceCleanup(ctx, rec, domain.DispositionRemoved)
+	} else if ws.Path == "" {
+		m.recordSettledWorkspaceCleanup(ctx, rec, domain.DispositionNotApplicable)
 	}
 	return KillResult{Freed: freed}, nil
 }

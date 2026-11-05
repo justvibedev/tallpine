@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
 	"tallpine.eu/tallpine/backend/internal/ports"
 	sessionmanager "tallpine.eu/tallpine/backend/internal/session_manager"
@@ -43,6 +44,9 @@ func (r sessionErrorRow) want(err error) *apierr.Error {
 func sessionErrorRows() []sessionErrorRow {
 	return []sessionErrorRow{
 		{sessionmanager.ErrNotFound, "NotFound", "SESSION_NOT_FOUND", "Unknown session"},
+		{sessionmanager.ErrSessionNotTerminated, "Conflict", "SESSION_NOT_TERMINATED", "Archive the session before deleting it."},
+		{sessionmanager.ErrWorkspaceNotReleased, "Conflict", "WORKSPACE_NOT_RELEASED", "The session's worktree has not been cleaned up yet. Run `tallpine session cleanup` first, or delete with cleanup."},
+		{domain.ErrSessionHistoryShared, "Conflict", "SESSION_HISTORY_SHARED", "This session's turns belong to a conversation that outlives it, so it cannot be deleted."},
 		{ErrPRNotOpen, "Conflict", "PR_NOT_OPEN", "PR is not open"},
 		{ports.ErrAgentAccountUnknown, "NotFound", "AGENT_ACCOUNT_NOT_FOUND", "Unknown agent account"},
 		{ports.ErrAgentAccountProviderMismatch, "Invalid", "AGENT_ACCOUNT_PROVIDER_MISMATCH", "The account is for a different agent"},
@@ -154,6 +158,9 @@ func TestMapSessionErrorSpecialCases(t *testing.T) {
 	if !errors.Is(mapSessionError(plain), plain) {
 		t.Fatal("an unknown error must pass through unchanged")
 	}
+	refused := fmt.Errorf("delete mer-1: %w", &sessionmanager.CleanupRefusedError{Reason: "workspace has uncommitted changes"})
+	equalAPIError(t, mapSessionError(refused),
+		apierr.Conflict("WORKSPACE_CLEANUP_REFUSED", "The worktree was kept, so the session was not deleted: workspace has uncommitted changes", nil))
 	split := &ports.SplitHistoryError{}
 	equalAPIError(t, mapSessionError(fmt.Errorf("x: %w", errors.Join(ports.ErrAgentAccountSplitHistory, split))),
 		apierr.Conflict("AGENT_ACCOUNT_SPLIT_HISTORY", split.Error(), nil))

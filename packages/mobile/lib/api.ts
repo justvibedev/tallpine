@@ -11,3 +11,4 @@ export * from "./api/reviews";
 export * from "./api/backlog";
 export * from "./api/preview";
 export * from "./api/actions";
+export * from "./api/artifacts";

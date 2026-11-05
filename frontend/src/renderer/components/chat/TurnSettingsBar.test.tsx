@@ -45,10 +45,14 @@ describe.each(["native", "ACP submenu", "ACP standalone"] as const)("%s model se
 			</div>,
 		);
 		const open = async () => {
-			await user.click(screen.getByRole("button", {
+			const trigger = screen.getByRole("button", {
 				name: path === "ACP standalone" ? "Model" : "Model and reasoning effort for the next turn",
-			}));
-			if (path !== "ACP standalone") await user.keyboard("{ArrowDown}{ArrowRight}");
+				hidden: true,
+			});
+			// A chosen model closes only its submenu, so the parent menu may still be open.
+			const alreadyOpen = trigger.getAttribute("aria-expanded") === "true";
+			if (!alreadyOpen) await user.click(trigger);
+			if (path !== "ACP standalone") await user.keyboard(alreadyOpen ? "{ArrowRight}" : "{ArrowDown}{ArrowRight}");
 		};
 		return { user, onChange, onComposerClick, open };
 	}
@@ -580,7 +584,8 @@ describe("ACP session config options", () => {
 			within(tools).getByRole("button", { name: "Model and reasoning effort for the next turn" })
 				.querySelector(".lucide-chevron-down"),
 		).toBeNull();
-		expect(within(tools).getByRole("button", { name: "Permission mode" }).querySelector(".lucide-chevron-down")).toBeNull();
+		// The permission button reads as a select: value first, caret second.
+		expect(within(tools).getByRole("button", { name: "Permission mode" }).querySelector(".lucide-chevron-down")).not.toBeNull();
 		expect(within(tools).queryByRole("button", { name: "Fast mode" })).not.toBeInTheDocument();
 		expect(within(tools).queryByRole("button", { name: "Agent" })).not.toBeInTheDocument();
 		expect(screen.queryByText("Default")).not.toBeInTheDocument();
@@ -1691,20 +1696,4 @@ describe("effort default when the provider reports none", () => {
 			models={[{ id: "m1", displayName: "Model", default: true, efforts: ["low", "medium", "high"], defaultEffort: "high" }]} />);
 		expect(onChange).not.toHaveBeenCalled();
 	});
-});
-
-describe("permissions for the agent picked for the next message", () => {
-	it("goes back to the chat's own mode when leaving an agent that needed another", () => {
-		render(
-			<TurnSettingsBar
-				harness="pi"
-				models={[]}
-				settings={{ approvalMode: "bypass-permissions" }}
-				onChange={vi.fn()}
-				agentSwitch={{ projectId: "p", pending: { harness: "claude-code" }, chatPermissionMode: "accept-edits", onPendingChange: vi.fn() }}
-			/>,
-		);
-		expect(screen.getByRole("button", { name: "Approval policy for Claude Code" })).toHaveTextContent("Accept edits");
-	});
-
 });

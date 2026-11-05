@@ -9238,6 +9238,60 @@ paths:
       tags:
       - sessions
   /api/v1/sessions/{sessionId}:
+    delete:
+      operationId: deleteSession
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      - description: When true, a worktree that is still on disk is cleaned up first,
+          the way session cleanup does it; a dirty or locked worktree is never forced
+          and refuses the delete.
+        in: query
+        name: cleanup
+        schema:
+          description: When true, a worktree that is still on disk is cleaned up first,
+            the way session cleanup does it; a dirty or locked worktree is never forced
+            and refuses the delete.
+          type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteSessionResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Permanently delete a terminated session whose workspace is released
+      tags:
+      - sessions
     get:
       operationId: getSession
       parameters:
@@ -9494,6 +9548,45 @@ paths:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
       summary: Read the agent policy decision a session's latest launch was made under
+      tags:
+      - sessions
+  /api/v1/sessions/{sessionId}/artifact-events:
+    get:
+      operationId: streamSessionArtifactChanges
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            text/event-stream:
+              schema:
+                type: string
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Stream changes to the files in a session's artifact directory
       tags:
       - sessions
   /api/v1/sessions/{sessionId}/artifact-files:
@@ -18282,8 +18375,12 @@ components:
           - string
         provider:
           type: string
+        requiresVersion:
+          type: string
         supportsFast:
           type: boolean
+        unavailableReason:
+          type: string
       required:
       - id
       - label
@@ -22692,6 +22789,16 @@ components:
       - ok
       - workerId
       type: object
+    DeleteSessionResponse:
+      properties:
+        ok:
+          type: boolean
+        sessionId:
+          type: string
+      required:
+      - ok
+      - sessionId
+      type: object
     DesktopArtifactLocationResponse:
       properties:
         artifactDir:
@@ -24819,6 +24926,16 @@ components:
           type: string
         chatHibernation:
           $ref: '#/components/schemas/ChatHibernationConfig'
+        claudeAutoMemory:
+          additionalProperties:
+            type: boolean
+          type: object
+        claudePlugins:
+          additionalProperties:
+            additionalProperties:
+              type: boolean
+            type: object
+          type: object
         cloneWorktreeInclude:
           type: boolean
         containerReap:
@@ -25909,6 +26026,9 @@ components:
         message:
           maxLength: 4096
           minLength: 1
+          type: string
+        relayOwnerMessage:
+          maxLength: 128
           type: string
         senderSessionId:
           type: string

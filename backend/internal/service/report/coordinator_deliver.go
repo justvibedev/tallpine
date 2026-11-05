@@ -88,7 +88,10 @@ func (c *Coordinator) deliverBatch(ctx context.Context, target domain.SessionRec
 		_, err = c.store.AcknowledgeReportBatch(ctx, batch.ProjectID, batch.Token, c.now().UTC())
 		return err
 	}
-	if batch.hasState(domain.ReportStuck) {
+	// Terminal orchestrators queue typed input during a turn, and a Ctrl-C there
+	// cancels the running turn or a just-submitted prompt, so stuck reports are
+	// delivered to them like any other report.
+	if batch.hasState(domain.ReportStuck) && domain.NormalizeSessionMode(target.Mode) == domain.SessionModeChat {
 		interrupted := false
 		var nextInterrupt time.Time
 		for _, worker := range batch.stuckWorkers() {

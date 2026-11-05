@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/agentpolicy"
+	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
 	"tallpine.eu/tallpine/backend/internal/ports"
 	sessionmanager "tallpine.eu/tallpine/backend/internal/session_manager"
@@ -82,6 +83,15 @@ func splitHistoryError(err error) error {
 	return apierr.Conflict("AGENT_ACCOUNT_SPLIT_HISTORY", message, nil)
 }
 
+func cleanupRefusedError(err error) error {
+	message := "The worktree was kept, so the session was not deleted"
+	var refused *sessionmanager.CleanupRefusedError
+	if errors.As(err, &refused) && refused.Reason != "" {
+		message += ": " + refused.Reason
+	}
+	return apierr.Conflict("WORKSPACE_CLEANUP_REFUSED", message, nil)
+}
+
 // operationInProgressError names the holding operation and its age (B541) so
 // callers know what they are waiting for instead of blind-retrying.
 func operationInProgressError(err error) error {
@@ -124,6 +134,10 @@ var sessionErrorRules = []sessionErrorRule{
 	{agentpolicy.ErrRequiresFence, kindConflict, "", "", fenceRequiredError},
 	{ports.ErrProjectEnvLocked, kindConflict, ports.CodeProjectEnvLocked, ports.ProjectEnvLockedMessage, nil},
 	{sessionmanager.ErrNotFound, kindNotFound, "SESSION_NOT_FOUND", "Unknown session", nil},
+	{sessionmanager.ErrSessionNotTerminated, kindConflict, "SESSION_NOT_TERMINATED", "Archive the session before deleting it.", nil},
+	{sessionmanager.ErrCleanupRefused, kindConflict, "", "", cleanupRefusedError},
+	{sessionmanager.ErrWorkspaceNotReleased, kindConflict, "WORKSPACE_NOT_RELEASED", "The session's worktree has not been cleaned up yet. Run `tallpine session cleanup` first, or delete with cleanup.", nil},
+	{domain.ErrSessionHistoryShared, kindConflict, "SESSION_HISTORY_SHARED", "This session's turns belong to a conversation that outlives it, so it cannot be deleted.", nil},
 	{ErrPRNotOpen, kindConflict, "PR_NOT_OPEN", "PR is not open", nil},
 	{ports.ErrAgentAccountUnknown, kindNotFound, "AGENT_ACCOUNT_NOT_FOUND", "Unknown agent account", nil},
 	{ports.ErrAgentAccountProviderMismatch, kindInvalid, "AGENT_ACCOUNT_PROVIDER_MISMATCH", "The account is for a different agent", nil},

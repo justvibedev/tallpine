@@ -161,3 +161,23 @@ func TestLaneOrchestratorWorkspaceProjectUsesLanePrefix(t *testing.T) {
 		t.Fatalf("lane prefix = %q, default %q; want distinct lane-suffixed prefix", got, def)
 	}
 }
+
+// B554: KillIfLive leaves a session someone else already killed alone and
+// reports false; a live one is killed and reports true.
+func TestKillIfLiveSkipsTerminatedSession(t *testing.T) {
+	t.Parallel()
+	m, st := newGitWorktreeManager(t)
+	a, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "mer", Kind: domain.KindOrchestrator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := m.KillIfLive(ctx, a.ID); err != nil || !ok {
+		t.Fatalf("live KillIfLive = %v, %v; want true", ok, err)
+	}
+	if !st.sessions[a.ID].IsTerminated {
+		t.Fatal("session should be terminated")
+	}
+	if ok, err := m.KillIfLive(ctx, a.ID); err != nil || ok {
+		t.Fatalf("terminated KillIfLive = %v, %v; want false", ok, err)
+	}
+}

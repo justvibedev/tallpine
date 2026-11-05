@@ -66,3 +66,9 @@ type CleanupSessionsResponse struct {
 	AlreadyGone []domain.SessionID      `json:"alreadyGone"`
 	Skipped     []CleanupSkippedSession `json:"skipped"`
 }
+
+// DeleteSessionResponse is the body of DELETE /api/v1/sessions/{sessionId}.
+type DeleteSessionResponse struct {
+	OK        bool             `json:"ok"`
+	SessionID domain.SessionID `json:"sessionId"`
+}

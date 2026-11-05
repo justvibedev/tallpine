@@ -61,6 +61,7 @@ func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {
 	}
 	message := domain.SanitizeControlChars(in.Message)
 	if agent, ok := scopedAgent(r); ok {
+		message = domain.NeutralizeOwnerStamp(message)
 		if agent.Role != requestscope.RoleOrchestrator {
 			message = domain.FrameUntrusted(string(agent.SessionID), message)
 		} else if target, err := c.Svc.Get(r.Context(), sessionID(r)); err != nil || target.Kind == domain.KindOrchestrator {
@@ -68,6 +69,14 @@ func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {
 			// unknown target is framed (fail closed).
 			message = domain.FrameUntrustedOrchestrator(string(agent.SessionID), message)
 		}
+	}
+	if in.RelayOwnerMessage != "" {
+		block, code, msg := c.ownerRelayBlock(r, in.RelayOwnerMessage)
+		if code != "" {
+			envelope.WriteAPIError(w, r, http.StatusForbidden, "forbidden", code, msg, nil)
+			return
+		}
+		message = block + "\n\n" + message
 	}
 	var err error
 	var receipt ports.MessageReceipt

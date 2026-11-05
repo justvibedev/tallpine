@@ -179,6 +179,7 @@ func (m *Manager) freshLaunchOptions(ctx context.Context, harness domain.AgentHa
 		envWindow := harness == domain.HarnessClaudeCode && project.Env[contextwindow.ClaudeAutoCompactWindowEnv] != ""
 		options.AutoCompactWindow = domain.DefaultAutoCompactChoice(kind, project, harnessDefault, envWindow)
 	}
+	options.EnabledPlugins, options.AutoMemoryOff = project.ClaudeLaunchFor(domain.SessionRoleFor(kind))
 	return m.withModelWindow(ctx, harness, projectID, model, options)
 }
 

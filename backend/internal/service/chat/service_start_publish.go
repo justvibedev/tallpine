@@ -36,7 +36,7 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 	// A fresh generation per launch, so events from the controller this one
 	// replaced can be told apart from the current one's.
 	l.controller = newController(
-		l.cfg.SessionID, l.owner, l.conversation, l.generation, l.cfg.Harness, l.conv, s.store, s.activity, s.log, s.newID, s.now, s.onAccountChanged, s.onCodexCapacityChanged, s.reader)
+		l.cfg.SessionID, l.owner, l.conversation, l.generation, l.cfg.Harness, l.conv, s.store, s.activity, s.log, s.newID, s.now, s.onAccountChanged, s.recheckAccount, s.onCodexCapacityChanged, s.reader)
 	l.controller.onAsyncTask = s.onAsyncTask
 	l.controller.onAsyncTasksGone = s.onAsyncTasksGone
 	l.controller.reportCoordinator = func() *reportsvc.Coordinator { return s.reports.Load() }

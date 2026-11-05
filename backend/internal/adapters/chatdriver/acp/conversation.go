@@ -149,7 +149,7 @@ type conversation struct {
 	// next successful turn reports recovery. Durable recovery after a restart is
 	// established by the controller from turn completion, not from this signal.
 	authRejected          bool
-	promptResponseFailure func(acpsdk.PromptResponse) error
+	promptResponseFailure func(acpsdk.PromptResponse, string) error
 	// turnUsage: see Config.TurnUsage.
 	turnUsage func(map[string]any, string) []domain.ModelUsage
 	// infoContextUsage: see Config.InfoContextUsage.
@@ -175,6 +175,18 @@ type conversation struct {
 	// so a rejected or discarded turn leaves it armed for the next one.
 	preamble      []acpsdk.ContentBlock
 	preambleSpent bool
+	// servedModel reports the model that answered a completed turn; nil when the
+	// binding cannot tell. lastServedModel suppresses repeating the same report.
+	servedModel     func(ctx context.Context, sessionID, selectedModel string) (string, string)
+	lastServedModel string
+	// validateModel rejects a model the binding knows the agent cannot use;
+	// nil when the binding has no such knowledge.
+	validateModel func(ctx context.Context, model string) error
+	// turnModel is the model selected when turn turnModelID started. The
+	// selection can change while a turn runs, so turn-scoped facts (a version
+	// rejection, the model that answered) are attributed to this value instead.
+	turnModel   string
+	turnModelID string
 
 	contextTokens     int64
 	contextWindow     int64

@@ -1,12 +1,12 @@
 import { usePathname, useRootNavigationState, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { shouldOnboard } from "./onboarding";
+import { launchRedirect } from "./onboarding";
 import { loadOnboardingSkipped } from "./onboardingStore";
 import { useApp } from "./store";
 
 // Headless. Mounted beside PushManager in `app/_layout.tsx`; sends a first-run
 // user to the welcome screen once both the saved config and the skip flag have
-// resolved. Decision logic lives in `onboarding.ts` so it is unit-testable.
+// resolved, and everyone else to Projects (the launch page). Decision logic lives in `onboarding.ts` so it is unit-testable.
 export function OnboardingGate() {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -25,15 +25,17 @@ export function OnboardingGate() {
 	useEffect(() => {
 		if (redirected.current) return;
 		if (!navState?.key) return; // wait until navigation is ready to accept routes
-		// `config` is null until the store's first load resolves; `shouldOnboard`
-		// treats that as "not known yet" and declines to act.
+		// `config` is null until the store's first load resolves; `launchRedirect`
+		// treats that as "not known yet" and declines to act. It also leaves a
+		// deep-linked launch (any pathname other than `/`) where it is.
 		const configured = config === null ? null : config.host.trim().length > 0;
-		if (!shouldOnboard({ configured, skipped })) return;
-		// Don't fight the user if they've already navigated somewhere deliberately
-		// (e.g. straight to the scanner from a deep link).
-		if (pathname !== "/") return;
+		const target = launchRedirect({ configured, skipped, pathname });
+		if (target === null) {
+			if (configured !== null && skipped !== null) redirected.current = true;
+			return;
+		}
 		redirected.current = true;
-		router.replace("/onboarding");
+		router.replace(target);
 	}, [config, skipped, pathname, router, navState?.key]);
 
 	return null;

@@ -238,9 +238,9 @@ describe("AssistantMessage streaming", () => {
 		expect(frames.size).toBe(0);
 	});
 
-	it("spreads a large received burst over several frames instead of dumping it", () => {
+	it("smooths received bursts up to 4,000 characters", () => {
 		const view = render(<AssistantMessage message={message()} />);
-		const text = "a".padEnd(10_000, "x");
+		const text = "a".padEnd(4000, "x");
 		view.rerender(<AssistantMessage message={message({ text })} />);
 
 		runFrame(0);

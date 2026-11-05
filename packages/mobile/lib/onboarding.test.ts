@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldOnboard } from "./onboarding";
+import { shouldOnboard, launchRedirect } from "./onboarding";
 
 describe("shouldOnboard", () => {
 	it("onboards a fresh install", () => {
@@ -30,5 +30,22 @@ describe("shouldOnboard", () => {
 
 	it("waits while both are still loading", () => {
 		expect(shouldOnboard({ configured: null, skipped: null })).toBe(false);
+	});
+});
+
+describe("launchRedirect", () => {
+	it("lands a paired cold launch on Projects, not Workers", () => {
+		expect(launchRedirect({ configured: true, skipped: false, pathname: "/" })).toBe("/projects");
+		expect(launchRedirect({ configured: false, skipped: true, pathname: "/" })).toBe("/projects");
+	});
+	it("sends a first-run user to onboarding", () => {
+		expect(launchRedirect({ configured: false, skipped: false, pathname: "/" })).toBe("/onboarding");
+	});
+	it("waits until both inputs are known", () => {
+		expect(launchRedirect({ configured: null, skipped: false, pathname: "/" })).toBeNull();
+		expect(launchRedirect({ configured: true, skipped: null, pathname: "/" })).toBeNull();
+	});
+	it("leaves a deep-linked launch alone", () => {
+		expect(launchRedirect({ configured: true, skipped: false, pathname: "/session/abc" })).toBeNull();
 	});
 });

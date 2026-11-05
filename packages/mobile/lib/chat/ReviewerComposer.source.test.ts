@@ -11,6 +11,11 @@ describe("reviewer attachment composer", () => {
 		expect(source).toContain("<ChatAttachmentMenu");
 	});
 
+	it("takes pasted images only while attachments are enabled and the reply can be sent", () => {
+		expect(source).toContain("useImagePaste(stopped || submitting || !attachmentsEnabled ? null : addImages)");
+		expect(source).toContain("onLayout={pasteLayout}");
+	});
+
 	it("only sends or interrupts and has no ordinary session actions", () => {
 		expect(source).toContain("await onSend(");
 		expect(source).toContain("onInterrupt()");

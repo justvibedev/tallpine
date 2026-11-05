@@ -459,7 +459,7 @@ func TestClaudePromptResponseFailureRequiresStructuredLoginAction(t *testing.T) 
 		}}},
 	}
 
-	err := claudePromptResponseFailure(response)
+	err := claudePromptResponseFailure(response, "")
 	if !errors.Is(err, ports.ErrChatAuthRequired) {
 		t.Fatalf("error = %v, want ErrChatAuthRequired", err)
 	}
@@ -470,7 +470,7 @@ func TestClaudePromptResponseFailureIgnoresAssistantAuthProse(t *testing.T) {
 		StopReason: acpsdk.StopReasonEndTurn,
 		Meta:       map[string]any{"assistantMessage": "Your OAuth token has expired; please run /login."},
 	}
-	if err := claudePromptResponseFailure(response); err != nil {
+	if err := claudePromptResponseFailure(response, ""); err != nil {
 		t.Fatalf("assistant prose classified as terminal auth failure: %v", err)
 	}
 }

@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { feedConfig, feedConfigYaml, UPDATE_TEAM_ID } from "./update-feed";
 import { isManagedUpdatePolicy, parseManagedUpdatePolicy, readManagedUpdatePolicy } from "./update-policy";
-import { planUpdates, readBuildDirty, type UpdateEnvironment } from "./update-eligibility";
+import { planUpdates, readBuildDirty, readBuildKind, type UpdateEnvironment } from "./update-eligibility";
 import { isQuietUpdateError } from "./update-errors";
 import { coerceUpdateSettings, readUpdateSettings, writeUpdateSettings, DEFAULT_UPDATE_SETTINGS } from "./update-settings";
 
@@ -73,7 +73,7 @@ describe("planUpdates", () => {
 	});
 
 	it("never updates dirty, unstamped or non-release builds", () => {
-		for (const env of [{ ...releaseEnv, buildDirty: "true" }, { ...releaseEnv, buildDirty: undefined }, { ...releaseEnv, version: "dev" }]) {
+		for (const env of [{ ...releaseEnv, buildDirty: "true" }, { ...releaseEnv, buildDirty: undefined }, { ...releaseEnv, version: "dev" }, { ...releaseEnv, version: "1.4.0-dev.abcd1234", buildKind: "local" }]) {
 			expect(planUpdates(env, DEFAULT_UPDATE_SETTINGS, {})).toEqual({ active: false, reason: "not-a-release" });
 		}
 	});
@@ -106,6 +106,19 @@ describe("readBuildDirty", () => {
 		await writeFile(path.join(contents, "Info.plist"), "<dict><key>VOBuildDirty</key>\n\t<string>false</string></dict>");
 		expect(await readBuildDirty(path.join(contents, "Resources"))).toBe("false");
 		expect(await readBuildDirty(path.join(contents, "missing", "Resources"))).toBeUndefined();
+	});
+});
+
+describe("readBuildKind", () => {
+	it("reads TallpineBuildKind from the bundle's Info.plist", async () => {
+		const contents = await mkdtemp(path.join(os.tmpdir(), "tp-update-"));
+		await mkdir(path.join(contents, "Resources"));
+		const resources = path.join(contents, "Resources");
+		await writeFile(path.join(contents, "Info.plist"), "<dict><key>TallpineBuildKind</key>\n\t<string>local</string></dict>");
+		expect(await readBuildKind(resources)).toBe("local");
+		await writeFile(path.join(contents, "Info.plist"), "<dict><key>VOBuildDirty</key><string>false</string></dict>");
+		expect(await readBuildKind(resources)).toBeUndefined();
+		expect(await readBuildKind(path.join(contents, "missing", "Resources"))).toBeUndefined();
 	});
 });
 

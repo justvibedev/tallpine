@@ -4,7 +4,7 @@ import { ElectronAppAdapter } from "electron-updater/out/ElectronAppAdapter";
 import path from "node:path";
 import { createAutoUpdater, type AutoUpdaterController, type UpdaterLike } from "./auto-updater";
 import { agentsBusy } from "./idle-agents";
-import { readBuildDirty, readSigningTeam } from "./update-eligibility";
+import { readBuildDirty, readBuildKind, readSigningTeam } from "./update-eligibility";
 import { readManagedUpdatePolicy } from "./update-policy";
 import { coerceUpdateSettings, type UpdatePreferences, type UpdateStatus } from "./update-settings";
 
@@ -51,6 +51,7 @@ export function initAppUpdates(options: { ipcMain: Pick<IpcMain, "handle">; stat
 				platform: process.platform,
 				version: app.getVersion(),
 				buildDirty: packaged ? await readBuildDirty(process.resourcesPath) : undefined,
+				buildKind: packaged ? await readBuildKind(process.resourcesPath) : undefined,
 				teamId: packaged && process.platform === "darwin" ? await readSigningTeam(bundlePath()) : null,
 			};
 		},

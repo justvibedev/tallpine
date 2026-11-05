@@ -424,13 +424,16 @@ func TestBuildSystemPrompt_WorkerNativeReviewAsksBeforeTriggering(t *testing.T) 
 	}
 
 	off := build(true)
-	for _, want := range append(common, "ask the user or the orchestrator whether to start a Tallpine review") {
+	for _, want := range append(common, "Do not ask whether to start a review; the orchestrator starts it") {
 		if !strings.Contains(off, want) {
 			t.Fatalf("default worker prompt missing %q:\n%s", want, off)
 		}
 	}
 	if strings.Contains(off, "This project asks workers to request it") {
 		t.Fatalf("default worker prompt requests review :\n%s", off)
+	}
+	if strings.Contains(off, "whether to start a Tallpine review") {
+		t.Fatalf("worker prompt with an orchestrator still asks before triggering:\n%s", off)
 	}
 	if solo := build(false); !strings.Contains(solo, "ask the user whether to start a Tallpine review") {
 		t.Fatalf("worker prompt without an orchestrator should only ask the user:\n%s", solo)

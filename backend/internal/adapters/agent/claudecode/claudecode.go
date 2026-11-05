@@ -210,7 +210,7 @@ func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (
 }
 
 // claudeLaunchSettingsArgs passes a session's launch choices to Claude Code as
-// settings: Ultracode, the token count at which it compacts on its own, and
+// settings: the session's own launch options (addLaunchOptionSettings) and
 // what the agent policy decides (the protectState sandbox). They share one
 // --settings flag with the auto-mode dialog guard (see autoDefaultNudgeGuardArgs).
 func claudeLaunchSettingsArgs(options domain.AgentLaunchOptions, policy agentruntime.PermissionPolicy, env map[string]string, decision agentpolicy.Decision) []string {
@@ -223,13 +223,7 @@ func claudeLaunchSettingsArgs(options domain.AgentLaunchOptions, policy agentrun
 	// Pinned in the flag layer so a disableAllHooks in the worktree's local or
 	// project settings cannot switch Tallpine's hooks off.
 	settings["disableAllHooks"] = false
-	if options.Ultracode {
-		settings["ultracode"] = true
-	}
-	if tokens := domain.AutoCompactTokenCount(options.AutoCompactWindow, options.ModelContextWindow); tokens > 0 {
-		settings["autoCompactEnabled"] = true
-		settings["autoCompactWindow"] = tokens
-	}
+	addLaunchOptionSettings(settings, options)
 	encoded, _ := json.Marshal(settings)
 	return []string{"--settings", string(encoded)}
 }

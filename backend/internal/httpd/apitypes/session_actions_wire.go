@@ -66,6 +66,10 @@ type SendSessionMessageRequest struct {
 	// UserAuthored marks content written directly by the user but delivered via
 	// Tallpine's automation relay, such as inline document feedback.
 	UserAuthored bool `json:"userAuthored,omitempty"`
+	// RelayOwnerMessage names a message in the sending agent's own chat (an id,
+	// or "last"). The daemon checks it is a turn the owner typed and delivers
+	// it verbatim in a daemon-stamped block before Message.
+	RelayOwnerMessage string `json:"relayOwnerMessage,omitempty" maxLength:"128"`
 	// Attachment is an optional inline image (e.g. a browser-annotation
 	// snapshot) delivered alongside the message. The daemon writes it into the
 	// session worktree and appends a path reference to the message.

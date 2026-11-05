@@ -124,26 +124,10 @@ func (s *Store) LoadConversationSnapshotPage(
 		}
 		return snapshot, nil
 	}
-	fetchLimit := limit + 1
-
-	messageRows, err := s.snapshotReader(ctx).SelectConversationMessagesPage(ctx, gen.SelectConversationMessagesPageParams{
-		ConversationID: conversationID,
-		BeforeSequence: beforeSequence,
-		PageLimit:      fetchLimit,
-	})
+	messageRows, activityRows, oldest, hasMore, err := s.loadSnapshotPageWindow(ctx, conversationID, beforeSequence, visibleAfterSequence, limit)
 	if err != nil {
-		return ConversationSnapshot{}, fmt.Errorf("select message page: %w", err)
+		return ConversationSnapshot{}, err
 	}
-	activityRows, err := s.snapshotReader(ctx).SelectConversationActivitiesPage(ctx, gen.SelectConversationActivitiesPageParams{
-		ConversationID: conversationID,
-		BeforeSequence: beforeSequence,
-		PageLimit:      fetchLimit,
-	})
-	if err != nil {
-		return ConversationSnapshot{}, fmt.Errorf("select activity page: %w", err)
-	}
-
-	oldest, hasMore := snapshotPageWindow(messageRows, activityRows, visibleAfterSequence, limit, beforeSequence)
 
 	turnRows, err := s.snapshotReader(ctx).SelectConversationTurnsPage(ctx, gen.SelectConversationTurnsPageParams{
 		ConversationID: conversationID,

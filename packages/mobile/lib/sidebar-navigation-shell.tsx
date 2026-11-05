@@ -214,6 +214,12 @@ export function SidebarNavigationShell({ children }: { children: ReactNode }) {
 		<SidebarNavigationContext.Provider value={context}>
 			<View style={styles.shell} {...panResponder.panHandlers}>
 				<Animated.View
+					// A closed drawer still sits behind the page, and its SwiftUI
+					// destination Host lies right under the header. Left touchable,
+					// UIKit/SwiftUI hit-testing sends header taps to that hidden Host
+					// once it has been shown, so the menu button stops responding
+					// after the first navigation. Android has always done this.
+					pointerEvents={open ? "auto" : "none"}
 					style={[
 						styles.sidebar,
 						sidebarContentTransform,

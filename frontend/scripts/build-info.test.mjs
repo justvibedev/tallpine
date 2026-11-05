@@ -11,7 +11,7 @@ describe("resolveBuildInfo", () => {
 		const info = resolveBuildInfo({
 			env: { TALLPINE_BUILD_VERSION: "1.2.3", TALLPINE_BUILD_COMMIT: "abc", TALLPINE_BUILD_DATE: "2026-10-26T00:00:00Z", TALLPINE_BUILD_DIRTY: "true" },
 		});
-		expect(info).toEqual({ version: "1.2.3", commit: "abc", date: "2026-10-26T00:00:00Z", dirty: "true" });
+		expect(info).toEqual({ version: "1.2.3", commit: "abc", date: "2026-10-26T00:00:00Z", dirty: "true", kind: "release" });
 	});
 
 	it("falls back to package.json, no commit and a clean flag outside a git checkout", () => {
@@ -65,5 +65,12 @@ describe("goLdflags", () => {
 			expect(out).not.toContain("releaseRepo");
 			expect(out).not.toContain("ExpectedTeamID");
 		}
+	});
+});
+
+describe("build kind", () => {
+	it("is local only when TALLPINE_BUILD_KIND=local", () => {
+		expect(resolveBuildInfo({ env: { TALLPINE_BUILD_VERSION: "1", TALLPINE_BUILD_COMMIT: "a", TALLPINE_BUILD_DIRTY: "false", TALLPINE_BUILD_KIND: "local" } }).kind).toBe("local");
+		expect(resolveBuildInfo({ env: { TALLPINE_BUILD_VERSION: "1", TALLPINE_BUILD_COMMIT: "a", TALLPINE_BUILD_DIRTY: "false" } }).kind).toBe("release");
 	});
 });

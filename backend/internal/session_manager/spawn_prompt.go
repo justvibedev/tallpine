@@ -223,7 +223,8 @@ func (m *Manager) tallpineSkillPointer(chat bool) string {
 		"When a chart, table, diagram, or mockup is clearer than text, call `html_preview`, then `html_render`. " +
 		"If you cannot see them, search your tools for them. " +
 		"If you find nothing, read `" + renderFile + "` and use `tallpine render`. " +
-		"Do not use a built-in visualize skill."
+		"Do not use a built-in visualize skill. " +
+		"To show screenshots or local images, render them by absolute path (`<img src=\"/abs/shot.png\">`); never claim you cannot show images."
 }
 
 func (m *Manager) workspaceProjectPrompt(ctx context.Context, kind domain.SessionKind, projectID domain.ProjectID) (string, error) {

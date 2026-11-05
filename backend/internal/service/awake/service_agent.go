@@ -109,7 +109,7 @@ func (s *Service) runAgent(ctx context.Context, task agentTask) {
 // policy. An unused feature must not spawn a native process every five seconds.
 func (s *Service) needsObservations() bool {
 	if s.doc.StopReason != "" {
-		return false
+		return s.doc.StopReason == "low_battery"
 	}
 	for _, source := range s.doc.Sessions {
 		if source.EndedAt == nil {

@@ -69,6 +69,7 @@ type Service struct {
 	newID                  IDFactory
 	now                    Clock
 	onAccountChanged       func(domain.SessionID, string, domain.AgentHarness)
+	recheckAccount         func(domain.SessionID, domain.AgentHarness)
 	onAsyncTask            func(domain.SessionID, ports.ChatAsyncTask)
 	onAsyncTasksGone       func(domain.SessionID)
 	onCodexCapacityChanged func(domain.SessionID, string, ports.CodexCapacityObservation)
@@ -205,6 +206,10 @@ type Options struct {
 	// OnAccountChanged invalidates daemon-owned account readiness for the
 	// harness that emitted an account/updated notification.
 	OnAccountChanged func(domain.SessionID, string, domain.AgentHarness)
+	// RecheckAccount reads the session's account again when a turn starts while
+	// a refused login is pending, so a login that works clears the notice. It
+	// is not a refusal and leaves readiness alone.
+	RecheckAccount func(domain.SessionID, domain.AgentHarness)
 	// OnAsyncTask receives each harness background task report.
 	OnAsyncTask func(domain.SessionID, ports.ChatAsyncTask)
 	// OnAsyncTasksGone fires when a session's provider process is gone (its
@@ -272,6 +277,7 @@ func New(opts Options) *Service {
 		newID:                  opts.NewID,
 		now:                    now,
 		onAccountChanged:       opts.OnAccountChanged,
+		recheckAccount:         opts.RecheckAccount,
 		onAsyncTask:            opts.OnAsyncTask,
 		onAsyncTasksGone:       opts.OnAsyncTasksGone,
 		onCodexCapacityChanged: opts.OnCodexCapacityChanged,

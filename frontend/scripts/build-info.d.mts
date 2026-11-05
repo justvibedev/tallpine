@@ -6,6 +6,7 @@ export interface BuildInfo {
 	commit: string;
 	date: string;
 	dirty: "true" | "false";
+	kind: "local" | "release";
 }
 export declare const BUILDINFO_PACKAGE: string;
 export declare function resolveBuildInfo(options?: {

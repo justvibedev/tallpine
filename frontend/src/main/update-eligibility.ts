@@ -12,6 +12,8 @@ export interface UpdateEnvironment {
 	version: string;
 	/** VOBuildDirty from Info.plist: "false" for a clean release build. */
 	buildDirty: string | undefined;
+	/** TallpineBuildKind from Info.plist: "local" for a non-public build; absent on releases. */
+	buildKind?: string | undefined;
 	/** TeamIdentifier of the running app's signature, null when ad hoc or unsigned. */
 	teamId: string | null;
 }
@@ -30,7 +32,7 @@ export function planUpdates(env: UpdateEnvironment, settings: UpdateSettings, po
 	if (policy.invalid || policy.enabled === false) return { active: false, reason: "managed" };
 	// Local or dirty builds are not releases; an update would replace them with
 	// something unrelated to what the developer built.
-	if (!RELEASE_VERSION.test(env.version) || env.buildDirty !== "false") return { active: false, reason: "not-a-release" };
+	if (!RELEASE_VERSION.test(env.version) || env.buildDirty !== "false" || env.buildKind === "local") return { active: false, reason: "not-a-release" };
 	// Squirrel.Mac accepts an update only if it satisfies the running app's
 	// designated requirement. For a Developer ID build that pins the team; for
 	// an ad hoc one it pins a hash no release matches. Require our team so the
@@ -54,6 +56,16 @@ export async function readBuildDirty(resourcesPath: string): Promise<string | un
 	try {
 		const plist = await readFile(path.join(contentsDir(resourcesPath), "Info.plist"), "utf8");
 		return /<key>VOBuildDirty<\/key>\s*<string>([^<]*)<\/string>/.exec(plist)?.[1];
+	} catch {
+		return undefined;
+	}
+}
+
+/** TallpineBuildKind from the bundle's Info.plist, undefined when unstamped. */
+export async function readBuildKind(resourcesPath: string): Promise<string | undefined> {
+	try {
+		const plist = await readFile(path.join(contentsDir(resourcesPath), "Info.plist"), "utf8");
+		return /<key>TallpineBuildKind<\/key>\s*<string>([^<]*)<\/string>/.exec(plist)?.[1];
 	} catch {
 		return undefined;
 	}

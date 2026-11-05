@@ -22,6 +22,14 @@ func (c *Controller) afterProject(ctx context.Context, event ports.ChatEvent, pr
 		if primaryTurn {
 			c.keepOpenInputsOf(event.ProviderTurnID)
 			c.reportActivity(ctx, domain.ActivityActive, "chat.turn.started", now)
+			// A turn after a refused login hints the login is back. Reading the
+			// account again confirms it and clears the sign-in notice now, not
+			// when this turn ends.
+			if c.recheckAccount != nil {
+				if account, err := c.store.ConversationAccount(ctx, c.conversation.ID); err == nil && account != nil && account.ReauthRequiredAt != nil {
+					c.recheckAccount(c.sessionID, c.harness)
+				}
+			}
 		}
 	case ports.ChatEventTurnCompleted:
 		reauthRequired := errors.Is(event.Err, ports.ErrChatAuthRequired)

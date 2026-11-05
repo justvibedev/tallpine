@@ -126,6 +126,9 @@ func (b *boot) serve() error {
 				}
 			}
 		}()
+		if reconciler, ok := b.sessMgr.(workspaceCleanupReconciler); ok {
+			go runWorkspaceCleanupSweep(b.ctx, done, reconciler, b.log)
+		}
 		go runVersionRefreshSweep(b.ctx, b.cfg, b.settingsSvc, b.sessMgr, b.systemInstall, b.log)
 	})
 

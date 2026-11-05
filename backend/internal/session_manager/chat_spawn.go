@@ -168,7 +168,7 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 		ExpectedControllerOwner: in.record.ControllerOwner(),
 		PrepareControllerEnv: func(launchCtx context.Context, expected domain.SessionControllerOwner, harness domain.AgentHarness) (map[string]string, error) {
 			prepared, launchEnv, prepareErr := m.prepareChatControllerEnv(
-				launchCtx, in.record, in.project.Config.Env, expected, harness,
+				launchCtx, in.record, in.project.Config, expected, harness,
 			)
 			if prepareErr != nil {
 				return nil, fmt.Errorf("%w: %w", ErrSpawnBrowser, prepareErr)

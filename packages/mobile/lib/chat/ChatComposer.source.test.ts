@@ -159,3 +159,10 @@ describe("session changes pill", () => {
 		expect(composer).toContain('{attachments.length ? "Attachments next" : "Sent after this"}');
 	});
 });
+
+describe("chat composer image paste", () => {
+	it("attaches the composer field to image paste unless stopped or submitting", () => {
+		expect(composer).toContain("useImagePaste(stopped || submitting ? null : pasteImages)");
+		expect(composer).toContain("onLayout={pasteLayout}");
+	});
+});

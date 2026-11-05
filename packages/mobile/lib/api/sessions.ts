@@ -45,6 +45,10 @@ export type DashboardPR = {
 export type SessionProvisionStep = components["schemas"]["SessionProvisionStep"];
 
 export type DashboardSession = {
+	/** Files in the session's artifact directory, newest first. */
+	artifacts?: import("../artifacts").SessionArtifact[];
+	/** Whether the artifact directory has files; the board row says so without listing them. */
+	hasArtifacts?: boolean;
 	id: string;
 	projectId: string;
 	/** Opaque daemon runtime handle used only for terminal mux operations. */
@@ -319,9 +323,9 @@ export async function getArchivedSessions(
 
 // ---- Session artifacts (read-only; the single-session read lists them) ------
 
-export type SessionArtifact = components["schemas"]["SessionArtifact"];
+export type { SessionArtifact } from "../artifacts";
 
-export async function getSessionArtifacts(cfg: ServerConfig, sessionId: string): Promise<SessionArtifact[]> {
+export async function getSessionArtifacts(cfg: ServerConfig, sessionId: string): Promise<import("../artifacts").SessionArtifact[]> {
 	const res = await req(cfg, `${API}/sessions/${encodeURIComponent(sessionId)}`);
 	const data = await res.json();
 	const files = (data?.session ?? data)?.artifactFiles;

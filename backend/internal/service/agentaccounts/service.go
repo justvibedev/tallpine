@@ -71,8 +71,10 @@ type Service struct {
 	// burst of spawns before readings show the new sessions.
 	recentPlacements map[string][]time.Time
 	// rechecks throttles RecheckSessionAccount per account.
-	rechecks     map[string]*recheckState
-	recheckEvery time.Duration
+	rechecks map[string]*recheckState
+	// loginConfirmed hears that a reading found an account's login working.
+	loginConfirmed func(domain.AgentAccount, time.Time)
+	recheckEvery   time.Duration
 }
 
 // recheckState is one account's session-triggered reads: at most one runs, and
@@ -323,7 +325,13 @@ func (s *Service) read(ctx context.Context, account domain.AgentAccount) *readin
 	}
 	s.mu.Lock()
 	s.readings[account.ID] = r
+	confirmed := s.loginConfirmed
 	s.mu.Unlock()
+	// The limits come from the provider's API under this login, so a reading
+	// that has them shows the login worked when the reading began.
+	if confirmed != nil && err == nil && r.identity.SignedIn && r.limits != nil {
+		confirmed(account, r.at)
+	}
 	return r
 }
 

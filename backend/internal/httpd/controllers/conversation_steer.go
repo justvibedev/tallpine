@@ -61,6 +61,7 @@ func (c *ConversationsController) steerOrSend(w http.ResponseWriter, r *http.Req
 		// per client message id so an idempotent retry replays instead of
 		// conflicting.
 		if !req.RecoverOnly && strings.TrimSpace(req.Text) != "" {
+			req.Text = domain.NeutralizeOwnerStamp(req.Text)
 			if agent.Role != requestscope.RoleOrchestrator {
 				req.Text = domain.FrameUntrustedFor(string(agent.SessionID), req.ClientMessageID, req.Text)
 			} else if c.targetIsOrchestrator(r.Context(), domain.SessionID(chi.URLParam(r, "sessionId"))) {

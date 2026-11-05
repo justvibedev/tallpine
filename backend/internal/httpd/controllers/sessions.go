@@ -183,6 +183,8 @@ type SessionsController struct {
 	Projects       interface {
 		Get(context.Context, domain.ProjectID) (projectsvc.GetResult, error)
 	}
+	// OwnerMessages resolves `tallpine send --relay-owner-message`; nil refuses it.
+	OwnerMessages OwnerMessageLookup
 	// Routes warns at spawn when the project's reports bypass its orchestrator; nil omits it.
 	Routes                   RouteNoticer
 	Activity                 ActivityRecorder
@@ -245,6 +247,7 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Get("/sessions", c.list)
 	r.Post("/sessions", c.spawn)
 	r.Post("/sessions/cleanup", c.cleanup)
+	r.Delete("/sessions/{sessionId}", c.deleteSession)
 	r.Get("/sessions/{sessionId}", c.get)
 	r.Get("/sessions/{sessionId}/preview", c.preview)
 	r.Post("/sessions/{sessionId}/preview", c.setPreview)
@@ -317,10 +320,11 @@ func (c *SessionsController) Register(r chi.Router) {
 }
 
 // RegisterStreams mounts long-lived session streams outside the REST timeout
-// middleware. Worktree notifications remain active only while a client is
-// actually viewing that session's files.
+// middleware. Worktree and artifact notifications remain active only while a
+// client is actually viewing that session's files or artifacts.
 func (c *SessionsController) RegisterStreams(r chi.Router) {
 	r.Get("/sessions/{sessionId}/workspace/events", c.streamWorkspaceChanges)
+	r.Get("/sessions/{sessionId}/artifact-events", c.streamArtifactChanges)
 }
 
 func sessionID(r *http.Request) domain.SessionID {

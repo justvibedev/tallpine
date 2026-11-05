@@ -17,6 +17,7 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@tallpine/image-paste": "file:./native/image-paste",
     "@tallpine/response-selection": "file:./native/response-selection",
     "@bsky.app/react-native-uitextview": "2.4.0",
     "@expo-google-fonts/geist": "^0.4.2",

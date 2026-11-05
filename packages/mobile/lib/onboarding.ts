@@ -25,3 +25,19 @@ export function shouldOnboard({ configured, skipped }: OnboardingInput): boolean
 	if (configured === null || skipped === null) return false;
 	return !configured && !skipped;
 }
+
+/** The page a cold launch lands on once the app knows whether to onboard. */
+export const LAUNCH_ROUTE = "/projects";
+
+/**
+ * Where the launch should send the user, or `null` to stay put.
+ *
+ * Every cold start opens at `/` (the Workers tab). Once both inputs are known,
+ * a first-run user goes to onboarding and everyone else to Projects. Any other
+ * pathname means the user (or a deep link) already chose a page.
+ */
+export function launchRedirect(input: OnboardingInput & { pathname: string }): "/onboarding" | typeof LAUNCH_ROUTE | null {
+	if (input.configured === null || input.skipped === null) return null;
+	if (input.pathname !== "/") return null;
+	return shouldOnboard(input) ? "/onboarding" : LAUNCH_ROUTE;
+}

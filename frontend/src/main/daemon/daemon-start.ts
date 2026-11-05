@@ -34,11 +34,12 @@ import { verifyBundledHelpers } from "../helper-signature";
 import { legacyStagedTmuxRootFor, removeLegacyStagedTmux } from "../legacy-tmux-cleanup";
 import { ensureShellEnv } from "../shell-env-host";
 import { appendDaemonOutput, daemonIdentityError, daemonLaunchEnv, gracefullyReplaceDaemonForBrowser, inspectExistingDaemon, PORT_DISCOVERY_TIMEOUT_MS, repairDevAcpRuntime, resolvedDaemonPort, RUN_FILE_FRESHNESS_SKEW_MS, RUN_FILE_POLL_MS, runFilePath, setDaemonStatus, startDaemonForRestart } from "./daemon-lifecycle";
+import { noteUnexpectedDaemonExit } from "./daemon-auto-restart-host";
 import { reclaimOrphanedPortHolder } from "./daemon-port-takeover";
 import { readDaemonProbe } from "./daemon-probe";
 import { spawnDaemonProcess } from "./daemon-spawn";
 
-export async function startDaemonInner(startEpoch: number): Promise<DaemonStatus> {
+export async function startDaemonInner(startEpoch: number, autoRestart = false): Promise<DaemonStatus> {
 	if (ctx.daemonProcess) {
 		return ctx.daemonStatus;
 	}
@@ -80,6 +81,8 @@ export async function startDaemonInner(startEpoch: number): Promise<DaemonStatus
 	if (startEpoch !== ctx.daemonStartEpoch) {
 		return ctx.daemonStatus;
 	}
+	// Automatic recovery never adopts or replaces a daemon someone else started.
+	if (existing && autoRestart) return ctx.daemonStatus;
 	if (existing) {
 		const ownership = browserDaemonOwnershipDecision(appRunId, existing);
 		if (shouldReplaceDaemonForStartup({ ownership, forceRequested: ctx.forceReplaceAdoptedRequested })) {
@@ -133,6 +136,7 @@ export async function startDaemonInner(startEpoch: number): Promise<DaemonStatus
 	if (startEpoch !== ctx.daemonStartEpoch) {
 		return ctx.daemonStatus;
 	}
+	if (directDaemon && autoRestart) return ctx.daemonStatus;
 	if (directDaemon) {
 		let portAttachOwner: string | undefined;
 		let portAttachAppRunId: string | undefined;
@@ -204,7 +208,7 @@ export async function startDaemonInner(startEpoch: number): Promise<DaemonStatus
 		}
 	}
 
-	await reclaimOrphanedPortHolder();
+	if (!autoRestart) await reclaimOrphanedPortHolder();
 
 	if (launch.source === "bundled" && !existsSync(launch.command)) {
 		setDaemonStatus({
@@ -272,6 +276,12 @@ export async function startDaemonInner(startEpoch: number): Promise<DaemonStatus
 	// child so the parent does not wait on it. Port discovery then relies on the
 	// running.json handshake (the log pipe scan is skipped).
 	const keep = replacementKeepAlive ?? keepDaemonAlive(process.env);
+	// The awaits since the last epoch check (tmux staging, helper verification,
+	// mkdir) can outlive a superseding start; never spawn a second daemon.
+	if (startEpoch !== ctx.daemonStartEpoch || ctx.daemonProcess) {
+		return ctx.daemonStatus;
+	}
+	// The sticky forced-replace flag is consumed only by the start that spawns.
 	// We are about to own the daemon and hand it this launch's runtime token, so
 	// any forced replacement has been honored and must not leak into a later
 	// startup in this process.
@@ -438,6 +448,7 @@ export async function startDaemonInner(startEpoch: number): Promise<DaemonStatus
 			exitCode: code,
 			signal,
 		});
+		noteUnexpectedDaemonExit(child.pid ?? null, code, signal);
 	});
 
 	return ctx.daemonStatus;

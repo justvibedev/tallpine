@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo } from "react";
 import { type WorkspaceSummary, STANDALONE_PROJECT_KIND } from "../../types/workspace";
 import { useStableArray } from "../../hooks/useStable";
 import { useSidebarOrderStore } from "../../stores/sidebar-order-store";
-import { applyOrder } from "../../lib/sidebar-order";
+import { applyOrder, pinnedFirst } from "../../lib/sidebar-order";
 import type { RemoteHost } from "../../hooks/useRemoteHosts";
 import { SIDEBAR_INITIAL_SECTION_LIMIT } from "./constants";
 import { type Selection } from "./types";
@@ -10,6 +10,7 @@ import { useShowMoreCap } from "./useShowMoreCap";
 
 export function useSidebarProjects({ workspaces, remoteHosts, selection, projectsOpen, isIconRail }: { workspaces: WorkspaceSummary[]; remoteHosts: RemoteHost[]; selection: Selection; projectsOpen: boolean; isIconRail: boolean }) {
 	const projectOrder = useSidebarOrderStore((state) => state.projectOrder);
+	const pinnedProjectIds = useSidebarOrderStore((state) => state.pinnedProjectIds);
 	const pendingCreatedProjectIds = useSidebarOrderStore((state) => state.pendingCreatedProjectIds);
 
 	useLayoutEffect(() => {
@@ -19,8 +20,8 @@ export function useSidebarProjects({ workspaces, remoteHosts, selection, project
 		useSidebarOrderStore.getState().reconcileProjectOrder(workspaces.map((workspace) => workspace.id));
 	}, [workspaces, pendingCreatedProjectIds]);
 	const orderedWorkspaces = useMemo(
-		() => applyOrder(workspaces, (workspace) => workspace.id, projectOrder, "start"),
-		[projectOrder, workspaces],
+		() => pinnedFirst(applyOrder(workspaces, (workspace) => workspace.id, projectOrder, "start"), (workspace) => workspace.id, pinnedProjectIds),
+		[pinnedProjectIds, projectOrder, workspaces],
 	);
 
 	// The ad hoc group is a bucket for projectless sessions, not a project: it

@@ -2599,15 +2599,22 @@ agent will only see it after its current turn or an interface transition) or
 when one exists. A message the agent cannot take right now is
 refused with an error instead of being silently dropped.
 
+--relay-owner-message passes on a message the owner typed in your own chat
+(its id, or "last" for the newest one). Tallpine checks it is the owner's own
+turn and delivers it verbatim in a daemon-stamped block the receiver can
+trust; your --message text stays your own, untrusted words. It is refused
+when the message is not one the owner typed.
+
 Usage:
   tallpine send [flags]
 
 Flags:
-      --client-message-id string   Stable steering delivery handle
-      --message string             Message body (required unless --recover-only)
-      --recover-only               Recover a steering result without contacting the provider
-      --session string             Session id (required)
-      --steer                      Steer an active Chat turn, or start the next turn when idle
+      --client-message-id string     Stable steering delivery handle
+      --message string               Message body (required unless --recover-only)
+      --recover-only                 Recover a steering result without contacting the provider
+      --relay-owner-message string   Relay an owner message from your own chat, verified by Tallpine (id, or last)
+      --session string               Session id (required)
+      --steer                        Steer an active Chat turn, or start the next turn when idle
 ```
 
 ## `tallpine session`
@@ -2624,6 +2631,7 @@ Available Commands:
   approve      Approve a worker's pending permission prompt (orchestrator, when the project allows it)
   claim-pr     Attach an existing PR to a session
   cleanup      Clean up terminated sessions
+  delete       Permanently delete a terminated session
   deny         Deny a worker's pending permission prompt (orchestrator, when the project allows it)
   exit-agent   Exit an agent without terminating its Tallpine session
   get          Fetch one session
@@ -2710,6 +2718,20 @@ Usage:
 Flags:
       --dry-run          Preview which sessions would be cleaned without removing anything
   -p, --project string   Filter by project ID
+  -y, --yes              Skip confirmation prompt
+```
+
+### `tallpine session delete`
+
+```text
+Permanently delete a terminated session's record and its Tallpine history (conversation, PR facts, attachments and artifacts). The session must be terminated and its worktree cleaned up first (tallpine session cleanup, or --cleanup). Git branches, pull requests and agent account usage totals are kept, and the session's id is never reused.
+
+Usage:
+  tallpine session delete <id> [flags]
+
+Flags:
+      --cleanup          Clean up a worktree still on disk first (never forced; a dirty or locked one refuses the delete)
+  -p, --project string   Project id to scope the lookup
   -y, --yes              Skip confirmation prompt
 ```
 
