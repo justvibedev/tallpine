@@ -1,13 +1,16 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Square } from "lucide-react";
+import { formatDurationStatus } from "@tallpine/shared/format/duration";
 import { useStopBackgroundTask } from "../../hooks/useStopBackgroundTask";
 import type { SessionBackgroundTask } from "../../types/workspace";
 import { Button } from "../ui/button";
 
 /**
- * The background tasks (commands, monitors) the agent is running, each with a
- * stop control. Shown only while there are any.
+ * The background tasks (commands, monitors, subagents) the agent is running.
+ * Commands and monitors have a stop control; a subagent shows its model and
+ * how long it has run, since the agent's turn can end or sit waiting while it
+ * works. Shown only while there are any.
  */
 export const BackgroundTasksBanner = memo(function BackgroundTasksBanner(props: {
 	tasks?: SessionBackgroundTask[];
@@ -24,7 +27,7 @@ function BackgroundTaskList({ tasks, sessionId, hostId }: { tasks: SessionBackgr
 	return (
 		<div className="flex shrink-0 flex-col gap-1 border-b border-border bg-surface px-4 py-2 text-xs" aria-label={t("chat.backgroundTasks.title")}>
 			<span className="font-medium text-muted-foreground">{t("chat.backgroundTasks.title")}</span>
-			{tasks.map((task) => (
+			{tasks.map((task) => task.kind === "subagent" ? <SubagentRow key={task.id} task={task} /> : (
 				<div key={task.id} className="flex items-center justify-between gap-2">
 					<span className="min-w-0 truncate" title={task.name}>{task.name}</span>
 					<Button
@@ -42,6 +45,28 @@ function BackgroundTaskList({ tasks, sessionId, hostId }: { tasks: SessionBackgr
 				</div>
 			))}
 			{error ? <span role="alert" className="text-destructive">{error}</span> : null}
+		</div>
+	);
+}
+
+/** A running background subagent: what it does, its model and its elapsed time. */
+function SubagentRow({ task }: { task: SessionBackgroundTask }) {
+	const { t } = useTranslation();
+	const started = task.startedAt ? Date.parse(task.startedAt) : Number.NaN;
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (!Number.isFinite(started)) return;
+		const timer = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, [started]);
+	return (
+		<div className="flex items-center gap-2">
+			<span className="shrink-0 font-medium">{t("chat.backgroundTasks.subagent")}</span>
+			<span className="min-w-0 truncate" title={task.name}>{task.name}</span>
+			{task.model ? <span className="shrink-0 text-muted-foreground">{task.model}</span> : null}
+			{Number.isFinite(started) ? (
+				<span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{formatDurationStatus(Math.max(0, now - started))}</span>
+			) : null}
 		</div>
 	);
 }

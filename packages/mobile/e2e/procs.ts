@@ -31,3 +31,28 @@ export async function killProcessesUnder(dir: string): Promise<{ pid: number; co
 	}
 	return killed;
 }
+
+/** ps etime ([[dd-]hh:]mm:ss) to seconds. */
+export function etimeSeconds(etime: string): number {
+	const [days, rest] = etime.includes("-") ? etime.split("-") : ["0", etime];
+	const parts = rest.split(":").map(Number);
+	while (parts.length < 3) parts.unshift(0);
+	return Number(days) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2];
+}
+
+/** A hard-killed run (CI step timeout, SIGKILL) never reaches its teardown and
+ * leaves detached chat hosts behind (B563). Orphans (PPID 1) whose command line
+ * names an e2e scratch dir (tpe-bin-/tpe-run-) older than `minAgeSeconds` belong
+ * to no live run, so the next run reaps them. `onlyContaining` narrows the
+ * sweep (tests). Returns the pids it killed. */
+export function reapStaleE2eProcesses(minAgeSeconds = 3600, onlyContaining = ""): number[] {
+	const out = spawnSync("ps", ["-axo", "pid=,ppid=,etime=,command="], { encoding: "utf8", maxBuffer: 64 << 20 }).stdout ?? "";
+	const reaped: number[] = [];
+	for (const line of out.split("\n")) {
+		const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+		if (!m || Number(m[2]) !== 1 || Number(m[1]) === process.pid) continue;
+		if (!/\/tpe-(bin|run)-[^/\s]+\//.test(m[4]) || etimeSeconds(m[3]) < minAgeSeconds || !m[4].includes(onlyContaining)) continue;
+		try { process.kill(Number(m[1]), "SIGKILL"); reaped.push(Number(m[1])); } catch { /* gone */ }
+	}
+	return reaped;
+}

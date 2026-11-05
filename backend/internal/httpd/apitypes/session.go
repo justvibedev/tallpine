@@ -10,6 +10,13 @@ import (
 type BackgroundTaskPayload struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Kind is the harness task type; "subagent" is a background subagent,
+	// which the client lists without a stop control.
+	Kind string `json:"kind,omitempty"`
+	// Model is the model a subagent runs on, when its spawn named one.
+	Model string `json:"model,omitempty"`
+	// StartedAt is when the daemon first saw the task running.
+	StartedAt *time.Time `json:"startedAt,omitempty"`
 }
 
 // SessionView is the session wire shape: the domain read model plus the

@@ -147,7 +147,12 @@ func backgroundTaskPayloads(tasks []bgtasks.Info) []BackgroundTaskPayload {
 	}
 	out := make([]BackgroundTaskPayload, 0, len(tasks))
 	for _, task := range tasks {
-		out = append(out, BackgroundTaskPayload{ID: task.ID, Name: task.Name})
+		payload := BackgroundTaskPayload{ID: task.ID, Name: task.Name, Kind: task.Kind, Model: task.Model}
+		if !task.StartedAt.IsZero() {
+			started := task.StartedAt.UTC()
+			payload.StartedAt = &started
+		}
+		out = append(out, payload)
 	}
 	return out
 }

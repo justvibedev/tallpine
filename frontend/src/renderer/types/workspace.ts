@@ -76,7 +76,7 @@ export type SessionBranchState = { commits: number; remoteBranch?: string; unpus
 
 /** The session's current launch still runs a harness release an update has replaced. */
 /** A running background task of a session's agent. */
-export type SessionBackgroundTask = { id: string; name: string };
+export type SessionBackgroundTask = { id: string; name: string; kind?: string; model?: string; startedAt?: string };
 export type SessionStaleBinary = { version: string; since: string; switchFailedAt?: string };
 
 export type WorkspaceSession = {

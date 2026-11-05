@@ -6360,7 +6360,11 @@ export interface components {
         };
         BackgroundTaskPayload: {
             id: string;
+            kind?: string;
+            model?: string;
             name: string;
+            /** Format: date-time */
+            startedAt?: null | string;
         };
         BacklogBadgesResponse: {
             /** @description A linked session is still running. */

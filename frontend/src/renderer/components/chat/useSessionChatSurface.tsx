@@ -1,6 +1,6 @@
 import { Centered, unavailableConversationSnapshot } from "./SessionChatSurfaceStates";
 import type { SessionChatSurfaceProps } from "./SessionChatSurfaceProps";
-import { useAutoOpenAssistantLinks } from "./useAutoOpenAssistantLinks";
+import { autoOpensAssistantLinks, useAutoOpenAssistantLinks } from "./useAutoOpenAssistantLinks";
 import { useSettings } from "../../hooks/useSettings";
 import { useTranslation } from "react-i18next";
 import { useIndependentSideChats } from "./IndependentSideChats";
@@ -282,7 +282,7 @@ export function useSessionChatSurface(props: SessionChatSurfaceProps) {
 	// not own; only a click earns the explanation in the file pane.
 	const autoOpenLinkInBrowser = useSessionBrowserLink(session, onOpenLinkInBrowser, paths);
 	const openSessionLink = useSessionLinkNavigation(hostId);
-	useAutoOpenAssistantLinks({ snapshot, isLoading, uiSessionId, paths, autoOpenLinkInBrowser });
+	useAutoOpenAssistantLinks({ snapshot, isLoading, uiSessionId, paths, autoOpenLinkInBrowser, enabled: autoOpensAssistantLinks(session) });
 	const promptSuggestion = useConversationPromptSuggestion(snapshot, Boolean(
 		targetChatControllerReady && !controllerBusy && !localEchos.length &&
 		!commands.rollbackPending && !commands.editMessagePending && !commands.activateBranchPending && !commands.compacting &&

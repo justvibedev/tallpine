@@ -16,7 +16,11 @@ function setup(entries: Record<string, Entry>, platform: NodeJS.Platform = "darw
 		revealPath: vi.fn(),
 		openPath: vi.fn(async () => ""),
 		copyText: vi.fn(),
-		resolveArtifactDir: vi.fn(async (sessionId: string) => { if (sessionId === "gone") throw new Error("no artifacts"); return `/data/artifacts/${sessionId}`; }),
+		resolveArtifactDir: vi.fn(async (sessionId: string) => {
+			if (sessionId === "gone") throw new Error("no artifacts");
+			return sessionId === "moved" ? "/elsewhere/moved-artifacts" : `/data/artifacts/${sessionId}`;
+		}),
+		resolveWorkspace: vi.fn(async (sessionId: string) => `/data/worktrees/proj/${sessionId}`),
 	};
 	return { deps, actions: createLocalPathActions(deps) };
 }
@@ -132,5 +136,43 @@ describe("tallpine:// artifact links", () => {
 		for (const v of ["tallpine://sessions/p/s1", "tallpine://other/x", "tallpine://sessions/p/s1/kill", "tallpine://sessions/p/s1/artifacts/"]) {
 			expect(await actions.inspect(v), v).toEqual({ ok: false, reason: "invalid" });
 		}
+	});
+});
+
+describe("inspect image source for a chat session", () => {
+	const file: Entry = { kind: "file" };
+	const image = async (target: string, sessionId: unknown = "s-1") => {
+		const { actions } = setup({ [target]: file, "/data/artifacts/s-1/dir.png": { kind: "directory" } });
+		const inspection = await actions.inspect(target, sessionId);
+		return inspection.ok ? inspection.image : inspection.reason;
+	};
+
+	it("maps a file inside the session's real worktree or artifact directory", async () => {
+		expect(await image("/data/worktrees/proj/s-1/docs/shot.png")).toEqual({ kind: "workspace", path: "docs/shot.png" });
+		// A worktree folder that happens to be named artifacts/<x> is still the worktree.
+		expect(await image("/data/worktrees/proj/s-1/artifacts/x/a.png")).toEqual({ kind: "workspace", path: "artifacts/x/a.png" });
+		expect(await image("/data/artifacts/s-1/a light.png")).toEqual({ kind: "artifact", sessionId: "s-1", path: "a light.png" });
+	});
+
+	it("maps another session's artifact only when it sits inside that session's own directory", async () => {
+		expect(await image("/data/artifacts/s-2/shots/one.webp")).toEqual({ kind: "artifact", sessionId: "s-2", path: "shots/one.webp" });
+		expect(await image("/data/artifacts/moved/one.png")).toBeUndefined();
+		expect(await image("/data/artifacts/gone/one.png")).toBeUndefined();
+	});
+
+	it("maps nothing for a same-named segment outside the real roots", async () => {
+		expect(await image("/Users/me/proj/artifacts/foo/logo.png")).toBeUndefined();
+		expect(await image("/tmp/s-1/shot.png")).toBeUndefined();
+		expect(await image("/data/worktrees/proj/s-2/docs/shot.png")).toBeUndefined();
+		expect(await image("/data/worktrees/proj/s-1-old/shot.png")).toBeUndefined();
+	});
+
+	it("maps only image files, and only when asked for a session", async () => {
+		expect(await image("/data/artifacts/s-1/notes.md")).toBeUndefined();
+		expect(await image("/data/artifacts/s-1/a.png", null)).toBeUndefined();
+		expect(await image("/data/artifacts/s-1/a.png", "../s-1")).toBeUndefined();
+		expect(await image("/data/artifacts/s-1/dir.png")).toBeUndefined();
+		const { actions } = setup({});
+		expect(await actions.inspect("/data/artifacts/s-1/missing.png", "s-1")).toEqual({ ok: false, reason: "not_found" });
 	});
 });

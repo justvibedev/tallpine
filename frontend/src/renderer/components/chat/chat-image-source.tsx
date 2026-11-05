@@ -6,9 +6,11 @@
  * across daemon ports and sessions.
  */
 
-import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getApiBaseUrl, subscribeApiBaseUrl } from "../../lib/api-client";
-import { isAbsoluteMarkdownAssetSrc, resolveMarkdownImageSrc } from "../../lib/markdown-image-resolver";
+import { buildWorkspaceBlobUrl, isAbsoluteMarkdownAssetSrc, resolveMarkdownImageSrc } from "../../lib/markdown-image-resolver";
+import { tallpineBridge } from "../../lib/bridge";
+import type { LocalImageSource } from "../../../shared/local-path";
 import type { SessionArtifact } from "../../types/workspace";
 import { isInlineArtifactUrl } from "../../../shared/agent-page-url";
 
@@ -32,6 +34,33 @@ export function useChatImageSrc(src: string | undefined): string | undefined {
 	if (!source) return src;
 	if (source.remoteHost && !source.baseUrl && src && !isAbsoluteMarkdownAssetSrc(src)) return undefined;
 	return resolveMarkdownImageSrc(source.sessionId, "", src, source.version, source.baseUrl);
+}
+
+/**
+ * The URL a thumbnail of a local image path loads from, once main has checked
+ * the path against the session's real artifact directory and worktree and named
+ * the confined route that serves it. `undefined` while that is pending, outside
+ * a local session chat, and for a missing file or one under neither root.
+ */
+export function useChatLocalImageUrl(path: string): string | undefined {
+	const source = useContext(ChatImageSourceContext);
+	const sessionId = source && !source.remoteHost && source.baseUrl ? source.sessionId : undefined;
+	const [image, setImage] = useState<{ key: string; source?: LocalImageSource }>();
+	const key = `${sessionId}\0${path}`;
+	useEffect(() => {
+		if (!sessionId) return;
+		let live = true;
+		void tallpineBridge.localPath.inspect(path, sessionId).then(
+			(inspection) => { if (live) setImage({ key, source: inspection.ok ? inspection.image : undefined }); },
+			() => { if (live) setImage({ key }); },
+		);
+		return () => { live = false; };
+	}, [key, path, sessionId]);
+	const found = image?.key === key ? image.source : undefined;
+	if (!sessionId || !source?.baseUrl || !found) return undefined;
+	if (found.kind === "workspace") return buildWorkspaceBlobUrl(sessionId, found.path, source.version, source.baseUrl);
+	const asset = found.path.split("/").map(encodeURIComponent).join("/");
+	return `${source.baseUrl.replace(/\/+$/, "")}/api/v1/sessions/${encodeURIComponent(found.sessionId)}/artifact-files/${asset}`;
 }
 
 /** Whether the open chat runs on a remote host, whose session files the local daemon cannot serve. */

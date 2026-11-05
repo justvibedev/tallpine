@@ -2767,6 +2767,7 @@
 	"chat.backgroundTasks.stop": "Arrêter",
 	"chat.backgroundTasks.stopping": "Arrêt…",
 	"chat.backgroundTasks.stopTask": "Arrêter {{name}}",
+	"chat.backgroundTasks.subagent": "Sous-agent",
 	"chat.reauth.accountSignedOut": "{{account}} est déconnecté",
 	"chat.reauth.savedAccountHint": "Reconnectez-le pour continuer à l’utiliser ici, puis réessayez votre dernier message.",
 	"chat.reauth.continueOn": "Continuer avec {{account}}",

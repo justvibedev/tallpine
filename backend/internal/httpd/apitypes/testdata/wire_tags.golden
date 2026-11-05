@@ -8,7 +8,7 @@ AttachmentInput: data mimeType,omitempty
 AutomationResponse: createdAt displayName enabled harness,omitempty id kind lastRunAt,omitempty latestRun,omitempty nextRunAt projectId prompt rrule timezone updatedAt
 AutomationRunResponse: attemptCount automationId claimedAt,omitempty createdAt errorMessage,omitempty finishedAt,omitempty id leaseExpiresAt,omitempty scheduledFor sessionId,omitempty startedAt,omitempty status updatedAt
 AutomationRunSummaryResponse: errorMessage,omitempty finishedAt,omitempty id scheduledFor sessionId,omitempty startedAt,omitempty status
-BackgroundTaskPayload: id name
+BackgroundTaskPayload: id kind,omitempty model,omitempty name startedAt,omitempty
 BacklogBadgesResponse: active inReview landed
 BacklogDeleteResponse: deleted skipped
 BacklogItemPlan: id itemChanged stale status

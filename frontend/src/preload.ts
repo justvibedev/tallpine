@@ -373,7 +373,7 @@ const api = {
 			ipcRenderer.invoke("editorHandoff:copyWorkspacePath", sessionId) as Promise<void>,
 	},
 	localPath: {
-		inspect: (filePath: string) => ipcRenderer.invoke("localPath:inspect", filePath) as Promise<LocalPathInspection>,
+		inspect: (filePath: string, sessionId?: string) => ipcRenderer.invoke("localPath:inspect", filePath, sessionId) as Promise<LocalPathInspection>,
 		perform: (filePath: string, action: LocalPathAction) =>
 			ipcRenderer.invoke("localPath:perform", filePath, action) as Promise<LocalPathResult>,
 	},

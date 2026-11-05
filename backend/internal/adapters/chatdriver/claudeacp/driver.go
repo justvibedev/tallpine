@@ -332,6 +332,14 @@ func validateClaudeACPExecutable(binary, goos string) error {
 	}
 }
 
+// claudeSubagentTaskFrames is the emitRawSDKMessages filter: only the task
+// lifecycle frames, so no other SDK message is sent twice.
+var claudeSubagentTaskFrames = []map[string]string{
+	{"type": "system", "subtype": "task_started"},
+	{"type": "system", "subtype": "task_updated"},
+	{"type": "system", "subtype": "task_notification"},
+}
+
 func claudeSessionMeta(cfg acpdriver.LaunchConfig) map[string]any {
 	meta := map[string]any{}
 	standing := strings.TrimSpace(cfg.SystemPrompt)
@@ -348,12 +356,13 @@ func claudeSessionMeta(cfg acpdriver.LaunchConfig) map[string]any {
 			"type": "preset", "preset": "claude_code", "append": standing,
 		}
 	}
+	// The SDK task frames are the only live record of a background subagent:
+	// the adapter's async-task lifecycle skips subagents (acp.handleSDKMessage).
+	claude := map[string]any{"emitRawSDKMessages": claudeSubagentTaskFrames}
 	if options := claudeSDKOptions(cfg); len(options) > 0 {
-		meta["claudeCode"] = map[string]any{"options": options}
+		claude["options"] = options
 	}
-	if len(meta) == 0 {
-		return nil
-	}
+	meta["claudeCode"] = claude
 	return meta
 }
 

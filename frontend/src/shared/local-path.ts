@@ -7,8 +7,18 @@
 
 export type LocalPathAction = "reveal" | "open" | "copy";
 
+/**
+ * The confined daemon route that serves a local image file, decided in main
+ * against the session's real roots: its artifact directory (or another
+ * session's, verified against that session's own) or its worktree.
+ */
+export type LocalImageSource =
+	| { kind: "artifact"; sessionId: string; path: string }
+	| { kind: "workspace"; path: string };
+
 export type LocalPathInspection =
-	| { ok: true; path: string; kind: "file" | "directory"; canOpen: boolean }
+	/** `image` is set only for an image file inspected for a chat session (see {@link LocalImageSource}). */
+	| { ok: true; path: string; kind: "file" | "directory"; canOpen: boolean; image?: LocalImageSource }
 	| { ok: false; reason: "invalid" | "not_found" };
 
 export type LocalPathResult =

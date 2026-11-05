@@ -99,6 +99,11 @@ const (
 	ChatAsyncTaskStopped   = "stopped"
 )
 
+// ChatAsyncTaskSubagent is the TaskType of a background harness subagent
+// (Claude Code's Agent tool with run_in_background). Its harness always wakes
+// the parent itself when it ends.
+const ChatAsyncTaskSubagent = "subagent"
+
 // ChatAsyncTaskStopper is a live conversation that can stop one of its harness
 // background tasks.
 type ChatAsyncTaskStopper interface {
@@ -119,6 +124,8 @@ type ChatAsyncTask struct {
 	// State is empty on a spawn that carries none; spawn means running.
 	State   string
 	Summary string
+	// Model is the model a subagent task runs on, when its spawn named one.
+	Model string
 }
 
 // Done reports whether the task reached a terminal state.

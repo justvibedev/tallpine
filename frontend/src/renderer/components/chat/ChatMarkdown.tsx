@@ -28,8 +28,6 @@
 
 import {
 	createContext,
-	Fragment,
-	isValidElement,
 	memo,
 	useContext,
 	useEffect,
@@ -46,12 +44,13 @@ import { cn } from "../../lib/utils";
 import { isHostLocalWebLink } from "../../lib/loopback";
 import { canonicalLanguage } from "../../lib/code-highlight";
 import { fenceOf } from "../../lib/markdown-fence";
-import { EMOJI_GRAPHEME, rehypeStreamFade } from "../../lib/rehype-stream-fade";
+import { rehypeStreamFade } from "../../lib/rehype-stream-fade";
+import { compactEmoji } from "./compact-emoji";
 import { remarkLocalPaths } from "../../lib/remark-local-paths";
 import { isLocalPathCandidate } from "../../../shared/local-path";
 import { copyLinkText, isOpenLinkClick } from "../../lib/copy-link";
 import { LocalPathMenu } from "../LocalPathMenu";
-import { tallpineBridge } from "../../lib/bridge";
+import { linkedLocalPath, openLocalPathOnClick, performLocalPath } from "../../lib/local-path-click";
 import { useUiStore } from "../../stores/ui-store";
 import { useTranslation } from "react-i18next";
 import { hasInAppLinkScheme } from "../../../shared/session-link-parse";
@@ -290,36 +289,6 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
 	);
 }
 
-const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-function compactEmoji(children: ReactNode): ReactNode {
-	if (typeof children === "string") {
-		if (!EMOJI_GRAPHEME.test(children)) return children;
-		let last = 0;
-		const parts: ReactNode[] = [];
-		for (const { segment, index } of GRAPHEME_SEGMENTER.segment(children)) {
-			if (!EMOJI_GRAPHEME.test(segment)) continue;
-			if (index > last) parts.push(children.slice(last, index));
-			parts.push(
-				<span key={`${index}-${segment}`} className="chat-md-emoji">
-					{segment}
-				</span>,
-			);
-			last = index + segment.length;
-		}
-		if (last === 0) return children;
-		if (last < children.length) parts.push(children.slice(last));
-		return parts;
-	}
-	if (Array.isArray(children)) {
-		// An element react-markdown already keyed needs no wrapper: it holds no text for
-		// `compactEmoji` to split, and a wrapper per streamed character span is a
-		// wasted element on every update.
-		return children.map((child, index) => isValidElement(child) && child.key !== null ? child : <Fragment key={index}>{compactEmoji(child)}</Fragment>);
-	}
-	return children;
-}
-
 function MarkdownLink({ href, children, className, localPath }: { href?: string; children?: ReactNode; className?: string; localPath?: string }) {
 	const { t } = useTranslation();
 	const safeOriginContent = useContext(SafeOriginContent);
@@ -333,6 +302,8 @@ function MarkdownLink({ href, children, className, localPath }: { href?: string;
 	const unknownTallpineLink = Boolean(href && hasInAppLinkScheme(href) && !sessionLink);
 	if (safeOriginContent && !sessionLink) return <>{children}</>;
 	const openInFiles = filePath && href && !/\.html?$/i.test(filePath) ? workspaceFileOpenTarget(href, filePath) : undefined;
+	// The absolute local path a plain click opens: an artifact path written as code, or a link straight to a local file.
+	const clickPath = remoteHost || safeOriginContent || unknownTallpineLink ? undefined : localPath ?? linkedLocalPath(href);
 	if (remoteHost && href && (isHostLocalWebLink(href) || (isPotentialWorkspaceFileLink(href) && !openInFiles))) {
 		return <span className="text-muted-foreground" title={REMOTE_PREVIEW_UNAVAILABLE}>
 			{children}<span className="sr-only"> (remote preview unavailable)</span>
@@ -358,18 +329,21 @@ function MarkdownLink({ href, children, className, localPath }: { href?: string;
 					useUiStore.getState().showGlobalToast(t("path.unsupportedLink"), undefined, "error");
 					return;
 				}
+				if (clickPath && !isOpenLinkClick(event)) {
+					// Plain click opens a local file in its default app (a directory or missing path is copied).
+					event.preventDefault();
+					void openLocalPathOnClick(clickPath);
+					return;
+				}
 				if (href && !sessionLink && !isOpenLinkClick(event) && (artifactPath || openInFiles || browserLink)) {
-					// Plain click copies a file path or web link; Cmd/Ctrl+click opens it.
+					// Plain click copies a web link or relative file reference; Cmd/Ctrl+click opens it.
 					event.preventDefault();
 					copyLinkText(localPath ?? href);
 					return;
 				}
 				if (artifactPath) {
 					event.preventDefault();
-					void tallpineBridge.localPath.perform(artifactPath, "reveal").then(
-						(result) => { if (!result.ok) useUiStore.getState().showGlobalToast(t(result.reason === "not_found" ? "path.notFound" : "path.failed"), undefined, result.reason === "not_found" ? "info" : "error"); },
-						() => undefined,
-					);
+					void performLocalPath(artifactPath, "reveal");
 					return;
 				}
 				if (href && sessionLink) {
@@ -540,7 +514,12 @@ function InlineCode({ children }: { children?: ReactNode }) {
 	return (
 		<button
 			type="button"
-			onClick={(event) => (isOpenLinkClick(event) ? file.open(workspaceFileReferenceLine(text ?? "")) : copyLinkText(text ?? ""))}
+			onClick={(event) => {
+				if (isOpenLinkClick(event)) file.open(workspaceFileReferenceLine(text ?? ""));
+				// An absolute path opens in its default app, as anywhere else in chat; a relative one is copied.
+				else if (text && !remoteHost && isLocalPathCandidate(text)) void openLocalPathOnClick(text);
+				else copyLinkText(text ?? "");
+			}}
 			aria-label={`Open ${file.filePath} in Files`}
 			className="inline rounded text-left transition-colors hover:bg-interactive-hover"
 		>

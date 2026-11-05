@@ -129,6 +129,7 @@ export const localPathActions = createLocalPathActions({
 	openPath: (target) => shell.openPath(target),
 	copyText: (text) => clipboard.writeText(text),
 	resolveArtifactDir: resolveSessionArtifactDirForDesktop,
+	resolveWorkspace: resolveSessionWorkspaceForDesktop,
 });
 
 export function registerEditorIpc(): void {
@@ -154,9 +155,9 @@ export function registerEditorIpc(): void {
 		return editorHandoff.copyWorkspacePath(typeof sessionId === "string" ? sessionId : "");
 	});
 
-	ipcMain.handle("localPath:inspect", (event, filePath: unknown) => {
+	ipcMain.handle("localPath:inspect", (event, filePath: unknown, sessionId: unknown) => {
 		if (event.sender !== getShellWebContents()) throw new Error("Untrusted local path request.");
-		return localPathActions.inspect(filePath);
+		return localPathActions.inspect(filePath, sessionId);
 	});
 
 	ipcMain.handle("localPath:perform", (event, filePath: unknown, action: unknown) => {

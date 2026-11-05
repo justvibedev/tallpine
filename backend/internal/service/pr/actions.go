@@ -19,6 +19,9 @@ type MergeRequest struct {
 	PRID            string
 	PRURL           string
 	ExpectedHeadSHA string
+	// Requester is the scoped agent session making the request; empty for the
+	// app or CLI user.
+	Requester domain.SessionID
 }
 
 // MergeResult is the successful outcome of a PR merge.

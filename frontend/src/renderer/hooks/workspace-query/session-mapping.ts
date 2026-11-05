@@ -99,7 +99,7 @@ export function toWorkspaceSession(
 		branchState: session.branchState,
 		branchNaming: session.branchNaming,
 		staleBinary: session.staleBinary ? { version: session.staleBinary.version, since: session.staleBinary.since, switchFailedAt: session.staleBinary.switchFailedAt ?? undefined } : undefined,
-		backgroundTasks: session.backgroundTasks?.length ? session.backgroundTasks.map((task) => ({ id: task.id, name: task.name })) : undefined,
+		backgroundTasks: session.backgroundTasks?.length ? session.backgroundTasks.map((task) => ({ id: task.id, name: task.name, kind: task.kind, model: task.model, startedAt: task.startedAt ?? undefined })) : undefined,
 		hibernatedAt: session.hibernatedAt ?? undefined,
 		pausedUntil: session.pausedUntil ?? undefined,
 		isTerminated: session.isTerminated,

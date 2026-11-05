@@ -2,13 +2,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { buildDaemon } from "./harness";
-import { killProcessesUnder, processesUnder } from "./procs";
+import { killProcessesUnder, processesUnder, reapStaleE2eProcesses } from "./procs";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Builds the daemon once before any test file. Every scratch daemon dir lives
  * under one run dir; the teardown removes it and the binary, pass or fail. */
 export default function setup(): () => Promise<void> {
+	reapStaleE2eProcesses(); // leftovers of a hard-killed earlier run (B563)
 	const bin = buildDaemon();
 	const scratch = mkdtempSync(join(tmpdir(), "tpe-run-"));
 	process.env.TALLPINE_E2E_DAEMON_BIN = bin;

@@ -30,7 +30,9 @@ export function useTranscriptSelection({
 	draftScope: ChatDraftScope;
 	setDraftPersistenceError: Dispatch<SetStateAction<string | undefined>>;
 }) {
-	const captureTranscriptSelection = useCallback(() => {
+	const captureTranscriptSelection = useCallback((event?: object) => {
+		// A right-click selects the word under it on macOS; that must open the link/path context menu, not the floating Add to chat action.
+		if (event && "button" in event && event.button) return;
 		const selection = window.getSelection();
 		if (!excerptsEnabled || !selection || selection.isCollapsed || selection.rangeCount === 0) {
 			setSelectionAction(null);

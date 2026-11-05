@@ -2722,6 +2722,7 @@
 	"chat.backgroundTasks.stop": "중지",
 	"chat.backgroundTasks.stopping": "중지 중…",
 	"chat.backgroundTasks.stopTask": "{{name}} 중지",
+	"chat.backgroundTasks.subagent": "서브에이전트",
 	"chat.reauth.accountSignedOut": "{{account}}에서 로그아웃되었습니다",
 	"chat.reauth.savedAccountHint": "여기서 계속 사용하려면 다시 로그인한 후 마지막 메시지를 재시도하세요.",
 	"chat.reauth.continueOn": "{{account}}(으)로 계속",

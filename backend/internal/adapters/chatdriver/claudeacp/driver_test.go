@@ -254,7 +254,7 @@ func TestClaudeSessionMetaOmitsPlanGuidanceWhenTodoToolsAreOff(t *testing.T) {
 		t.Run("project env "+off, func(t *testing.T) {
 			t.Setenv("CLAUDE_CODE_ENABLE_TODO_TOOLS", "")
 			env := map[string]string{"CLAUDE_CODE_ENABLE_TODO_TOOLS": off}
-			if got := claudeSessionMeta(acpdriver.LaunchConfig{Env: env}); got != nil {
+			if got := claudeSessionMeta(acpdriver.LaunchConfig{Env: env}); got["systemPrompt"] != nil {
 				t.Fatalf("meta = %#v, want none: the to-do tools are off", got)
 			}
 			prompt := claudeSessionMeta(acpdriver.LaunchConfig{Env: env, SystemPrompt: "Tallpine standing instructions"})["systemPrompt"].(map[string]any)
@@ -265,7 +265,7 @@ func TestClaudeSessionMetaOmitsPlanGuidanceWhenTodoToolsAreOff(t *testing.T) {
 	}
 	t.Run("daemon env", func(t *testing.T) {
 		t.Setenv("CLAUDE_CODE_ENABLE_TODO_TOOLS", "0")
-		if got := claudeSessionMeta(acpdriver.LaunchConfig{}); got != nil {
+		if got := claudeSessionMeta(acpdriver.LaunchConfig{}); got["systemPrompt"] != nil {
 			t.Fatalf("meta = %#v, want none: the to-do tools are off", got)
 		}
 	})
@@ -273,7 +273,7 @@ func TestClaudeSessionMetaOmitsPlanGuidanceWhenTodoToolsAreOff(t *testing.T) {
 
 func TestClaudeSessionMetaAppendsWithoutReplacingPreset(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_ENABLE_TODO_TOOLS", "0")
-	if got := claudeSessionMeta(acpdriver.LaunchConfig{}); got != nil {
+	if got := claudeSessionMeta(acpdriver.LaunchConfig{}); got["systemPrompt"] != nil {
 		t.Fatalf("empty prompt metadata = %#v", got)
 	}
 	meta := claudeSessionMeta(acpdriver.LaunchConfig{SystemPrompt: "Tallpine standing instructions"})

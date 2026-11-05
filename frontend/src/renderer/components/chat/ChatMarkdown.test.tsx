@@ -436,19 +436,23 @@ describe("ChatMarkdown", () => {
 	});
 
 	it.each([
-		["`worker-1/plan.md`", "tallpine://sessions/project/worker-1/artifacts/plan.md"],
-		["`/tmp/tallpine/artifacts/worker-1/plans/q3.md`", "tallpine://sessions/project/worker-1/artifacts/plans/q3.md"],
-		["`worker-1/plans/my plan.md`", "tallpine://sessions/project/worker-1/artifacts/plans/my%20plan.md"],
-		["`/tmp/tallpine data/artifacts/worker-1/plans/my plan.md`", "tallpine://sessions/project/worker-1/artifacts/plans/my%20plan.md"],
-	])("links inline code naming a listed session artifact: %s", async (text, href) => {
+		// A relative artifact name is no path on disk: a click reveals the artifact link.
+		["`worker-1/plan.md`", "tallpine://sessions/project/worker-1/artifacts/plan.md", undefined],
+		// An absolute artifact path is a file: a plain click opens it in its default app.
+		["`/tmp/tallpine/artifacts/worker-1/plans/q3.md`", "tallpine://sessions/project/worker-1/artifacts/plans/q3.md", "/tmp/tallpine/artifacts/worker-1/plans/q3.md"],
+		["`worker-1/plans/my plan.md`", "tallpine://sessions/project/worker-1/artifacts/plans/my%20plan.md", undefined],
+		["`/tmp/tallpine data/artifacts/worker-1/plans/my plan.md`", "tallpine://sessions/project/worker-1/artifacts/plans/my%20plan.md", "/tmp/tallpine data/artifacts/worker-1/plans/my plan.md"],
+	])("links inline code naming a listed session artifact: %s", async (text, href, opened) => {
 		linkSource.workspaces = [{ id: "project", sessions: [{ id: "worker-1", artifactFiles: [{ path: "plan.md" }, { path: "plans/q3.md" }, { path: "plans/my plan.md" }] }] }];
 		const onSessionLinkOpen = vi.fn();
 		const perform = vi.spyOn(tallpineBridge.localPath, "perform");
+		vi.spyOn(tallpineBridge.localPath, "inspect").mockResolvedValue({ ok: true, path: opened ?? "", kind: "file", canOpen: true });
 		renderWithSessionLinkHandler(text, onSessionLinkOpen);
 		const link = screen.getByRole("link");
 		expect(link).toHaveAttribute("href", href);
 		await userEvent.setup().click(link);
-		expect(perform).toHaveBeenCalledWith(href, "reveal");
+		if (opened) await waitFor(() => expect(perform).toHaveBeenCalledWith(opened, "open"));
+		else expect(perform).toHaveBeenCalledWith(href, "reveal");
 		expect(onSessionLinkOpen).not.toHaveBeenCalled();
 	});
 
@@ -986,16 +990,6 @@ describe("ChatMarkdown streaming fade", () => {
 });
 
 describe("local paths", () => {
-	it("makes prose and inline-code paths clickable but leaves fences and URLs alone", async () => {
-		const perform = vi.spyOn(tallpineBridge.localPath, "perform");
-		render(<ChatMarkdown text={"See /Users/me/a.txt and `~/b/c.md` or https://x.dev/a/b\n\n```\n/etc/hosts\n```"} />);
-		fireEvent.click(screen.getByText("/Users/me/a.txt"), { metaKey: true });
-		expect(perform).toHaveBeenCalledWith("/Users/me/a.txt", "reveal");
-		fireEvent.click(screen.getByText("~/b/c.md"), { metaKey: true });
-		expect(perform).toHaveBeenCalledWith("~/b/c.md", "reveal");
-		expect(screen.queryAllByRole("button", { name: /etc\/hosts/ })).toHaveLength(0);
-	});
-
 	it("does not offer local actions for remote-host chats", () => {
 		render(<ChatLinkProvider remoteHost><ChatMarkdown text="See /Users/me/a.txt" /></ChatLinkProvider>);
 		expect(screen.getByText("/Users/me/a.txt").closest("[role=button]")).toBeNull();

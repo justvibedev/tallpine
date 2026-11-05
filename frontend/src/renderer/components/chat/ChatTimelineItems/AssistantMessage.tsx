@@ -4,6 +4,7 @@ import { Loader2, Undo2, X } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { ChatMarkdown } from "../ChatMarkdown";
 import { CopyButton } from "../CopyButton";
+import { ChatLocalImageStrip } from "../ChatLocalImageStrip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
 import { type ConversationMessage } from "../../../types/conversation";
 import { formatDuration, formatMessageTimestamp } from "./format";
@@ -57,6 +58,8 @@ export function AssistantMessage({
 			data-chat-message-role={!live && !renderingStreaming ? message.role : undefined}
 		>
 			<div data-chat-message-body=""><ChatMarkdown text={visibleText} streaming={renderingStreaming} /></div>
+			{/* Once the reply has landed: a path half-streamed is not a file yet. */}
+			{renderingStreaming ? null : <ChatLocalImageStrip text={message.text} />}
 			{showActions ? (
 				// One action row for the completed answer, not one after every prose
 				// fragment the provider emitted while working. Copy, rollback, and

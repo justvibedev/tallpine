@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 // autoCloseHooks is what ending a finished worker (B407) needs beyond the kill:
@@ -17,7 +18,9 @@ type autoCloseHooks interface {
 	RunningJobs(ctx context.Context, rec domain.SessionRecord) (int, error)
 	// OpenBacklogItems counts live backlog items still linked to the session (B487).
 	OpenBacklogItems(ctx context.Context, id domain.SessionID) (int, error)
-	NotifyClosed(ctx context.Context, rec domain.SessionRecord)
+	// NotifyClosed tells the orchestrator; requester is the session whose merge
+	// request caused the close ("" if none), which needs no notice.
+	NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID)
 	// EndOnMergeSessions lists live sessions marked end-on-merge (B498 rearm).
 	EndOnMergeSessions(ctx context.Context) ([]domain.SessionID, error)
 	// NotifyHeld tells the orchestrator a close has been held past the bound (B498).
@@ -131,7 +134,7 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 		slog.Warn("clear end-on-merge after auto-close failed", "session", id, "err", err)
 	}
 	if hooks := m.autoCloseHooksOrNil(); hooks != nil {
-		hooks.NotifyClosed(ctx, rec)
+		hooks.NotifyClosed(ctx, rec, ports.MergeRequester(ctx))
 	}
 	return false, nil
 }

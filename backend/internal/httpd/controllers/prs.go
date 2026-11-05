@@ -88,7 +88,11 @@ func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	res, err := c.Svc.Merge(r.Context(), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA})
+	var requester domain.SessionID
+	if agent, ok := scopedAgent(r); ok {
+		requester = agent.SessionID
+	}
+	res, err := c.Svc.Merge(r.Context(), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA, Requester: requester})
 	if err != nil {
 		writePRError(w, r, err)
 		return

@@ -178,22 +178,30 @@ export function ChatImage({ src, alt, inline }: { src?: string | Blob; alt?: str
 					)}
 				</button>
 			</ChatImageMenu>
-			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent
-					aria-describedby={undefined}
-					className="z-overlay w-auto max-w-[calc(100vw-4rem)] gap-0 bg-popover p-2 pt-10"
-				>
-					<DialogTitle className="sr-only">{label || t("chat.image.untitled")}</DialogTitle>
-					<ChatImageMenu url={url} label={label}>
-						<img
-							crossOrigin={mediaCrossOrigin(url)}
-							src={remote.src}
-							alt={label}
-							className="block max-h-[calc(100svh-8rem)] max-w-full rounded-md object-contain"
-						/>
-					</ChatImageMenu>
-				</DialogContent>
-			</Dialog>
+			<ChatImageViewer url={url} src={remote.src} label={label} open={open} onOpenChange={setOpen} />
 		</>
+	);
+}
+
+/** The full-size image dialog a chat image or thumbnail opens, with Copy / Save on right-click. */
+export function ChatImageViewer({ url, src = url, label, open, onOpenChange }: { url: string; src?: string; label: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+	const { t } = useTranslation();
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent
+				aria-describedby={undefined}
+				className="z-overlay w-auto max-w-[calc(100vw-4rem)] gap-0 bg-popover p-2 pt-10"
+			>
+				<DialogTitle className="sr-only">{label || t("chat.image.untitled")}</DialogTitle>
+				<ChatImageMenu url={url} label={label}>
+					<img
+						crossOrigin={mediaCrossOrigin(url)}
+						src={src}
+						alt={label}
+						className="block max-h-[calc(100svh-8rem)] max-w-full rounded-md object-contain"
+					/>
+				</ChatImageMenu>
+			</DialogContent>
+		</Dialog>
 	);
 }

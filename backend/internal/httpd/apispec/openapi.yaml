@@ -19494,8 +19494,17 @@ components:
       properties:
         id:
           type: string
+        kind:
+          type: string
+        model:
+          type: string
         name:
           type: string
+        startedAt:
+          format: date-time
+          type:
+          - "null"
+          - string
       required:
       - id
       - name

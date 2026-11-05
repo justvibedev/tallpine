@@ -3,22 +3,14 @@ import { Copy, ExternalLink, FolderSearch } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { tallpineBridge } from "../lib/bridge";
 import { isMacPlatform, isWindowsPlatform } from "../lib/platform";
-import { useUiStore } from "../stores/ui-store";
+import { performLocalPath } from "../lib/local-path-click";
 import type { LocalPathAction, LocalPathInspection } from "../../shared/local-path";
 import { ContextMenuItem } from "./ui/context-menu";
 
 /** Inspect-on-open state plus the toast-on-missing action runner shared by every local-path menu. */
 export function useLocalPathMenu(path: string) {
-	const { t } = useTranslation();
 	const [inspection, setInspection] = useState<LocalPathInspection>();
-	const perform = (action: LocalPathAction) => {
-		void tallpineBridge.localPath.perform(path, action).then(
-			(result) => {
-				if (!result.ok) useUiStore.getState().showGlobalToast(t(result.reason === "not_found" ? "path.notFound" : "path.failed"), undefined, result.reason === "not_found" ? "info" : "error");
-			},
-			() => undefined,
-		);
-	};
+	const perform = (action: LocalPathAction) => void performLocalPath(path, action);
 	const onOpenChange = (open: boolean) => {
 		if (open) void tallpineBridge.localPath.inspect(path).then(setInspection, () => setInspection({ ok: false, reason: "invalid" }));
 	};

@@ -162,6 +162,27 @@ describe("SessionView", () => {
 		expect(browserUnseen("sess-orch")).toBe(false);
 	});
 
+	it("does not carry an open orchestrator Browser, or re-open it on return, when switching sessions", () => {
+		const orchestrator = workerSession("sess-orch");
+		const { rerender } = render(<SessionView sessionId="sess-orch" />);
+		orchestrator.previewUrl = "https://example.com";
+		orchestrator.previewRevision = 1;
+		rerender(<SessionView sessionId="sess-orch" />);
+		expect(inspectorOpen("sess-orch")).toBe(true);
+		// Another session whose view already holds a page opens closed: entering a
+		// session with an existing target never reveals it.
+		const other = workerSession("sess-1");
+		other.previewUrl = "https://example.org";
+		other.previewRevision = 3;
+		rerender(<SessionView sessionId="sess-1" />);
+		expect(useUiStore.getState().inspectorSessions["sess-1"]?.view).not.toBe("browser");
+		expect(browserViewOptions.current).toMatchObject({ sessionId: "sess-1", active: false });
+		// Coming back keeps the orchestrator's own state; nothing reopens or closes it.
+		rerender(<SessionView sessionId="sess-orch" />);
+		expect(inspectorOpen("sess-orch")).toBe(true);
+		expect(useUiStore.getState().inspectorSessions["sess-1"]?.view).not.toBe("browser");
+	});
+
 	it("does not open the orchestrator Browser on passive agent activity, only flags it unseen", () => {
 		const { rerender } = render(<SessionView sessionId="sess-orch" />);
 		browserViewState.agentBrowserActive = true;

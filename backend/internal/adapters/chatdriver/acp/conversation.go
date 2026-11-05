@@ -111,6 +111,8 @@ type conversation struct {
 	thoughts          map[string]string
 	nestedMessages    map[string]nestedMessageState
 	tools             map[string]*toolState
+	subagents         map[string]*subagentTask // SDK subagent tasks by task id
+	subagentSeq       uint64
 	compactionSent    map[string]ports.ChatCompaction // last report per compact tool call
 	turnDiffs         *turnDiffAccumulator
 	turnDiffTurnID    string

@@ -16,6 +16,8 @@ type fakeAutoClose struct {
 	held     []string
 	sessions []domain.SessionID
 	closed   []domain.SessionID
+	// requesters is the requester NotifyClosed was given, per notice.
+	requesters []domain.SessionID
 }
 
 func (f *fakeAutoClose) HasQueuedMessages(context.Context, domain.SessionID) (bool, error) {
@@ -33,8 +35,9 @@ func (f *fakeAutoClose) EndOnMergeSessions(context.Context) ([]domain.SessionID,
 func (f *fakeAutoClose) NotifyHeld(_ context.Context, rec domain.SessionRecord, reason string) {
 	f.held = append(f.held, string(rec.ID)+": "+reason)
 }
-func (f *fakeAutoClose) NotifyClosed(_ context.Context, rec domain.SessionRecord) {
+func (f *fakeAutoClose) NotifyClosed(_ context.Context, rec domain.SessionRecord, requester domain.SessionID) {
 	f.closed = append(f.closed, rec.ID)
+	f.requesters = append(f.requesters, requester)
 }
 
 func autoCloseSetup(rec domain.SessionRecord) (*Manager, *fakeCompletionTerminator, *fakeAutoClose) {
@@ -249,5 +252,21 @@ func TestAutoClose_AlreadyKilledSessionSendsNoNotice(t *testing.T) {
 	observeMerged(t, m, "ac-k")
 	if term.calls != 1 || len(hooks.closed) != 0 {
 		t.Fatalf("kills=%d notices=%v, want one attempt and no notice", term.calls, hooks.closed)
+	}
+}
+
+// B560: the requester of the merge that caused the close reaches NotifyClosed
+// (so the daemon can skip a notice to that same session); an external merge
+// carries none.
+func TestAutoClose_MergeRequesterReachesNotice(t *testing.T) {
+	for _, requester := range []domain.SessionID{"orch-1", ""} {
+		m, term, hooks := autoCloseSetup(idleWorker("ac-l"))
+		c := ports.WithMergeRequester(ctx, requester)
+		if err := m.ApplyPRObservation(c, "ac-l", ports.PRObservation{Fetched: true, URL: "pr1", Merged: true}); err != nil {
+			t.Fatal(err)
+		}
+		if term.calls != 1 || len(hooks.requesters) != 1 || hooks.requesters[0] != requester {
+			t.Fatalf("kills=%d requesters=%v, want one kill and requester %q", term.calls, hooks.requesters, requester)
+		}
 	}
 }

@@ -47,12 +47,20 @@ type Tracker struct {
 	idle   IdleFunc
 	grace  time.Duration
 
+	// now stamps when a task was first seen running; tests replace it.
+	now func() time.Time
+	// onChange runs after a session's running set gained or lost a task, so
+	// clients that list the tasks can refresh. Set once, before use.
+	onChange func(domain.SessionID)
+
 	mu       sync.Mutex
 	sessions map[domain.SessionID]*sessionTasks
 }
 
 type sessionTasks struct {
 	running map[string]ports.ChatAsyncTask
+	// startedAt is when each running task was first reported.
+	startedAt map[string]time.Time
 	// ended remembers finished task ids so a repeated terminal report neither
 	// wakes twice nor resurrects the task.
 	ended map[string]bool
@@ -72,7 +80,20 @@ func New(sender Sender, idle IdleFunc, grace time.Duration) *Tracker {
 	if grace <= 0 {
 		grace = DefaultGrace
 	}
-	return &Tracker{sender: sender, idle: idle, grace: grace, sessions: map[domain.SessionID]*sessionTasks{}}
+	return &Tracker{sender: sender, idle: idle, grace: grace, now: time.Now, sessions: map[domain.SessionID]*sessionTasks{}}
+}
+
+// OnChange registers fn to run (outside the lock) whenever a session's
+// running tasks are added or removed. Call it before the tracker is used.
+func (t *Tracker) OnChange(fn func(domain.SessionID)) *Tracker {
+	t.onChange = fn
+	return t
+}
+
+func (t *Tracker) changed(id domain.SessionID) {
+	if t.onChange != nil {
+		t.onChange(id)
+	}
 }
 
 // Apply records one task report for a session.
@@ -112,12 +133,26 @@ func (t *Tracker) Apply(id domain.SessionID, task ports.ChatAsyncTask) {
 		if task.TaskType == "" {
 			task.TaskType = prev.TaskType
 		}
+		if task.Model == "" {
+			task.Model = prev.Model
+		}
+		_, known := s.running[task.ID]
 		s.running[task.ID] = task
+		if !known {
+			if s.startedAt == nil {
+				s.startedAt = map[string]time.Time{}
+			}
+			s.startedAt[task.ID] = t.now()
+		}
 		t.mu.Unlock()
+		if !known {
+			t.changed(id)
+		}
 		return
 	}
-	prev := s.running[task.ID]
+	prev, wasRunning := s.running[task.ID]
 	delete(s.running, task.ID)
+	delete(s.startedAt, task.ID)
 	s.ended[task.ID] = true
 	if task.Name == "" {
 		task.Name = prev.Name
@@ -125,9 +160,15 @@ func (t *Tracker) Apply(id domain.SessionID, task ports.ChatAsyncTask) {
 	turnsAtEnd := s.turns
 	// A turn that was open when the task ended, or a prompted turn still running,
 	// receives the task's result itself; no continuation is needed.
-	handled := len(s.turnIDs) > 0 || s.stopRequested[task.ID]
+	// A subagent's end always reaches its parent as a task notification that
+	// starts the parent's next turn, so it never needs a wake from here.
+	handled := len(s.turnIDs) > 0 || s.stopRequested[task.ID] ||
+		task.TaskType == ports.ChatAsyncTaskSubagent || prev.TaskType == ports.ChatAsyncTaskSubagent
 	delete(s.stopRequested, task.ID)
 	t.mu.Unlock()
+	if wasRunning {
+		t.changed(id)
+	}
 	if !handled && t.idle != nil && !t.idle(context.Background(), id) {
 		handled = true
 	}
@@ -176,6 +217,11 @@ type Info struct {
 	ID    string
 	Name  string
 	State string
+	// Kind is the harness task type ("subagent", "monitor", ...), when known.
+	Kind  string
+	Model string
+	// StartedAt is when the tracker first saw the task running.
+	StartedAt time.Time
 }
 
 // Running lists the session's running background tasks, sorted by id.
@@ -191,7 +237,10 @@ func (t *Tracker) Running(id domain.SessionID) []Info {
 	}
 	out := make([]Info, 0, len(s.running))
 	for _, task := range s.running {
-		out = append(out, Info{ID: task.ID, Name: label(task), State: task.State})
+		out = append(out, Info{
+			ID: task.ID, Name: label(task), State: task.State,
+			Kind: task.TaskType, Model: task.Model, StartedAt: s.startedAt[task.ID],
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
@@ -236,8 +285,12 @@ func (t *Tracker) Clear(id domain.SessionID) {
 		return
 	}
 	t.mu.Lock()
+	had := t.sessions[id] != nil && len(t.sessions[id].running) > 0
 	delete(t.sessions, id)
 	t.mu.Unlock()
+	if had {
+		t.changed(id)
+	}
 }
 
 func label(task ports.ChatAsyncTask) string {

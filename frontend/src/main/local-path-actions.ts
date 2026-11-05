@@ -1,7 +1,8 @@
 import path from "node:path";
 import type { Stats } from "node:fs";
 import { hasInAppLinkScheme, parseArtifactLink } from "../shared/session-link-parse";
-import type { LocalPathInspection, LocalPathResult } from "../shared/local-path";
+import type { LocalImageSource, LocalPathInspection, LocalPathResult } from "../shared/local-path";
+import { isLocalImagePath } from "../shared/local-image-paths";
 
 const MAX_PATH_LENGTH = 4096;
 // Open is an allowlist: only inert document, media and text files (zip and everything else is reveal-only).
@@ -25,7 +26,11 @@ export type LocalPathActionsDeps = {
 	copyText: (text: string) => void;
 	/** A session's artifact directory (absolute), for `tallpine://sessions/<project>/<session>/artifacts/<path>` links. */
 	resolveArtifactDir: (sessionId: string) => Promise<string>;
+	/** A session's worktree (absolute), for chat thumbnails of images inside it. */
+	resolveWorkspace: (sessionId: string) => Promise<string>;
 };
+
+const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** Absolute, normalized path for renderer-supplied text, or undefined when it is not a plain local path. */
 export function resolveLocalPath(input: unknown, homeDir: string, platform: NodeJS.Platform): string | undefined {
@@ -51,20 +56,43 @@ export function isOpenableLocalPath(target: string, kind: "file" | "directory", 
 	return platform === "win32" || (mode & 0o111) === 0;
 }
 
+/** The path of `candidate` strictly inside `base`, or undefined when it is `base` itself or outside it. */
+function pathInside(api: path.PlatformPath, base: string, candidate: string): string | undefined {
+	const rel = api.relative(base, candidate);
+	return rel !== "" && !rel.startsWith("..") && !api.isAbsolute(rel) ? rel : undefined;
+}
+
 export function createLocalPathActions(deps: LocalPathActionsDeps) {
+	const api = deps.platform === "win32" ? path.win32 : path.posix;
+	const rootOf = (resolve: (sessionId: string) => Promise<string>, sessionId: string) =>
+		resolve(sessionId).then((root) => (api.isAbsolute(root) ? api.normalize(root) : undefined), () => undefined);
+	const routePath = (rel: string) => rel.split(api.sep).join("/");
+
+	// Which confined route serves an image file for `sessionId`'s chat: only a file strictly inside a real root
+	// maps — that session's worktree or artifact directory, or another session's artifact directory under the same
+	// artifacts root, checked against that session's own directory. A same-named segment elsewhere maps nothing.
+	async function imageSource(target: string, sessionId: string): Promise<LocalImageSource | undefined> {
+		const workspace = await rootOf(deps.resolveWorkspace, sessionId);
+		const inWorkspace = workspace && pathInside(api, workspace, target);
+		if (inWorkspace) return { kind: "workspace", path: routePath(inWorkspace) };
+		const artifactDir = await rootOf(deps.resolveArtifactDir, sessionId);
+		if (!artifactDir) return undefined;
+		const owner = pathInside(api, api.dirname(artifactDir), target)?.split(api.sep)[0];
+		if (!owner || !SESSION_ID.test(owner)) return undefined;
+		const dir = owner === sessionId ? artifactDir : await rootOf(deps.resolveArtifactDir, owner);
+		const inArtifacts = dir && pathInside(api, dir, target);
+		return inArtifacts ? { kind: "artifact", sessionId: owner, path: routePath(inArtifacts) } : undefined;
+	}
+
 	// A tallpine:// artifact link becomes the file inside that session's artifact dir; anything that would
 	// leave the dir (traversal, a symlink pointing out) is invalid. Other tallpine:// forms are not paths.
 	async function resolveArtifactLink(input: string): Promise<string | LocalPathInspection> {
 		const link = parseArtifactLink(input);
 		if (!link) return { ok: false, reason: "invalid" };
-		const api = deps.platform === "win32" ? path.win32 : path.posix;
 		const dir = await deps.resolveArtifactDir(link.sessionId).catch(() => undefined);
 		if (!dir || !api.isAbsolute(dir)) return { ok: false, reason: "not_found" };
 		const target = api.join(dir, ...link.path.split("/"));
-		const inside = (base: string, candidate: string) => {
-			const rel = api.relative(base, candidate);
-			return rel !== "" && !rel.startsWith("..") && !api.isAbsolute(rel);
-		};
+		const inside = (base: string, candidate: string) => pathInside(api, base, candidate) !== undefined;
 		if (!inside(dir, target)) return { ok: false, reason: "invalid" };
 		const realDir = await deps.realPath(dir).catch(() => undefined);
 		const realTarget = await deps.realPath(target).catch(() => undefined);
@@ -72,7 +100,8 @@ export function createLocalPathActions(deps: LocalPathActionsDeps) {
 		return inside(realDir, realTarget) ? target : { ok: false, reason: "invalid" };
 	}
 
-	async function inspect(input: unknown): Promise<LocalPathInspection> {
+	/** `sessionId`, when given, is the chat the path is shown in: an image file there also gets its {@link imageSource}. */
+	async function inspect(input: unknown, sessionId?: unknown): Promise<LocalPathInspection> {
 		let resolved: string | undefined;
 		if (typeof input === "string" && hasInAppLinkScheme(input)) {
 			const artifact = await resolveArtifactLink(input);
@@ -88,7 +117,10 @@ export function createLocalPathActions(deps: LocalPathActionsDeps) {
 		// Sockets, devices and FIFOs can be revealed and copied but never opened.
 		const real = kind ? await deps.realPath(resolved).catch(() => undefined) : undefined;
 		const canOpen = Boolean(kind && real && isOpenableLocalPath(resolved, kind, info.mode, deps.platform) && isOpenableLocalPath(real, kind, info.mode, deps.platform));
-		return { ok: true, path: resolved, kind: kind ?? "file", canOpen };
+		const image = kind === "file" && typeof sessionId === "string" && SESSION_ID.test(sessionId) && isLocalImagePath(resolved)
+			? await imageSource(resolved, sessionId)
+			: undefined;
+		return { ok: true, path: resolved, kind: kind ?? "file", canOpen, ...(image ? { image } : {}) };
 	}
 
 	async function perform(input: unknown, action: unknown): Promise<LocalPathResult> {

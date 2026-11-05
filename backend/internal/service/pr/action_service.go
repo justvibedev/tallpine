@@ -235,7 +235,7 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 		fresh.PR.State = string(domain.PRStateMerged)
 		fresh.PR.MergeCommitSHA = out.MergeCommitSHA
 		fresh.ObservedAt = mergedAt
-		if err := s.lifecycle.ApplySCMObservation(ctx, tracked.SessionID, fresh); err != nil {
+		if err := s.lifecycle.ApplySCMObservation(ports.WithMergeRequester(ctx, request.Requester), tracked.SessionID, fresh); err != nil {
 			s.logger.Error("pr merge succeeded but lifecycle notification failed", "session", tracked.SessionID, "pr", tracked.URL, "err", err)
 		}
 	}

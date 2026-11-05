@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { isWebLink, isWorkspaceHtmlLink } from "../../lib/external-link-policy";
 import type { ConversationSnapshot } from "../../types/conversation";
+import { isOrchestratorSession, type WorkspaceSession } from "../../types/workspace";
 
 const HTTP_LINK_PATTERN = /https?:\/\/[^\s<>()\[\]{}"']+/i;
 const autoOpenedLinkSessions = new Set<string>();
@@ -33,17 +34,27 @@ function firstBrowserLink(text: string, workspacePaths: string[]): string | unde
 	return undefined;
 }
 
-/** Opens the first browser link of a newly completed assistant reply, once per session. */
-export function useAutoOpenAssistantLinks({ snapshot, isLoading, uiSessionId, paths, autoOpenLinkInBrowser }: {
+/** Only worker chats auto-open links; an orchestrator's Browser shows only pages the user opens. */
+export function autoOpensAssistantLinks(session: Pick<WorkspaceSession, "id" | "kind">): boolean {
+	return !isOrchestratorSession(session);
+}
+
+/**
+ * Opens the first browser link of a newly completed assistant reply, once per session.
+ * `enabled` is false for orchestrators: their replies cite PR and release links the
+ * in-app Browser (no login) shows as a 404, and entering the chat must never pop it open.
+ */
+export function useAutoOpenAssistantLinks({ snapshot, isLoading, uiSessionId, paths, autoOpenLinkInBrowser, enabled = true }: {
 	snapshot: ConversationSnapshot | undefined;
 	isLoading: boolean;
 	uiSessionId: string;
 	paths: string[];
 	autoOpenLinkInBrowser: (url: string) => void;
+	enabled?: boolean;
 }) {
 	const conversationLinkBaselines = useRef(new Map<string, ConversationLinkBaseline>());
 	useEffect(() => {
-		if (!snapshot || isLoading) return;
+		if (!enabled || !snapshot || isLoading) return;
 		const previous = conversationLinkBaselines.current.get(uiSessionId);
 		const isInitialSnapshot = !previous;
 		const latestUserMessage = snapshot.items
@@ -96,5 +107,5 @@ export function useAutoOpenAssistantLinks({ snapshot, isLoading, uiSessionId, pa
 				break;
 			}
 		}
-	}, [autoOpenLinkInBrowser, isLoading, paths, snapshot, uiSessionId]);
+	}, [autoOpenLinkInBrowser, enabled, isLoading, paths, snapshot, uiSessionId]);
 }

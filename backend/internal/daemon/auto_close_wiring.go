@@ -88,13 +88,14 @@ func (h autoCloseHooks) RunningJobs(ctx context.Context, rec domain.SessionRecor
 	return h.jobs.RunningJobs(ctx, rec)
 }
 
-func (h autoCloseHooks) NotifyClosed(ctx context.Context, rec domain.SessionRecord) {
+func (h autoCloseHooks) NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID) {
 	lane := ""
 	if lanes, err := h.store.ListSessionLanes(ctx, rec.ProjectID); err == nil {
 		lane = lanes[rec.ID]
 	}
 	to, ok := h.orchestrator(ctx, rec.ProjectID, lane)
-	if !ok {
+	// The orchestrator that landed the PR already knows it ended (B560).
+	if !ok || to == requester {
 		return
 	}
 	// Only the session id: the display name is worker-controlled text.

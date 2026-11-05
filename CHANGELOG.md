@@ -4,6 +4,20 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.2]
+
+### Fixed
+- No false "ended on its own" notice when a session's close was caused by Tallpine itself (#1003).
+- Right-clicking a path in the chat shows the full context menu again, not only the floating Add to chat action (#1004).
+- Orchestrator chats no longer auto-open the Browser from links in their own replies (#1005).
+- Running background subagents are shown in the chat (#1007).
+
+### Changed
+- Local image paths in chat replies render as inline thumbnails, and a plain click on any other local file path opens it (#1006).
+
+### Internal
+- Test-only: reap stale chat-host orphans from hard-killed e2e runs and regenerate a wire-tag golden (#1008, #1009).
+
 ## [0.13.1]
 
 ### Added

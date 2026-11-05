@@ -214,7 +214,13 @@ func (b *boot) wireChatNotifiers() {
 		func(c context.Context, id domain.SessionID) bool {
 			rec, ok, err := b.store.GetSession(c, id)
 			return err == nil && ok && !rec.IsTerminated && (rec.Activity.State == domain.ActivityIdle || rec.Activity.State == domain.ActivityWaitingInput)
-		}, 0)
+		}, 0).OnChange(func(id domain.SessionID) {
+		// The tracker is in memory: tell clients to re-read the session so its
+		// listed tasks (a background subagent above all) appear and clear.
+		if err := b.store.NotifySessionRuntimeChanged(context.Background(), id); err != nil {
+			b.log.Warn("background tasks: notify session change failed", "session", id, "error", err)
+		}
+	})
 }
 
 // workerJobRoots names where a session's process tree starts, for background-job counting.

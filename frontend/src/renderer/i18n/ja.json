@@ -2722,6 +2722,7 @@
 	"chat.backgroundTasks.stop": "停止",
 	"chat.backgroundTasks.stopping": "停止中…",
 	"chat.backgroundTasks.stopTask": "{{name}} を停止",
+	"chat.backgroundTasks.subagent": "サブエージェント",
 	"chat.reauth.accountSignedOut": "{{account}} はサインアウトしています",
 	"chat.reauth.savedAccountHint": "ここで使い続けるにはもう一度サインインしてから、最後のメッセージを再試行してください。",
 	"chat.reauth.continueOn": "{{account}} で続行",

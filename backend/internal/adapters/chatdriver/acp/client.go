@@ -81,6 +81,8 @@ func (c *conversation) handleNotification(method string, params json.RawMessage)
 		if err == nil {
 			err = c.SessionUpdate(context.Background(), update)
 		}
+	case ClaudeSDKMessageMethod:
+		c.handleSDKMessage(params)
 	case persistenthost.ACPPromptResultMethod, persistenthost.ACPInteractionCommandMethod:
 		_, err = c.HandleExtensionMethod(context.Background(), method, params)
 	default:
