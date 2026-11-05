@@ -15,6 +15,7 @@ resolveDaemonFromPort
 } from "../../shared/daemon-attach";
 import { createListenPortScanner, parseRunFile } from "../../shared/daemon-discovery";
 import { resolveDaemonLaunch } from "../../shared/daemon-launch";
+import { isDataDirLockWaitStatus } from "../../shared/daemon-datadir-lock";
 import {
 slowDaemonStartupStatus
 } from "../../shared/daemon-startup-status";
@@ -34,7 +35,8 @@ import { verifyBundledHelpers } from "../helper-signature";
 import { legacyStagedTmuxRootFor, removeLegacyStagedTmux } from "../legacy-tmux-cleanup";
 import { ensureShellEnv } from "../shell-env-host";
 import { appendDaemonOutput, daemonIdentityError, daemonLaunchEnv, gracefullyReplaceDaemonForBrowser, inspectExistingDaemon, PORT_DISCOVERY_TIMEOUT_MS, repairDevAcpRuntime, resolvedDaemonPort, RUN_FILE_FRESHNESS_SKEW_MS, RUN_FILE_POLL_MS, runFilePath, setDaemonStatus, startDaemonForRestart } from "./daemon-lifecycle";
-import { noteUnexpectedDaemonExit } from "./daemon-auto-restart-host";
+import { noteUnexpectedDaemonExit, watchForDataDirLockRelease } from "./daemon-auto-restart-host";
+import { daemonExitStatus, dataDirLockProgressStatus } from "./daemon-start-status";
 import { reclaimOrphanedPortHolder } from "./daemon-port-takeover";
 import { readDaemonProbe } from "./daemon-probe";
 import { spawnDaemonProcess } from "./daemon-spawn";
@@ -304,6 +306,7 @@ export async function startDaemonInner(startEpoch: number, autoRestart = false):
 	// confirmed sources race — the "daemon listening" slog line (stderr, but both
 	// streams are scanned) and the running.json handshake — first one wins.
 	const spawnedAtMs = Date.now();
+	const handshakePath = runFilePath();
 	let portConfirmed = false;
 	let runFileTimer: ReturnType<typeof setInterval> | undefined;
 	let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -313,6 +316,20 @@ export async function startDaemonInner(startEpoch: number, autoRestart = false):
 		runFileTimer = undefined;
 		if (fallbackTimer) clearTimeout(fallbackTimer);
 		fallbackTimer = undefined;
+	};
+
+	const slowStartupStatus = () => slowDaemonStartupStatus({
+		output: ctx.daemonOutput,
+		executablePath: launch.command,
+		workingDirectory: launch.cwd,
+		handshakePath,
+	});
+	// A replacement waiting for its predecessor's data-dir lock says so (B568).
+	const noteDaemonOutput = (text: string) => {
+		appendDaemonOutput(text);
+		if (portConfirmed || ctx.daemonProcess !== child || ctx.daemonStoppingProcess === child) return;
+		const next = dataDirLockProgressStatus(ctx.daemonStatus, ctx.daemonOutput, slowStartupStatus);
+		if (next) setDaemonStatus(next);
 	};
 
 	const reportBoundPort = (port: number) => {
@@ -363,20 +380,19 @@ export async function startDaemonInner(startEpoch: number, autoRestart = false):
 
 		child.stdout?.on("data", (chunk: Buffer) => {
 			const text = chunk.toString("utf8");
-			appendDaemonOutput(text);
+			noteDaemonOutput(text);
 			if (echoDaemonOutput) console.log(text.trimEnd());
 			scanStdout(text);
 		});
 
 		child.stderr?.on("data", (chunk: Buffer) => {
 			const text = chunk.toString("utf8");
-			appendDaemonOutput(text);
+			noteDaemonOutput(text);
 			if (echoDaemonOutput) console.error(text.trimEnd());
 			scanStderr(text);
 		});
 	}
 
-	const handshakePath = runFilePath();
 	if (handshakePath) {
 		runFileTimer = setInterval(() => {
 			readFile(handshakePath, "utf8")
@@ -398,16 +414,13 @@ export async function startDaemonInner(startEpoch: number, autoRestart = false):
 	// the same launch to ready.
 	fallbackTimer = setTimeout(() => {
 		if (portConfirmed || ctx.daemonProcess !== child || ctx.daemonStoppingProcess === child) return;
+		fallbackTimer = undefined;
+		// The lock-wait status is more specific; it falls back to this one when the lock is acquired.
+		if (isDataDirLockWaitStatus(ctx.daemonStatus)) return;
 		// Keep running.json polling alive after surfacing slow startup. In
 		// keep-daemon mode there are no stdout/stderr scanners, so the run file is
 		// the only way a slow-but-successful boot can still recover to ready.
-		fallbackTimer = undefined;
-		setDaemonStatus(slowDaemonStartupStatus({
-			output: ctx.daemonOutput,
-			executablePath: launch.command,
-			workingDirectory: launch.cwd,
-			handshakePath,
-		}));
+		setDaemonStatus(slowStartupStatus());
 	}, PORT_DISCOVERY_TIMEOUT_MS);
 
 	child.once("error", (error) => {
@@ -440,15 +453,10 @@ export async function startDaemonInner(startEpoch: number, autoRestart = false):
 			setDaemonStatus({ state: "stopped" });
 			return;
 		}
-		setDaemonStatus({
-			state: "stopped",
-			message: signal ? `Daemon exited with ${signal}` : `Daemon exited with code ${code ?? "unknown"}`,
-			details: ctx.daemonOutput.trim() || undefined,
-			code: "exited",
-			exitCode: code,
-			signal,
-		});
-		noteUnexpectedDaemonExit(child.pid ?? null, code, signal);
+		const exitStatus = daemonExitStatus(code, signal, ctx.daemonOutput);
+		setDaemonStatus(exitStatus);
+		if (exitStatus.code === "datadir_locked") watchForDataDirLockRelease(exitStatus.lockHolderPid);
+		else noteUnexpectedDaemonExit(child.pid ?? null, code, signal);
 	});
 
 	return ctx.daemonStatus;

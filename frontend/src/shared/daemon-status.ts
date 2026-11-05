@@ -14,7 +14,9 @@ export type DaemonFailureCode =
 	| "port_unconfirmed"
 	| "not_ready"
 	| "identity_mismatch"
-	| "datadir_unwritable";
+	| "datadir_unwritable"
+	// The daemon exited 75: another Tallpine process still holds the data-dir lock.
+	| "datadir_locked";
 
 export type DaemonStatus = {
 	state: "starting" | "ready" | "stopped" | "error";
@@ -29,4 +31,10 @@ export type DaemonStatus = {
 	code?: DaemonFailureCode;
 	exitCode?: number | null;
 	signal?: string | null;
+	// A starting daemon that is waiting for its predecessor to release the data dir.
+	phase?: "datadir_lock_wait";
+	// PID recorded in the data-dir lock by the process that still holds it.
+	lockHolderPid?: number;
+	// The daemon's own last error line (for example its lock refusal).
+	daemonError?: string;
 };

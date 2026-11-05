@@ -73,5 +73,14 @@ rm "$repo/new_big.go"; git -C "$repo" reset -q --hard HEAD
 
 run --changed --write >/dev/null 2>&1 && bad "--changed --write must be rejected" || ok
 
+# --write must not touch entries for files the branch did not change (stale-base lock-in, B569).
+lines 600 >"$repo/stale.go"; lines 600 >"$repo/mine.go"
+printf '600 big.go\n600 stale.go\n600 mine.go\n' >"$repo/scripts/size-ratchet.allow"
+git -C "$repo" add -A; git -C "$repo" -c user.name=t -c user.email=t@t commit -qm s || bad "setup commit"; git -C "$repo" branch -f basebr HEAD
+lines 550 >"$repo/mine.go"; lines 540 >"$repo/stale.go"; git -C "$repo" checkout -q basebr -- stale.go
+printf '600 big.go\n700 stale.go\n600 mine.go\n' >"$repo/scripts/size-ratchet.allow"
+run --write --base basebr >/dev/null
+grep -qx '550 mine.go' "$repo/scripts/size-ratchet.allow" && grep -qx '700 stale.go' "$repo/scripts/size-ratchet.allow" && ok || bad "--write must lock in changed files only: $(cat "$repo/scripts/size-ratchet.allow")"
+
 echo "size-ratchet tests: $pass passed, $fails failed"
 [ "$fails" = 0 ]

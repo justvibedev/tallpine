@@ -326,7 +326,7 @@ export const QueuedMessageDock = memo(function QueuedMessageDock({
 	promotePendingTurnId?: string;
 	cancelPendingTurnId?: string;
 }) {
-	const [expanded, setExpanded] = useState(true);
+	const [expanded, setExpanded] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [optimisticallySteeredTurnIds, setOptimisticallySteeredTurnIds] = useState<Set<string>>(
 		() => new Set(),

@@ -2,7 +2,7 @@
 # scripts/size-ratchet: keeps source files from growing past a line cap.
 #
 #   scripts/size-ratchet                 # check (a scripts/verify job)
-#   scripts/size-ratchet --write         # tighten scripts/size-ratchet.allow (shrink/remove only)
+#   scripts/size-ratchet --write         # tighten scripts/size-ratchet.allow (shrink/remove only, only for files changed vs the merge-base)
 #   scripts/size-ratchet --write --add   # also list new over-cap files (needs a written reason in review)
 #
 # A tracked source file over MAX lines (default 500) must be listed in the
@@ -84,18 +84,32 @@ now="$(sizes | LC_ALL=C sort -k2)"
 listed="$(grep -vE '^[[:space:]]*(#|$)' "$allow" 2>/dev/null | LC_ALL=C sort -k2)"
 
 if [ "$write" = 1 ]; then
+	# Only entries for files this branch changed (vs the merge-base) are rewritten; every other
+	# entry is kept verbatim, so a stale branch base can never lower an entry another PR set.
+	# With no resolvable base, every file counts as changed.
+	chg=""
+	if [ -n "$(changed_base)" ] && git -C "$root" rev-parse -q --verify "$(changed_base)^{commit}" >/dev/null 2>&1; then
+		chg="$(
+			git -C "$root" diff --name-only "$(changed_base)" --
+			git -C "$root" ls-files --others --exclude-standard
+		)"
+		chg="${chg:-/}"
+	fi
 	{
 		sed -n '/^#/p;/^$/p' "$allow" 2>/dev/null
-		printf '%s\n' "$now" | while read -r n f; do
-			[ -n "$f" ] || continue
+		{ printf '%s\n' "$now"; printf '%s\n' "$listed"; } | awk 'NF { print $2 }' | LC_ALL=C sort -u | while read -r f; do
 			old="$(printf '%s\n' "$listed" | awk -v f="$f" '$2 == f { print $1 }')"
-			if [ -n "$old" ]; then
+			n="$(printf '%s\n' "$now" | awk -v f="$f" '$2 == f { print $1 }')"
+			if [ -n "$chg" ] && ! printf '%s\n' "$chg" | grep -qxF -- "$f"; then
+				if [ -n "$old" ]; then printf '%s %s\n' "$old" "$f"; fi
+			elif [ -n "$old" ] && [ -n "$n" ]; then
 				[ "$n" -lt "$old" ] && old="$n"
 				printf '%s %s\n' "$old" "$f"
-			elif [ "$add" = 1 ]; then
+			elif [ -z "$old" ] && [ -n "$n" ] && [ "$add" = 1 ]; then
 				printf '%s %s\n' "$n" "$f"
 			fi
 		done
+		true
 	} >"$allow.tmp" && mv "$allow.tmp" "$allow"
 	echo "size-ratchet: wrote $allow"
 	exit 0

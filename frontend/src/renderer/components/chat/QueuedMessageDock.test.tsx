@@ -60,6 +60,12 @@ function simulateDrag(activeId: string, overId: string) {
 	});
 }
 
+it("starts collapsed so several queued messages do not overflow the one-row slot (B565)", () => {
+	render(<QueuedMessageDock messages={queuedMessages(["a", "b", "c"])} />);
+	expect(screen.getByTestId("queued-message-dock")).toHaveAttribute("data-expanded", "false");
+	expect(screen.getByTestId("queued-message-toggle")).toHaveAttribute("aria-expanded", "false");
+});
+
 describe("QueuedMessageDock reorder", () => {
 	it("submits FIFO order when dragging the first display row to the bottom", async () => {
 		const onReorderQueuedTurns = vi.fn().mockResolvedValue(undefined);

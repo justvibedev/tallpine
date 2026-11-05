@@ -2,33 +2,45 @@ import { AlertTriangle, Clock3 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DaemonStatus } from "../../shared/daemon-status";
+import { isDataDirLockWaitStatus } from "../../shared/daemon-datadir-lock";
 import { isSlowDaemonStartupStatus } from "../../shared/daemon-startup-status";
 import { daemonFailureHint, daemonFailureMessage, daemonFailureTitle } from "../lib/daemon-failure";
 import { tallpineBridge } from "../lib/bridge";
 
-export function DaemonFailureBanner({ status }: { status: DaemonStatus }) {
-	if ((!status.code && !isSlowDaemonStartupStatus(status)) || status.state === "ready") return null;
-	return <DaemonFailureContent status={status} />;
+// "toast" floats over the shell; "inline" sits on the startup screen, which has nothing else to show.
+type DaemonFailurePlacement = "toast" | "inline";
+
+export function DaemonFailureBanner({ status, placement = "toast" }: { status: DaemonStatus; placement?: DaemonFailurePlacement }) {
+	if ((!status.code && !isSlowDaemonStartupStatus(status) && !isDataDirLockWaitStatus(status)) || status.state === "ready") return null;
+	return <DaemonFailureContent status={status} placement={placement} />;
 }
 
-function DaemonFailureContent({ status }: { status: DaemonStatus }) {
+function DaemonFailureContent({ status, placement }: { status: DaemonStatus; placement: DaemonFailurePlacement }) {
 	const { t } = useTranslation();
 	const [detailsOpen, setDetailsOpen] = useState(false);
 	const [copied, setCopied] = useState(false);
 	const [restarting, setRestarting] = useState(false);
 	const [restartError, setRestartError] = useState<string | null>(null);
 	const copiedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const slowStartup = isSlowDaemonStartupStatus(status);
+	const lockWait = isDataDirLockWaitStatus(status);
+	const slowStartup = isSlowDaemonStartupStatus(status) || lockWait;
 	const details = status.details?.trim();
-	const hint = slowStartup ? "" : daemonFailureHint(status, t);
-	const title = slowStartup ? t("daemon.title.notReady") : daemonFailureTitle(status, t);
+	const daemonError = status.daemonError?.trim();
+	const hint = lockWait ? t("daemon.hint.waitingForPrevious") : slowStartup ? "" : daemonFailureHint(status, t);
+	const title = lockWait
+		? t("daemon.title.waitingForPrevious")
+		: slowStartup
+			? t("daemon.title.notReady")
+			: daemonFailureTitle(status, t);
 	const canRestart =
 		!slowStartup &&
 		(status.code === "not_ready" ||
 			status.code === "spawn_failed" ||
 			status.code === "exited" ||
+			status.code === "datadir_locked" ||
 			status.code === "identity_mismatch" ||
 			status.code === "daemon_unreachable");
+	const restartLabel = status.code === "datadir_locked" ? t("daemon.retry") : t("daemon.restart");
 	useEffect(() => {
 		setCopied(false);
 		return () => {
@@ -40,6 +52,7 @@ function DaemonFailureContent({ status }: { status: DaemonStatus }) {
 			title,
 			status.code ? t("daemon.details.code", { code: status.code }) : "",
 			t("daemon.details.message", { message: daemonFailureMessage(status, t) }),
+			daemonError ? t("daemon.details.daemonError", { error: daemonError }) : "",
 			details ? `\n${t("daemon.details.heading", { details })}` : "",
 		];
 		await tallpineBridge.clipboard.writeText(lines.filter(Boolean).join("\n"));
@@ -67,7 +80,8 @@ function DaemonFailureContent({ status }: { status: DaemonStatus }) {
 	return (
 		<section
 			aria-live={slowStartup ? "polite" : "assertive"}
-			className="pointer-events-auto fixed top-3 right-3 z-overlay flex w-daemon-failure-toast flex-col rounded-welcome-panel border border-[var(--color-border-import-modal)] bg-[var(--color-bg-import-modal)] px-3.5 py-3 text-xs shadow-[var(--shadow-import-modal)]"
+			className={`pointer-events-auto ${placement === "inline" ? "relative" : "fixed top-3 right-3 z-overlay"} flex w-daemon-failure-toast flex-col rounded-welcome-panel border border-[var(--color-border-import-modal)] bg-[var(--color-bg-import-modal)] px-3.5 py-3 text-xs shadow-[var(--shadow-import-modal)]`}
+			data-testid="daemon-failure-banner"
 			role={slowStartup ? "status" : "alert"}
 		>
 			<div className="flex items-start gap-3">
@@ -84,6 +98,9 @@ function DaemonFailureContent({ status }: { status: DaemonStatus }) {
 					<p className="mt-0.5 wrap-break-word text-pretty text-[var(--color-text-import-muted)]">
 						{daemonFailureMessage(status, t)}
 					</p>
+					{daemonError ? (
+						<p className="mt-1 wrap-break-word font-mono text-caption text-[var(--color-text-import-title)]">{daemonError}</p>
+					) : null}
 					{hint ? <p className="mt-1 text-[var(--color-text-import-muted)]">{hint}</p> : null}
 					{canRestart ? (
 						<button
@@ -92,7 +109,7 @@ function DaemonFailureContent({ status }: { status: DaemonStatus }) {
 							disabled={restarting}
 							onClick={() => void restartDaemon()}
 						>
-							{restarting ? t("daemon.restarting") : t("daemon.restart")}
+							{restarting ? t("daemon.restarting") : restartLabel}
 						</button>
 					) : null}
 					{restartError ? <p className="mt-2 text-error">{restartError}</p> : null}

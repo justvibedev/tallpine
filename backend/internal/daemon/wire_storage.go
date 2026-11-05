@@ -210,12 +210,14 @@ func (b *boot) lockDaemonInstance() error {
 	//     5s closed-lid lease release plus 3s caffeinate exit (keep-awake).
 	// Wait 9T+18s (108s by default), one stage of margin. Run's uncapped waits
 	// (startup reconcile, preview servers, chat side stops, usage, pricing,
-	// lifecycle stack) are not covered: a predecessor stuck in one past the
-	// wait still makes this daemon exit 75.
+	// lifecycle stack) are not capped, so the predecessor's shutdown backstop
+	// forces it out first, and a predecessor still holding the lock once the
+	// wait is over is killed if it marked itself stopping (B564).
 	dataDirLock, err := lockDataDir(context.Background(), b.cfg.DataDir, b.cfg.RunFilePath, 9*b.cfg.ShutdownTimeout+dataDirLockFixedWait, b.log)
 	if err != nil {
 		return err
 	}
+	b.dataDirLock = dataDirLock
 	b.cleanup(func() { _ = dataDirLock.Release() })
 	return nil
 }

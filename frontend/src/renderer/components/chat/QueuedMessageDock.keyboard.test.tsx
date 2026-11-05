@@ -7,8 +7,9 @@ import { queuedMessages as queued } from "../../test/queued-message-fixtures";
 // Real DndContext (no mock): proves the grip is wired to dnd-kit's KeyboardSensor.
 
 describe("QueuedMessageDock keyboard reorder", () => {
-	it("exposes each grip as a focusable sortable button", () => {
+	it("exposes each grip as a focusable sortable button", async () => {
 		render(<QueuedMessageDock messages={queued(["a", "b"])} onReorderQueuedTurns={vi.fn()} />);
+		await userEvent.setup().click(screen.getByTestId("queued-message-toggle"));
 		const grips = screen.getAllByRole("button", { name: "Drag to reorder queued message" });
 		expect(grips).toHaveLength(2);
 		for (const grip of grips) {
@@ -21,6 +22,7 @@ describe("QueuedMessageDock keyboard reorder", () => {
 		const user = userEvent.setup();
 		const onReorder = vi.fn().mockResolvedValue(undefined);
 		render(<QueuedMessageDock messages={queued(["a", "b"])} onReorderQueuedTurns={onReorder} />);
+		await user.click(screen.getByTestId("queued-message-toggle"));
 		const [grip] = screen.getAllByRole("button", { name: "Drag to reorder queued message" });
 		grip.focus();
 		await user.keyboard(" ");

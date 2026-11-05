@@ -9,6 +9,15 @@ export function daemonFailureMessage(status: DaemonStatus, t: TFunction = appI18
 	return t("daemon.message.notReady");
 }
 
+/**
+ * Whether a not-yet-ready daemon keeps the startup screen rather than the shell:
+ * a plain start, and a start refused the data-dir lock, which the startup
+ * screen explains and which recovers on its own once the holder exits (B568).
+ */
+export function daemonStatusKeepsStartupScreen(status: DaemonStatus): boolean {
+	return !status.code || status.code === "datadir_locked";
+}
+
 export function daemonFailureTitle(status: DaemonStatus, t: TFunction = appI18n.t): string {
 	switch (status.code) {
 		case "not_ready":
@@ -24,6 +33,8 @@ export function daemonFailureTitle(status: DaemonStatus, t: TFunction = appI18n.
 			return t("daemon.title.binaryMissing");
 		case "signature_invalid":
 			return t("daemon.title.signatureInvalid");
+		case "datadir_locked":
+			return t("daemon.title.dataDirLocked");
 		case "spawn_failed":
 		case "exited":
 		default:
@@ -37,6 +48,8 @@ export function daemonFailureHint(status: DaemonStatus, t: TFunction = appI18n.t
 			return t("daemon.hint.binaryMissing");
 		case "signature_invalid":
 			return t("daemon.hint.signatureInvalid");
+		case "datadir_locked":
+			return t("daemon.hint.dataDirLocked");
 		case "spawn_failed":
 		case "exited":
 			return "";

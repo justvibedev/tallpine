@@ -50,6 +50,7 @@ var _ interface {
 // graceful shutdown through the HTTP server and background workers.
 func Run() error {
 	b := &boot{}
+	defer b.disarmShutdownBackstop() // after the cleanups, which may hang too
 	defer b.runCleanups()
 	for _, stage := range b.bootStages() {
 		if err := stage(); err != nil {
@@ -208,6 +209,9 @@ func lockDataDirWait(ctx context.Context, dataDir string, wait time.Duration, lo
 	start := time.Now()
 	lock, err = datadirlock.Acquire(ctx, dataDir, wait)
 	if errors.Is(err, datadirlock.ErrLocked) {
+		if reclaimed, rerr := reclaimFromStoppingHolder(ctx, dataDir, reclaimMaxStopWait(wait), log); reclaimed != nil || rerr != nil {
+			return reclaimed, rerr
+		}
 		return nil, fmt.Errorf("%w; waited %s for it to exit, refusing to start", err, wait)
 	}
 	if err != nil {

@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommandPalette } from "../components/CommandPalette";
 import { DaemonFailureBanner } from "../components/DaemonFailureBanner";
+import { daemonStatusKeepsStartupScreen } from "../lib/daemon-failure";
 import { DaemonStartupLoader } from "../components/DaemonStartupLoader";
 import { NotificationRuntime } from "../components/NotificationCenter";
 import { HarnessUpdateNotice } from "../components/HarnessUpdateNotice";
@@ -235,7 +236,7 @@ function ShellLayout() {
 const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 	const isStartupLoading =
 		!usesPreviewWorkspaceData &&
-		!daemonStatus.code &&
+		daemonStatusKeepsStartupScreen(daemonStatus) &&
 		(daemonStatus.state !== "ready" || workspaceStartupState === "loading" || (!workspaceQuery.isSuccess && !workspaceQuery.isError));
 		const { sidebarSessionOrder, openNavSession, navigateSession } = useSessionNavigation({ t, navigate, workspacesRef, remoteWorkspacesRef, routeParams });
 
@@ -303,7 +304,7 @@ const replacementErrorCount = Object.keys(orchestratorReplacementErrors).length;
 	if (isStartupLoading) {
 		return (
 			<>
-				<DaemonStartupLoader />
+				<DaemonStartupLoader status={daemonStatus} />
 				{quitConfirmDialog}
 			</>
 		);

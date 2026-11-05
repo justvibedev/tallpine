@@ -144,6 +144,8 @@ func (b *boot) serve() error {
 // shutdownAfterRun stops the background goroutines in order once the server
 // has returned, and passes runErr through.
 func (b *boot) shutdownAfterRun(runErr error, startupReconcileDone, usageLimitResumeDone <-chan struct{}) error {
+	// Any stage below can block forever (B563 deadlocked a store write).
+	b.beginShutdown()
 	// Shut the background goroutines down in order: cancel the context FIRST so
 	// their loops exit, then wait for them to drain. Doing this explicitly (not
 	// via defer) avoids the LIFO trap where a Stop() that blocks on ctx-cancel

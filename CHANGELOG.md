@@ -4,6 +4,15 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.4]
+
+### Fixed
+- Orchestrators no longer deny a worker's own deletes and writes in its $TMPDIR as outside the workspace; the path is checked and approved (#1013).
+- The release .dmg is signed and notarized when published, so Gatekeeper accepts it (#1014).
+- The queued-messages dock starts collapsed, so it no longer covers chat text when several messages are queued (#1015).
+- The daemon force-exits when shutdown hangs, and a replacement daemon reclaims the data-dir lock from a hung predecessor instead of refusing to start (#1016).
+- When the daemon cannot start, for example because the previous daemon still holds the data dir, the desktop app shows what happened, which process it is waiting for, the daemon's error and a Retry button instead of an empty window, and starts again on its own once that process exits (#1020).
+
 ## [0.13.3]
 
 ### Fixed

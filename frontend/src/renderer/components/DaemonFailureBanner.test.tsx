@@ -120,4 +120,60 @@ describe("DaemonFailureBanner", () => {
 
 		expect(await screen.findByText("Daemon did not stop")).toBeInTheDocument();
 	});
+
+	it("explains a start that waits for the previous daemon, without a restart button", () => {
+		render(
+			<DaemonFailureBanner
+				status={{
+					state: "starting",
+					phase: "datadir_lock_wait",
+					lockHolderPid: 87127,
+					message: "Waiting for the previous Tallpine daemon (pid 87127) to finish shutting down.",
+				}}
+			/>,
+		);
+
+		const status = screen.getByRole("status");
+		expect(status).toHaveTextContent("Tallpine is waiting for the previous daemon");
+		expect(status).toHaveTextContent("Waiting for the previous Tallpine daemon (pid 87127) to finish shutting down.");
+		expect(status).toHaveTextContent("Tallpine starts as soon as the previous daemon exits.");
+		expect(screen.queryByRole("button", { name: /Retry|Restart daemon/ })).toBeNull();
+	});
+
+	it("shows the lock refusal, the daemon's error and a Retry that restarts", async () => {
+		const restart = vi.spyOn(tallpineBridge.daemon, "restart").mockResolvedValue({ state: "starting" });
+		const daemonError = "data dir is in use by another Tallpine process: /d (pid 87127); waited 1m48s for it to exit, refusing to start";
+		render(
+			<DaemonFailureBanner
+				placement="inline"
+				status={{
+					state: "stopped",
+					code: "datadir_locked",
+					lockHolderPid: 87127,
+					message: "The previous Tallpine daemon (pid 87127) is still shutting down, so a new daemon could not start.",
+					daemonError,
+				}}
+			/>,
+		);
+
+		const alert = screen.getByRole("alert");
+		expect(alert).toHaveTextContent("Tallpine daemon could not start");
+		expect(alert).toHaveTextContent("The previous Tallpine daemon (pid 87127) is still shutting down");
+		expect(alert).toHaveTextContent(daemonError);
+		expect(alert).toHaveTextContent("retries automatically when that process exits");
+		expect(alert.className).not.toContain("fixed");
+		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+		await waitFor(() => expect(restart).toHaveBeenCalledTimes(1));
+	});
+
+	it("shows the daemon's own error for any other failed start", () => {
+		render(
+			<DaemonFailureBanner
+				status={{ state: "stopped", code: "exited", message: "Daemon exited with code 1", daemonError: "open store: disk I/O error" }}
+			/>,
+		);
+
+		expect(screen.getByRole("alert")).toHaveTextContent("open store: disk I/O error");
+		expect(screen.getByRole("button", { name: "Restart daemon" })).toBeInTheDocument();
+	});
 });

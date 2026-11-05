@@ -63,6 +63,7 @@ SH
 chmod +x "${T}/security" "${T}/pkgbuild" "${T}/productsign" "${T}/pkgutil" "${T}/stapler"
 export TALLPINE_RELEASE_PKGBUILD="${T}/pkgbuild" TALLPINE_RELEASE_PRODUCTSIGN="${T}/productsign" TALLPINE_RELEASE_PKGUTIL="${T}/pkgutil" TALLPINE_RELEASE_SECURITY="${T}/security"
 export TALLPINE_INSTALLER_IDENTITY="Developer ID Installer: Test (TESTTEAM01)"
+export T TALLPINE_SIGN_IDENTITY="Developer ID Application: Test (TESTTEAM01)"; unset APPLE_SIGNING_IDENTITY
 
 # Fake gh: logs every call; $T/tags lists tags that exist.
 cat >"${T}/gh" <<SH
@@ -142,13 +143,14 @@ fe="${T}/build/frontend"
 mkdir -p "${fe}/scripts" "${fe}/src/shared" "${app}/Contents/Resources/daemon" "${T}/bin"
 : >"${fe}/package.json"; : >"${fe}/scripts/feed.mjs"; : >"${app}/Contents/Resources/daemon/tallpine"
 echo '{"title":"schema"}' >"${fe}/src/shared/jamf-schema.json"
-printf '#!/bin/bash\nmkdir -p out/make/zip/darwin && : >out/make/zip/darwin/x-1.2.0.zip && : >out/make/x.dmg\n' >"${T}/bin/npm"
+printf '#!/bin/bash\necho "${APPLE_SIGNING_IDENTITY:-}|${TALLPINE_NOTARY_PROFILE:-}" >"${T}/make-env"\nmkdir -p out/make/zip/darwin && : >out/make/zip/darwin/x-1.2.0.zip && : >out/make/x.dmg\n' >"${T}/bin/npm"
 printf '#!/bin/bash\nexit 0\n' >"${T}/bin/node"
 chmod +x "${T}/bin/npm" "${T}/bin/node"
 rm -f "${T}/gh.log"
 rm -f "${T}/pkg.log"
 if PATH="${T}/bin:${PATH}" publish --publish-github; then ok "publishes"; else bad "publishes"; cat "${T}/out"; fi
 create="$(grep '^release create' "${T}/gh.log" || true)"
+if [[ "$(cat "${T}/make-env")" == "Developer ID Application: Test (TESTTEAM01)|tallpine-notary" ]]; then ok "make sees the signing identity and notary profile (dmg is sealed)"; else bad "make env: $(cat "${T}/make-env")"; fi
 if [[ "${create}" == *"tallpine-jamf-schema.json"* && "${create}" == *"-PPPC.mobileconfig"* ]]; then ok "release create attaches PPPC and schema"; else bad "release create attaches PPPC and schema: ${create}"; fi
 if [[ "${create}" == *"-1.2.0.pkg"* ]]; then ok "release create attaches the pkg"; else bad "release create attaches the pkg: ${create}"; fi
 pk="$(cat "${T}/pkg.log")"

@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	codexagent "tallpine.eu/tallpine/backend/internal/adapters/agent/codex"
 	chatdriverregistry "tallpine.eu/tallpine/backend/internal/adapters/chatdriver/registry"
@@ -17,6 +18,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/browserstream"
 	"tallpine.eu/tallpine/backend/internal/codexops"
 	"tallpine.eu/tallpine/backend/internal/config"
+	"tallpine.eu/tallpine/backend/internal/datadirlock"
 	"tallpine.eu/tallpine/backend/internal/httpd"
 	"tallpine.eu/tallpine/backend/internal/httpd/controllers"
 	managedcfg "tallpine.eu/tallpine/backend/internal/managedcfg"
@@ -86,6 +88,8 @@ type boot struct {
 	agents                    ports.AgentResolver
 	messenger                 ports.AgentMessenger
 	lcStack                   *lifecycleStack
+	dataDirLock               *datadirlock.Lock // nil when the file system cannot lock
+	shutdownBackstop          *time.Timer
 	agentSvc                  *agentsvc.Service
 	agentAccountSvc           *agentaccounts.Service
 	chatDrivers               *chatdriverregistry.Registry

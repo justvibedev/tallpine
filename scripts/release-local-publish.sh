@@ -32,7 +32,7 @@ publish_tag_free() {
 }
 
 cmd_publish() {
-  local app="${1:-}" version tag team frontend assets zip dmg prerelease=()
+  local app="${1:-}" version tag team frontend assets zip dmg seal_identity prerelease=()
   [[ -n "${app}" && -d "${app}" ]] || die "usage: release-local publish <app> [--publish-github]"
   app="$(cd "${app}" && pwd -P)"
   [[ "$(plist_get "${app}" CFBundleIdentifier)" == "${bundle_id}" ]] || die "${app} is not a ${product_name} build (bundle id)"
@@ -66,6 +66,12 @@ cmd_publish() {
   # <tree>/frontend/out/<name>-darwin-<arch>/<Product>.app
   frontend="$(cd "${app}/../../.." && pwd -P)"
   [[ -f "${frontend}/package.json" && -f "${frontend}/scripts/feed.mjs" ]] || die "${app} is not inside a build tree's frontend/out"
+  # The dmg is sealed (signed, notarized, stapled) by forge's postMake hook from these env vars.
+  # release.env is sourced, not exported, and TALLPINE_SIGN_IDENTITY is not an APPLE_* name, so
+  # without this the dmg step saw "no signing material" and uploaded an unsigned container (B566).
+  seal_identity="$(sign_identity)"
+  [[ -n "${seal_identity}" ]] || die "refusing to publish: no signing identity (TALLPINE_SIGN_IDENTITY or APPLE_SIGNING_IDENTITY), so the dmg could not be signed"
+  export APPLE_SIGNING_IDENTITY="${seal_identity}" TALLPINE_NOTARY_PROFILE
   say "Making the zip and dmg from ${app}..."
   (cd "${frontend}" && build_env nice -n 10 npm run make -- --skip-package)
   zip="$(find "${frontend}/out/make" -name "*${version}*.zip" -path '*darwin*' | head -n 1)"

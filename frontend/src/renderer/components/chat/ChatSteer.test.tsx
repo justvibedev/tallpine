@@ -308,13 +308,14 @@ describe("ChatWorkspace steering", () => {
 		expect(screen.queryByText("Queued · sends when the agent finishes")).not.toBeInTheDocument();
 	});
 
-	it("shows drag handles when queue reordering is available", () => {
+	it("shows drag handles when queue reordering is available", async () => {
 		render(
 			<QueuedMessageDock
 				messages={queuedMessages(["first queued", "second queued"])}
 				onReorderQueuedTurns={vi.fn().mockResolvedValue(undefined)}
 			/>,
 		);
+		await userEvent.click(screen.getByTestId("queued-message-toggle"));
 		expect(screen.getAllByRole("button", { name: "Drag to reorder queued message" })).toHaveLength(2);
 	});
 
@@ -332,6 +333,7 @@ describe("ChatWorkspace steering", () => {
 			/>,
 		);
 
+		await userEvent.click(screen.getByTestId("queued-message-toggle"));
 		expect(screen.queryByText("Queue")).not.toBeInTheDocument();
 		expect(
 			within(screen.getByTestId("queued-message-queued-1")).getAllByRole("button", {
@@ -363,11 +365,7 @@ describe("ChatWorkspace steering", () => {
 
 		const dock = screen.getByTestId("queued-message-dock");
 		expect(within(dock).getByText("first queued")).toBeVisible();
-		expect(within(dock).getByText("second queued")).toBeVisible();
-
-		await userEvent.click(screen.getByRole("button", { expanded: true }));
 		expect(screen.getByRole("button", { expanded: false })).toBeInTheDocument();
-		expect(within(dock).getByText("first queued")).toBeVisible();
 		const hiddenRow = within(dock).getByTestId("queued-message-queued-2");
 		expect(hiddenRow).toHaveAttribute("aria-hidden", "true");
 		expect(hiddenRow).toHaveAttribute("inert");
@@ -438,7 +436,7 @@ describe("ChatWorkspace steering", () => {
 		expect(within(dock).getByText("second queued")).toBeVisible();
 	});
 
-	it("shows the standard steer action on the next row and hover steer on later rows", () => {
+	it("shows the standard steer action on the next row and hover steer on later rows", async () => {
 		render(
 			<ChatWorkspace
 				snapshot={withQueuedMessages()}
@@ -446,6 +444,7 @@ describe("ChatWorkspace steering", () => {
 				onPromoteQueuedTurn={vi.fn()}
 			/>,
 		);
+		await userEvent.click(screen.getByTestId("queued-message-toggle"));
 
 		const dock = screen.getByTestId("queued-message-dock");
 		expect(within(dock).queryByText("Queue")).not.toBeInTheDocument();

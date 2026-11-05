@@ -9,14 +9,20 @@ vi.mock("node:fs/promises", () => ({
 		return state.runFile;
 	}),
 }));
-vi.mock("../app-context", () => ({ ctx: { browserQuitRequested: false, daemonProcess: null } }));
+vi.mock("../app-context", () => ({ ctx: { browserQuitRequested: false, daemonProcess: null, daemonStatus: { state: "stopped" } } }));
 vi.mock("./daemon-lifecycle", () => ({ runFilePath: () => "/run.json", startDaemon }));
 vi.mock("../../shared/daemon-discovery", () => ({
 	parseRunFile: (s: string) => (s ? { pid: Number(s) } : null),
 }));
 
 import { ctx } from "../app-context";
-import { cancelDaemonAutoRestart, noteUnexpectedDaemonExit } from "./daemon-auto-restart-host";
+import {
+	cancelDaemonAutoRestart,
+	LOCK_RELEASE_POLL_MS,
+	noteUnexpectedDaemonExit,
+	processIsAlive,
+	watchForDataDirLockRelease,
+} from "./daemon-auto-restart-host";
 
 const flush = async () => {
 	for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -80,5 +86,71 @@ describe("daemon auto-restart host", () => {
 		await flush();
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(startDaemon).not.toHaveBeenCalled();
+	});
+});
+
+// B568: a start refused the data-dir lock (exit 75) recovers once the holder exits.
+describe("data-dir lock release watch", () => {
+	let holderAlive = true;
+	const isAlive = vi.fn(() => holderAlive);
+	beforeEach(() => {
+		vi.useFakeTimers();
+		startDaemon.mockClear();
+		isAlive.mockClear();
+		holderAlive = true;
+		ctx.browserQuitRequested = false;
+		(ctx as { daemonProcess: unknown }).daemonProcess = null;
+		(ctx as { daemonStatus: { state: string } }).daemonStatus = { state: "stopped" };
+		cancelDaemonAutoRestart();
+	});
+	afterEach(() => {
+		cancelDaemonAutoRestart();
+		vi.useRealTimers();
+	});
+
+	it("starts a daemon as soon as the holder has exited", async () => {
+		watchForDataDirLockRelease(87127, isAlive);
+		await vi.advanceTimersByTimeAsync(LOCK_RELEASE_POLL_MS * 5);
+		expect(startDaemon).not.toHaveBeenCalled();
+		expect(isAlive).toHaveBeenCalledWith(87127);
+
+		holderAlive = false;
+		await vi.advanceTimersByTimeAsync(LOCK_RELEASE_POLL_MS);
+		expect(startDaemon).toHaveBeenCalledOnce();
+		expect(startDaemon).toHaveBeenCalledWith();
+		await vi.advanceTimersByTimeAsync(LOCK_RELEASE_POLL_MS * 5);
+		expect(startDaemon).toHaveBeenCalledOnce();
+	});
+
+	it("stands down when an explicit restart or stop cancels it", async () => {
+		watchForDataDirLockRelease(87127, isAlive);
+		cancelDaemonAutoRestart();
+		holderAlive = false;
+		await vi.advanceTimersByTimeAsync(LOCK_RELEASE_POLL_MS * 5);
+		expect(startDaemon).not.toHaveBeenCalled();
+	});
+
+	it("stands down once a daemon is running or attached", async () => {
+		watchForDataDirLockRelease(87127, isAlive);
+		(ctx as { daemonStatus: { state: string } }).daemonStatus = { state: "ready" };
+		holderAlive = false;
+		await vi.advanceTimersByTimeAsync(LOCK_RELEASE_POLL_MS * 5);
+		expect(startDaemon).not.toHaveBeenCalled();
+	});
+
+	it("does not watch without a holder pid or while quitting", async () => {
+		holderAlive = false;
+		watchForDataDirLockRelease(undefined, isAlive);
+		ctx.browserQuitRequested = true;
+		watchForDataDirLockRelease(87127, isAlive);
+		await vi.advanceTimersByTimeAsync(LOCK_RELEASE_POLL_MS * 5);
+		expect(startDaemon).not.toHaveBeenCalled();
+	});
+
+	it("probes liveness with signal 0 and counts EPERM as alive", () => {
+		expect(processIsAlive(1, () => true)).toBe(true);
+		expect(processIsAlive(1, () => { throw Object.assign(new Error("perm"), { code: "EPERM" }); })).toBe(true);
+		expect(processIsAlive(1, () => { throw Object.assign(new Error("gone"), { code: "ESRCH" }); })).toBe(false);
+		expect(processIsAlive(process.pid)).toBe(true);
 	});
 });

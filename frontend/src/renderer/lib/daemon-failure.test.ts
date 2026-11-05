@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daemonFailureHint, daemonFailureTitle } from "./daemon-failure";
+import { daemonFailureHint, daemonFailureTitle, daemonStatusKeepsStartupScreen } from "./daemon-failure";
 
 describe("daemonFailureTitle", () => {
 	it.each([
@@ -20,5 +20,25 @@ describe("daemonFailureTitle", () => {
 describe("daemonFailureHint", () => {
 	it("tells the user to reinstall on signature_invalid", () => {
 		expect(daemonFailureHint({ state: "error", code: "signature_invalid" })).toContain("Reinstall");
+	});
+});
+
+describe("daemonStatusKeepsStartupScreen", () => {
+	it("keeps the startup screen for a plain start and a refused data-dir lock (B568)", () => {
+		expect(daemonStatusKeepsStartupScreen({ state: "starting" })).toBe(true);
+		expect(daemonStatusKeepsStartupScreen({ state: "starting", phase: "datadir_lock_wait" })).toBe(true);
+		expect(daemonStatusKeepsStartupScreen({ state: "stopped", code: "datadir_locked" })).toBe(true);
+	});
+
+	it("shows the shell for other failures", () => {
+		expect(daemonStatusKeepsStartupScreen({ state: "stopped", code: "exited" })).toBe(false);
+		expect(daemonStatusKeepsStartupScreen({ state: "error", code: "signature_invalid" })).toBe(false);
+	});
+});
+
+describe("datadir_locked copy", () => {
+	it("has its own title and recovery hint", () => {
+		expect(daemonFailureTitle({ state: "stopped", code: "datadir_locked" })).toBe("Tallpine daemon could not start");
+		expect(daemonFailureHint({ state: "stopped", code: "datadir_locked" })).toContain("retries automatically");
 	});
 });

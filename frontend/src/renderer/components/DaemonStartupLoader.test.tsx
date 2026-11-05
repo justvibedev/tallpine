@@ -23,4 +23,23 @@ describe("DaemonStartupLoader", () => {
 		expect(status.textContent).toBe("");
 		expect(status.querySelector(".tallpine-startup-logo")).not.toBeNull();
 	});
+
+	it("explains a refused start on the startup screen (B568)", () => {
+		render(
+			<DaemonStartupLoader
+				status={{ state: "stopped", code: "datadir_locked", message: "The previous Tallpine daemon (pid 7) is still shutting down, so a new daemon could not start." }}
+			/>,
+		);
+
+		const alert = screen.getByRole("alert");
+		expect(alert).toHaveTextContent("The previous Tallpine daemon (pid 7) is still shutting down");
+		expect(screen.getByRole("status", { name: "Tallpine is starting" })).not.toContainElement(alert);
+		expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+	});
+
+	it("stays bare while the daemon starts normally", () => {
+		render(<DaemonStartupLoader status={{ state: "starting" }} />);
+
+		expect(screen.queryByTestId("daemon-failure-banner")).toBeNull();
+	});
 });
