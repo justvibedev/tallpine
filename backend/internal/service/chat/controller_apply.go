@@ -77,9 +77,8 @@ func (c *Controller) apply(ctx context.Context, event ports.ChatEvent, historica
 		return c.applyThreadState(ctx, *event.ThreadState, now)
 
 	case ports.ChatEventAsyncTask:
-		if event.AsyncTask != nil && c.onAsyncTask != nil && c.reviewID == "" {
-			c.onAsyncTask(c.sessionID, *event.AsyncTask)
-		}
+		// Daemon state, not conversation state: publishCommittedAsyncTask hands it
+		// over after the archive row commits.
 		return nil
 
 	case ports.ChatEventMCPServers:

@@ -183,6 +183,7 @@ func (c *Controller) projectEvent(ctx context.Context, event ports.ChatEvent, hi
 		return projected, false, err
 	}
 	c.publishCommittedCapacity(event)
+	c.publishCommittedAsyncTask(event)
 	return true, c.applyCommittedTurnLifecycle(event), nil
 }
 
@@ -196,6 +197,18 @@ func (c *Controller) publishCommittedCapacity(event ports.ChatEvent) {
 		return
 	}
 	c.onCodexCapacityChanged(c.sessionID, c.generation, *event.RateLimits.CodexCapacity)
+}
+
+// publishCommittedAsyncTask hands a background-task report to the daemon only
+// after its archive row commits. The daemon's tracker announces the change with
+// a store write, which takes the store's single writer lock: calling it from
+// inside the projection transaction, which holds that lock, deadlocked every
+// store write the first time a session started a background task.
+func (c *Controller) publishCommittedAsyncTask(event ports.ChatEvent) {
+	if event.Kind != ports.ChatEventAsyncTask || event.AsyncTask == nil || c.onAsyncTask == nil || c.reviewID != "" {
+		return
+	}
+	c.onAsyncTask(c.sessionID, *event.AsyncTask)
 }
 
 // archive records event in the provider archive and runs project in the same

@@ -4,6 +4,11 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.3]
+
+### Fixed
+- The daemon no longer freezes the first time a session starts a background task (all saves stopped, chats stuck running, Stop and paste dead, restart to an empty window). Regression from 0.13.2 (#1007); fixed in #1011. Upgrading from 0.13.2 is recommended.
+
 ## [0.13.2]
 
 ### Fixed

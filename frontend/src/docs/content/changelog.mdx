@@ -5,6 +5,11 @@ description: Read current Tallpine product updates and release notes.
 
 Release notes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and are sourced from Tallpine's merged pull requests. Tallpine is a fork of Agent Orchestrator; notes from before the fork are upstream's.
 
+## [0.13.3]
+
+### Fixed
+- The daemon no longer freezes the first time a session starts a background task (all saves stopped, chats stuck running, Stop and paste dead, restart to an empty window). Regression from 0.13.2 (#1007); fixed in #1011. Upgrading from 0.13.2 is recommended.
+
 ## [0.13.2]
 
 ### Fixed
