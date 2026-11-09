@@ -152,6 +152,7 @@ func (s *Service) submitOne(ctx context.Context, workerID domain.SessionID, revi
 		run.Verdict = verdict
 		run.Body = body
 		run.GithubReviewID = githubReviewID
+		run.PostFailed = run.NotPostedToPR()
 		run.AutoInjectReview = session.AutoInjectReview
 	case domain.ReviewRunComplete:
 		if run.Verdict != verdict {

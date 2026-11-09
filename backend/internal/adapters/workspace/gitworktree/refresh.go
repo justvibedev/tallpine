@@ -37,7 +37,7 @@ func (w *Workspace) refreshOrchestratorWorktree(ctx context.Context, cfg ports.W
 		w.logf("gitworktree: orchestrator refresh skipped for %s: resolve default branch: %v", path, err)
 		return
 	}
-	if err := w.FetchDefaultBranch(ctx, repo, target); err != nil {
+	if err := w.FetchDefaultBranch(ctx, repo, target, cfg.RefreshGitEnv); err != nil {
 		w.logf("gitworktree: orchestrator refresh for %s: fetch failed, using local %s: %v", path, target.BaseRef, err)
 	}
 	status, err := w.run(ctx, w.binary, "-C", path, "status", "--porcelain")

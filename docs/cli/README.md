@@ -58,6 +58,8 @@ addresses change on restart.
 | `tallpine project ls`                     | `GET /api/v1/projects`                         |
 | `tallpine project get <id>`               | `GET /api/v1/projects/{id}`                    |
 | `tallpine project set-config <id>`        | `PUT /api/v1/projects/{id}/config`             |
+| `tallpine project set-config <id> --github-user <login>` | With no other field flag: `PATCH /api/v1/settings/values` (`project.githubUser`; the login must be signed in to `gh`, an empty value returns to auto-pick; reaches only sessions started afterwards) |
+| `tallpine github accounts [--project <id>]` | `GET /api/v1/github/accounts`, or `GET /api/v1/projects/{id}/github-accounts` with a project (logins only, push access to the project's repo, the pinned and auto-picked account; never tokens) |
 | `tallpine project rm <id>`                | `DELETE /api/v1/projects/{id}`                 |
 | `tallpine import ao`                      | `POST /api/v1/imports/ao` (read-only snapshot of the official `~/.tallpine` database; `--dry-run` plans without writing) |
 | `tallpine agent ls`                       | `POST /api/v1/agents/readiness/ensure` (`display`) |
@@ -366,8 +368,12 @@ projects do not gain hyphen-sibling ownership.
 The registered origin remains the checkout and push repository. An optional
 `canonicalRepoURL` in project config explicitly authorizes one upstream repository
 for PR claims. Git remotes, including a remote named `upstream`, never grant claim
-permission automatically. Both identities must have the same provider and host;
-claims match the entire namespace and repository, including GitLab subgroups.
+permission automatically. The canonical URL may be on a different host than the
+origin: that is how a project follows a repository that moved (for example from
+Bitbucket to GitHub). It then replaces the origin for PR tracking, native review
+and GitHub account resolution, while checkout and push stay on origin. GitHub
+credentials are only scoped to the canonical host when it is a GitHub host.
+Claims match the entire namespace and repository, including GitLab subgroups.
 
 For a project with no other config:
 

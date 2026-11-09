@@ -166,7 +166,7 @@ func TestCommitPathsPushRejectedKeepsCommit(t *testing.T) {
 	if err := os.Remove(hook); err != nil {
 		t.Fatal(err)
 	}
-	branch, err := PushAsBranch(context.Background(), checkout, "origin", res.SHA)
+	branch, err := PushAsBranch(context.Background(), checkout, "origin", res.SHA, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,5 +237,35 @@ func TestCommitPathsRefusesUnlistedAndExistingPaths(t *testing.T) {
 	}
 	if got := strings.TrimSpace(git(t, checkout, "rev-parse", "main")); got != before {
 		t.Fatal("a refused commit moved main")
+	}
+}
+
+// Commit pushes and PR-branch pushes run as the project's account: GIT_TRACE
+// from the credential env reaches real git.
+func TestPushesPassCredentialEnvToGit(t *testing.T) {
+	checkout, origin := remoteRepo(t)
+	trace := filepath.Join(t.TempDir(), "trace")
+	target := originMain
+	target.PushEnv = []string{"GIT_TRACE=" + trace}
+	write(t, filepath.Join(checkout, "CLAUDE.md"), "@AGENTS.md\n")
+	res, err := CommitPaths(context.Background(), checkout, target, []string{"CLAUDE.md"}, []string{"CLAUDE.md"}, CommitMessage)
+	if err != nil || !res.Pushed {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if b, err := os.ReadFile(trace); err != nil || !strings.Contains(string(b), "push") {
+		t.Fatalf("commit push ran without the account: %v %s", err, b)
+	}
+	if err := os.Remove(trace); err != nil {
+		t.Fatal(err)
+	}
+	branch, err := PushAsBranch(context.Background(), checkout, "origin", res.SHA, []string{"GIT_TRACE=" + trace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(trace); err != nil || !strings.Contains(string(b), "push") {
+		t.Fatalf("branch push ran without the account: %v %s", err, b)
+	}
+	if got := strings.TrimSpace(git(t, origin, "rev-parse", "refs/heads/"+branch)); got != res.SHA {
+		t.Fatalf("branch %s = %s", branch, got)
 	}
 }

@@ -26,6 +26,9 @@ type CommitTarget struct {
 	Remote  string
 	Branch  string
 	BaseRef string
+	// PushEnv authenticates the push as the project's GitHub account. It holds a
+	// secret: pass it to git only and never log it.
+	PushEnv []string
 }
 
 // NeedsPush reports whether sessions start from the remote-tracking ref, so a
@@ -96,7 +99,7 @@ func CommitPaths(ctx context.Context, workspace string, target CommitTarget, pat
 	// fast-forwarded only after the remote took the commit, so a refused push
 	// never leaves local history ahead of (or diverged from) the remote.
 	if target.NeedsPush() {
-		if _, perr := gitOut(ctx, workspace, pushEnv(), "push", "--", target.Remote, sha+":refs/heads/"+target.Branch); perr != nil {
+		if _, perr := gitOut(ctx, workspace, pushEnv(target.PushEnv), "push", "--", target.Remote, sha+":refs/heads/"+target.Branch); perr != nil {
 			res.PushError = perr.Error()
 		} else {
 			res.Pushed = true
@@ -123,7 +126,7 @@ func CommitPaths(ctx context.Context, workspace string, target CommitTarget, pat
 
 // PushAsBranch pushes commit sha to a new branch on remote, for a pull request
 // when the default branch refuses direct pushes. It never forces.
-func PushAsBranch(ctx context.Context, workspace, remote, sha string) (string, error) {
+func PushAsBranch(ctx context.Context, workspace, remote, sha string, gitEnv []string) (string, error) {
 	if !isHexSHA(sha) {
 		return "", errors.New("invalid commit id")
 	}
@@ -138,7 +141,7 @@ func PushAsBranch(ctx context.Context, workspace, remote, sha string) (string, e
 		return "", fmt.Errorf("commit %s not found", sha)
 	}
 	branch := brand.BranchPrefix + "/agent-files-" + sha[:8]
-	if _, err := gitOut(ctx, workspace, pushEnv(), "push", "--", remote, sha+":refs/heads/"+branch); err != nil {
+	if _, err := gitOut(ctx, workspace, pushEnv(gitEnv), "push", "--", remote, sha+":refs/heads/"+branch); err != nil {
 		return "", err
 	}
 	return branch, nil
@@ -264,8 +267,11 @@ func samePath(a, b string) bool {
 	return ra == rb
 }
 
-// pushEnv keeps git from prompting for credentials in the daemon.
-func pushEnv() []string { return []string{"GIT_TERMINAL_PROMPT=0"} }
+// pushEnv keeps git from prompting for credentials in the daemon and adds the
+// project's GitHub account, if any.
+func pushEnv(gitEnv []string) []string {
+	return append([]string{"GIT_TERMINAL_PROMPT=0"}, gitEnv...)
+}
 
 // gitOut runs git in workspace and returns trimmed stdout; the error carries
 // git's stderr.

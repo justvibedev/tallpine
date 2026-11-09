@@ -56,6 +56,7 @@ func (m *Manager) restoreSessionWorkspace(ctx context.Context, project domain.Pr
 			Path:          rec.Metadata.WorkspacePath,
 
 			RefreshOrchestrator: refreshOrchestrator,
+			RefreshGitEnv:       m.orchestratorRefreshGitEnv(ctx, rec.Kind, rec.ProjectID, refreshOrchestrator),
 		})
 		if err != nil {
 			return ports.WorkspaceInfo{}, err

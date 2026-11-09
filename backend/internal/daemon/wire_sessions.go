@@ -35,7 +35,7 @@ func (b *boot) wireSessions() error {
 	}
 	wireProjectEnvEncryption(b.ctx, b.store, b.agentPolicySvc, b.cfg.DataDir, b.log)
 	var wiredSessMgr sessionLifecycle
-	b.sessionSvc, b.reviewSvc, wiredSessMgr, err = startSession(b.ctx, b.cfg, b.runtimeAdapter, b.store, b.lcStack.LCM, b.lcStack.ArtifactVersions, b.messenger, b.notificationWriter, b.agents, b.agentSvc, b.managedPreview, b.browserBroker, b.browserAuthority, b.sessionTokens, chatLauncher{svc: b.chatSvc, policy: b.agentPolicySvc, persistentHostReconcileDone: b.persistentHostsReconciled}, b.reviewerChatsRecovered, b.settingsSvc, b.tracker, b.codexOperationGate, b.reviewers, b.reviewerAccounts, b.log)
+	b.sessionSvc, b.reviewSvc, wiredSessMgr, err = startSession(b.ctx, b.cfg, b.runtimeAdapter, b.store, b.lcStack.LCM, b.lcStack.ArtifactVersions, b.messenger, b.notificationWriter, b.agents, b.agentSvc, b.managedPreview, b.browserBroker, b.browserAuthority, b.sessionTokens, chatLauncher{svc: b.chatSvc, policy: b.agentPolicySvc, persistentHostReconcileDone: b.persistentHostsReconciled}, b.reviewerChatsRecovered, b.settingsSvc, b.tracker, b.codexOperationGate, b.reviewers, b.reviewerAccounts, b.ghAccounts, b.log)
 	if err != nil {
 		b.stop()
 		b.lcStack.Stop()
@@ -82,7 +82,7 @@ func (b *boot) wireSessions() error {
 	// after store.Close, so no pass outlives the store.
 	b.artifactStorage = artifactstorage.New(b.cfg.DataDir, b.store, b.lcStack.ArtifactVersions, b.cfg.ArtifactSizeWarnBytes)
 	b.artifactStorage.SetProtector(b.store)
-	b.cleanupSvc = newCleanup(b.cfg.DataDir, os.TempDir(), b.store, b.sessMgr, b.lcStack.ArtifactVersions, b.artifactStorage, b.agentPolicySvc, b.log)
+	b.cleanupSvc = newCleanup(b.cfg.DataDir, os.TempDir(), b.store, b.sessMgr, b.lcStack.ArtifactVersions, b.artifactStorage, b.agentPolicySvc, b.notificationWriter, b.log)
 	b.cleanupSvc.SetManaged(b.managedLocks) // before Start: the scheduler reads it
 	cleanupDone := b.cleanupSvc.Start(b.ctx)
 	b.cleanup(func() {
@@ -96,7 +96,7 @@ func (b *boot) wireSessions() error {
 	b.lifecycleMessenger.Bind(sessionLifecycleMessenger{b.sessMgr})
 	b.lcStack.LCM.SetCompletionTerminator(b.sessMgr)
 	b.lcStack.LCM.SetMergeNotifier(newMergeNotifier(b.store, b.sessionSvc))
-	b.lcStack.LCM.SetAutoCloseHooks(autoCloseHooks{store: b.store, jobs: b.workerJobs, orchestrator: orchestratorPicker(b.store), send: func(ctx context.Context, to domain.SessionID, msg string) error {
+	b.lcStack.LCM.SetAutoCloseHooks(autoCloseHooks{store: b.store, jobs: b.workerJobs, turns: b.turnNotifier, branchWork: b.sessionSvc.WorkerBranchWork, orchestrator: orchestratorPicker(b.store), send: func(ctx context.Context, to domain.SessionID, msg string) error {
 		return b.sessionSvc.Send(ctx, to, msg, nil)
 	}, log: b.log})
 	b.lcStack.LCM.SetSessionInputLease(b.sessMgr)
@@ -146,6 +146,11 @@ func (b *boot) wireSessionManagerHooks() {
 		SetGitHubAccounts(sessionmanager.GitHubAccountTokens)
 	}); ok {
 		wired.SetGitHubAccounts(b.ghAccounts)
+	}
+	if wired, ok := b.sessMgr.(interface {
+		SetProjectGitCredentials(ports.ProjectGitCredentials)
+	}); ok {
+		wired.SetProjectGitCredentials(b.gitCredentials())
 	}
 	if stopper, ok := b.sessMgr.(interface {
 		ExitAgentsOnAccount(context.Context, string) error

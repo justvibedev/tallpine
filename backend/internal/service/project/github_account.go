@@ -23,5 +23,10 @@ func (m *Service) githubAccount(ctx context.Context, row domain.ProjectRecord) s
 	}
 	ctx, cancel := context.WithTimeout(ctx, githubAccountLookupTimeout)
 	defer cancel()
-	return m.ghAccounts.LoginForProject(ctx, row.RepoOriginURL, row.Config.GitHubUser)
+	for _, remote := range row.Config.AccountRemotes(row.RepoOriginURL) {
+		if login := m.ghAccounts.LoginForProject(ctx, remote, row.Config.GitHubUser); login != "" {
+			return login
+		}
+	}
+	return ""
 }

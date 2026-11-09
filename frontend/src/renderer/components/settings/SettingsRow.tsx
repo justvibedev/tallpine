@@ -105,6 +105,7 @@ export function SettingsInlineInput({
 	onCommit,
 	onCancel,
 	placeholder,
+	emptyLabel,
 	className,
 }: {
 	id: string;
@@ -114,6 +115,8 @@ export function SettingsInlineInput({
 	onCommit?: (value: string) => void;
 	onCancel?: () => void;
 	placeholder?: string;
+	/** Shown muted, instead of the placeholder, while the value is empty and not being edited. */
+	emptyLabel?: string;
 	className?: string;
 }) {
 	const { t } = useTranslation();
@@ -155,8 +158,8 @@ export function SettingsInlineInput({
 				aria-label={t("settings.field.edit", { label })}
 				onClick={() => setEditing(true)}
 			>
-				<span className="settings-row-value" title={value || placeholder}>
-					{value || placeholder}
+				<span className={cn("settings-row-value", !value && emptyLabel && "text-settings-muted")} title={value || emptyLabel || placeholder}>
+					{value || emptyLabel || placeholder}
 				</span>
 				<Pencil className="settings-inline-edit-icon" aria-hidden="true" />
 			</button>

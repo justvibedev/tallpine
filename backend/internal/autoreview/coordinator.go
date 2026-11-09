@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -18,6 +20,9 @@ const (
 	DefaultIdleThreshold = time.Minute
 	// DefaultSweepInterval is the cadence for reevaluating live sessions.
 	DefaultSweepInterval = time.Minute
+	// DefaultStallThreshold is how long a PR head may need review with no
+	// reviewer started before the orchestrator is told.
+	DefaultStallThreshold = 10 * time.Minute
 	// autoReviewFailedRetryLimit bounds retries for the same current PR head.
 	autoReviewFailedRetryLimit = 3
 )
@@ -54,6 +59,11 @@ type Coordinator struct {
 	sweepInterval time.Duration
 	logger        *slog.Logger
 	escalate      func(ctx context.Context, session domain.SessionRecord, prURL, headSHA string, rounds int)
+
+	stalled        func(ctx context.Context, session domain.SessionRecord, prURL, headSHA string, waited time.Duration)
+	stallThreshold time.Duration
+	stallMu        sync.Mutex
+	needsSince     map[string]time.Time
 }
 
 // Config customizes coordinator timing and logging.
@@ -66,11 +76,19 @@ type Config struct {
 	// automatic review rounds (ProjectConfig.AutoReviewMaxRounds). Optional; it
 	// must be idempotent per PR and round count.
 	Escalate func(ctx context.Context, session domain.SessionRecord, prURL, headSHA string, rounds int)
+	// Stalled tells the project's orchestrator that a PR head has sat in
+	// needs_review with no reviewer started for StallThreshold (B389). Optional;
+	// it must be idempotent per PR and head.
+	Stalled        func(ctx context.Context, session domain.SessionRecord, prURL, headSHA string, waited time.Duration)
+	StallThreshold time.Duration
 }
 
 // New constructs an auto-review coordinator.
 func New(store Store, reviews Trigger, cfg Config) *Coordinator {
-	c := &Coordinator{store: store, reviews: reviews, clock: cfg.Clock, idleThreshold: cfg.IdleThreshold, sweepInterval: cfg.SweepInterval, logger: cfg.Logger, escalate: cfg.Escalate}
+	c := &Coordinator{store: store, reviews: reviews, clock: cfg.Clock, idleThreshold: cfg.IdleThreshold, sweepInterval: cfg.SweepInterval, logger: cfg.Logger, escalate: cfg.Escalate, stalled: cfg.Stalled, stallThreshold: cfg.StallThreshold, needsSince: map[string]time.Time{}}
+	if c.stallThreshold <= 0 {
+		c.stallThreshold = DefaultStallThreshold
+	}
 	if c.clock == nil {
 		c.clock = time.Now
 	}
@@ -107,15 +125,15 @@ func (c *Coordinator) evaluate(ctx context.Context, id domain.SessionID, ready b
 		}
 		return Result{}, err
 	}
-	if reason := sessionGate(session, c.clock(), c.idleThreshold, ready); reason != "" {
+	project, ok, err := c.store.GetProject(ctx, string(session.ProjectID))
+	if err != nil {
+		return Result{}, err
+	}
+	if reason := sessionGate(session, reviewcore.AutoReviewActive(ctx, c.store, session, project, ok), c.clock(), c.idleThreshold, ready); reason != "" {
 		return Result{Reason: reason}, nil
 	}
-	project, ok, err := c.store.GetProject(ctx, string(session.ProjectID))
-	if err != nil || !ok {
-		if err == nil {
-			return Result{Reason: "missing_reviewer_harness"}, nil
-		}
-		return Result{}, err
+	if !ok {
+		return Result{Reason: "missing_reviewer_harness"}, nil
 	}
 	if ready && project.Config.AutoReviewOnReport != nil && !*project.Config.AutoReviewOnReport {
 		if c.logger != nil {
@@ -160,18 +178,12 @@ func (c *Coordinator) evaluate(ctx context.Context, id domain.SessionID, ready b
 		case reviewcore.ReviewStateIneligible:
 			reason = ineligibleReason(prs, state.PRURL)
 		case reviewcore.ReviewStateNeedsReview:
-			if blocked := existingHeadReason(harnessRuns, state.PRURL, state.TargetSHA); blocked != "" {
+			if blocked, rounds := headBlockedReason(project.Config, harnessRuns, state); blocked != "" {
+				if blocked == "review_rounds_exhausted" && c.escalate != nil {
+					c.escalate(ctx, session, state.PRURL, state.TargetSHA, rounds)
+				}
 				reason = blocked
 				continue
-			}
-			if limit := project.Config.AutoReviewMaxRounds; limit > 0 {
-				if rounds := reviewcore.ChangesRequestedRounds(harnessRuns, state.PRURL); rounds >= limit {
-					if c.escalate != nil {
-						c.escalate(ctx, session, state.PRURL, state.TargetSHA, rounds)
-					}
-					reason = "review_rounds_exhausted"
-					continue
-				}
 			}
 			eligible = true
 		}
@@ -190,6 +202,26 @@ func (c *Coordinator) evaluate(ctx context.Context, id domain.SessionID, ready b
 		return Result{Reason: triggerResultReason(prs, result, harness)}, nil
 	}
 	return Result{Triggered: true, Reason: "triggered"}, nil
+}
+
+// headBlockedReason says why a needs_review head is deliberately not reviewed
+// automatically (empty when it is due): a same-head run that settles it, or the
+// project's round limit. evaluate and the stall watch share it, so a stall is
+// only ever a head that should have started.
+// retryLimitReason is the one blocked-head reason that is a failure rather than
+// a deliberate stop, so the stall watch still reports it.
+const retryLimitReason = "failed_same_sha_retry_limit"
+
+func headBlockedReason(cfg domain.ProjectConfig, harnessRuns []domain.ReviewRun, state reviewcore.PRReviewState) (reason string, rounds int) {
+	if blocked := existingHeadReason(harnessRuns, state.PRURL, state.TargetSHA); blocked != "" {
+		return blocked, 0
+	}
+	if limit := cfg.AutoReviewMaxRounds; limit > 0 {
+		if rounds := reviewcore.ChangesRequestedRounds(harnessRuns, state.PRURL); rounds >= limit {
+			return "review_rounds_exhausted", rounds
+		}
+	}
+	return "", 0
 }
 
 func triggerResultReason(prs []domain.PullRequest, result reviewcore.TriggerResult, harness domain.ReviewerHarness) string {
@@ -213,9 +245,15 @@ func triggerResultReason(prs []domain.PullRequest, result reviewcore.TriggerResu
 }
 
 func existingHeadReason(runs []domain.ReviewRun, prURL, targetSHA string) string {
-	failedAutoRuns := 0
+	retries := 0
 	for _, run := range runs {
 		if run.PRURL != prURL || run.TargetSHA != targetSHA {
+			continue
+		}
+		// A pass that died with its reviewer, like a failed auto pass, leaves
+		// the head eligible until the retry limit.
+		if reviewcore.CountsTowardAutoRetryLimit(run) {
+			retries++
 			continue
 		}
 		if run.Status == domain.ReviewRunRunning {
@@ -230,12 +268,9 @@ func existingHeadReason(runs []domain.ReviewRun, prURL, targetSHA string) string
 		if run.Verdict == domain.VerdictChangesRequested {
 			return "changes_requested_same_sha"
 		}
-		if run.Status == domain.ReviewRunFailed && run.TriggerSource == domain.ReviewTriggerAuto {
-			failedAutoRuns++
-		}
 	}
-	if failedAutoRuns >= autoReviewFailedRetryLimit {
-		return "failed_same_sha_retry_limit"
+	if retries >= autoReviewFailedRetryLimit {
+		return retryLimitReason
 	}
 	return ""
 }
@@ -271,8 +306,8 @@ func ineligibleReason(prs []domain.PullRequest, url string) string {
 	return "planner_ineligible"
 }
 
-func sessionGate(session domain.SessionRecord, now time.Time, threshold time.Duration, ready bool) string {
-	if !session.AutoReviewEnabled {
+func sessionGate(session domain.SessionRecord, enabled bool, now time.Time, threshold time.Duration, ready bool) string {
+	if !enabled {
 		return "disabled"
 	}
 	if session.Kind != domain.KindWorker {
@@ -303,12 +338,14 @@ func (c *Coordinator) Sweep(ctx context.Context) error {
 		return err
 	}
 	for _, session := range sessions {
-		if reason := sessionGate(session, c.clock(), c.idleThreshold, false); reason != "" {
+		if session.Kind != domain.KindWorker || session.IsTerminated {
 			continue
 		}
+		c.syncAutoReviewFlag(ctx, session)
 		if _, err := c.EvaluateSession(ctx, session.ID); err != nil {
 			c.logger.Error("auto-review: evaluate session failed", "session_id", session.ID, "err", err)
 		}
+		c.watchStall(ctx, session)
 	}
 	return nil
 }
@@ -333,4 +370,113 @@ func (c *Coordinator) Start(ctx context.Context) <-chan struct{} {
 		}
 	}()
 	return done
+}
+
+// watchStall reports a PR head that has needed review, with no reviewer running
+// or finished on it, for longer than the stall threshold, while Auto review is on for the
+// worker and it is past the idle gate (e.g. retries exhausted, a failed launch). A head is reported once.
+func (c *Coordinator) watchStall(ctx context.Context, session domain.SessionRecord) {
+	if c.stalled == nil {
+		return
+	}
+	now := c.clock()
+	c.stallMu.Lock()
+	defer c.stallMu.Unlock()
+	prefix := string(session.ID) + "|"
+	forget := func() {
+		for key := range c.needsSince {
+			if strings.HasPrefix(key, prefix) {
+				delete(c.needsSince, key)
+			}
+		}
+	}
+	// Only a review that should have started counts: Auto review on for this
+	// worker and the worker past the idle gate.
+	project, found, err := c.store.GetProject(ctx, string(session.ProjectID))
+	if err != nil || sessionGate(session, reviewcore.AutoReviewActive(ctx, c.store, session, project, found), now, c.idleThreshold, false) != "" {
+		forget()
+		return
+	}
+	prs, err := c.store.ListPRsBySession(ctx, session.ID)
+	if err != nil {
+		return
+	}
+	runs, err := c.store.ListReviewRunsBySession(ctx, session.ID)
+	if err != nil {
+		return
+	}
+	live := map[string]bool{}
+	harness := effectiveReviewerHarness(session, project.Config)
+	harnessRuns := make([]domain.ReviewRun, 0, len(runs))
+	for _, run := range runs {
+		if run.Harness == harness || run.Harness == "" {
+			harnessRuns = append(harnessRuns, run)
+		}
+	}
+	for _, state := range reviewcore.Plan(prs, harnessRuns) {
+		if state.Status != reviewcore.ReviewStateNeedsReview {
+			continue
+		}
+		if blocked, _ := headBlockedReason(project.Config, harnessRuns, state); (blocked != "" && blocked != retryLimitReason) || headReviewedByAnyAgent(runs, state) {
+			continue
+		}
+		key := string(session.ID) + "|" + state.PRURL + "|" + state.TargetSHA
+		live[key] = true
+		since, seen := c.needsSince[key]
+		if !seen {
+			c.needsSince[key] = now
+			continue
+		}
+		if since.IsZero() || now.Sub(since) < c.stallThreshold {
+			continue
+		}
+		c.needsSince[key] = time.Time{} // reported; stays tracked so it is not re-sent
+		c.stalled(ctx, session, state.PRURL, state.TargetSHA, now.Sub(since))
+	}
+	for key := range c.needsSince {
+		if strings.HasPrefix(key, prefix) && !live[key] {
+			delete(c.needsSince, key)
+		}
+	}
+}
+
+// flagSyncer rewrites a session's stored Auto review flag without recording a
+// per-session override.
+type flagSyncer interface {
+	SyncSessionAutoReviewFlag(ctx context.Context, id domain.SessionID, enabled bool, at time.Time) (bool, error)
+}
+
+// syncAutoReviewFlag keeps the stored flag, which the session API, kanban and
+// UI read, equal to what the gates decide. A project or app toggle thus shows
+// on already-running workers within a sweep, and an override already equals its
+// flag, so only follow-the-setting sessions change.
+func (c *Coordinator) syncAutoReviewFlag(ctx context.Context, session domain.SessionRecord) {
+	syncer, ok := c.store.(flagSyncer)
+	if !ok {
+		return
+	}
+	project, found, err := c.store.GetProject(ctx, string(session.ProjectID))
+	if err != nil {
+		return
+	}
+	if active := reviewcore.AutoReviewActive(ctx, c.store, session, project, found); active != session.AutoReviewEnabled {
+		if _, err := syncer.SyncSessionAutoReviewFlag(ctx, session.ID, active, c.clock()); err != nil {
+			c.logger.Warn("auto-review: sync session flag failed", "session_id", session.ID, "err", err)
+		}
+	}
+}
+
+// headReviewedByAnyAgent reports a running or finished review on the head from
+// any reviewer, such as the stronger risk reviewer, which the configured
+// reviewer's own plan does not see.
+func headReviewedByAnyAgent(runs []domain.ReviewRun, state reviewcore.PRReviewState) bool {
+	for _, run := range runs {
+		if run.PRURL != state.PRURL || run.TargetSHA != state.TargetSHA {
+			continue
+		}
+		if run.Status == domain.ReviewRunRunning || run.Verdict == domain.VerdictApproved || run.Verdict == domain.VerdictChangesRequested {
+			return true
+		}
+	}
+	return false
 }

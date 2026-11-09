@@ -111,6 +111,7 @@ func (m *Manager) restoreAllSession(ctx context.Context, rec domain.SessionRecor
 
 			// Only sessions terminated at shutdown get here: no agent is attached.
 			RefreshOrchestrator: true,
+			RefreshGitEnv:       m.orchestratorRefreshGitEnv(ctx, rec.Kind, rec.ProjectID, true),
 		})
 		if restoreErr != nil {
 			m.logger.Error("restore-all: workspace restore failed", "sessionID", rec.ID, "error", restoreErr)

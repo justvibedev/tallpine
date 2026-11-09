@@ -477,18 +477,3 @@ func (s *Store) SetSessionReviewerConfig(
 	}
 	return rows > 0, nil
 }
-
-// SetSessionAutoReview persists the daemon-side review automation toggle.
-func (s *Store) SetSessionAutoReview(ctx context.Context, id domain.SessionID, enabled bool, updatedAt time.Time) (bool, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	rows, err := s.qw.SetSessionAutoReview(ctx, gen.SetSessionAutoReviewParams{
-		AutoReviewEnabled: enabled,
-		UpdatedAt:         updatedAt,
-		ID:                id,
-	})
-	if err != nil {
-		return false, fmt.Errorf("set auto review for %s: %w", id, err)
-	}
-	return rows > 0, nil
-}

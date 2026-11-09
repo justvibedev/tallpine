@@ -404,23 +404,6 @@ type Workspace interface {
 	AddExclude(ctx context.Context, info WorkspaceInfo, patterns ...string) error
 }
 
-// WorkspaceDefaultBranchRefresher is an optional capability for Git-backed
-// workspaces. Resolution is local-only so callers can retain the canonical ref
-// even when the subsequent best-effort network refresh fails.
-type WorkspaceDefaultBranchRefresher interface {
-	ResolveDefaultBranch(ctx context.Context, repoPath, configuredBranch string) (WorkspaceDefaultBranch, error)
-	FetchDefaultBranch(ctx context.Context, repoPath string, target WorkspaceDefaultBranch) error
-}
-
-// WorkspaceDefaultBranch is a locally resolved default-branch target. BaseRef
-// is canonical (for example refs/remotes/upstream/main), so materialization
-// never has to reconstruct the remote decision from an ambiguous slash.
-type WorkspaceDefaultBranch struct {
-	Remote  string
-	Branch  string
-	BaseRef string
-}
-
 // WorkspaceObserver is an optional read-only capability implemented by
 // workspace adapters that can describe the durable state an agent handoff
 // must treat as authoritative. The session manager consumes it before and
@@ -589,6 +572,9 @@ type WorkspaceConfig struct {
 	// when no agent can be attached to the worktree: a refresh under a live
 	// agent would rewrite files and race its git commands.
 	RefreshOrchestrator bool
+	// RefreshGitEnv authenticates the fetch of that refresh (see
+	// ProjectGitCredentials). It holds a secret: never log or persist it.
+	RefreshGitEnv []string
 	// CloneWorktreeInclude seeds directories matched by .worktreeinclude with a
 	// copy-on-write clone where the platform supports it, falling back to a
 	// normal copy. Create only.

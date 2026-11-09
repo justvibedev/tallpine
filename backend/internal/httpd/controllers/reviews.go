@@ -176,6 +176,7 @@ func (c *ReviewsController) trigger(w http.ResponseWriter, r *http.Request) {
 		Reviews:           reviews,
 		Runs:              runs,
 		Created:           res.Created,
+		Queued:            res.Queued,
 		AutoInjectEnabled: res.AutoInjectEnabled,
 		ReviewerSurface:   reviewerSurfacePayload(res.ReviewerSurface),
 	})
@@ -319,7 +320,15 @@ func reviewsResponse(res reviewcore.SessionReviews, reviews []reviewcore.PRRevie
 		Runs:                  runs,
 		ReviewerSurface:       reviewerSurfacePayload(res.ReviewerSurface),
 		ActiveReviewers:       activeReviewersPayload(res.ActiveReviewers),
+		QueuedReviews:         queuedReviewsPayload(res.Queued),
 	}
+}
+
+func queuedReviewsPayload(queued []domain.QueuedReviewTrigger) []domain.QueuedReviewTrigger {
+	if queued == nil {
+		return []domain.QueuedReviewTrigger{}
+	}
+	return queued
 }
 
 func activeReviewersPayload(surfaces []domain.ReviewerSurface) []domain.ReviewerSurface {

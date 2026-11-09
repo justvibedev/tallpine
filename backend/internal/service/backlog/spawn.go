@@ -22,14 +22,14 @@ type SpawnItem struct {
 	// the item is not planned in place. The caller attaches the spawned session
 	// with AttachInPlaceAuthor, or releases the plan if the spawn fails.
 	PlanID string
-	// Warning is non-empty when the item has open blockers; the spawn goes ahead.
+	// Warning is non-empty when the item has open blockers and force started it anyway.
 	Warning string
 }
 
 // PrepareSpawn validates that work may start on the item and builds the
 // worker's task context. The item must be open and not a parent; a held item
-// needs force. Open blockers only produce a warning: ordering is the
-// orchestrator's call.
+// needs force. Open v.OpenBlockers refuse the spawn unless force is set, so
+// stacked work cannot run in parallel and conflict; a forced spawn warns.
 func (s *Service) PrepareSpawn(ctx context.Context, projectID domain.ProjectID, ref string, force bool) (SpawnItem, error) {
 	return s.PrepareSpawnAllowDuplicate(ctx, projectID, ref, force, false)
 }
@@ -37,7 +37,7 @@ func (s *Service) PrepareSpawn(ctx context.Context, projectID domain.ProjectID, 
 // PrepareSpawnAllowDuplicate is PrepareSpawn with an explicit override of the
 // live-holder guard; force (held items) deliberately does not imply it.
 func (s *Service) PrepareSpawnAllowDuplicate(ctx context.Context, projectID domain.ProjectID, ref string, force, allowDuplicate bool) (SpawnItem, error) {
-	return s.PrepareSpawnPlan(ctx, projectID, ref, force, allowDuplicate, PlanArmSeparate)
+	return s.PrepareSpawnPlan(ctx, projectID, ref, force, allowDuplicate, false, PlanArmSeparate)
 }
 
 // AttachInPlaceAuthor records the spawned implementer as the author of the
@@ -56,7 +56,7 @@ func (s *Service) ReleaseInPlace(ctx context.Context, planID, reason string) {
 // `plan start`), "in-place" makes the spawned implementer author the plan, and
 // "" picks in-place only when the project's planInPlace switch is on and the
 // item needs a plan.
-func (s *Service) PrepareSpawnPlan(ctx context.Context, projectID domain.ProjectID, ref string, force, allowDuplicate bool, arm string) (SpawnItem, error) {
+func (s *Service) PrepareSpawnPlan(ctx context.Context, projectID domain.ProjectID, ref string, force, allowDuplicate, allowBlocked bool, arm string) (SpawnItem, error) {
 	if !ValidPlanArm(arm) {
 		return SpawnItem{}, apierr.Invalid("PLAN_ARM_INVALID", fmt.Sprintf("--plan must be %s or %s", PlanArmInPlace, PlanArmSeparate), nil)
 	}
@@ -95,8 +95,15 @@ func (s *Service) PrepareSpawnPlan(ctx context.Context, projectID domain.Project
 	if err != nil {
 		return SpawnItem{}, err
 	}
+	if len(v.OpenBlockers) > 0 && !force && !allowBlocked {
+		return SpawnItem{}, apierr.Conflict("BACKLOG_ITEM_BLOCKED", fmt.Sprintf("%s is blocked by %s; finish the blocker first or pass --force to start it anyway", item.Ref(), strings.Join(v.OpenBlockers, ", ")), nil)
+	}
+	var warning string
+	if len(v.OpenBlockers) > 0 {
+		warning = fmt.Sprintf("%s is blocked by %s", item.Ref(), strings.Join(v.OpenBlockers, ", "))
+	}
 	scope := s.effectiveScope(ctx, item)
-	out := SpawnItem{ID: item.ID, Ref: item.Ref(), ParentID: item.ParentID, Context: spawnContext(item) + fmt.Sprintf("\n\nPublishing: %s", publishingBrief(scope))}
+	out := SpawnItem{ID: item.ID, Ref: item.Ref(), ParentID: item.ParentID, Context: spawnContext(item) + fmt.Sprintf("\n\nPublishing: %s", publishingBrief(scope)), Warning: warning}
 	if s.plans.Enabled() {
 		extra, planID, err := s.planForSpawn(ctx, item, force, arm)
 		if err != nil {
@@ -104,22 +111,6 @@ func (s *Service) PrepareSpawnPlan(ctx context.Context, projectID domain.Project
 		}
 		out.Context += extra
 		out.PlanID = planID
-	}
-	var blockers []string
-	for _, l := range v.LinkViews {
-		if l.Kind != domain.BacklogLinkBlockedBy {
-			continue
-		}
-		b, ok, err := s.store.GetBacklogItem(ctx, l.Ref)
-		if err != nil {
-			return SpawnItem{}, err
-		}
-		if ok && !b.State.Closed() {
-			blockers = append(blockers, b.Ref())
-		}
-	}
-	if len(blockers) > 0 {
-		out.Warning = fmt.Sprintf("%s is blocked by %s", item.Ref(), strings.Join(blockers, ", "))
 	}
 	if scope == "" {
 		note := fmt.Sprintf("%s has no scope and no open run sets one: the worker gets no publishing permission (set one with backlog edit %s --scope pr)", item.Ref(), item.Ref())

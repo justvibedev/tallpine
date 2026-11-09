@@ -115,6 +115,8 @@ func matchSessionDetail(candidates []sessionRepo, sourceBranch string) (sr sessi
 type workspaceBranchInfo struct {
 	current string
 	visited map[string]struct{}
+	// reflogRead is false when git could not read the HEAD reflog at all.
+	reflogRead bool
 }
 
 const workspaceReflogLimit = "300"
@@ -130,6 +132,7 @@ func readWorkspaceBranches(ctx context.Context, path string) workspaceBranchInfo
 	if err != nil {
 		return info
 	}
+	info.reflogRead = true
 	for _, line := range strings.Split(string(out), "\n") {
 		// "checkout: moving from <old> to <new>"; a commit SHA on either side is a
 		// detached HEAD and simply never equals a PR source branch.
@@ -148,6 +151,13 @@ func readWorkspaceBranches(ctx context.Context, path string) workspaceBranchInfo
 }
 
 var readWorkspaceBranchesFunc = readWorkspaceBranches
+
+// WorkspaceVisitedBranches returns the branches a worktree's HEAD reflog shows
+// it on; ok is false when the reflog could not be read.
+func WorkspaceVisitedBranches(ctx context.Context, path string) (visited map[string]struct{}, ok bool) {
+	info := readWorkspaceBranchesFunc(ctx, path)
+	return info.visited, info.reflogRead
+}
 
 // branchCreatedLocally reports whether branch was created by a local
 // `git branch`/`checkout -b`/`switch -c` rather than fetched or pulled in (as

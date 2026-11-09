@@ -12,11 +12,6 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
 
-const (
-	chatReportOpen  = "<ao-worker-reports>"
-	chatReportClose = "</ao-worker-reports>"
-)
-
 // AppendToUserMessage places reports after the user's text in one semantic turn.
 // The envelope lets Tallpine's Chat UI hide daemon-authored context while preserving
 // the exact prompt accepted by the provider for retry and recovery.
@@ -24,7 +19,7 @@ func (b PreparedBatch) AppendToUserMessage(message string) string {
 	if !b.hasDeliverable() {
 		return message
 	}
-	return message + "\n\n" + chatReportOpen + "\n" + b.Render() + "\n" + chatReportClose
+	return message + "\n\n" + domain.WorkerReportsOpen + "\n" + b.Render() + "\n" + domain.WorkerReportsClose
 }
 
 // IdempotencyKey returns the stable durable delivery identity.

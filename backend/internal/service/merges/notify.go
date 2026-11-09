@@ -51,7 +51,7 @@ func (n *Notifier) NotifyMerge(ctx context.Context, project domain.ProjectID, pr
 		slog.Warn("merge notice: load PRs", "project", project, "err", err)
 		return
 	}
-	for _, t := range n.Service.notices(ctx, prs, prURL, func(lane string) (domain.SessionID, bool) {
+	for _, t := range n.Service.notices(ctx, project, prs, prURL, func(lane string) (domain.SessionID, bool) {
 		return n.Orchestrator(ctx, project, lane)
 	}) {
 		if err := n.Send(ctx, t.To, t.Text); err != nil {
@@ -67,7 +67,7 @@ type Notice struct {
 }
 
 // notices computes who is told what about the merged PR prURL.
-func (s *Service) notices(ctx context.Context, prs []domain.MergeDigestPR, prURL string, orch func(lane string) (domain.SessionID, bool)) []Notice {
+func (s *Service) notices(ctx context.Context, project domain.ProjectID, prs []domain.MergeDigestPR, prURL string, orch func(lane string) (domain.SessionID, bool)) []Notice {
 	var m *domain.MergeDigestPR
 	for i := range prs {
 		if prs[i].URL == prURL && prs[i].State == domain.PRStateMerged {
@@ -108,7 +108,7 @@ func (s *Service) notices(ctx context.Context, prs []domain.MergeDigestPR, prURL
 		if m.LaneItemID == "" && f.LaneItemID == "" {
 			continue
 		}
-		if shared := sharedPaths(f.Paths, m.Paths); len(shared) > 0 {
+		if shared := sharedPaths(f.Paths, m.Paths); len(shared) > 0 && !s.containsMerge(ctx, project, f, *m) {
 			add(f.LaneItemID, fmt.Sprintf("%s Your open PR #%d (%s) touches the same files as the merge (file list below): have its worker rebase on origin/main before it merges.\n%s",
 				head, f.Number, label(f.LaneItemID), domain.FrameUntrusted(string(m.SessionID), strings.Join(shared, ", "))))
 		}

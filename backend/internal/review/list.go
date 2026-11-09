@@ -141,7 +141,12 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 			return SessionReviews{}, err
 		}
 	}
+	queued, err := e.queuedFor(ctx, workerID)
+	if err != nil {
+		return SessionReviews{}, err
+	}
 	return SessionReviews{
+		Queued:                queued,
 		ReviewerHandleID:      legacyReviewerHandle(reviewRow),
 		ReviewerHarness:       reviewerHarness,
 		ReviewerActivityState: reviewRow.ReviewerActivityState,
@@ -177,6 +182,10 @@ const (
 	ReviewerInterruptedByRestart = "reviewer Chat turn interrupted by a restart"
 	reviewerTrustDialogMarker    = "workspace trust dialog"
 
+	// ReviewerRestoreFailedPrefix starts the body of a pass that failed because
+	// its reviewer could not be restored.
+	ReviewerRestoreFailedPrefix = "reviewer restore failed: "
+
 	reviewRunSupersededReason         = "superseded by a review trigger for a newer commit"
 	reviewerChatUnavailableReason     = "cancelled because reviewer Chat is unavailable"
 	reviewerTerminalUnavailableReason = "cancelled because reviewer terminal is unavailable"
@@ -185,7 +194,7 @@ const (
 // IsUnsubmittedReviewerFailure reports whether a failed pass's body says the
 // reviewer died, went idle or ended its turn without submitting a result.
 func IsUnsubmittedReviewerFailure(body string) bool {
-	if strings.HasPrefix(body, ReviewerUsageLimitPrefix) || strings.HasPrefix(body, ReviewerAPIErrorPrefix) {
+	if strings.HasPrefix(body, ReviewerUsageLimitPrefix) || strings.HasPrefix(body, ReviewerAPIErrorPrefix) || strings.HasPrefix(body, ReviewerRestoreFailedPrefix) {
 		return true
 	}
 	return body == reviewerExitedBeforeSubmission || body == reviewerIdleWithoutSubmission ||
@@ -239,6 +248,14 @@ const reviewerIdleGrace = 10 * time.Minute
 // reviewer looked at the commit (usage limit, restart, trust dialog). Such a pass
 // does not use up the commit's one retry.
 func NeverReviewed(body string) bool {
-	return strings.HasPrefix(body, ReviewerUsageLimitPrefix) || strings.HasPrefix(body, ReviewerAPIErrorPrefix) || body == ReviewerInterruptedByRestart ||
+	return strings.HasPrefix(body, ReviewerUsageLimitPrefix) || strings.HasPrefix(body, ReviewerRestoreFailedPrefix) || strings.HasPrefix(body, ReviewerAPIErrorPrefix) || body == ReviewerInterruptedByRestart ||
 		(strings.HasPrefix(body, ReviewerNotStartedPrefix) && strings.Contains(body, reviewerTrustDialogMarker))
+}
+
+// ReviewerGoneCancel reports whether Tallpine cancelled the pass because its
+// reviewer is gone (a dead pane or Chat after a restart). Like an unsubmitted
+// failure it ended without a verdict through no choice of the requester, so
+// the same retry resumes it.
+func ReviewerGoneCancel(run domain.ReviewRun) bool {
+	return run.Status == domain.ReviewRunCancelled && (run.Body == reviewerChatUnavailableReason || run.Body == reviewerTerminalUnavailableReason)
 }

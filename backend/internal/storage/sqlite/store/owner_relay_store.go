@@ -15,9 +15,11 @@ const ownerLastScan = 50
 
 // OwnChatMessage looks up ref in session's own chat: the conversation the
 // session owns or the project conversation it currently controls. ref is a
-// message id, or "last" for the newest genuine owner turn there. ok is false
-// when no such message is in that chat; the caller still checks an id's turn
-// with IsGenuineOwnerTurn.
+// message id, or "last" for the owner's newest turn there, which is returned
+// even when it cannot be verified: a relay must never fall back to an older
+// approval. Text excludes any attached worker reports. ok is false when no such
+// message is in that chat; the caller still checks the turn with
+// IsGenuineOwnerTurn.
 func (s *Store) OwnChatMessage(ctx context.Context, session domain.SessionID, ref string) (domain.OwnerChatMessage, bool, error) {
 	if ref == "last" {
 		rows, err := s.qr.SelectRecentOwnChatHumanMessages(ctx, gen.SelectRecentOwnChatHumanMessagesParams{SessionID: &session, MaxRows: ownerLastScan})
@@ -25,8 +27,8 @@ func (s *Store) OwnChatMessage(ctx context.Context, session domain.SessionID, re
 			return domain.OwnerChatMessage{}, false, err
 		}
 		for _, r := range rows {
-			m := domain.OwnerChatMessage{ID: r.ID, Role: r.Role, Origin: r.Origin, SenderSessionID: r.SenderSessionID, Text: r.Text, At: r.CreatedAt, SpawnBrief: r.SpawnBrief != 0}
-			if m.IsGenuineOwnerTurn() {
+			m := domain.OwnerChatMessage{ID: r.ID, Role: r.Role, Origin: r.Origin, SenderSessionID: r.SenderSessionID, Text: domain.StripWorkerReports(r.Text), At: r.CreatedAt, SpawnBrief: r.SpawnBrief != 0}
+			if !m.IsMachineAuthored() {
 				return m, true, nil
 			}
 		}
@@ -39,5 +41,5 @@ func (s *Store) OwnChatMessage(ctx context.Context, session domain.SessionID, re
 	if err != nil {
 		return domain.OwnerChatMessage{}, false, err
 	}
-	return domain.OwnerChatMessage{ID: r.ID, Role: r.Role, Origin: r.Origin, SenderSessionID: r.SenderSessionID, Text: r.Text, At: r.CreatedAt, SpawnBrief: r.SpawnBrief != 0}, true, nil
+	return domain.OwnerChatMessage{ID: r.ID, Role: r.Role, Origin: r.Origin, SenderSessionID: r.SenderSessionID, Text: domain.StripWorkerReports(r.Text), At: r.CreatedAt, SpawnBrief: r.SpawnBrief != 0}, true, nil
 }

@@ -120,5 +120,91 @@ grep -q 'sleep 3' "$tmp/q.ps" 2>/dev/null || { fails=$((fails + 1)); echo "FAIL:
 printf '#!/bin/bash\necho "PID PPID PGID STAT COMMAND"; echo "5 1 77 S (bash)"; echo "6 1 77 S (sleep)"\n' >"$fakeps"
 echo good >"$tmp/q.ps"; PS_CMD="$fakeps" snapshot_tree 77 "$tmp/q.ps"
 [ "$(cat "$tmp/q.ps")" = good ] || { fails=$((fails + 1)); echo "FAIL: degraded ps replaced a readable snapshot"; }
+# B590: GitHub access is per repo, and an unreachable origin is reported rather than idled through.
+fetch_state="$H/fetch-failing"; : >"$CALLS"; rm -f "$fetch_state" "$H/github-user"
+printf 'fatal: repository not found https://user:s3cret@github.com/x.git\n' >"$FETCH_ERR"
+FETCH_FAIL_NOTIFY_AFTER=2 note_fetch_failure >/dev/null
+grep -q 'notify' "$CALLS" && { fails=$((fails + 1)); echo "FAIL: notified before the threshold"; }
+[ "$(sed -n 1p "$fetch_state" | cut -d' ' -f1)" = 1 ] || { fails=$((fails + 1)); echo "FAIL: first failure not recorded: $(cat "$fetch_state")"; }
+FETCH_FAIL_NOTIFY_AFTER=2 note_fetch_failure >/dev/null
+grep -q 'orchestrator notify.*cannot reach origin.*repository not found' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: repeated failure did not notify: $(cat "$CALLS")"; }
+grep -q 's3cret' "$CALLS" "$fetch_state" && { fails=$((fails + 1)); echo "FAIL: URL credentials leaked into the notice or state"; }
+n="$(grep -c 'cannot reach origin' "$CALLS")"; FETCH_FAIL_NOTIFY_AFTER=2 note_fetch_failure >/dev/null
+[ "$(grep -c 'cannot reach origin' "$CALLS")" = "$n" ] || { fails=$((fails + 1)); echo "FAIL: renotified on every tick"; }
+: >"$CALLS"; note_fetch_ok >/dev/null
+[ ! -e "$fetch_state" ] || { fails=$((fails + 1)); echo "FAIL: recovery left the failure state"; }
+grep -q 'reachable again' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: no all-clear after a notified failure: $(cat "$CALLS")"; }
+# A blip that never reached the orchestrator gets no all-clear.
+: >"$CALLS"; FETCH_FAIL_NOTIFY_AFTER=9 note_fetch_failure >/dev/null; note_fetch_ok >/dev/null
+grep -q 'reachable again' "$CALLS" && { fails=$((fails + 1)); echo "FAIL: all-clear for an unannounced blip"; }
+
+# Fake gh with two accounts; only "good" can reach the repo. The fake git fails unless its credential helper yields good's token.
+cat >"$tmp/bin/gh" <<'SH'
+#!/bin/sh
+case "$*" in
+  "auth status --hostname github.com") printf '  x Failed to log in to github.com account broken (keyring)\n  ok Logged in to github.com account bad (keyring)\n  ok Logged in to github.com account good (keyring)\n' ;;
+  *"auth token --hostname github.com --user good") echo good-token ;;
+  *"auth token --hostname github.com --user bad") echo bad-token ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$tmp/bin/gh"
+[ "$(gh_logins | tr '\n' ' ')" = "bad good " ] || { fails=$((fails + 1)); echo "FAIL: gh_logins: $(gh_logins | tr '\n' ' ')"; }
+# The real git credential path: the chosen account answers even when a machine-wide helper is configured.
+git config --global credential.helper '!f() { echo username=machine; echo password=machine-token; }; f'
+cred() { printf 'protocol=https\nhost=github.com\n\n' | ci_git credential fill 2>/dev/null | sed -n 's/^password=//p'; }
+got="$(CI_GH_LOGIN=good cred)"; [ "$got" = good-token ] || { fails=$((fails + 1)); echo "FAIL: chosen account's token not used: '$got'"; }
+got="$(CI_GH_LOGIN="" cred)"; [ "$got" = machine-token ] || { fails=$((fails + 1)); echo "FAIL: no chosen account must keep the ambient login: '$got'"; }
+git config --global --unset credential.helper
+realgit="$(command -v git)"
+cat >"$tmp/bin/git" <<SH
+#!/bin/bash
+case "\$*" in *ls-remote*) ;; *) exec "$realgit" "\$@" ;; esac
+case "\$*" in *"--user good"*) echo "abc	refs/heads/main"; exit 0 ;; esac
+echo "fatal: repository not found" >&2; exit 128
+SH
+chmod +x "$tmp/bin/git"; hash -r # bash cached the real git
+CI_GH_LOGIN=""; ci_try -C "$WORK" ls-remote origin refs/heads/main >/dev/null || { fails=$((fails + 1)); echo "FAIL: did not fall back to the account that can reach the repo"; }
+[ "$CI_GH_LOGIN" = good ] && [ "$(printf '%s' "$CI_OUT" | cut -f1)" = abc ] || { fails=$((fails + 1)); echo "FAIL: fallback not remembered: '$CI_GH_LOGIN' '$CI_OUT'"; }
+# A pinned account is the only one used, and its failure stays a failure.
+echo bad >"$H/github-user"; CI_GH_LOGIN=""
+ci_try -C "$WORK" ls-remote origin refs/heads/main >/dev/null 2>&1 && { fails=$((fails + 1)); echo "FAIL: a pinned account fell back to another one"; }
+[ "$CI_GH_LOGIN" = bad ] || { fails=$((fails + 1)); echo "FAIL: pinned account not selected: '$CI_GH_LOGIN'"; }
+rm -f "$H/github-user" "$tmp/bin/git" "$tmp/bin/gh"; hash -r; CI_GH_LOGIN=""
+
+# The real loop against an unreachable origin: it reports and retries, and never evaluates anything.
+loopdir="$tmp/ci2"; mkdir -p "$loopdir"; touch "$loopdir/housekeeping.stamp"; : >"$CALLS"
+( TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/no-such-repo" bash "$here/loop.sh" --once >"$tmp/once.out" 2>&1 ); rc=$?
+[ "$rc" = 1 ] || { fails=$((fails + 1)); echo "FAIL: --once on an unreachable origin exited $rc: $(cat "$tmp/once.out")"; }
+rm -f "$loopdir/fetch-failing"
+TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/no-such-repo" POLL=1 FETCH_FAIL_NOTIFY_AFTER=2 bash "$here/loop.sh" >"$tmp/loop.out" 2>&1 &
+loop_pid=$!; for _ in $(seq 1 30); do grep -q 'cannot reach origin' "$CALLS" 2>/dev/null && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
+grep -q 'orchestrator notify.*cannot reach origin' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: running loop did not report: $(cat "$tmp/loop.out")"; }
+[ -s "$loopdir/fetch-failing" ] || { fails=$((fails + 1)); echo "FAIL: running loop left no failure state"; }
+grep -q 'evaluating main' "$tmp/loop.out" && { fails=$((fails + 1)); echo "FAIL: loop evaluated main with no origin"; }
+
+# Recovery on the real loop: origin appears, the failure clears, and a recorded head is not re-run.
+rm -rf "$tmp/up2"; git init -q --bare "$tmp/up2"; git -C "$tmp/w2" push -q "$tmp/up2" HEAD:refs/heads/main 2>/dev/null
+up_sha="$(git -C "$tmp/up2" rev-parse refs/heads/main)"; mkdir -p "$loopdir/results"; printf 'main\t%s\tpass\tok\n' "$up_sha" >"$loopdir/results/local-ci.tsv"
+printf '3 1 1\nold error\n' >"$loopdir/fetch-failing"; : >"$CALLS"
+TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/up2" POLL=1 bash "$here/loop.sh" >"$tmp/loop2.out" 2>&1 &
+loop_pid=$!; for _ in $(seq 1 30); do [ ! -e "$loopdir/fetch-failing" ] && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
+[ ! -e "$loopdir/fetch-failing" ] || { fails=$((fails + 1)); echo "FAIL: loop did not clear the failure: $(cat "$tmp/loop2.out")"; }
+grep -q 'reachable again' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: loop sent no all-clear: $(cat "$tmp/loop2.out")"; }
+grep -q 'evaluating main' "$tmp/loop2.out" && { fails=$((fails + 1)); echo "FAIL: recorded head was re-evaluated"; }
+
+# The incident itself: an existing checkout whose origin stops answering (ls-remote fails), then one where only fetch fails.
+run_failing_loop() { # run_failing_loop <label>: the loop must report without evaluating anything
+  : >"$CALLS"; rm -f "$loopdir/fetch-failing"
+  TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/up2" POLL=1 FETCH_FAIL_NOTIFY_AFTER=1 bash "$here/loop.sh" >"$tmp/loop3.out" 2>&1 &
+  loop_pid=$!; for _ in $(seq 1 30); do grep -q 'cannot reach origin' "$CALLS" 2>/dev/null && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
+  grep -q 'orchestrator notify.*cannot reach origin' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: $1 was not reported: $(cat "$tmp/loop3.out")"; }
+  grep -q 'evaluating main' "$tmp/loop3.out" && { fails=$((fails + 1)); echo "FAIL: $1 evaluated a stale main"; }
+}
+rm -f "$loopdir/work/main/.git/FETCH_HEAD"; mkdir "$loopdir/work/main/.git/FETCH_HEAD" # ls-remote still answers; fetch cannot write
+run_failing_loop "a failing fetch"
+mv "$tmp/up2" "$tmp/up2.gone"
+run_failing_loop "a failing ls-remote"
+
 [ "$fails" = 0 ] && echo "local-ci loop tests: ok"
 exit "$fails"

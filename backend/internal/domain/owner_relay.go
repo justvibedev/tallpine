@@ -24,21 +24,58 @@ type OwnerChatMessage struct {
 // never carries it: NeutralizeOwnerStamp breaks it, and frames break every "<<".
 const ownerStampLabel = "<<owner-verified"
 
-// IsGenuineOwnerTurn reports whether m is a turn the owner typed themselves:
-// a human user turn no session sent, not an opening spawn brief, not a
-// Tallpine [auto] notice, and not text relayed or framed from another session.
-func (m OwnerChatMessage) IsGenuineOwnerTurn() bool {
+// WorkerReportsOpen and WorkerReportsClose delimit the daemon-authored worker
+// reports attached after an owner's text in one stored turn. Their spelling is
+// a persisted wire format shared with the Chat UI.
+const (
+	WorkerReportsOpen  = "<ao-worker-reports>"
+	WorkerReportsClose = "</ao-worker-reports>"
+)
+
+// StripWorkerReports returns the owner's own text from a stored turn that had
+// worker reports attached. Text is returned unchanged unless it holds exactly
+// one report block at its end: worker text can contain the tag, so a second
+// one leaves the boundary unknown, and IsGenuineOwnerTurn then refuses the turn.
+func StripWorkerReports(text string) string {
+	if strings.Count(text, WorkerReportsOpen) != 1 || !strings.HasSuffix(text, "\n"+WorkerReportsClose) {
+		return text
+	}
+	owner, _, found := strings.Cut(text, "\n\n"+WorkerReportsOpen+"\n")
+	if !found {
+		return text
+	}
+	return owner
+}
+
+// IsMachineAuthored reports whether m is a row the owner never typed, whatever
+// else it contains: not a human user turn, sent by a session, an opening spawn
+// brief, a Tallpine [auto] notice, or a [from ...] relay. "last" looks past these
+// and treats any other row as the owner's turn. A frame is not a signal here: an
+// owner can paste one, so a framed row stays the newest turn and is refused.
+func (m OwnerChatMessage) IsMachineAuthored() bool {
 	if m.Role != MessageRoleUser || m.Origin != MessageOriginHuman || m.SenderSessionID != "" || m.SpawnBrief {
-		return false
+		return true
 	}
 	text := strings.TrimSpace(m.Text)
-	switch {
-	case text == "":
+	for _, prefix := range []string{"[auto]", "[from "} {
+		if strings.HasPrefix(text, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsGenuineOwnerTurn reports whether m is a turn the owner typed themselves and
+// its text can be stamped as theirs: not machine-authored, not empty, and with
+// no frame, owner stamp or worker-report tag left in the text.
+func (m OwnerChatMessage) IsGenuineOwnerTurn() bool {
+	if m.IsMachineAuthored() || strings.TrimSpace(m.Text) == "" {
 		return false
-	case strings.HasPrefix(text, "[auto]"), strings.HasPrefix(text, "[from "):
-		return false
-	case strings.Contains(text, "<<worker:"), strings.Contains(text, "<<orchestrator:"), strings.Contains(text, ownerStampLabel):
-		return false
+	}
+	for _, marker := range []string{"<<worker:", "<<orchestrator:", ownerStampLabel, WorkerReportsOpen, WorkerReportsClose} {
+		if strings.Contains(m.Text, marker) {
+			return false
+		}
 	}
 	return true
 }

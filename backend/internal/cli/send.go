@@ -31,9 +31,11 @@ func newSendCommand(ctx *commandContext) *cobra.Command {
 		Long: `Send a message to a running agent session and report what happened to it:
 "delivered" (written to the session; for a terminal that does not prove the
 agent has read it), "queued for next turn" (accepted, but the
-agent will only see it after its current turn or an interface transition) or
-"duplicate" (a message with that id was already accepted), with a delivery id
-when one exists. A message the agent cannot take right now is
+agent will only see it after its current turn or an interface transition),
+"delivery unconfirmed" (the session's provider refused its login, so the
+attempt reaches the agent only if that login was renewed; do not resend until
+the turn ends) or "duplicate" (a message with that id was already accepted), with a
+delivery id when one exists. A message the agent cannot take right now is
 refused with an error instead of being silently dropped.
 
 --relay-owner-message passes on a message the owner typed in your own chat
@@ -160,6 +162,8 @@ func describeSendOutcome(session string, res apitypes.SendSessionMessageResponse
 			return "delivered to " + session + handle + " into its running turn, which was waiting on an in-chat question"
 		}
 		return "delivered to " + session + handle
+	case "reauth_required":
+		return "accepted for " + session + handle + " but delivery is unconfirmed: its provider refused the login on an earlier turn, so this attempt reaches the agent only if that login has since been renewed. Do not resend yet: it could deliver twice. Once the turn ends, if `tallpine session ls` still shows sign-in required, the attempt failed: run the harness login, then send again"
 	case "duplicate":
 		return "not sent to " + session + ": a message with this id was already accepted; its delivery state is not reported"
 	case "queued":

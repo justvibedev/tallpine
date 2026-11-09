@@ -153,7 +153,7 @@ func TestWorkspaceIntegrationConcurrentDefaultBranchFetchesShareOne(t *testing.T
 	const callers = 8
 	errs := make([]error, callers)
 	start, wait := concurrently(callers, func(i int) {
-		errs[i] = ws.FetchDefaultBranch(ctx, repo, target)
+		errs[i] = ws.FetchDefaultBranch(ctx, repo, target, nil)
 	})
 	start()
 	<-leaderIn
@@ -244,10 +244,10 @@ func TestWorkspaceIntegrationCancelledFetchLeaderDoesNotAbortFollower(t *testing
 
 	leaderCtx, cancelLeader := context.WithCancel(context.Background())
 	leaderDone := make(chan error, 1)
-	go func() { leaderDone <- ws.FetchDefaultBranch(leaderCtx, repo, target) }()
+	go func() { leaderDone <- ws.FetchDefaultBranch(leaderCtx, repo, target, nil) }()
 	<-leaderIn
 	followerDone := make(chan error, 1)
-	go func() { followerDone <- ws.FetchDefaultBranch(context.Background(), repo, target) }()
+	go func() { followerDone <- ws.FetchDefaultBranch(context.Background(), repo, target, nil) }()
 	// Let the follower join the in-flight fetch, then cancel only the leader.
 	time.Sleep(100 * time.Millisecond)
 	cancelLeader()

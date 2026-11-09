@@ -14,6 +14,8 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -52,6 +54,32 @@ func Transport(socketPath string) *http.Transport {
 		MaxIdleConns:    4,
 		IdleConnTimeout: 30 * time.Second,
 	}
+}
+
+// FallbackTransport is Transport that, when the socket cannot be reached
+// (missing path, or a sandbox denying it) and the caller has established the
+// daemon listens on loopback TCP (tcpPort > 0; a port in the run file alone does
+// not prove that), dials 127.0.0.1:tcpPort instead (B434). The
+// request URL and token are unchanged. If TCP fails too, the socket error is
+// returned, since that is the advertised endpoint.
+func FallbackTransport(socketPath string, tcpPort int) *http.Transport {
+	t := Transport(socketPath)
+	if tcpPort <= 0 {
+		return t
+	}
+	var d net.Dialer
+	t.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		conn, err := d.DialContext(ctx, "unix", socketPath)
+		if err == nil || (!errors.Is(err, syscall.ENOENT) && !errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EACCES)) {
+			return conn, err
+		}
+		tcp, tcpErr := d.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(tcpPort)))
+		if tcpErr != nil {
+			return nil, err
+		}
+		return tcp, nil
+	}
+	return t
 }
 
 // LoopbackTransport is the TCP fallback for daemons without a socket. Proxy

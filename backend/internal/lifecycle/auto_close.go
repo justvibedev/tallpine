@@ -18,13 +18,23 @@ type autoCloseHooks interface {
 	RunningJobs(ctx context.Context, rec domain.SessionRecord) (int, error)
 	// OpenBacklogItems counts live backlog items still linked to the session (B487).
 	OpenBacklogItems(ctx context.Context, id domain.SessionID) (int, error)
+	// UndeliveredTurnResult renders the worker's last turn result if the close
+	// about to happen would lose it, or "" (B557). It must not change any state:
+	// the close can still fail.
+	UndeliveredTurnResult(ctx context.Context, rec domain.SessionRecord) string
 	// NotifyClosed tells the orchestrator; requester is the session whose merge
-	// request caused the close ("" if none), which needs no notice.
-	NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID)
+	// request caused the close ("" if none), which needs no notice unless
+	// undelivered carries a result it would otherwise never see.
+	NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID, undelivered string)
 	// EndOnMergeSessions lists live sessions marked end-on-merge (B498 rearm).
 	EndOnMergeSessions(ctx context.Context) ([]domain.SessionID, error)
 	// NotifyHeld tells the orchestrator a close has been held past the bound (B498).
 	NotifyHeld(ctx context.Context, rec domain.SessionRecord, reason string)
+	// FinishedWorkerKeepReason says why a worker with no merged PR must stay
+	// open, or "" when it is finished with nothing unmerged (B588).
+	FinishedWorkerKeepReason(ctx context.Context, rec domain.SessionRecord, now time.Time) (string, error)
+	// NotifyFinishedClosed tells the orchestrator a PR-less worker was closed.
+	NotifyFinishedClosed(ctx context.Context, rec domain.SessionRecord, undelivered string)
 }
 
 // SetAutoCloseHooks wires the queued-message check and the [auto] notice.
@@ -61,6 +71,7 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 		return false, err
 	}
 	if rec.IsTerminated || !rec.TerminateOnPRMerge {
+		m.autoCloseRetry.forgetKept(id)
 		return false, nil
 	}
 	// A merge must not race the still-working agent (#2879). A session whose
@@ -86,10 +97,11 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 		return false, err
 	}
 	if !done {
-		return false, nil
+		return m.tryCloseFinishedWorker(ctx, rec)
 	}
 	// A message queued for the session must not die with it (B431): hold the
 	// close, and the idle signal after it drains retries.
+	undelivered := ""
 	if hooks := m.autoCloseHooksOrNil(); hooks != nil {
 		queued, err := hooks.HasQueuedMessages(ctx, id)
 		if err != nil {
@@ -118,6 +130,8 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 			m.holdAutoClose(ctx, rec, hooks, "running background jobs", jobs)
 			return true, nil
 		}
+		// Read last, and before the kill: the close makes the normal notice undeliverable.
+		undelivered = hooks.UndeliveredTurnResult(ctx, rec)
 	}
 	slog.Info("auto-close firing", "session", id, "reason", "all PRs merged or closed, idle, nothing queued, no jobs")
 	killed, err := m.terminateCompletedSession(ctx, id)
@@ -134,7 +148,7 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 		slog.Warn("clear end-on-merge after auto-close failed", "session", id, "err", err)
 	}
 	if hooks := m.autoCloseHooksOrNil(); hooks != nil {
-		hooks.NotifyClosed(ctx, rec, ports.MergeRequester(ctx))
+		hooks.NotifyClosed(ctx, rec, ports.MergeRequester(ctx), undelivered)
 	}
 	return false, nil
 }
@@ -202,6 +216,9 @@ type autoCloseRetry struct {
 	mu      sync.Mutex
 	pending map[domain.SessionID]bool
 	held    map[domain.SessionID]*heldClose
+	// kept is the last logged reason a finished worker stayed open (B588). It
+	// is separate from held so a keep never ages an end-on-merge hold.
+	kept map[domain.SessionID]string
 	// after schedules f; nil uses time.AfterFunc. clock is time.Now when nil.
 	// Tests replace them.
 	after func(d time.Duration, f func())
@@ -247,6 +264,25 @@ func (r *autoCloseRetry) clear(id domain.SessionID) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.held, id)
+}
+
+// noteKept records why a finished worker stayed open and reports whether that
+// reason is new, so a sweep logs each one once.
+func (r *autoCloseRetry) noteKept(id domain.SessionID, reason string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.kept == nil {
+		r.kept = map[domain.SessionID]string{}
+	}
+	changed := r.kept[id] != reason
+	r.kept[id] = reason
+	return changed
+}
+
+func (r *autoCloseRetry) forgetKept(id domain.SessionID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.kept, id)
 }
 
 func (r *autoCloseRetry) arm(id domain.SessionID, f func()) {

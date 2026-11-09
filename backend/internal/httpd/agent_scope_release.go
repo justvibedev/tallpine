@@ -4,7 +4,7 @@ package httpd
 // adds the land routes.
 var agentRulesWithRelease = append(baseAgentRules[:len(baseAgentRules):len(baseAgentRules)], releaseAgentRules...)
 
-var agentRules = append(agentRulesWithRelease, landAgentRules...)
+var agentRules = append(append(agentRulesWithRelease, landAgentRules...), githubAccountAgentRules...)
 
 // releaseAgentRules: the daemon builds and installs local releases for agents
 // whose fenced shells cannot write release-builds or read the daemon token.

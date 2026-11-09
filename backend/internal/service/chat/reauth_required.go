@@ -15,6 +15,12 @@ func (s *Service) ReauthRequired(ctx context.Context, id domain.SessionID) bool 
 	if err != nil || controller == nil {
 		return false
 	}
-	account, err := controller.store.ConversationAccount(ctx, controller.conversation.ID)
+	return controller.reauthRequired(ctx)
+}
+
+// reauthRequired reports a provider login refusal on the durable conversation
+// account that no completed turn has cleared yet.
+func (c *Controller) reauthRequired(ctx context.Context) bool {
+	account, err := c.store.ConversationAccount(ctx, c.conversation.ID)
 	return err == nil && account != nil && account.ReauthRequiredAt != nil
 }

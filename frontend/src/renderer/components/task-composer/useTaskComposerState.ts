@@ -85,7 +85,7 @@ export function useTaskComposerState(props: TaskComposerProps) {
 						...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
 						...(input.attachments && input.attachments.length > 0 ? { attachments: input.attachments } : {}),
 						...(input.taskPreparation ? { taskPreparation: input.taskPreparation } : {}),
-						...(input.backlogRef ? { backlogRef: input.backlogRef, ...(input.backlogForce ? { backlogForce: true } : {}) } : {}),
+						...(input.backlogRef ? { backlogRef: input.backlogRef, ...(input.backlogForce ? { backlogForce: true } : {}), ...(input.backlogAllowBlocked ? { backlogAllowBlocked: true } : {}) } : {}),
 					},
 				});
 				if (error) {

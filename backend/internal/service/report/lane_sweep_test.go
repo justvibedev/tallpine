@@ -78,3 +78,39 @@ func (d *busyOnceDelivery) Submit(ctx context.Context, target domain.SessionID, 
 	}
 	return d.coordinatorDelivery.Submit(ctx, target, message, key)
 }
+
+// B545 review: a retried batch may already be typed into a terminal under its
+// key. A report added now would be acknowledged with that copy, unseen, so it
+// must travel in a batch of its own.
+func TestLaneRetriedBatchDoesNotSweepLaterReports(t *testing.T) {
+	h := newLaneHarness(t)
+	orch := h.session(domain.KindOrchestrator, "", false)
+	h.report(h.session(domain.KindWorker, "", false), "first-report")
+	busy := &busyOnceDelivery{coordinatorDelivery: h.delivery}
+	at := func(d time.Duration) *Coordinator {
+		return NewCoordinator(CoordinatorDeps{Store: h.st, Delivery: busy, Now: func() time.Time { return h.now.Add(d) }})
+	}
+	if _, err := at(time.Second).RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Create(context.Background(), CreateInput{SessionID: h.session(domain.KindWorker, "lane-x", false), Message: "late-report", Quiet: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := at(OrchestratorBusyRetry + 2*time.Second).RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.delivery.submissions) != 1 || h.delivery.submissions[0].target != orch {
+		t.Fatalf("want the retried batch alone, got %#v", h.delivery.submissions)
+	}
+	if m := h.delivery.submissions[0].message; !strings.Contains(m, "first-report") || strings.Contains(m, "late-report") {
+		t.Fatalf("retried batch = %q, want first-report without late-report", m)
+	}
+
+	if _, err := at(24 * time.Hour).RunDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.delivery.submissions) != 2 || !strings.Contains(h.delivery.submissions[1].message, "late-report") {
+		t.Fatalf("late report was not delivered on its own: %#v", h.delivery.submissions)
+	}
+}

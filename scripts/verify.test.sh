@@ -22,6 +22,8 @@ done
 if ! grep -q 'mode" = all \]; then' "$here/verify" || ! grep -q 'gitleaks is not installed' "$here/verify"; then
 	echo "FAIL: verify --all must fail when gitleaks is missing"; rc=1
 fi
+# B518: the repo-wide testenv meta test runs on every changed-mode push, not only when internal/testenv changes.
+sed -n '/^go_invariants()/,/^}/p' "$here/verify" | grep -q './internal/testenv/' || { echo "FAIL: go_invariants must run ./internal/testenv/"; rc=1; }
 # A failed package of this module (tallpine.eu/...) must be picked for the one retry.
 eval "$(sed -n '/^failing_go_packages()/p' "$here/verify")"
 vf="$(mktemp)"

@@ -136,6 +136,10 @@ func (d *Dispatcher) dispatch(ctx context.Context, rec domain.NotificationRecord
 	if d.hostID == "" {
 		return
 	}
+	// A kept worktree is a desktop housekeeping note, not worth a phone alert.
+	if rec.Type == domain.NotificationWorktreeKept {
+		return
+	}
 	// Mobile is opt-in: with the feature flag off nothing leaves this machine.
 	if d.enabled != nil && !d.enabled() {
 		return

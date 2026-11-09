@@ -18,6 +18,16 @@ type fakeAutoClose struct {
 	closed   []domain.SessionID
 	// requesters is the requester NotifyClosed was given, per notice.
 	requesters []domain.SessionID
+	// finishedKeep and finishedErr answer the finished-worker check (B588).
+	finishedKeep   string
+	finishedErr    error
+	finishedClosed []domain.SessionID
+	// undelivered answers UndeliveredTurnResult; notices records what each close
+	// notice carried and readBeforeKill whether the kill had already happened.
+	undelivered    string
+	notices        []string
+	readBeforeKill []bool
+	term           *fakeCompletionTerminator
 }
 
 func (f *fakeAutoClose) HasQueuedMessages(context.Context, domain.SessionID) (bool, error) {
@@ -35,7 +45,21 @@ func (f *fakeAutoClose) EndOnMergeSessions(context.Context) ([]domain.SessionID,
 func (f *fakeAutoClose) NotifyHeld(_ context.Context, rec domain.SessionRecord, reason string) {
 	f.held = append(f.held, string(rec.ID)+": "+reason)
 }
-func (f *fakeAutoClose) NotifyClosed(_ context.Context, rec domain.SessionRecord, requester domain.SessionID) {
+func (f *fakeAutoClose) FinishedWorkerKeepReason(context.Context, domain.SessionRecord, time.Time) (string, error) {
+	return f.finishedKeep, f.finishedErr
+}
+func (f *fakeAutoClose) UndeliveredTurnResult(context.Context, domain.SessionRecord) string {
+	if f.term != nil {
+		f.readBeforeKill = append(f.readBeforeKill, f.term.calls == 0)
+	}
+	return f.undelivered
+}
+func (f *fakeAutoClose) NotifyFinishedClosed(_ context.Context, rec domain.SessionRecord, undelivered string) {
+	f.finishedClosed = append(f.finishedClosed, rec.ID)
+	f.notices = append(f.notices, undelivered)
+}
+func (f *fakeAutoClose) NotifyClosed(_ context.Context, rec domain.SessionRecord, requester domain.SessionID, undelivered string) {
+	f.notices = append(f.notices, undelivered)
 	f.closed = append(f.closed, rec.ID)
 	f.requesters = append(f.requesters, requester)
 }
@@ -43,7 +67,7 @@ func (f *fakeAutoClose) NotifyClosed(_ context.Context, rec domain.SessionRecord
 func autoCloseSetup(rec domain.SessionRecord) (*Manager, *fakeCompletionTerminator, *fakeAutoClose) {
 	m, st, _ := newManager()
 	term := &fakeCompletionTerminator{}
-	hooks := &fakeAutoClose{}
+	hooks := &fakeAutoClose{term: term}
 	m.SetCompletionTerminator(term)
 	m.SetAutoCloseHooks(hooks)
 	rec.TerminateOnPRMerge = true
@@ -269,4 +293,123 @@ func TestAutoClose_MergeRequesterReachesNotice(t *testing.T) {
 			t.Fatalf("kills=%d requesters=%v, want one kill and requester %q", term.calls, hooks.requesters, requester)
 		}
 	}
+}
+
+func finishedSetup(rec domain.SessionRecord) (*Manager, *fakeCompletionTerminator, *fakeAutoClose) {
+	m, term, hooks := autoCloseSetup(rec)
+	m.store.(*fakeStore).prs[rec.ID] = nil
+	return m, term, hooks
+}
+
+// B588: a finished worker with no PR closes and its orchestrator is told, from
+// the sweep alone, so workers that predate this path get the same treatment.
+func TestAutoClose_FinishedWorkerClosesFromSweep(t *testing.T) {
+	m, term, hooks := finishedSetup(idleWorker("fw-1"))
+	hooks.sessions = []domain.SessionID{"fw-1"}
+	m.RearmAutoCloses(ctx)
+	if term.calls != 1 || len(hooks.finishedClosed) != 1 || len(hooks.closed) != 0 {
+		t.Fatalf("kills=%d finished=%v merged=%v, want one finished close", term.calls, hooks.finishedClosed, hooks.closed)
+	}
+	rec := m.store.(*fakeStore).sessions["fw-1"]
+	if rec.TerminateOnPRMerge {
+		t.Fatal("flag still set after close: a restore by hand would close again")
+	}
+}
+
+// B588: each keep-condition the lifecycle owns holds the close with no notice.
+func TestAutoClose_FinishedWorkerKeeps(t *testing.T) {
+	for name, set := range map[string]func(*domain.SessionRecord, *fakeAutoClose){
+		"keep reason":    func(_ *domain.SessionRecord, h *fakeAutoClose) { h.finishedKeep = "unmerged commits" },
+		"queued message": func(_ *domain.SessionRecord, h *fakeAutoClose) { h.queued = true },
+		"backlog item":   func(_ *domain.SessionRecord, h *fakeAutoClose) { h.items = 1 },
+		"running job":    func(_ *domain.SessionRecord, h *fakeAutoClose) { h.jobs = 1 },
+		"turn running":   func(r *domain.SessionRecord, _ *fakeAutoClose) { r.Activity.State = domain.ActivityActive },
+		"waiting input":  func(r *domain.SessionRecord, _ *fakeAutoClose) { r.Activity.State = domain.ActivityWaitingInput },
+		"check failed":   func(_ *domain.SessionRecord, h *fakeAutoClose) { h.finishedErr = context.DeadlineExceeded },
+	} {
+		rec := idleWorker("fw-2")
+		m, term, hooks := finishedSetup(rec)
+		st := m.store.(*fakeStore)
+		cur := st.sessions["fw-2"]
+		set(&cur, hooks)
+		st.sessions["fw-2"] = cur
+		hooks.sessions = []domain.SessionID{"fw-2"}
+		m.RearmAutoCloses(ctx)
+		if term.calls != 0 || len(hooks.finishedClosed) != 0 || len(hooks.held) != 0 {
+			t.Errorf("%s: kills=%d closed=%v held=%v, want none", name, term.calls, hooks.finishedClosed, hooks.held)
+		}
+	}
+}
+
+// B588: the per-session auto-close flag, off, disables the finished path too.
+func TestAutoClose_FinishedWorkerRespectsFlagOff(t *testing.T) {
+	m, term, hooks := finishedSetup(idleWorker("fw-3"))
+	st := m.store.(*fakeStore)
+	cur := st.sessions["fw-3"]
+	cur.TerminateOnPRMerge = false
+	st.sessions["fw-3"] = cur
+	m.autoCloseAfterSignal(ctx, "fw-3")
+	if term.calls != 0 || len(hooks.finishedClosed) != 0 {
+		t.Fatalf("kills=%d, want none with the flag off", term.calls)
+	}
+}
+
+// B588 review: hours of finished-worker keeps must not age the end-on-merge
+// hold, or a later merge held by a job would get a false give-up notice and no
+// recheck.
+func TestAutoClose_FinishedKeepDoesNotStartHoldClock(t *testing.T) {
+	m, term, hooks := finishedSetup(idleWorker("fw-4"))
+	now := time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	m.autoCloseRetry.clock = func() time.Time { return now }
+	armed := 0
+	m.autoCloseRetry.after = func(time.Duration, func()) { armed++ }
+	hooks.finishedKeep = "open PR"
+	hooks.sessions = []domain.SessionID{"fw-4"}
+	m.RearmAutoCloses(ctx)
+	now = now.Add(7 * time.Hour)
+	hooks.jobs = 1
+	m.store.(*fakeStore).prs["fw-4"] = []domain.PullRequest{{URL: "pr1", Merged: true}}
+	observeMerged(t, m, "fw-4")
+	if term.calls != 0 || len(hooks.held) != 0 || armed != 1 {
+		t.Fatalf("kills=%d held=%v armed=%d, want no notice and one recheck", term.calls, hooks.held, armed)
+	}
+}
+
+// A sweep logs a keep once per reason; a new reason is new.
+func TestAutoClose_KeptReasonDedupes(t *testing.T) {
+	var r autoCloseRetry
+	if !r.noteKept("s", "a") || r.noteKept("s", "a") || !r.noteKept("s", "b") {
+		t.Fatal("noteKept must report only a changed reason")
+	}
+	r.forgetKept("s")
+	if !r.noteKept("s", "b") {
+		t.Fatal("a forgotten session starts fresh")
+	}
+}
+
+// B557: both close paths read the result before the kill and pass it on.
+func TestAutoClose_CarriesUndeliveredTurnResult(t *testing.T) {
+	t.Run("all PRs merged", func(t *testing.T) {
+		m, term, hooks := autoCloseSetup(idleWorker("ac-r"))
+		hooks.undelivered = "the answer"
+		observeMerged(t, m, "ac-r")
+		if term.calls != 1 || len(hooks.notices) != 1 || hooks.notices[0] != "the answer" {
+			t.Fatalf("kills=%d notices=%q", term.calls, hooks.notices)
+		}
+		if len(hooks.readBeforeKill) != 1 || !hooks.readBeforeKill[0] {
+			t.Fatalf("read before kill = %v", hooks.readBeforeKill)
+		}
+	})
+	t.Run("finished worker", func(t *testing.T) {
+		m, term, hooks := finishedSetup(idleWorker("fw-r"))
+		hooks.undelivered = "the answer"
+		hooks.sessions = []domain.SessionID{"fw-r"}
+		m.RearmAutoCloses(ctx)
+		if term.calls != 1 || len(hooks.notices) != 1 || hooks.notices[0] != "the answer" {
+			t.Fatalf("kills=%d notices=%q", term.calls, hooks.notices)
+		}
+		if len(hooks.readBeforeKill) != 1 || !hooks.readBeforeKill[0] {
+			t.Fatalf("read before kill = %v", hooks.readBeforeKill)
+		}
+	})
 }

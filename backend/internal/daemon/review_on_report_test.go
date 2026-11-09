@@ -20,7 +20,12 @@ func (s reportStore) ListLiveSessions(context.Context) ([]domain.SessionRecord, 
 	return nil, nil
 }
 func (s reportStore) GetProject(context.Context, string) (domain.ProjectRecord, bool, error) {
-	return s.project, true, nil
+	p := s.project
+	if p.Config.AutoReview == nil { // the project setting decides Auto review
+		on := true
+		p.Config.AutoReview = &on
+	}
+	return p, true, nil
 }
 func (s reportStore) ListPRsBySession(context.Context, domain.SessionID) ([]domain.PullRequest, error) {
 	return []domain.PullRequest{{URL: "pr1", Number: 1, HeadSHA: "sha1"}}, nil

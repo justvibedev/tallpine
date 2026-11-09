@@ -354,6 +354,14 @@ func rebindProjectConversation(ctx context.Context, q *gen.Queries, existing *ge
 		}); err != nil {
 			return fmt.Errorf("release untouched provider of project conversation %s: %w", existing.ID, err)
 		}
+		// Tool-server startup state and the provider's thread lifecycle belong to
+		// the process that reported them (see clearProviderReportedState). The
+		// caller returns this row to seed the new controller, which would write
+		// the old values straight back on its first report.
+		if err := clearProviderReportedState(ctx, q, existing.ID); err != nil {
+			return err
+		}
+		existing.McpServersJson, existing.ThreadStateJson = sql.NullString{}, sql.NullString{}
 	}
 	if options.contextReset == nil ||
 		existing.LatestSequence <= 0 ||
@@ -445,4 +453,20 @@ func (s *Store) insertConversationTx(ctx context.Context, options conversationCr
 		return adoptErr
 	})
 	return latestSequence, err
+}
+
+// clearProviderReportedState resets what the previous provider process reported
+// about a conversation: tool-server startup status and the thread lifecycle. A
+// new owner may run another harness (a Codex-only server that failed to start
+// would otherwise be shown on a Claude chat forever, as Claude never reports
+// it), and its controller re-announces what is true for it. NULL means "never
+// asked". Call it wherever a conversation changes owner or harness.
+func clearProviderReportedState(ctx context.Context, q *gen.Queries, conversationID string) error {
+	if err := q.UpdateConversationMcpServers(ctx, gen.UpdateConversationMcpServersParams{ID: conversationID}); err != nil {
+		return fmt.Errorf("clear stale tool server state of conversation %s: %w", conversationID, err)
+	}
+	if err := q.UpdateConversationThreadState(ctx, gen.UpdateConversationThreadStateParams{ID: conversationID}); err != nil {
+		return fmt.Errorf("clear stale thread state of conversation %s: %w", conversationID, err)
+	}
+	return nil
 }

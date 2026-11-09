@@ -16,7 +16,7 @@ import (
 // launches. With no ref it returns a zero item. On failure it has already
 // written the response and ok is false. method/path name the endpoint for the
 // 501 answer when no backlog service is wired.
-func (c *SessionsController) prepareBacklogSpawn(w http.ResponseWriter, r *http.Request, method, path string, projectID domain.ProjectID, ref string, force, allowDuplicate bool, arm string) (item backlogsvc.SpawnItem, warnings []string, ok bool) {
+func (c *SessionsController) prepareBacklogSpawn(w http.ResponseWriter, r *http.Request, method, path string, projectID domain.ProjectID, ref string, force, allowDuplicate, allowBlocked bool, arm string) (item backlogsvc.SpawnItem, warnings []string, ok bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return item, nil, true
@@ -25,7 +25,7 @@ func (c *SessionsController) prepareBacklogSpawn(w http.ResponseWriter, r *http.
 		apispec.NotImplemented(w, r, method, path)
 		return item, nil, false
 	}
-	item, err := c.Backlog.PrepareSpawnPlan(backlogsvc.WithSpawner(r.Context(), backlogActor(r)), projectID, ref, force, allowDuplicate, arm)
+	item, err := c.Backlog.PrepareSpawnPlan(backlogsvc.WithSpawner(r.Context(), backlogActor(r)), projectID, ref, force, allowDuplicate, allowBlocked, arm)
 	if err != nil {
 		envelope.WriteError(w, r, err)
 		return backlogsvc.SpawnItem{}, nil, false

@@ -81,7 +81,27 @@ func (m *Manager) SendSemantic(ctx context.Context, id domain.SessionID, message
 		return ErrSemanticAcceptanceUnsupported
 	}
 	if semanticMessageAccepted(rec, clientMessageID) {
+		m.semanticPastes.forget(id, clientMessageID)
 		return nil
+	}
+	launch := rec.Metadata.RuntimeLaunchID
+	if m.semanticPastes.written(id, clientMessageID, launch) {
+		if semanticTurnUnfinished(rec) {
+			// Already typed into this turn's input queue; another paste would only
+			// repeat the batch to the agent. Return at once: waiting cannot succeed
+			// and would hold the single report delivery loop.
+			return fmt.Errorf("%w: waiting for the running turn", ErrSemanticAcceptancePending)
+		}
+		// A turn just ended, and the agent may be about to submit the copy already
+		// typed. Give it the acceptance window before typing a second one.
+		current, accepted, err := m.awaitSemanticAcceptance(ctx, id, clientMessageID)
+		if err != nil || accepted {
+			return err
+		}
+		if semanticTurnUnfinished(current) {
+			return fmt.Errorf("%w: waiting for the running turn", ErrSemanticAcceptancePending)
+		}
+		launch = current.Metadata.RuntimeLaunchID
 	}
 	wrapped := domain.WrapReportDelivery(clientMessageID, message)
 	if err := m.send(ctx, id, wrapped, clientMessageID, ports.MessageDeliveryOptions{}); err != nil {
@@ -93,29 +113,15 @@ func (m *Manager) SendSemantic(ctx context.Context, id domain.SessionID, message
 			return err
 		}
 	}
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(m.sendConfirm.pollInterval)
-	defer ticker.Stop()
-	for {
-		current, found, readErr := m.store.GetSession(ctx, id)
-		if readErr != nil {
-			return readErr
-		}
-		if !found || current.IsTerminated || current.Activity.State == domain.ActivityExited {
-			return ErrTerminated
-		}
-		if semanticMessageAccepted(current, clientMessageID) {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadline.C:
-			return fmt.Errorf("%w: prompt submission was not observed", ErrSemanticAcceptanceUnsupported)
-		case <-ticker.C:
-		}
+	m.semanticPastes.record(id, clientMessageID, launch)
+	current, accepted, err := m.awaitSemanticAcceptance(ctx, id, clientMessageID)
+	if err != nil || accepted {
+		return err
 	}
+	if semanticTurnUnfinished(current) {
+		return fmt.Errorf("%w: prompt submission was not observed during the running turn", ErrSemanticAcceptancePending)
+	}
+	return fmt.Errorf("%w: prompt submission was not observed", ErrSemanticAcceptanceUnsupported)
 }
 
 func (m *Manager) harnessSemanticAcceptance(harness domain.AgentHarness) bool {

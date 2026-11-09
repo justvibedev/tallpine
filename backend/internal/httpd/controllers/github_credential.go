@@ -10,12 +10,14 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apispec"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/service/githubcred"
 )
 
 // GitHubCredentialService issues a GitHub credential for a session on a host.
 type GitHubCredentialService interface {
 	Issue(ctx context.Context, session domain.SessionID, host string) (githubcred.Credential, error)
+	ports.ProjectGitCredentials
 }
 
 // GitHubCredentialController serves the credential helper and the gh shim.

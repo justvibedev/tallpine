@@ -51,3 +51,42 @@ func TestReviewListShowsRunningPassOnOlderHead(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q", out, want)
 	}
 }
+
+// B590: a verdict that never reached the PR is visible in `review ls`.
+func TestReviewListShowsRunNotPostedToPR(t *testing.T) {
+	cfg := setReviewEnv(t)
+	srv, _ := reviewServer(t, http.StatusOK, `{
+		"reviewerHandleId":"handle-1",
+		"reviews":[{
+			"prUrl":"https://github.com/example/repo/pull/42",
+			"prNumber":42,
+			"title":"Fix session resume",
+			"targetSha":"abc123",
+			"status":"changes_requested",
+			"latestRun":{"id":"run-1","reviewId":"review-1","harness":"codex","status":"complete","verdict":"changes_requested","postFailed":true}
+		}]
+	}`)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, aliveDeps(), "review", "ls", "mer-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	if want := "#42 codex: not posted to the PR"; !strings.Contains(out, want) {
+		t.Fatalf("stdout = %q, want %q", out, want)
+	}
+}
+
+func TestReviewListShowsBranchForNoPRReview(t *testing.T) {
+	cfg := setReviewEnv(t)
+	srv, _ := reviewServer(t, http.StatusOK, `{"reviews":[{"prUrl":"local:tp/w1/root","prNumber":0,"status":"needs_review","targetSha":"0123456789abcdef"}]}`)
+	writeRunFileFor(t, cfg, srv)
+
+	out, errOut, err := executeCLI(t, aliveDeps(), "review", "ls", "mer-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	if strings.Contains(out, "#0") || !strings.Contains(out, "branch tp/w1/root") {
+		t.Fatalf("stdout = %q, want the branch instead of #0", out)
+	}
+}

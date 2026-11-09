@@ -24,6 +24,9 @@ func validMergeRequest() ports.SCMMergeRequest {
 
 func TestMergePullRequest_UsesSquashAndExpectedHead(t *testing.T) {
 	f := newFakeGH(t)
+	f.on(http.MethodGet, "/repos/octocat/hello/pulls/42", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"title": "t", "body": "no trailers"})
+	})
 	f.on(http.MethodPut, "/repos/octocat/hello/pulls/42/merge", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			SHA         string `json:"sha"`
@@ -59,6 +62,9 @@ func TestMergePullRequest_MapsGitHubFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFakeGH(t)
+			f.on(http.MethodGet, "/repos/octocat/hello/pulls/42", func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"title": "t", "body": "no trailers"})
+			})
 			f.on(http.MethodPut, "/repos/octocat/hello/pulls/42/merge", func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				_ = json.NewEncoder(w).Encode(map[string]string{"message": tc.name})
@@ -181,5 +187,60 @@ func TestResolveReviewThread_RejectsUnresolvedMutation(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "not confirmed resolved") {
 		t.Fatalf("error = %v, want an unresolved mutation error", err)
+	}
+}
+
+func TestMergePullRequest_KeepsBodyTrailersInSquashMessage(t *testing.T) {
+	f := newFakeGH(t)
+	trailers := "Ported-from: OrchestratorInc/agent-orchestrator#7306 (640f3e7fba)\nCo-Authored-By: A <a@example.com>"
+	f.on(http.MethodGet, "/repos/octocat/hello/pulls/42", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"title": "fix: thing", "user": map[string]any{"login": "pruser"}, "body": "Summary\n\nTests: ok\n\n" + trailers + "\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"})
+	})
+	commit := func(msg, name, email string) map[string]any {
+		login := "pruser"
+		if name != "Me" {
+			login = name
+		}
+		return map[string]any{"author": map[string]any{"login": login}, "commit": map[string]any{"message": msg, "author": map[string]any{"name": name, "email": email}}}
+	}
+	f.on(http.MethodGet, "/repos/octocat/hello/pulls/42/commits", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode([]any{
+			commit("feat: one\n\nbody one\n\nCo-Authored-By: A <a@example.com>", "First", "first@example.com"),
+			commit("fix: two", "Other", "other@example.com"),
+			commit("fix: three", "Me", "me@example.com"),
+		})
+	})
+	f.on(http.MethodPut, "/repos/octocat/hello/pulls/42/merge", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			CommitTitle   string `json:"commit_title"`
+			CommitMessage string `json:"commit_message"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		wantTail := "Co-authored-by: First <first@example.com>\nCo-authored-by: Other <other@example.com>\n" + trailers
+		if body.CommitTitle != "fix: thing (#42)" || !strings.HasSuffix(body.CommitMessage, "\n\n"+wantTail) ||
+			!strings.Contains(body.CommitMessage, "* feat: one\n\nbody one") || !strings.Contains(body.CommitMessage, "* fix: two") ||
+			strings.Count(strings.ToLower(body.CommitMessage), "co-authored-by: a <a@example.com>") != 1 {
+			t.Fatalf("body = %#v", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"sha": "merge-sha", "merged": true})
+	})
+	if _, err := newProviderForTest(t, f).MergePullRequest(ctx(), validMergeRequest()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTrailerBlock(t *testing.T) {
+	for body, want := range map[string]string{
+		"": "",
+		"Summary\n\nCo-Authored-By: A <a@b>\n\n🤖 Generated with Claude Code": "Co-Authored-By: A <a@b>",
+		"Summary only":                       "",
+		"Summary\n\nSee: the docs, ok\nmore": "",
+		"Summary\n\nCo-Authored-By: A <a@b>": "Co-Authored-By: A <a@b>",
+	} {
+		if got := trailerBlock(body); got != want {
+			t.Errorf("trailerBlock(%q) = %q, want %q", body, got, want)
+		}
 	}
 }

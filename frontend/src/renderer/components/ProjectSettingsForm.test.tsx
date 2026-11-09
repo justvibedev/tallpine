@@ -756,7 +756,7 @@ describe("ProjectSettingsForm", () => {
 
 		renderSettings("proj-1", undefined, "general");
 
-		const field = await beginEdit("Canonical repo URL");
+		const field = await beginEdit("Moved repository URL");
 		await userEvent.clear(field);
 		await userEvent.type(field, "https://github.com/acme/new");
 		await userEvent.keyboard("{Enter}");

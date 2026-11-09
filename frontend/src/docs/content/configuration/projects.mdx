@@ -39,7 +39,7 @@ tallpine project rm <project-id>
 
 | Field | Purpose |
 | --- | --- |
-| `canonicalRepoURL` | Trusted upstream for numeric PR claims. It does not change where Tallpine checks out or pushes. |
+| `canonicalRepoURL` | The repository to use for GitHub access and numeric PR claims after a project moved hosts. Shown in Settings as **Moved repository URL**; leave it empty otherwise. It does not change where Tallpine checks out or pushes. |
 | `autoReview` | Default automatic-review setting copied to new worker sessions. A project that sets none follows the app default in **Settings > Reviews**. |
 | `planAutoApprove` | Approves a submitted plan automatically, without the owner, recording the approver as `auto (project setting)`. For unattended throwaway test or benchmark projects only. Off by default. Only a person can turn it on: agents, including the project's own orchestrator, are refused on every route, and a managed `planner.autoApprove` of `off` locks it off. Set it with `tallpine project set-config <id> --plan-auto-approve` or the **Auto-approve plans** toggle under Settings → Project. |
 | `claudePlugins` | Per-role Claude Code plugin overrides, keyed by role (`orchestrator`, `worker`, `reviewer`) then `name@marketplace` plugin to on/off. A role you leave out loads the account's plugins unchanged. Applies to terminal and Chat sessions. |
@@ -47,7 +47,7 @@ tallpine project rm <project-id>
 | `noCI` | Declares that the repository has no CI, so Tallpine review approval is the merge gate. When `true` and the provider reports no checks at all for a PR head, CI counts as passing for ready-to-merge state and `tallpine pr merge` only once a Tallpine review (`tallpine review trigger`) approved that exact head. A provider review approval does not count, because it is not tied to a commit. Until then the PR is not ready and `tallpine pr merge` reports `review_approval_required`, `ao_review_running` or `ao_changes_requested`. Failing or pending checks still block. Off by default, because a fresh push in a repository with CI can briefly have no registered checks. Set it with `tallpine project set-config <id> --no-ci` or the **No CI: review gates merge** toggle under Settings → Project → Pull requests. |
 | `defaultBranch` | Base branch for new Git worktrees. Defaults to `auto`. |
 | `sessionPrefix` | Prefix for generated session identifiers. |
-| `githubUser` | Signed-in `gh` account for this project. Leave empty and Tallpine picks the signed-in account that can push to the repository (the owner's own account first). It sets `GH_TOKEN` in the project's sessions and is used by the PR observer. `TALLPINE_GITHUB_USER` sets a default for every project, and a `GH_TOKEN`/`GITHUB_TOKEN` in project env, or `TALLPINE_GITHUB_TOKEN` in the daemon environment, always wins. An ambient `GH_TOKEN`/`GITHUB_TOKEN` in the daemon environment (for example inherited from a shell that launched the app) is ignored, so it cannot pin every project to one account. Settings shows which login the project's token really is and warns when it is another account or cannot see the repository. Set with `tallpine project set-config --github-user <login>`. |
+| `githubUser` | Signed-in `gh` account for this project. Leave empty and Tallpine picks the signed-in account that can push to the repository (the owner's own account first). It sets `GH_TOKEN` in the project's sessions and is used by the PR observer. `TALLPINE_GITHUB_USER` sets a default for every project, and a `GH_TOKEN`/`GITHUB_TOKEN` in project env, or `TALLPINE_GITHUB_TOKEN` in the daemon environment, always wins. An ambient `GH_TOKEN`/`GITHUB_TOKEN` in the daemon environment (for example inherited from a shell that launched the app) is ignored, so it cannot pin every project to one account. Settings shows which login the project's token really is and warns when it is another account or cannot see the repository. Pick it in **Settings > Repository & worktrees > GitHub access**, or set it with `tallpine project set-config <id> --github-user <login>` (the login must be signed in to `gh`; `--github-user ""` returns to auto-pick). A new choice applies to sessions started afterwards, not to running ones. |
 | `defaultSessionMode` | Interface new worker sessions start in when the spawn does not ask for one: `tui` or `chat`. Unset uses the app-wide default. This is not `agentConfig.mode`, which is the reasoning effort (`low`, `medium`, `high`, `ultra`). Set it with `tallpine project set-config <id> --default-session-mode chat`. |
 | `env` | Extra environment variables passed to agent runtimes. |
 | `symlinks` | Repository-relative paths linked into each session workspace. |
@@ -65,6 +65,20 @@ tallpine project rm <project-id>
 | `containerReap` | Project-wide opt-out from Tallpine's session-container cleanup. |
 
 `symlinks` and `agentRulesFile` must stay inside the repository. Tallpine rejects absolute paths and paths that traverse outside it. Scratch projects do not support Git-only fields such as `defaultBranch` or `symlinks`.
+
+### Repository settings page
+
+**Settings > Repository & worktrees** has three groups:
+
+- **Repository**: the project's origin URL (read-only), the **Default branch** new sessions start from (`auto` uses the repository's own default branch), and the **Session prefix** that starts session IDs and session branch names.
+- **GitHub access**: the **GitHub account** sessions use, and the **Moved repository URL** (`canonicalRepoURL`), needed only after the repository moved to another host.
+- **Worktree setup**: symlinked paths, **Clone ignored folders**, and the **Setup** and **Cleanup** commands that run when a worktree is created or removed.
+
+The **GitHub account** picker lists the accounts signed in to `gh` on this machine, plus **Auto-pick**, which shows the account it currently resolves to. An account that cannot push to the repository is marked. A pinned login that is no longer signed in stays in the list, marked "not signed in", so you can see and change it. A line under the picker says which account sessions use and whether it can push. If the origin is not on GitHub (for example Bitbucket), Auto-pick cannot choose: sessions use the machine's default GitHub login unless you pick an account.
+
+A change reaches only sessions started after you save it; running sessions keep the account they started with. Tallpine never runs `gh auth switch`, `login` or `logout` for this, because those change the default for every session and project.
+
+To see the choices from the CLI, run `tallpine github accounts` (add `--project <id>` to see which accounts can push to that project's repository and which one Auto-pick chooses). It prints logins only, never tokens. An orchestrator may change its own project's account the same way when you ask it to.
 
 ### Choose a base branch
 

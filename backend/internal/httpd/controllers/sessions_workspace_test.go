@@ -752,7 +752,7 @@ func TestSessionsAPI_StreamWorkspaceChanges(t *testing.T) {
 		if got != "event: workspace_changed" {
 			t.Fatalf("event = %q, want workspace_changed", got)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(watchEventDeadline):
 		t.Fatal("timed out waiting for workspace change event")
 	}
 }

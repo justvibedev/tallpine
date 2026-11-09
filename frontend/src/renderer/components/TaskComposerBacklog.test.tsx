@@ -93,6 +93,15 @@ describe("TaskComposer on a backlog item", () => {
 		await waitFor(() => expect(delegateBody()).toMatchObject({ backlogRef: "B7", backlogForce: true }));
 	});
 
+	it("sends backlogAllowBlocked, not backlogForce, for a blocked item the user chose to start anyway", async () => {
+		setupRemote();
+		render(<Wrap><TaskComposer hostId="box-a" projectId="project-a" backlog={{ ref: "B8", title: "Chained", allowBlocked: true }} onCreated={vi.fn()} /></Wrap>);
+		await waitForTaskReady();
+		fireEvent.click(startTask());
+		await waitFor(() => expect(delegateBody()).toMatchObject({ backlogRef: "B8", backlogAllowBlocked: true }));
+		expect(delegateBody()).not.toHaveProperty("backlogForce");
+	});
+
 	it("shows the server's warnings after the worker starts", async () => {
 		setupRemote({ data: { workerId: "tallpine-9", warnings: ["B12 is blocked by B3"] } });
 		useUiStore.getState().clearGlobalToast();

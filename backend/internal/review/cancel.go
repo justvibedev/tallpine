@@ -23,6 +23,17 @@ func (e *Engine) Cancel(ctx stdctx.Context, workerID domain.SessionID) (CancelRe
 	if !ok {
 		return CancelResult{}, fmt.Errorf("%w: worker session %q", ErrNotFound, workerID)
 	}
+	// A cancel also withdraws the passes waiting for the reviewer, or a
+	// cancelled request could still start later.
+	queued, err := e.queuedFor(ctx, workerID)
+	if err != nil {
+		return CancelResult{}, err
+	}
+	for _, q := range queued {
+		if err := e.DropQueuedTrigger(ctx, q); err != nil {
+			return CancelResult{}, err
+		}
+	}
 	harness, _, err := e.reviewerSelection(ctx, worker)
 	if err != nil {
 		return CancelResult{}, err

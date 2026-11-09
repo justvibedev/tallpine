@@ -31,12 +31,13 @@ nrl install "${T}/nonexistent.app" --notify orch-1 --log "${T}/the.log" >"${T}/o
 check "early refusal sends a FAILED message" 'grep -q "^send|--session|orch-1|--message|\[release\] install of unknown FAILED: .*not an app bundle.*; log ${T}/the.log|" "${nrc}"'
 # Give-up path: a CLI that always fails never changes the install result, and the window is shared.
 fake_cli "${napps}/${product}.app" "${nrc}" 1; : >"${nrc}"
-t0=$(date +%s)
-TALLPINE_RELEASE_NOTIFY_TIMEOUT=2 TALLPINE_RELEASE_NOTIFY_INTERVAL=0 nrl install "${T}/nonexistent.app" --notify orch-1 --notify orch-2 >"${T}/out" 2>&1 && rc=0 || rc=$?
+TALLPINE_RELEASE_NOTIFY_TIMEOUT=5 TALLPINE_RELEASE_NOTIFY_INTERVAL=0 nrl install "${T}/nonexistent.app" --notify orch-1 --notify orch-2 >"${T}/out" 2>&1 && rc=0 || rc=$?
 check "failing send: install exits 1" '[[ ${rc} -eq 1 ]] || { echo "rc=${rc}"; cat "${T}/out"; false; }'
 check "failing send: install keeps its own error" 'grep -q "not an app bundle" "${T}/out" || { cat "${T}/out"; false; }'
 check "failing send: warns once per session" '[[ "$(grep -c "could not notify session" "${T}/out")" -eq 2 ]] || { cat "${T}/out"; false; }'
-check "failing send: retried, and both sessions share one ~2s window" '[[ "$(grep -c "^send|" "${nrc}")" -ge 2 ]] && [[ $(($(date +%s) - t0)) -le 4 ]]'
+# The window is proven by attempts, not the clock: the first session retries until the shared deadline passes, so
+# the second gets exactly its one always-made attempt. A window per session would give it more.
+check "failing send: retried, and both sessions share one window" '[[ "$(grep -c "^send|--session|orch-1|" "${nrc}")" -ge 2 && "$(grep -c "^send|--session|orch-2|" "${nrc}")" -eq 1 ]] || { cat "${nrc}"; false; }'
 pkill -f "${nst}/" 2>/dev/null || true
 
 # B357: the detached run's output is followed by byte count; output appended between the size read and the

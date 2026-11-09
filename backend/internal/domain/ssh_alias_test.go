@@ -19,8 +19,8 @@ func TestCanonicalRepoAcceptsSSHHostAlias(t *testing.T) {
 	if err := c.ValidateCanonicalRepository("git@github-work:acme/repo"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ValidateCanonicalRepository("git@gitlab.example.com:o/r"); err == nil {
-		t.Fatal("expected mismatch error")
+	if err := c.ValidateCanonicalRepository("not a repo"); err == nil {
+		t.Fatal("expected invalid origin error")
 	}
 }
 

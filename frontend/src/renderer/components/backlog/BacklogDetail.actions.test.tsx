@@ -60,6 +60,35 @@ describe("Start worker", () => {
 		expect(useUiStore.getState().newTaskRequest?.backlog).toMatchObject({ ref: "B7", force: true });
 	});
 
+	it("asks before starting an item with an open blocker, then forces it", async () => {
+		open(item({ ref: "B8", title: "Chained", linkCounts: {}, openBlockers: ["B3"] }));
+		await userEvent.click(await screen.findByRole("button", { name: "Start worker" }));
+		expect(useUiStore.getState().newTaskRequest).toBeNull();
+		expect(await screen.findByRole("dialog")).toHaveTextContent("open blocker");
+		await userEvent.click(screen.getAllByRole("button", { name: "Start worker" }).at(-1) as HTMLElement);
+		expect(useUiStore.getState().newTaskRequest?.backlog).toMatchObject({ ref: "B8", allowBlocked: true });
+		expect(useUiStore.getState().newTaskRequest?.backlog).not.toHaveProperty("force");
+	});
+
+	it("names both the hold and the blocker for a held, blocked item, then forces", async () => {
+		open(item({ ref: "B10", title: "Both", hold: "after the rename", linkCounts: {}, openBlockers: ["B3"] }));
+		await userEvent.click(await screen.findByRole("button", { name: "Start worker" }));
+		const dialog = await screen.findByRole("dialog");
+		expect(dialog).toHaveTextContent("after the rename");
+		expect(dialog).toHaveTextContent("open blocker");
+		await userEvent.click(screen.getAllByRole("button", { name: "Start worker" }).at(-1) as HTMLElement);
+		expect(useUiStore.getState().newTaskRequest?.backlog).toMatchObject({ ref: "B10", force: true });
+	});
+
+	it("starts at once when the only blocker is closed", async () => {
+		const blocker = { kind: "blocked_by", ref: "item-x", display: "B3", createdBy: "human", createdAt: daysAgo(1) } as const;
+		open(item({ ref: "B9", title: "Unblocked", linkCounts: {}, links: [blocker], openBlockers: [] }));
+		await userEvent.click(await screen.findByRole("button", { name: "Start worker" }));
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+		expect(useUiStore.getState().newTaskRequest?.backlog).toMatchObject({ ref: "B9" });
+		expect(useUiStore.getState().newTaskRequest?.backlog).not.toHaveProperty("force");
+	});
+
 	it("is disabled for a parent, with the reason", async () => {
 		open(item({ ref: "B1", childCount: 3 }));
 		const start = await screen.findByRole("button", { name: "Start worker" });

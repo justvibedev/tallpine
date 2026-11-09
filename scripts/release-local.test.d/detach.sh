@@ -5,11 +5,12 @@
 b="${T}/b327"; bst="${b}/state"; bapps="${b}/apps"; mkdir -p "${bst}" "${bapps}"
 # </dev/null: detach_run only detaches without a tty, so these exercise it however the suite is started.
 brl() { "${release}" --state-dir "${bst}" --app-dir "${bapps}" --no-fetch --yes --force "$@" </dev/null; }
-# slow_app <dir> <commit>: an app that needs 3s to quit after SIGTERM, with a fake CLI that records sends.
+# slow_app <dir> <commit>: an app that needs 3s to quit after SIGTERM, and longer while ${b}/hold-quit exists,
+# with a fake CLI that records sends.
 bnrc="${b}/notify.out"; : >"${bnrc}"
 slow_app() {
   make_app "${b}/$1" "$2" "${bst}"
-  perl -pi -e 's/exit 0. TERM/sleep 3; exit 0\x27 TERM/' "${b}/$1/${product}.app/Contents/MacOS/fake"
+  perl -pi -e "s#exit 0. TERM#sleep 3; while [[ -e ${b}/hold-quit ]]; do sleep 0.05; done; exit 0\x27 TERM#" "${b}/$1/${product}.app/Contents/MacOS/fake"
   fake_cli "${b}/$1/${product}.app" "${bnrc}" 0
 }
 bwait() { local i; for i in $(seq 1 100); do [[ -f "${bst}/running.json" ]] && kill -0 "$(plutil -extract pid raw -o - "${bst}/running.json" 2>/dev/null)" 2>/dev/null && return 0; sleep 0.2; done; return 1; }
@@ -46,13 +47,15 @@ check "b327: the undo relaunched the app" 'grep -q "launch chain:" "${b}/chain.o
 check "b327: the failed install was reported" 'grep -q "^send|--session|orch-b|--message|\[release\] install of ${C:0:10} FAILED: .*did not quit.*; log ${T}/b.log|" "${bnrc}"'
 
 # B585: the app was already relaunched (a healthy new daemon) while the old app process is still exiting: the undo
-# must not wait for that exit or launch a second app, and still reports the failure.
-: >"${bnrc}"; : >"${b}/chain.out"; before="$(plutil -extract pid raw -o - "${bst}/running.json")"
+# must not wait for that exit or launch a second app, and still reports the failure. The app is held until the
+# install returns, so a slow python startup cannot let the old process exit before the new daemon answers.
+: >"${bnrc}"; : >"${b}/chain.out"; before="$(plutil -extract pid raw -o - "${bst}/running.json")"; : >"${b}/hold-quit"
 (
   for i in $(seq 1 50); do [[ -f "${bst}/running.json" ]] || break; sleep 0.05; done
   python3 "${T}/fake_daemon.py" "${bst}" "${D}" "${service}" >/dev/null 2>&1 &
 ) &
 TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl install "${b}/newer/${product}.app" --notify orch-b --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
+rm -f "${b}/hold-quit"
 wait
 check "b585: the undo sees the app is already running again" '[[ ${rc} -ne 0 ]] && grep -q "is already running again; not relaunching it" "${T}/out" && ! grep -q "Launching" "${T}/out"'
 check "b585: the undo launched nothing and the install failure was reported" '[[ ! -s "${b}/chain.out" ]] && grep -q "^send|--session|orch-b|--message|\[release\] install of ${C:0:10} FAILED: .*did not quit" "${bnrc}"'

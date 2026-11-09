@@ -50,7 +50,7 @@ func (c *checkedSessionManager) SetCleanupCheck(check sessionmanager.CleanupChec
 func TestNewCleanupInstallsTheSafetyCheckOnTheSessionManager(t *testing.T) {
 	data := t.TempDir()
 	mgr := &checkedSessionManager{}
-	newCleanup(data, t.TempDir(), nil, mgr, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	newCleanup(data, t.TempDir(), nil, mgr, nil, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if mgr.check == nil {
 		t.Fatal("no cleanup check installed")
 	}

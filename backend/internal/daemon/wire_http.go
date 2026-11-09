@@ -19,13 +19,11 @@ import (
 	cuesvc "tallpine.eu/tallpine/backend/internal/service/cue"
 	devimportsvc "tallpine.eu/tallpine/backend/internal/service/devimport"
 	fsbrowsersvc "tallpine.eu/tallpine/backend/internal/service/fsbrowser"
-	"tallpine.eu/tallpine/backend/internal/service/githubcred"
 	"tallpine.eu/tallpine/backend/internal/service/githubpat"
 	healthsvc "tallpine.eu/tallpine/backend/internal/service/health"
 	"tallpine.eu/tallpine/backend/internal/service/hookprocess"
 	importsvc "tallpine.eu/tallpine/backend/internal/service/importer"
 	linkpreviewsvc "tallpine.eu/tallpine/backend/internal/service/linkpreview"
-	"tallpine.eu/tallpine/backend/internal/service/localland"
 	officialimportsvc "tallpine.eu/tallpine/backend/internal/service/officialimport"
 	"tallpine.eu/tallpine/backend/internal/service/sessioncommit"
 	updatesvc "tallpine.eu/tallpine/backend/internal/service/update"
@@ -92,9 +90,9 @@ func (b *boot) wireHTTP() error {
 		Settings:             b.settingsSvc,
 		AgentPolicy:          b.agentPolicySvc,
 		AgentPolicyDecisions: b.store,
-		GitHubCredentials:    githubcred.New(b.agentPolicySvc, b.store, b.store, b.ghAccounts, b.log),
+		GitHubCredentials:    b.gitCredentials(),
 		SessionCommit:        sessioncommit.New(b.store, b.log),
-		SessionLand:          localland.New(b.store, b.store, gitworktree.NewDefaultBranchResolver(""), b.log),
+		SessionLand:          b.sessionLand(),
 		ArtifactStorage:      b.artifactStorage,
 		Cleanup:              b.cleanupSvc,
 		Storage:              newStorageUsage(b.cfg.DataDir, b.cfg.RunFilePath, b.store, b.sessMgr, b.cleanupSvc),

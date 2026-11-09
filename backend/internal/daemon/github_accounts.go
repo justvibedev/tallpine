@@ -133,8 +133,10 @@ func (a *githubAccounts) reloadOverrides(ctx context.Context) {
 			if user == "" {
 				continue
 			}
-			if repo, ok := ghaccount.ParseRemote(ctx, row.RepoOriginURL, a.resolver.SSHHost); ok {
-				next[repo.Key()] = user
+			for _, remote := range row.Config.AccountRemotes(row.RepoOriginURL) {
+				if repo, ok := ghaccount.ParseRemote(ctx, remote, a.resolver.SSHHost); ok {
+					next[repo.Key()] = user
+				}
 			}
 		}
 	}

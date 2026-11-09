@@ -2196,7 +2196,7 @@ func TestManager_CanonicalRepositoryConfigPersistence(t *testing.T) {
 	if got.Project.Config == nil || got.Project.Config.CanonicalRepoURL != cfg.CanonicalRepoURL {
 		t.Fatalf("stored config = %+v", got.Project.Config)
 	}
-	for _, target := range []string{"https://github.com/group/repo", "https://gitlab.example.com/group/subgroup/repo"} {
+	for _, target := range []string{"upstream"} {
 		bad := domain.ProjectConfig{CanonicalRepoURL: target}
 		if _, err := m.SetConfig(ctx, "fork", project.SetConfigInput{Config: bad}); err == nil {
 			t.Fatalf("SetConfig accepted %s", target)

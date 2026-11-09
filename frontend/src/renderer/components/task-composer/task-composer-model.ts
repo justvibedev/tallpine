@@ -20,6 +20,7 @@ export type CreateTaskInput = {
 	taskPreparation?: string;
 	backlogRef?: string;
 	backlogForce?: boolean;
+	backlogAllowBlocked?: boolean;
 };
 
 export const CHAT_PREFLIGHT_CODES = new Set([
@@ -69,5 +70,5 @@ export type TaskComposerProps = {
 	autoFocusTitle?: boolean;
 	createLabel?: string;
 	/** Starts the worker on a backlog item: its brief is prefilled and the daemon links the session to it. */
-	backlog?: { ref: string; title: string; force?: boolean };
+	backlog?: { ref: string; title: string; force?: boolean; allowBlocked?: boolean };
 };

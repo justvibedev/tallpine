@@ -29,6 +29,8 @@ const approvedLiterals: Record<string, readonly string[]> = {
 	"components/DaemonStartupLoader.tsx": ["Tallpine"],
 	// Technical branch/prefix examples moved with the common settings fields.
 	"components/ProjectSettingsEditor.tsx": ["auto", "ao"],
+	// Default-branch placeholder example.
+	"components/project-settings/ProjectRepositorySections.tsx": ["auto"],
 	// Key-cap hint beside Cancel.
 	"components/QuitConfirmDialog.tsx": ["Esc"],
 	"components/RemoteDirectoryPicker.tsx": ["/home/you/code"],

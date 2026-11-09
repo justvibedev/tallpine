@@ -20,7 +20,7 @@ func enrich(intent Intent) (domain.NotificationRecord, error) {
 	if !intent.Type.Valid() {
 		return domain.NotificationRecord{}, domain.ErrInvalidNotificationType
 	}
-	if intent.Type != domain.NotificationNeedsInput && intent.Type != domain.NotificationOrchestratorApproval && intent.Type != domain.NotificationPlanWaiting && rec.PRURL == "" {
+	if intent.Type != domain.NotificationNeedsInput && intent.Type != domain.NotificationOrchestratorApproval && intent.Type != domain.NotificationPlanWaiting && intent.Type != domain.NotificationWorktreeKept && rec.PRURL == "" {
 		return domain.NotificationRecord{}, domain.ErrInvalidNotificationRecord
 	}
 	rec.Title = titleForIntent(intent)
@@ -51,6 +51,11 @@ func titleForIntent(intent Intent) string {
 		return fmt.Sprintf("Review complete for %s", prLabel(intent))
 	case domain.NotificationReviewChangesRequested:
 		return fmt.Sprintf("Review found changes for %s", prLabel(intent))
+	case domain.NotificationWorktreeKept:
+		if title := strings.TrimSpace(intent.Title); title != "" {
+			return title
+		}
+		return "Cleanup kept a worktree"
 	case domain.NotificationPlanWaiting:
 		if title := strings.TrimSpace(intent.Title); title != "" {
 			return title
@@ -96,7 +101,7 @@ func bodyForIntent(intent Intent) string {
 		return withNote("Orchestrator finished reviewing this pull request and approved it.", intent.Body)
 	case domain.NotificationReviewChangesRequested:
 		return withNote("Orchestrator finished reviewing this pull request and found changes to address.", intent.Body)
-	case domain.NotificationOrchestratorApproval, domain.NotificationPlanWaiting:
+	case domain.NotificationOrchestratorApproval, domain.NotificationPlanWaiting, domain.NotificationWorktreeKept:
 		return strings.TrimSpace(intent.Body)
 	default:
 		return ""

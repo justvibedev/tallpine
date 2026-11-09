@@ -13,9 +13,8 @@ import (
 )
 
 // LocalTargetPrefix starts the synthetic review key of a session branch that
-// has no PR. Runs for such a branch are stored under local:<branch> in the
-// PR URL column; nothing else is stored.
-const LocalTargetPrefix = "local:"
+// has no PR; the domain owns the format.
+const LocalTargetPrefix = domain.LocalReviewTargetPrefix
 
 // ErrNoLocalCommits means the session branch has nothing beyond its base ref.
 var ErrNoLocalCommits = errors.New("nothing to review: the branch has no commits beyond its base")
@@ -26,7 +25,7 @@ var errRefMissing = errors.New("ref not found")
 func LocalTargetURL(branch string) string { return LocalTargetPrefix + branch }
 
 // IsLocalTarget reports whether a review key names a local branch, not a PR.
-func IsLocalTarget(url string) bool { return strings.HasPrefix(url, LocalTargetPrefix) }
+func IsLocalTarget(url string) bool { return domain.IsLocalReviewTarget(url) }
 
 // LocalTarget synthesizes the review target of a worker's branch: head is the
 // branch tip, BaseSHA the tip of the session's diff base ref. It reports ok

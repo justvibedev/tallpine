@@ -103,7 +103,13 @@ func (o *Observer) discoverSubjects(ctx context.Context) (map[string]*subject, [
 			}
 			projects[sess.ProjectID] = p
 			proj = p
-			if origin, ok := o.provider.ParseRepository(p.RepoOriginURL); ok {
+			// Prefer the tracked (possibly moved) repo, but a canonical URL no
+			// provider handles must not silence a healthy origin.
+			origin, ok := o.provider.ParseRepository(p.Config.TrackedRepoURL(p.RepoOriginURL))
+			if !ok {
+				origin, ok = o.provider.ParseRepository(p.RepoOriginURL)
+			}
+			if ok {
 				scanRepos[sess.ProjectID] = o.resolveScanRepos(ctx, p, origin)
 			}
 		}

@@ -1486,6 +1486,31 @@ Flags:
       --json   Output health checks as JSON
 ```
 
+## `tallpine github`
+
+```text
+Inspect the GitHub accounts signed in on this machine
+
+Usage:
+  tallpine github [command]
+
+Available Commands:
+  accounts    List the GitHub accounts signed in to gh
+```
+
+### `tallpine github accounts`
+
+```text
+Lists the accounts `gh` is signed in to for github.com (logins only, never tokens). With a project (--project, or TALLPINE_PROJECT_ID) it also says whether each account can push to that project's repository, which account is pinned, and which one auto-pick chooses. To pin one: `tallpine project set-config <id> --github-user <login>`; `--github-user ""` returns to auto-pick. The change reaches sessions started afterwards, not running ones. Do not use `gh auth switch`, `login` or `logout`: they change the machine default for every session.
+
+Usage:
+  tallpine github accounts [flags]
+
+Flags:
+      --json             Print JSON
+      --project string   Project id to check push access against (default: TALLPINE_PROJECT_ID)
+```
+
 ## `tallpine import`
 
 ```text
@@ -2197,6 +2222,8 @@ Field flags MERGE into the existing config: only the flags you pass change, and 
 
 The merge reads the config and writes it back in two requests with no revision check, so a concurrent config change (another set-config or a settings save) made in between is overwritten.
 
+Passing only --github-user pins (or, with an empty value, clears) the project's GitHub account through the settings route, which an orchestrator may use on its own project when the owner asks for it.
+
 Passing only --agent-rules, --orchestrator-rules, --orchestrator-compact-window, --orchestrator-idle-compact and/or --orchestrator-research-window writes just those fields through the rules endpoint; that is the only config change an orchestrator session may make, and only on its own project.
 
 --config-json REPLACES the whole config with the given object (overriding field flags), and --clear removes all config.
@@ -2207,13 +2234,13 @@ Usage:
 Flags:
       --agent-rules string                                               Project-specific standing instructions for worker sessions
       --agent-rules-file string                                          Repo-relative file containing worker standing instructions
-      --canonical-repo-url string                                        Explicit upstream HTTPS repository URL for PR claims (same provider, host, and port as origin)
+      --canonical-repo-url string                                        Explicit upstream HTTPS repository URL for PR claims; may be on another host when the repo moved, then it replaces origin for PR tracking
       --clear                                                            Clear all config
       --config-json string                                               Full config as a JSON object; replaces the entire config (overrides field flags)
       --default-branch string                                            Base branch for new worktrees; auto infers each repository's Git default
       --default-session-mode string                                      Interface for new worker sessions: tui or chat (empty clears; not the reasoning effort in agentConfig.mode)
       --env stringArray                                                  Env var KEY=VALUE forwarded into sessions (repeatable)
-      --github-user string                                               Signed-in gh account to use for this project (default: auto-pick the account that can push to the repo)
+      --github-user tallpine github accounts                             Signed-in gh account to use for this project; it must be signed in (see tallpine github accounts). Empty returns to auto-pick (the account that can push to the repo). Applies to sessions started afterwards
       --json                                                             Output the updated project as JSON
       --model string                                                     Agent model override (e.g. claude-opus-4-5)
       --no-ci                                                            Declare that the project has no CI: when the provider reports no checks for a PR head, an approved Tallpine review of that exact head is the merge gate (failing or pending checks still block); --no-ci=false restores the default
@@ -2594,9 +2621,11 @@ Flags:
 Send a message to a running agent session and report what happened to it:
 "delivered" (written to the session; for a terminal that does not prove the
 agent has read it), "queued for next turn" (accepted, but the
-agent will only see it after its current turn or an interface transition) or
-"duplicate" (a message with that id was already accepted), with a delivery id
-when one exists. A message the agent cannot take right now is
+agent will only see it after its current turn or an interface transition),
+"delivery unconfirmed" (the session's provider refused its login, so the
+attempt reaches the agent only if that login was renewed; do not resend until
+the turn ends) or "duplicate" (a message with that id was already accepted), with a
+delivery id when one exists. A message the agent cannot take right now is
 refused with an error instead of being silently dropped.
 
 --relay-owner-message passes on a message the owner typed in your own chat
@@ -3025,7 +3054,7 @@ Flags:
       --branch string              Branch for git project sessions (default: tp/<session-id>/root; unsupported for standalone or Scratch sessions)
       --claim-pr string            Claim PR ownership metadata only for the spawned session; does not check out the PR branch
       --effort string              Reasoning effort override for this session only (e.g. low, medium, high); empty defers to the agent/model default
-      --force                      With --backlog, start the item even if it is held
+      --force                      With --backlog, start the item even if it is held or has an open blocker
       --harness string             Agent harness / --agent: claude-code, codex, kiro, deepseek-harness (default: project worker.agent; orchestrator spawns default to project orchestrator.agent; required if the project has none)
       --issue string               Issue id to associate with the session
       --kind string                Session role: worker or orchestrator (default: worker)

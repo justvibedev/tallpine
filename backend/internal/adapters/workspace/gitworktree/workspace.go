@@ -277,7 +277,7 @@ func (w *Workspace) ResolveDefaultBranch(ctx context.Context, repoPath, configur
 
 // FetchDefaultBranch refreshes the exact target returned by
 // ResolveDefaultBranch using an explicit refspec.
-func (w *Workspace) FetchDefaultBranch(ctx context.Context, repoPath string, target ports.WorkspaceDefaultBranch) error {
+func (w *Workspace) FetchDefaultBranch(ctx context.Context, repoPath string, target ports.WorkspaceDefaultBranch, gitEnv []string) error {
 	repo, err := physicalAbs(repoPath)
 	if err != nil {
 		return fmt.Errorf("gitworktree: repo path: %w", err)
@@ -299,11 +299,12 @@ func (w *Workspace) FetchDefaultBranch(ctx context.Context, repoPath string, tar
 	if err := w.validateBranch(ctx, repo, target.Branch); err != nil {
 		return err
 	}
-	key := repo + "\x00" + target.Remote + "\x00" + target.Branch
+	// Callers with different credentials must not share one fetch's result.
+	key := repo + "\x00" + target.Remote + "\x00" + target.Branch + "\x00" + gitEnvFingerprint(gitEnv)
 	fetched := defaultBranchFetches.DoChan(key, func() (any, error) {
 		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sharedDefaultBranchFetchTimeout)
 		defer cancel()
-		_, err := w.run(fetchCtx, w.binary, fetchBranchArgs(repo, target.Remote, target.Branch)...)
+		_, err := w.run(withGitEnv(fetchCtx, gitEnv), w.binary, fetchBranchArgs(repo, target.Remote, target.Branch)...)
 		return nil, err
 	})
 	select {
@@ -337,6 +338,7 @@ func runCommand(ctx context.Context, binary string, args ...string) ([]byte, err
 		cmd.Env = untranslatedGitEnv(cmd.Env)
 	}
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
+	cmd.Env = append(cmd.Env, gitEnvFrom(ctx)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return out, commandError{args: append([]string{binary}, args...), output: string(out), err: err}

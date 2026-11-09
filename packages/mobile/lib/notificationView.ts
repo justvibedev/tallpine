@@ -88,6 +88,8 @@ export function notificationVisual(t: Theme, type: string, urgency?: string): No
 			return { icon: "message-square-dot", color: t.amber, label: "Review changes requested" };
 		case "plan_waiting":
 			return { icon: "message-square-dot", color: t.amber, label: "Plan waiting" };
+		case "worktree_kept":
+			return { icon: "bell", color: t.textTertiary, label: "Worktree kept" };
 		default:
 			if (urgency === "critical" || urgency === "attention") {
 				return { icon: "message-square-dot", color: t.amber, label: type ? type.replace(/_/g, " ") : "Notification" };

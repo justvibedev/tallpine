@@ -192,7 +192,7 @@ function ScriptsEditor({ projectId, scratch, postCreate, preRemove, save, onSave
 		setDrafts((current) => ({ ...current, [kind]: steps }));
 		setSavedAt(false);
 	};
-	return <form id={formId} className="flex min-h-full shrink-0 flex-col gap-3" onSubmit={(event) => { event.preventDefault(); if (!timeoutError) mutation.mutate(commands); }}>
+	return <form id={formId} className="flex shrink-0 flex-col gap-3" onSubmit={(event) => { event.preventDefault(); if (!timeoutError) mutation.mutate(commands); }}>
 		<Tabs className="flex flex-1 flex-col gap-3" value={activeTab} onValueChange={(value) => setActiveTab(value as ScriptKind)}>
 			<TabsList aria-label={t("settings.project.scripts")} className="shrink-0 self-start">
 				<TabsTrigger value="setup">{t("settings.project.scriptSetup")}</TabsTrigger>

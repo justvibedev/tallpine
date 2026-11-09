@@ -4,6 +4,39 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.7]
+
+### Added
+- Pick a project's GitHub account from your signed-in accounts, with clearer repository settings (#1067).
+- A busy reviewer queues a rerun instead of dropping it, and resumes after a restart (#1065).
+
+### Changed
+- Cleanup tells you when it keeps a worktree (#1063).
+- Spawning a backlog item with an unfinished blocker is refused unless you pass `--force` (#1056).
+
+### Fixed
+- Daemon git fetch and land run as the project's GitHub account (#1066).
+- Reviewer and local CI accounts are chosen per repository, and failures are surfaced (#1050).
+- Squash commits keep the PR-body trailers (#1054).
+- A project can use a canonical repo URL on a different host, and tracks it (#1060).
+- Orchestrators no longer change git remotes or publish to new hosts (#1061).
+- Cleanup stops retrying teardown of sessions in archived projects (#1064).
+- Workers get branch names Git can create (#1042).
+- Plans hold auto-approve for owner-flagged decisions and retire abandoned child tasks on replan (#1041).
+- Finished workers with no merged PR are closed (#1039).
+- Auto-review follows the project setting for live workers, and test-only paths no longer escalate (#1043).
+- Owner messages sent with "last" always resolve to the newest owner message (#1049).
+- Sending to a session that needs re-authentication reports unconfirmed delivery (#1048).
+- A mid-turn orchestrator is no longer reported as a failed delivery (#1047).
+- The rebase warning is skipped when the PR head already contains the merge commit (#1046).
+- A worker's undelivered turn result is carried in the close notice (#1045).
+- Stale tool-server status clears when a project conversation is rebound (#1044).
+- `review ls` shows the branch for no-PR reviews, and land notes local-ahead commits on non-hosted repos (#1059).
+- The CLI falls back to loopback TCP when the daemon socket is unreachable (#1057).
+
+### Internal
+- Test and CI only: regenerated sqlc models, stabilized flaky tests, and a desktop-dev skill update (#1040, #1051, #1052, #1053, #1055, #1058, #1062).
+
 ## [0.13.6]
 
 ### Changed

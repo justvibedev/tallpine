@@ -21,6 +21,9 @@ type ListReviewsResponse struct {
 	// ActiveReviewers is every reviewer with a live pane or a running pass,
 	// selected reviewer first. Several reviewers can work on one worker at once.
 	ActiveReviewers []domain.ReviewerSurface `json:"activeReviewers"`
+	// QueuedReviews are passes waiting for the reviewer to be free; none has a
+	// run yet. `review cancel` withdraws them.
+	QueuedReviews []domain.QueuedReviewTrigger `json:"queuedReviews"`
 }
 
 // TriggerReviewResponse is the body of trigger (200/201). reviews carries the
@@ -33,6 +36,9 @@ type TriggerReviewResponse struct {
 	// Created is true when a new review pass was started (HTTP 201) and false
 	// when an existing run for the same commit was reused (HTTP 200).
 	Created bool `json:"created" description:"True when a new review pass was started; false when an existing run for the same commit was reused."`
+	// Queued is true when the reviewer was busy and the pass was parked to start
+	// once it is free (HTTP 200, nothing created yet).
+	Queued bool `json:"queued" description:"True when the reviewer was busy on another head and the pass was queued to start once it is free; nothing was created yet."`
 	// AutoInjectEnabled is true when this request turned the worker session's
 	// review auto-inject on.
 	AutoInjectEnabled bool `json:"autoInjectEnabled" description:"True when this request turned the worker session's review auto-inject on."`

@@ -20,7 +20,7 @@ func (p *PlanService) ApproveWaiting(ctx context.Context, projectID domain.Proje
 		return
 	}
 	for _, plan := range plans {
-		if plan.Status != domain.PlanAwaitingApproval {
+		if plan.Status != domain.PlanAwaitingApproval || decisionsNeedOwner(plan.DecisionsMD) {
 			continue
 		}
 		ref := p.refOf(ctx, plan.ItemID)

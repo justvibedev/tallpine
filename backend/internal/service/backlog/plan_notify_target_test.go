@@ -62,7 +62,7 @@ func TestInPlaceReplanRecordsTheOrchestratorThatAskedForIt(t *testing.T) {
 func TestSpawnInPlaceRecordsTheSpawningOrchestrator(t *testing.T) {
 	e := inPlaceEnv(t)
 	ctx := backlog.WithSpawner(e.ctx, planOrch)
-	sp, err := e.bl.PrepareSpawnPlan(ctx, "p1", e.item.Ref(), false, false, "")
+	sp, err := e.bl.PrepareSpawnPlan(ctx, "p1", e.item.Ref(), false, false, false, "")
 	if err != nil || sp.PlanID == "" {
 		t.Fatalf("PrepareSpawnPlan = %+v, %v", sp, err)
 	}

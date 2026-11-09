@@ -117,6 +117,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 	}
 	notice := s.failureNotice()
 	if notice == nil {
+		s.drainQueuedTriggers(ctx)
 		return nil
 	}
 	ids, err := notice.store.ListSessionsWithRunningReviewRuns(ctx)
@@ -142,6 +143,9 @@ func (s *Service) Sweep(ctx context.Context) error {
 			slog.Default().DebugContext(ctx, "review sweep could not reconcile session", "session", id, "err", err)
 		}
 	}
+	// After the deadline and reconcile passes, so a hung launch here cannot
+	// hold them up and a pass they just freed can start in the same sweep.
+	s.drainQueuedTriggers(ctx)
 	return s.NotifyEndedRuns(ctx)
 }
 

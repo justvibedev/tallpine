@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -97,8 +98,11 @@ func (m *Manager) githubHosts(project domain.ProjectID) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), githubAccountEnvTimeout)
 	defer cancel()
 	if row, err := m.loadProject(ctx, project); err == nil {
-		if host := githubcreds.HostOf(row.RepoOriginURL); host != "" {
-			hosts = append(hosts, host)
+		// The origin host stays: checkout and push remain on origin after a move.
+		for _, remote := range []string{row.RepoOriginURL, row.Config.CredentialRepoURL(row.RepoOriginURL)} {
+			if host := githubcreds.HostOf(remote); host != "" && !slices.Contains(hosts, host) {
+				hosts = append(hosts, host)
+			}
 		}
 	}
 	return hosts
@@ -172,22 +176,38 @@ func (m *Manager) writeGHHosts(dir string, project domain.ProjectID, projectEnv 
 	// Same order as githubcred.Service.token: a token the daemon pins explicitly
 	// (narrow by intent) beats the project's account, so the real gh is never
 	// given a broader token than the helper would serve.
-	token := strings.TrimSpace(os.Getenv("TALLPINE_GITHUB_TOKEN"))
-	if token == "" {
+	pinned := strings.TrimSpace(os.Getenv("TALLPINE_GITHUB_TOKEN"))
+	var row domain.ProjectRecord
+	if pinned == "" {
 		ctx, cancel := context.WithTimeout(context.Background(), githubAccountEnvTimeout)
 		defer cancel()
-		row, err := m.loadProject(ctx, project)
-		if err != nil || row.RepoOriginURL == "" {
-			return
-		}
-		token, err = m.githubAccounts.TokenForProject(ctx, row.RepoOriginURL, row.Config.GitHubUser)
-		if err != nil || strings.TrimSpace(token) == "" {
+		var err error
+		if row, err = m.loadProject(ctx, project); err != nil || row.RepoOriginURL == "" {
 			return
 		}
 	}
 	var b strings.Builder
 	for _, host := range m.githubHosts(project) {
+		token := pinned
+		if token == "" {
+			// The account is resolved per host so a token for a moved-to repo is
+			// never written under the old origin host.
+			ctx, cancel := context.WithTimeout(context.Background(), githubAccountEnvTimeout)
+			remote, ok := row.Config.AccountRemoteForHost(row.RepoOriginURL, host)
+			var t string
+			var err error
+			if ok {
+				t, err = m.githubAccounts.TokenForProject(ctx, remote, row.Config.GitHubUser)
+			}
+			cancel()
+			if token = strings.TrimSpace(t); !ok || err != nil || token == "" {
+				continue
+			}
+		}
 		b.WriteString(host + ":\n    oauth_token: " + shellQuote(token) + "\n    git_protocol: https\n")
+	}
+	if b.Len() == 0 {
+		return
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
 		m.logger.Warn("gh login for the session unavailable; gh may be unauthenticated", "project", project, "error", err)

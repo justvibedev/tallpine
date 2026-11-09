@@ -79,7 +79,7 @@ EOF2
 ## Lifecycle (automatic)
 
 - `tallpine spawn --backlog B12` links the worker's session to the item. The item must
-  be `open`, unheld (or `--force`) and not a parent. The item's title, note,
+  be `open`, unheld and without an open blocker (or `--force`), and not a parent. The item's title, note,
   done-when and agent notes become part of the worker's task.
 - When **every** PR linked to the item, or opened by a linked session, is
   merged, the item becomes `done` ("merged #N"), whether the merge came from

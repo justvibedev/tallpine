@@ -205,10 +205,13 @@ type DelegateTaskRequest struct {
 	// note, done-when and agent notes join the worker's task and the session is
 	// linked to the item, as `tallpine spawn --backlog` does.
 	BacklogRef string `json:"backlogRef,omitempty" maxLength:"64"`
-	// BacklogForce starts a held backlog item anyway.
+	// BacklogForce starts a held backlog item, or one with an open blocker, anyway.
 	BacklogForce bool `json:"backlogForce,omitempty"`
 	// BacklogAllowDuplicate starts the item although a live session already holds it.
 	BacklogAllowDuplicate bool `json:"backlogAllowDuplicate,omitempty"`
+	// BacklogAllowBlocked starts the item although a blocker is unfinished, without
+	// skipping the plan checks (unlike BacklogForce).
+	BacklogAllowBlocked bool `json:"backlogAllowBlocked,omitempty"`
 }
 
 // PrepareTaskResponse returns the opaque token for a speculative task workspace.

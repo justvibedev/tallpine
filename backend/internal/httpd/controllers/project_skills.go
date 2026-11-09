@@ -13,6 +13,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apispec"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/skillbridge"
 )
 
@@ -25,6 +26,9 @@ type ProjectSkillsController struct {
 	// DefaultBranch resolves the ref session worktrees start from, the same
 	// resolution session spawn uses. Nil disables committing.
 	DefaultBranch DefaultBranchResolver
+	// GitCredentials fetches and pushes as the project's GitHub account. Nil
+	// keeps the machine's git login.
+	GitCredentials ports.ProjectGitCredentials
 }
 
 // ProjectSkillHarness is how one harness sees a skill or the instruction file:
@@ -129,6 +133,7 @@ func (c *ProjectSkillsController) Register(r chi.Router) {
 
 // projectScan is what the skills routes need of a project.
 type projectScan struct {
+	id            domain.ProjectID
 	path          string
 	env           map[string]string
 	harnesses     []string
@@ -150,7 +155,7 @@ func (c *ProjectSkillsController) scan(w http.ResponseWriter, r *http.Request) (
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "PROJECT_DEGRADED", "project config could not be loaded", nil)
 		return projectScan{}, false
 	}
-	out := projectScan{path: res.Project.Path, offersEnabled: true}
+	out := projectScan{id: domain.ProjectID(chi.URLParam(r, "id")), path: res.Project.Path, offersEnabled: true}
 	seen := map[string]bool{}
 	add := func(h string) {
 		if h != "" && !seen[h] {

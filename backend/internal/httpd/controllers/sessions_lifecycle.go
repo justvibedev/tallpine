@@ -153,7 +153,7 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "BACKLOG_PROJECT_REQUIRED", "backlogRef needs a project session", nil)
 		return
 	}
-	backlogItem, warnings, ok := c.prepareBacklogSpawn(w, r, "POST", "/api/v1/sessions", in.ProjectID, in.BacklogRef, in.BacklogForce, in.BacklogAllowDuplicate, in.BacklogPlan)
+	backlogItem, warnings, ok := c.prepareBacklogSpawn(w, r, "POST", "/api/v1/sessions", in.ProjectID, in.BacklogRef, in.BacklogForce, in.BacklogAllowDuplicate, in.BacklogAllowBlocked, in.BacklogPlan)
 	if !ok {
 		return
 	}
@@ -182,7 +182,7 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 
 // BacklogSpawner is the backlog side of `tallpine spawn --backlog`.
 type BacklogSpawner interface {
-	PrepareSpawnPlan(ctx context.Context, projectID domain.ProjectID, ref string, force, allowDuplicate bool, arm string) (backlogsvc.SpawnItem, error)
+	PrepareSpawnPlan(ctx context.Context, projectID domain.ProjectID, ref string, force, allowDuplicate, allowBlocked bool, arm string) (backlogsvc.SpawnItem, error)
 	// AttachInPlaceAuthor and ReleaseInPlace settle the plan PrepareSpawnPlan
 	// reserved for an in-place implementer.
 	AttachInPlaceAuthor(ctx context.Context, planID string, sid domain.SessionID) error

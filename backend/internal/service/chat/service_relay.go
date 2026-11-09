@@ -156,6 +156,9 @@ func (s *Service) RelaySessionChatTurnReceipt(ctx context.Context, id domain.Ses
 			return receipt, err
 		}
 	}
+	// Read before the send: this turn's own refusal must not relabel it, and a
+	// refusal already on record is what the sender has to be told about.
+	reauthRequired := controller.reauthRequired(ctx)
 	turn, err := controller.Send(ctx, msg)
 	if err != nil {
 		return ports.MessageReceipt{}, err
@@ -167,6 +170,9 @@ func (s *Service) RelaySessionChatTurnReceipt(ctx context.Context, id domain.Ses
 	}
 	if turn.State == domain.TurnStateQueued {
 		return ports.MessageReceipt{Outcome: ports.MessageQueued, ID: turn.ID, WaitingOnInput: waitingOnInput}, nil
+	}
+	if reauthRequired {
+		return ports.MessageReceipt{Outcome: ports.MessageReauthRequired, ID: turn.ID}, nil
 	}
 	return ports.MessageReceipt{Outcome: ports.MessageDelivered, ID: turn.ID}, nil
 }

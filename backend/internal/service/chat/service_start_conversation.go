@@ -64,12 +64,22 @@ func (s *Service) openConversation(ctx context.Context, l *launch) error {
 			l.conversation.ActiveBranchID != handoff.PreviousBranchID || l.conversation.LatestSequence != handoff.PreviousSequence) {
 			err = errors.New("native Chat handoff conversation changed")
 		}
+		if err == nil && handoff.PreviousSessionID != l.cfg.SessionID {
+			// A different session's provider reported this state; the commit
+			// clears it, and the new controller must not be seeded with it.
+			l.conversation.MCPServers, l.conversation.ThreadState = nil, nil
+		}
 	} else if providerSwitch := l.cfg.ProviderSwitch; providerSwitch != nil {
 		l.conversation, err = s.store.ConversationForSession(ctx, l.cfg.SessionID)
 		if err == nil && (l.conversation.ID != providerSwitch.ConversationID ||
 			l.conversation.ActiveBranchID != providerSwitch.SourceBranchID ||
 			l.conversation.LatestSequence != providerSwitch.SourceSequence) {
 			err = errors.New("provider switch conversation changed")
+		}
+		if err == nil {
+			// The source provider's reports do not describe the target; seeding
+			// the controller with them would persist them again.
+			l.conversation.MCPServers, l.conversation.ThreadState = nil, nil
 		}
 	} else if l.freshProjectContext && l.firstController {
 		// What the user typed while this orchestrator provisioned waits in a

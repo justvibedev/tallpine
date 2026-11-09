@@ -34,7 +34,7 @@ type NotificationResponse struct {
 	SessionID string `json:"sessionId"`
 	ProjectID string `json:"projectId"`
 	PRURL     string `json:"prUrl"`
-	Type      string `json:"type" enum:"needs_input,ready_to_merge,pr_merged,pr_closed_unmerged,review_completed,review_changes_requested,orchestrator_approval,plan_waiting"`
+	Type      string `json:"type" enum:"needs_input,ready_to_merge,pr_merged,pr_closed_unmerged,review_completed,review_changes_requested,orchestrator_approval,plan_waiting,worktree_kept"`
 	// Urgency is derived from Type (domain.NotificationType.Urgency).
 	Urgency   string    `json:"urgency,omitempty" enum:"critical,attention,info" description:"How insistently clients should signal: critical = blocked on the human, attention = actionable, info = settled fact."`
 	Title     string    `json:"title"`

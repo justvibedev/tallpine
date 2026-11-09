@@ -306,6 +306,7 @@ func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []
 		env[EnvTallpineCommandWarning] = fmt.Sprintf("PATH pin failed: %v; Tallpine shim fallback failed: %v", err, shimErr)
 	}
 	agentlaunch.AugmentRuntimePATHForLaunchBinary(ctx, env, argv, exec.LookPath, pinnedDir)
+	l.applyGitHubAccountEnv(ctx, spec, env)
 	l.applyEnvFilter(ctx, spec, env)
 	return env
 }

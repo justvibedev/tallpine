@@ -1355,6 +1355,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/github/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the gh accounts signed in to github.com (logins only, never tokens) */
+        get: operations["listGitHubAccounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/github/pat": {
         parameters: {
             query?: never;
@@ -2053,6 +2070,23 @@ export interface paths {
         };
         /** Report which GitHub login the project's token actually authenticates as and whether it can push to the repo */
         get: operations["getProjectGitHubAccountCheck"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/github-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the gh accounts signed in to github.com with push access to the project's repo and the account auto-pick chooses (logins only) */
+        get: operations["getProjectGitHubAccounts"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6432,6 +6466,8 @@ export interface components {
             links: components["schemas"]["BacklogLinkResponse"][];
             /** @description Markdown body. */
             note: string;
+            /** @description Refs of blocked_by items that are not done or dropped, on list and single-item reads. Starting the item is refused unless forced while any remain. */
+            openBlockers: string[];
             origin: components["schemas"]["BacklogOriginResponse"];
             parentId?: string;
             parentRef?: string;
@@ -6712,6 +6748,7 @@ export interface components {
             retentionDays: number;
         };
         CleanupItem: {
+            attention?: boolean;
             /** Format: int64 */
             bytes: number;
             path?: string;
@@ -7664,6 +7701,7 @@ export interface components {
             /** @enum {string} */
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
             attachments?: components["schemas"]["AttachmentInput"][];
+            backlogAllowBlocked?: boolean;
             backlogAllowDuplicate?: boolean;
             backlogForce?: boolean;
             backlogRef?: string;
@@ -7726,6 +7764,20 @@ export interface components {
             allowlist?: string[];
             codexDefault?: string;
             denylist?: string[];
+        };
+        DomainQueuedReviewTrigger: {
+            attempts: number;
+            /** Format: date-time */
+            createdAt: string;
+            effort?: string;
+            interfaceMode?: string;
+            model?: string;
+            /** Format: date-time */
+            nextAttemptAt: string;
+            pullRequestUrl: string;
+            reviewerHarness: string;
+            sessionId: string;
+            triggerSource: string;
         };
         DomainReviewRiskConfig: {
             effort?: string;
@@ -7833,6 +7885,18 @@ export interface components {
             name: string;
             /** @description Absolute path of the directory on the daemon host. */
             path: string;
+        };
+        GitHubAccountItem: {
+            /** @enum {string} */
+            canPush?: "yes" | "no" | "unknown";
+            login: string;
+        };
+        GitHubAccountsResponse: {
+            accounts: components["schemas"]["GitHubAccountItem"][];
+            autoPick?: string;
+            override?: string;
+            repo?: string;
+            unavailable?: boolean;
         };
         GitHubCredentialRequest: {
             host: string;
@@ -8067,6 +8131,7 @@ export interface components {
         };
         ListReviewsResponse: {
             activeReviewers: components["schemas"]["DomainReviewerSurface"][];
+            queuedReviews: components["schemas"]["DomainQueuedReviewTrigger"][];
             /** @enum {string} */
             reviewerActivityState?: "active" | "idle" | "waiting_input" | "blocked" | "exited";
             reviewerHandleId: string;
@@ -8278,7 +8343,7 @@ export interface components {
             target: components["schemas"]["NotificationTarget"];
             title: string;
             /** @enum {string} */
-            type: "needs_input" | "ready_to_merge" | "pr_merged" | "pr_closed_unmerged" | "review_completed" | "review_changes_requested" | "orchestrator_approval" | "plan_waiting";
+            type: "needs_input" | "ready_to_merge" | "pr_merged" | "pr_closed_unmerged" | "review_completed" | "review_changes_requested" | "orchestrator_approval" | "plan_waiting" | "worktree_kept";
             /**
              * @description How insistently clients should signal: critical = blocked on the human, attention = actionable, info = settled fact.
              * @enum {string}
@@ -8900,6 +8965,7 @@ export interface components {
             id: string;
             model?: string;
             modelReason?: string;
+            postFailed?: boolean;
             prUrl: string;
             reviewId: string;
             sessionId: string;
@@ -8969,7 +9035,7 @@ export interface components {
             message: string;
             ok: boolean;
             /** @enum {string} */
-            outcome?: "delivered" | "queued" | "duplicate";
+            outcome?: "delivered" | "queued" | "duplicate" | "reauth_required";
             sessionId: string;
             waitingOnInput?: boolean;
         };
@@ -9816,6 +9882,7 @@ export interface components {
             /** @enum {string} */
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
             attachments?: components["schemas"]["AttachmentInput"][];
+            backlogAllowBlocked?: boolean;
             backlogAllowDuplicate?: boolean;
             backlogForce?: boolean;
             /** @enum {string} */
@@ -10137,6 +10204,8 @@ export interface components {
             autoInjectEnabled: boolean;
             /** @description True when a new review pass was started; false when an existing run for the same commit was reused. */
             created: boolean;
+            /** @description True when the reviewer was busy on another head and the pass was queued to start once it is free; nothing was created yet. */
+            queued: boolean;
             reviewerHandleId: string;
             reviewerSurface?: components["schemas"]["DomainReviewerSurface"];
             reviews: components["schemas"]["PRReviewState"][];
@@ -15051,6 +15120,44 @@ export interface operations {
             };
         };
     };
+    listGitHubAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubAccountsResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     putGitHubPAT: {
         parameters: {
             query?: never;
@@ -17394,6 +17501,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectGitHubAccountCheckResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getProjectGitHubAccounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubAccountsResponse"];
                 };
             };
             /** @description Not Found */

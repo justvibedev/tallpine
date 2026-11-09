@@ -4,12 +4,14 @@ import "time"
 
 // MergeDigestPR is one pull request as the cross-lane merge digest sees it.
 type MergeDigestPR struct {
-	URL       string
-	Number    int
-	State     PRState
-	Title     string
-	HeadSHA   string
-	SessionID SessionID
+	URL     string
+	Number  int
+	State   PRState
+	Title   string
+	HeadSHA string
+	// MergeCommitSHA is the merge commit of a merged PR ("" when unknown).
+	MergeCommitSHA string
+	SessionID      SessionID
 	// LaneItemID is the lane of the owning session ("" = un-laned).
 	LaneItemID string
 	UpdatedAt  time.Time

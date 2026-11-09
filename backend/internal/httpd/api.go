@@ -102,7 +102,7 @@ type APIDeps struct {
 	AgentPolicy controllers.AgentPolicyService
 	// AgentPolicyDecisions reads the per-session decision records.
 	AgentPolicyDecisions controllers.AgentPolicyDecisions
-	// GitHubCredentials issues per-use GitHub credentials to helper-mode agents.
+	// GitHubCredentials issues per-use GitHub credentials to helper-mode agents and runs the daemon's own git as the project's account.
 	GitHubCredentials controllers.GitHubCredentialService
 	// SessionCommit commits in a session's own worktree for sandboxed workers.
 	SessionCommit controllers.SessionCommitService
@@ -330,7 +330,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		sessionCommit:  &controllers.SessionCommitController{Svc: deps.SessionCommit},
 		sessionLand:    &controllers.SessionLandController{Svc: deps.SessionLand},
 		projectGitHub:  &controllers.ProjectGitHubAccountController{Checker: deps.GitHubAccountCheck},
-		projectSkills:  &controllers.ProjectSkillsController{Projects: deps.Projects, DefaultBranch: deps.DefaultBranch},
+		projectSkills:  &controllers.ProjectSkillsController{Projects: deps.Projects, DefaultBranch: deps.DefaultBranch, GitCredentials: deps.GitHubCredentials},
 		agentPolicy:    &controllers.AgentPolicyController{Audit: deps.SettingsAudit, Svc: deps.AgentPolicy, Projects: deps.Projects, Decisions: deps.AgentPolicyDecisions},
 		artifactStore:  &controllers.ArtifactStorageController{Svc: deps.ArtifactStorage},
 		cleanup:        &controllers.CleanupController{Audit: deps.SettingsAudit, Svc: deps.Cleanup},

@@ -163,7 +163,7 @@ func (c *SessionsController) delegateTask(w http.ResponseWriter, r *http.Request
 		requestHash = clientRequestFingerprint("delegate", keyless, attachments)
 	}
 
-	backlogItem, warnings, ok := c.prepareBacklogSpawn(w, r, "POST", "/api/v1/orchestrators/delegate", in.ProjectID, in.BacklogRef, in.BacklogForce, in.BacklogAllowDuplicate, "separate")
+	backlogItem, warnings, ok := c.prepareBacklogSpawn(w, r, "POST", "/api/v1/orchestrators/delegate", in.ProjectID, in.BacklogRef, in.BacklogForce, in.BacklogAllowDuplicate, in.BacklogAllowBlocked, "separate")
 	if !ok {
 		return
 	}

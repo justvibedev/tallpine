@@ -101,13 +101,17 @@ Verified recipe for visually verifying UI from a worker worktree, with no touch 
 ```bash
 cd frontend && npm ci --no-audit --no-fund && npm rebuild   # once
 S=$TMPDIR/dv; mkdir -p "$S"
-TALLPINE_PORT=3377 TALLPINE_DEV_ELECTRON_DIR=$S/electron TALLPINE_RUN_FILE=$S/running.json \
-  TALLPINE_DATA_DIR=$S/data npm run dev -- -- --remote-debugging-port=9339 > "$S/log" 2>&1 &
+# Ask the kernel for free ports (a small bind/release race remains; the ownership check below catches it).
+freeport() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])'; }
+DAEMON_PORT=$(freeport); CDP_PORT=$(freeport)
+TALLPINE_PORT=$DAEMON_PORT TALLPINE_DEV_ELECTRON_DIR=$S/electron TALLPINE_RUN_FILE=$S/running.json \
+  TALLPINE_DATA_DIR=$S/data npm run dev -- -- --remote-debugging-port=$CDP_PORT > "$S/log" 2>&1 &
+echo $! > "$S/pid"; echo $CDP_PORT > "$S/cdp-port"
 ```
 
-- Pick any free port (never 3101/3102). Scratch dirs under `$TMPDIR` are honoured; without overrides state goes to `~/.tallpine/dev/checkouts/<hash>` and a derived port in 3200-3699.
+- Never hard-code the debug port (e.g. 9339) or the daemon port: parallel worktrees share the machine, and a taken `--remote-debugging-port` can leave you driving another session's app over CDP. Use the `freeport` ports above (never 3101/3102), and before attaching confirm the CDP target is yours: `lsof -nP -iTCP:$CDP_PORT -sTCP:LISTEN` must show a process whose command line contains this worktree's path (`ps -o command= -p <pid>`); if it is not, stop and pick another port instead of attaching. Scratch dirs under `$TMPDIR` are honoured; without overrides state goes to `~/.tallpine/dev/checkouts/<hash>` and a derived port in 3200-3699.
 - No host Go is needed: `build-daemon.mjs` falls back to `scripts/go`.
-- `screencapture` fails in a worker (no display access). Capture through CDP instead: connect to the `webSocketDebuggerUrl` from `curl localhost:9339/json`, `Emulation.setDeviceMetricsOverride` (<=1000px wide), click through the UI with `Runtime.evaluate`, then `Page.captureScreenshot`. A fresh data dir shows a "Before you start" dialog: click "I understand" first.
+- `screencapture` fails in a worker (no display access). Capture through CDP instead: connect to the `webSocketDebuggerUrl` from `curl localhost:$CDP_PORT/json` (CDP_PORT is saved in `$S/cdp-port`), `Emulation.setDeviceMetricsOverride` (<=1000px wide), click through the UI with `Runtime.evaluate`, then `Page.captureScreenshot`. A fresh data dir shows a "Before you start" dialog: click "I understand" first.
 - Wait about 90s for the first build. Stop by killing only this checkout's PIDs (`ps -axo pid=,command= | grep <worktree>/frontend`), then confirm the port is free.
 
 ## Reload changes correctly
@@ -144,7 +148,7 @@ Once one PR merges, prefer rebasing the remaining PR onto current `main`; the no
 - A packaged build outside `/Applications` copies itself into `/Applications` on launch when nothing is installed there. Any packaged smoke test must set `TALLPINE_DISABLE_RELOCATION=1` plus a scratch `HOME` and `TALLPINE_DATA_DIR`. The app also refuses to relocate for a non-default `TALLPINE_DATA_DIR`/`TALLPINE_RUN_FILE`, or a bundle under `~/.tallpine` or `frontend/out/`, but set the flag anyway.
 - `tallpine preview` controls the Tallpine Browser panel; it does not launch the desktop shell.
 - `npm run dev:web` is useful for browser-only renderer work but does not provide Electron APIs or native chrome.
-- Renderer URLs can move from `5173` when a port is occupied. Trust Forge's printed URL rather than assuming one.
+- Renderer URLs can move from `5173` when a port is occupied (Vite picks the next free one). Trust Forge's printed URL rather than assuming one, and never attach to a Vite/CDP port you did not launch.
 - Multiple dev instances share `~/.tallpine/dev/electron` by default, and Chromium's
   singleton lock lives in the profile, so a second checkout's `npm run dev`
   loses `requestSingleInstanceLock()` and exits immediately with code 0. To run

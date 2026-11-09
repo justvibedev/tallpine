@@ -28,6 +28,7 @@ export function backlogItem(overrides: Partial<BacklogItem> = {}): BacklogItem {
 		updatedAt: daysAgo(1),
 		links: [],
 		linkCounts: {},
+		openBlockers: [],
 		badges: { active: false, inReview: false, landed: false },
 		...overrides,
 	};

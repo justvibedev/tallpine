@@ -20,6 +20,28 @@ type autoCloseHooks struct {
 	send         func(ctx context.Context, to domain.SessionID, msg string) error
 	log          *slog.Logger
 	jobs         *turnnotify.ProcessJobs
+	// branchWork reads a worker's git state for the finished-worker close (B588).
+	branchWork func(ctx context.Context, rec domain.SessionRecord) domain.WorkerBranchWork
+	// turns reads a closing worker's undelivered turn result (B557).
+	turns interface {
+		UndeliveredTurnResult(ctx context.Context, rec domain.SessionRecord) string
+	}
+}
+
+// UndeliveredTurnResult reads the result a close would lose, or "" (B557).
+func (h autoCloseHooks) UndeliveredTurnResult(ctx context.Context, rec domain.SessionRecord) string {
+	if h.turns == nil {
+		return ""
+	}
+	return h.turns.UndeliveredTurnResult(ctx, rec)
+}
+
+// withUndeliveredResult appends the result only this notice can still carry.
+func withUndeliveredResult(notice, undelivered string) string {
+	if undelivered == "" {
+		return notice
+	}
+	return notice + "\nIts last turn result had not reached you:\n" + undelivered
 }
 
 func (h autoCloseHooks) HasQueuedMessages(ctx context.Context, id domain.SessionID) (bool, error) {
@@ -60,11 +82,7 @@ func (h autoCloseHooks) EndOnMergeSessions(ctx context.Context) ([]domain.Sessio
 
 // NotifyHeld tells the orchestrator a close has been held past the bound.
 func (h autoCloseHooks) NotifyHeld(ctx context.Context, rec domain.SessionRecord, reason string) {
-	lane := ""
-	if lanes, err := h.store.ListSessionLanes(ctx, rec.ProjectID); err == nil {
-		lane = lanes[rec.ID]
-	}
-	to, ok := h.orchestrator(ctx, rec.ProjectID, lane)
+	to, ok := h.orchestratorFor(ctx, rec)
 	if !ok {
 		return
 	}
@@ -88,18 +106,25 @@ func (h autoCloseHooks) RunningJobs(ctx context.Context, rec domain.SessionRecor
 	return h.jobs.RunningJobs(ctx, rec)
 }
 
-func (h autoCloseHooks) NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID) {
+// orchestratorFor picks the worker's orchestrator, lane first.
+func (h autoCloseHooks) orchestratorFor(ctx context.Context, rec domain.SessionRecord) (domain.SessionID, bool) {
 	lane := ""
 	if lanes, err := h.store.ListSessionLanes(ctx, rec.ProjectID); err == nil {
 		lane = lanes[rec.ID]
 	}
-	to, ok := h.orchestrator(ctx, rec.ProjectID, lane)
-	// The orchestrator that landed the PR already knows it ended (B560).
-	if !ok || to == requester {
+	return h.orchestrator(ctx, rec.ProjectID, lane)
+}
+
+func (h autoCloseHooks) NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID, undelivered string) {
+	to, ok := h.orchestratorFor(ctx, rec)
+	// The orchestrator that landed the PR already knows it ended (B560), but
+	// not what the worker last said (B557).
+	if !ok || (to == requester && undelivered == "") {
 		return
 	}
 	// Only the session id: the display name is worker-controlled text.
 	msg := fmt.Sprintf("[auto] session_closed: %s ended on its own because all its PRs are merged or closed and it was idle with nothing queued. Restore it if you still need it.", rec.ID)
+	msg = withUndeliveredResult(msg, undelivered)
 	if err := h.send(ctx, to, msg); err != nil && h.log != nil {
 		h.log.Warn("auto-close notice failed", "session", rec.ID, "orchestrator", to, "err", err)
 	}

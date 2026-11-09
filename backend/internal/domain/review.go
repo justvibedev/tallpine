@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"tallpine.eu/tallpine/backend/pkg/contract"
@@ -96,12 +97,34 @@ type ReviewRun struct {
 	// submit time. It is empty when the reviewer could not post to the provider.
 	// When the pass requests changes, Tallpine includes it in the message to the
 	// worker so the worker knows exactly which review to address and reply to.
-	GithubReviewID string     `json:"githubReviewId"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	DeliveredAt    *time.Time `json:"deliveredAt,omitempty"`
+	GithubReviewID string `json:"githubReviewId"`
+	// PostFailed marks a finished pass whose review never reached the PR, so its
+	// findings exist only in Tallpine. Derived from the other fields when a run is
+	// read (see NotPostedToPR); it is not stored.
+	PostFailed  bool       `json:"postFailed,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	DeliveredAt *time.Time `json:"deliveredAt,omitempty"`
 	// AutoInjectReview snapshots the session policy when this result is first
 	// recorded. Later toggle changes must not rewrite or deliver this run.
 	AutoInjectReview bool `json:"autoInjectReview"`
+}
+
+// LocalReviewTargetPrefix starts the synthetic review key of a session branch
+// that has no PR. Runs for such a branch are stored under local:<branch> in the
+// PR URL column; nothing else is stored.
+const LocalReviewTargetPrefix = "local:"
+
+// IsLocalReviewTarget reports whether a review key names a local branch, not a PR.
+func IsLocalReviewTarget(url string) bool { return strings.HasPrefix(url, LocalReviewTargetPrefix) }
+
+// NotPostedToPR reports whether a finished pass on a PR recorded a verdict but
+// no GitHub review: the reviewer could not post it. A local branch review has
+// no PR to post to, and a pass without a verdict has nothing to post.
+func (r ReviewRun) NotPostedToPR() bool {
+	if r.Status != ReviewRunComplete && r.Status != ReviewRunDelivered {
+		return false
+	}
+	return r.Verdict != VerdictNone && r.GithubReviewID == "" && !IsLocalReviewTarget(r.PRURL)
 }
 
 // ReviewTriggerSource identifies who initiated a review pass.
@@ -139,6 +162,27 @@ const (
 	VerdictApproved         = contract.TallpineReviewVerdictApproved
 	VerdictChangesRequested = contract.TallpineReviewVerdictChangesRequested
 )
+
+// QueuedReviewTrigger is a review pass waiting for its reviewer to be free: an
+// agent asked for it while the reviewer was busy, or the one-shot retry of a
+// dead pass found the reviewer busy. It names the PR, not a commit, so the pass
+// reviews the head the PR has when it starts, and keeps the options the
+// requester chose.
+type QueuedReviewTrigger struct {
+	SessionID     SessionID             `json:"sessionId"`
+	PRURL         string                `json:"pullRequestUrl"`
+	Harness       ReviewerHarness       `json:"reviewerHarness"`
+	CreatedAt     time.Time             `json:"createdAt"`
+	Model         string                `json:"model,omitempty"`
+	Effort        string                `json:"effort,omitempty"`
+	InterfaceMode ReviewerInterfaceMode `json:"interfaceMode,omitempty"`
+	// TriggerSource is who asked: an automatic pass keeps its auto policy and
+	// attribution when it finally starts.
+	TriggerSource ReviewTriggerSource `json:"triggerSource"`
+	// Attempts counts failed starts; NextAttemptAt is the earliest next one.
+	Attempts      int       `json:"attempts"`
+	NextAttemptAt time.Time `json:"nextAttemptAt"`
+}
 
 // CurrentHeadReviewRun is one Tallpine review pass recorded against a PR's current
 // head commit, reduced to the fields a derived read model needs.

@@ -1226,6 +1226,7 @@ type fakeWorkspace struct {
 	resolves    []resolveDefaultBranchCall
 	resolved    map[string]ports.WorkspaceDefaultBranch
 	fetchFunc   func(context.Context, string, ports.WorkspaceDefaultBranch) error
+	fetchEnvs   [][]string
 	// createRepoPath, when set, is returned as the RepoPath of a single-repo
 	// Create so tests can assert it survives the spawn->teardown metadata round
 	// trip (production Create resolves this path; the zero default keeps every
@@ -1265,13 +1266,6 @@ type fakeWorkspace struct {
 	sharedLog *[]string
 }
 
-type fetchDefaultBranchCall struct {
-	repoPath string
-	remote   string
-	branch   string
-	baseRef  string
-}
-
 type resolveDefaultBranchCall struct {
 	repoPath         string
 	configuredBranch string
@@ -1291,17 +1285,6 @@ func (w *fakeWorkspace) ResolveDefaultBranch(_ context.Context, repoPath, config
 		Branch:  branch,
 		BaseRef: "refs/remotes/origin/" + branch,
 	}, nil
-}
-
-func (w *fakeWorkspace) FetchDefaultBranch(ctx context.Context, repoPath string, target ports.WorkspaceDefaultBranch) error {
-	w.fetches = append(w.fetches, fetchDefaultBranchCall{repoPath: repoPath, remote: target.Remote, branch: target.Branch, baseRef: target.BaseRef})
-	if w.sharedLog != nil {
-		*w.sharedLog = append(*w.sharedLog, "FetchDefaultBranch:"+target.Remote+"/"+target.Branch)
-	}
-	if w.fetchFunc != nil {
-		return w.fetchFunc(ctx, repoPath, target)
-	}
-	return w.fetchErr
 }
 
 func (w *fakeWorkspace) Create(_ context.Context, cfg ports.WorkspaceConfig) (ports.WorkspaceInfo, error) {

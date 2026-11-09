@@ -22,6 +22,7 @@ func TestCarryApprovalAcrossIdenticalPatch(t *testing.T) {
 		extra     []domain.ReviewRun
 	}{
 		{"identical patch carries the approval", true, domain.ReviewRun{Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved}, map[string]string{"sha1": "p", "old": "p"}, true, nil},
+		{"approval by another reviewer carries to a risk-picked one (B546)", true, domain.ReviewRun{Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved, Harness: domain.ReviewerCodex}, map[string]string{"sha1": "p", "old": "p"}, true, nil},
 		{"changed patch is reviewed again", true, domain.ReviewRun{Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved}, map[string]string{"sha1": "p2", "old": "p"}, false, nil},
 		{"option off is reviewed again", false, domain.ReviewRun{Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved}, map[string]string{"sha1": "p", "old": "p"}, false, nil},
 		{"later changes requested blocks an older approval", true, domain.ReviewRun{Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved}, map[string]string{"sha1": "p", "old": "p"}, false, []domain.ReviewRun{
@@ -34,8 +35,15 @@ func TestCarryApprovalAcrossIdenticalPatch(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prior := tc.prior
-			prior.ID, prior.ReviewID, prior.SessionID, prior.Harness = "r-old", "rv1", "mer-1", domain.ReviewerClaudeCode
-			prior.PRURL, prior.TargetSHA, prior.CreatedAt = url, "old", time.Now().Add(-time.Hour)
+			prior.ID, prior.ReviewID, prior.SessionID = "r-old", "rv1", "mer-1"
+			if prior.Harness == "" {
+				prior.Harness = domain.ReviewerClaudeCode
+			}
+			prior.PRURL, prior.CreatedAt = url, time.Now().Add(-time.Hour)
+			if prior.TargetSHA == "" {
+				prior.TargetSHA = "old"
+			}
+			prior.GithubReviewID = "posted-77"
 			store := &fakeStore{runs: append([]domain.ReviewRun{prior}, tc.extra...)}
 			launcher := &fakeLauncher{handle: "review-mer-1"}
 			prs := fakePRs{prs: []domain.PullRequest{{URL: url, Number: 1, HeadSHA: "sha1", TargetBranch: "main"}}}
@@ -57,6 +65,9 @@ func TestCarryApprovalAcrossIdenticalPatch(t *testing.T) {
 			}
 			if tc.wantCarry && carried.DeliveredAt == nil {
 				t.Fatal("a carried approval must not be delivered to the worker again")
+			}
+			if tc.wantCarry && (carried.GithubReviewID != prior.GithubReviewID || carried.NotPostedToPR()) {
+				t.Fatalf("a carried approval must keep the posted review: id=%q notPosted=%v", carried.GithubReviewID, carried.NotPostedToPR())
 			}
 		})
 	}

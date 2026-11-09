@@ -533,33 +533,6 @@ func reviewFromListRecoverableChatReviewsRow(r gen.ListRecoverableChatReviewsRow
 	return domain.Review{ID: r.ID, SessionID: r.SessionID, ProjectID: r.ProjectID, Harness: r.Harness, PRURL: r.PRURL, ReviewerHandleID: r.ReviewerHandleID, AgentSessionID: r.AgentSessionID, ReviewerActivityState: domain.ActivityState(r.ReviewerActivityState), ReviewerLaunchID: r.ReviewerLaunchID, InterfaceMode: domain.ReviewerInterfaceMode(r.InterfaceMode), ProviderConversationID: r.ProviderConversationID, ControllerGeneration: r.ControllerGeneration, ControllerError: r.ControllerError, IsArchived: r.IsArchived, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 
-func reviewRunFromRow(r gen.ReviewRun) domain.ReviewRun {
-	var deliveredAt *time.Time
-	if r.DeliveredAt.Valid {
-		t := r.DeliveredAt.Time
-		deliveredAt = &t
-	}
-	return domain.ReviewRun{
-		ID:               r.ID,
-		ReviewID:         r.ReviewID,
-		SessionID:        r.SessionID,
-		BatchID:          r.BatchID,
-		Harness:          r.Harness,
-		Model:            r.Model,
-		ModelReason:      r.ModelReason,
-		TriggerSource:    r.TriggerSource,
-		PRURL:            r.PRURL,
-		TargetSHA:        r.TargetSha,
-		Status:           r.Status,
-		Verdict:          r.Verdict,
-		Body:             r.Body,
-		GithubReviewID:   r.GithubReviewID,
-		CreatedAt:        r.CreatedAt,
-		DeliveredAt:      deliveredAt,
-		AutoInjectReview: r.AutoInjectReview,
-	}
-}
-
 // ListCurrentHeadReviewRunsForSession returns Tallpine's review passes against the
 // current head commit of each PR the session owns. Passes recorded for an
 // earlier head are filtered out in SQL, so callers cannot let a stale run

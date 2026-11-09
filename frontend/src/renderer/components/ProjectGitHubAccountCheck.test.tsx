@@ -25,13 +25,25 @@ describe("ProjectGitHubAccountCheck", () => {
 	it("shows the matching login without a warning", async () => {
 		vi.mocked(fetchGitHubAccountCheck).mockResolvedValue({ status: "ok", override: "a", login: "a", tokenLogin: "a", repo: "a/r" });
 		renderCheck();
-		const status = await screen.findByText(/Token is a and can push to a\/r/);
+		const status = await screen.findByText(/Sessions use a, which can push to a\/r/);
 		expect(status.closest("[data-testid]")?.getAttribute("role")).toBe("status");
 	});
 
 	it("warns when the account cannot see the repo", async () => {
 		vi.mocked(fetchGitHubAccountCheck).mockResolvedValue({ status: "no_repo_access", override: "a", login: "a", tokenLogin: "a", repo: "o/r" });
 		renderCheck();
-		expect((await screen.findByRole("alert")).textContent).toContain("cannot see or push to o/r");
+		expect((await screen.findByRole("alert")).textContent).toContain("cannot push to o/r");
+	});
+
+	it("explains a non-GitHub origin where Auto-pick cannot choose", async () => {
+		vi.mocked(fetchGitHubAccountCheck).mockResolvedValue({ status: "no_account", override: "", login: "", tokenLogin: "", repo: "" });
+		renderCheck();
+		expect((await screen.findByText(/origin is not on GitHub, so Auto-pick cannot choose.*machine's default GitHub login/)).textContent).toContain("unless you pick an account");
+	});
+
+	it("says a pinned account is used for GitHub even when the origin is elsewhere", async () => {
+		vi.mocked(fetchGitHubAccountCheck).mockResolvedValue({ status: "no_account", override: "acme", login: "", tokenLogin: "", repo: "" });
+		renderCheck();
+		expect(await screen.findByText(/origin is not on GitHub\. Sessions use acme for GitHub commands/)).toBeInTheDocument();
 	});
 });

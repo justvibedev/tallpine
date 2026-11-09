@@ -32,10 +32,13 @@ type SpawnSessionRequest struct {
 	// note, done-when and agent notes join the worker's task, and the session is
 	// linked to the item. Project sessions only.
 	BacklogRef string `json:"backlogRef,omitempty" maxLength:"64"`
-	// BacklogForce starts a held backlog item anyway.
+	// BacklogForce starts a held backlog item, or one with an open blocker, anyway.
 	BacklogForce bool `json:"backlogForce,omitempty"`
 	// BacklogAllowDuplicate starts the item although a live session already holds it.
 	BacklogAllowDuplicate bool `json:"backlogAllowDuplicate,omitempty"`
+	// BacklogAllowBlocked starts the item although a blocker is unfinished, without
+	// skipping the plan checks (unlike BacklogForce).
+	BacklogAllowBlocked bool `json:"backlogAllowBlocked,omitempty"`
 	// BacklogPlan forces who plans an item that needs a plan (B335): in-place
 	// makes the spawned implementer author the plan and wait read-only for
 	// approval, separate keeps today's planner flow. Empty follows the project's

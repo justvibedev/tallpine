@@ -220,6 +220,17 @@ func shellTerminalOperationsPart1() []operation {
 			resps:      []respUnit{{http.StatusOK, controllers.ProjectGitHubAccountCheckResponse{}}, {http.StatusNotFound, envelope.APIError{}}, {http.StatusInternalServerError, envelope.APIError{}}, {http.StatusNotImplemented, envelope.APIError{}}},
 		},
 		{
+			method: http.MethodGet, path: "/api/v1/projects/{id}/github-accounts", id: "getProjectGitHubAccounts", tag: "projects",
+			pathParams: []any{controllers.ProjectIDParam{}},
+			summary:    "List the gh accounts signed in to github.com with push access to the project's repo and the account auto-pick chooses (logins only)",
+			resps:      []respUnit{{http.StatusOK, controllers.GitHubAccountsResponse{}}, {http.StatusNotFound, envelope.APIError{}}, {http.StatusInternalServerError, envelope.APIError{}}, {http.StatusNotImplemented, envelope.APIError{}}},
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/github/accounts", id: "listGitHubAccounts", tag: "projects",
+			summary: "List the gh accounts signed in to github.com (logins only, never tokens)",
+			resps:   []respUnit{{http.StatusOK, controllers.GitHubAccountsResponse{}}, {http.StatusInternalServerError, envelope.APIError{}}, {http.StatusNotImplemented, envelope.APIError{}}},
+		},
+		{
 			method: http.MethodGet, path: "/api/v1/projects/{id}/default-branch-check", id: "getProjectDefaultBranchCheck", tag: "projects",
 			pathParams: []any{controllers.ProjectIDParam{}},
 			summary:    "Check whether a branch is strictly ahead of and much newer than the branch new sessions start from (detection only)",

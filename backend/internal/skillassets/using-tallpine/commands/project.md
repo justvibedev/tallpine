@@ -143,7 +143,7 @@ tallpine project set-config <id> [flags]
 |---|---|---|
 | `--agent-rules string` | Project-specific standing instructions appended to worker session prompts | - |
 | `--agent-rules-file string` | Repo-relative file containing project-specific worker standing instructions | - |
-| `--canonical-repo-url string` | Explicit upstream HTTPS repository URL used for PR claims (same provider, host, and port as `origin`) | - |
+| `--canonical-repo-url string` | Explicit upstream HTTPS repository URL for PR claims; may be on another host when the repo moved, then it replaces origin for PR tracking | - |
 | `--clear` | Clear all config | - |
 | `--config-json string` | Full config as a JSON object; replaces the entire config (overrides field flags) | - |
 | `--default-branch string` | Base branch new session worktrees are created from | - |

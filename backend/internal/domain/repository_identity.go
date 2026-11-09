@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -91,25 +92,107 @@ func ParseRepositoryIdentity(raw string) (RepositoryIdentity, error) {
 	return RepositoryIdentity{Provider: provider, Host: strings.ToLower(host), Namespace: strings.Join(parts[:len(parts)-1], "/"), Name: parts[len(parts)-1]}, nil
 }
 
-// ValidateCanonicalRepository keeps an explicitly selected upstream on the
-// checkout's provider and host. Empty canonical identity preserves origin-only claims.
+// ValidateCanonicalRepository checks an explicitly selected canonical
+// repository: it must be a credential-free HTTPS repository URL and the project
+// must have a valid checkout origin. The canonical repository may live on a
+// different host than the origin: that is how a project follows a repository
+// that moved to another host (see TrackedRepoURL). Empty canonical identity
+// preserves origin-only claims.
 func (c ProjectConfig) ValidateCanonicalRepository(origin string) error {
 	if c.CanonicalRepoURL == "" {
 		return nil
 	}
-	upstream, err := ParseRepositoryIdentity(c.CanonicalRepoURL)
+	_, err := ParseRepositoryIdentity(c.CanonicalRepoURL)
 	canonicalURL, urlErr := url.Parse(c.CanonicalRepoURL)
-	if err != nil || urlErr != nil || canonicalURL.Scheme != "https" || canonicalURL.User != nil {
+	if err != nil || urlErr != nil || canonicalURL.Scheme != "https" || canonicalURL.User != nil ||
+		((IsGitHubDotComHost(canonicalURL.Host) || IsGHEComHost(canonicalURL.Host)) && canonicalURL.Port() != "") {
 		return fmt.Errorf("canonicalRepoURL: use an HTTPS repository URL without credentials, query, or fragment")
 	}
-	checkout, err := ParseRepositoryIdentity(origin)
-	if err != nil {
+	if _, err := ParseRepositoryIdentity(origin); err != nil {
 		return fmt.Errorf("canonicalRepoURL: project must have a valid checkout origin repository")
 	}
-	if upstream.Provider != checkout.Provider || upstream.Host != checkout.Host {
-		return fmt.Errorf("canonical repository must be on the same host as this project's origin (%s)", checkout.Host)
-	}
 	return nil
+}
+
+// TrackedRepoURL returns the repository URL PR tracking and review should use.
+// It is the stored origin, unless the canonical repository is on a different
+// provider or host: then the repository moved and the canonical URL wins, since
+// the stored origin no longer hosts the project's PRs. A same-host canonical
+// URL is a fork's upstream and does not replace the origin.
+func (c ProjectConfig) TrackedRepoURL(origin string) string {
+	if c.CanonicalRepoURL == "" {
+		return origin
+	}
+	canonical, err := ParseRepositoryIdentity(c.CanonicalRepoURL)
+	if err != nil {
+		return origin
+	}
+	if o, err := ParseRepositoryIdentity(origin); err == nil && o.Provider == canonical.Provider && o.Host == canonical.Host {
+		return origin
+	}
+	return c.CanonicalRepoURL
+}
+
+// CredentialRepoURL is TrackedRepoURL restricted to GitHub-family hosts: a
+// canonical URL on any other host never widens where GitHub credentials are
+// offered, so a mistyped or non-GitHub canonical host cannot receive a token.
+func (c ProjectConfig) CredentialRepoURL(origin string) string {
+	if u, err := ParseRepositoryIdentity(c.CanonicalRepoURL); err != nil || !IsGitHubHost(u.Host) {
+		return origin
+	}
+	return c.TrackedRepoURL(origin)
+}
+
+// CredentialRemoteForHost picks the remote an account token is resolved from
+// for one credential host: the credential repo (the moved-to canonical GitHub
+// repo) only for its own host and github.com, otherwise the stored origin. A
+// token for the new repo is therefore never offered to the old origin host.
+func (c ProjectConfig) CredentialRemoteForHost(origin, host string) string {
+	remote := c.CredentialRepoURL(origin)
+	id, err := ParseRepositoryIdentity(remote)
+	if err != nil {
+		return origin
+	}
+	bare := func(h string) string {
+		if name, _, err := net.SplitHostPort(h); err == nil {
+			h = name
+		}
+		return strings.ToLower(strings.TrimSpace(h))
+	}
+	h := bare(host)
+	// The origin host always resolves from the origin: checkout and push stay there.
+	if oid, err := ParseRepositoryIdentity(origin); err == nil && h == bare(oid.Host) {
+		return origin
+	}
+	if h == "github.com" || h == bare(id.Host) {
+		return remote
+	}
+	return origin
+}
+
+// AccountRemoteForHost is CredentialRemoteForHost for account resolution, with
+// one more rule: on a moved project (canonical differs from origin) a non-GitHub
+// origin host resolves no account, because a githubUser override would otherwise
+// hand a GitHub token to the old host. A plain project with no canonical keeps
+// its override-driven behaviour (e.g. an unregistered GHES origin).
+func (c ProjectConfig) AccountRemoteForHost(origin, host string) (string, bool) {
+	remote := c.CredentialRemoteForHost(origin, host)
+	if remote == origin && c.CredentialRepoURL(origin) != origin {
+		if id, err := ParseRepositoryIdentity(origin); err != nil || !IsGitHubHost(id.Host) {
+			return "", false
+		}
+	}
+	return remote, true
+}
+
+// AccountRemotes lists the remotes a project's GitHub account can be resolved
+// from, origin first: after a move the origin may not be a github.com remote
+// while the canonical one is, or the reverse.
+func (c ProjectConfig) AccountRemotes(origin string) []string {
+	if cred := c.CredentialRepoURL(origin); cred != origin {
+		return []string{origin, cred}
+	}
+	return []string{origin}
 }
 
 // renamedRepos maps a repository's new full name to the one it had before a

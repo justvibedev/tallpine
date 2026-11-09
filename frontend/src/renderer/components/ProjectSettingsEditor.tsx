@@ -23,7 +23,7 @@ import { ProjectAdvancedSection } from "./project-settings/ProjectAdvancedSectio
 import { ProjectReviewLimitsRows } from "./project-settings/ProjectReviewLimitsRows";
 import { ProjectSessionModeRow } from "./project-settings/ProjectSessionModeRow";
 import { ProjectWorkflowSection } from "./project-settings/ProjectWorkflowSection";
-import { ProjectWorktreeCommandsSection } from "./project-settings/ProjectWorktreeCommandsSection";
+import { ProjectGitHubAccessSection, ProjectRepositorySection, ProjectWorktreeSetupSection } from "./project-settings/ProjectRepositorySections";
 
 export type ProjectSettingsDraft = ReviewDefaultsDraft & ProjectLocalFieldsDraft & {
 	displayName: string;
@@ -118,7 +118,7 @@ const roleFields: Record<ProjectSettingsRole, RoleFields> = {
 
 // Both persistence adapters render this page. Drafts, validation, autosave and
 // common controls live here so a UI change applies to local and Cloud projects.
-export function ProjectSettingsEditor({ githubAccountExtra, initialValues, section, capabilities, details, workspaceRepos, repository, renderAgent, defaultReviewer = () => "", modelScope, modelHostId, autoReviewDescription, save, onSaveState, saveUnchanged = false, disabled = false, managedKeys, generalExtra, generalTop, securityExtra }: {
+export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, initialValues, section, capabilities, details, workspaceRepos, repository, renderAgent, defaultReviewer = () => "", modelScope, modelHostId, autoReviewDescription, save, onSaveState, saveUnchanged = false, disabled = false, managedKeys, generalExtra, generalTop, securityExtra }: {
 	initialValues: ProjectSettingsDraft;
 	section: SettingsSection;
 	capabilities: Capabilities;
@@ -138,6 +138,8 @@ export function ProjectSettingsEditor({ githubAccountExtra, initialValues, secti
 	generalExtra?: ReactNode;
 	/** Rendered right under the GitHub account override (the live account check). */
 	githubAccountExtra?: ReactNode;
+	/** Project whose signed-in GitHub accounts the account picker lists. */
+	githubProjectId?: string;
 	/** The Security page body (the project's Security mode switch). */
 	securityExtra?: ReactNode;
 	/** Rendered first on the General page; setDefaultBranch edits the draft so autosave persists it like a typed change. */
@@ -225,15 +227,9 @@ export function ProjectSettingsEditor({ githubAccountExtra, initialValues, secti
 					{workspaceRepos.length ? workspaceRepos.map((repo) => <ProjectSettingsRow key={repo.name} label={repo.name}><span className="settings-row-value">{repo.relativePath}{repo.repo ? ` · ${repo.repo}` : ""}</span></ProjectSettingsRow>) : <div className="settings-row-bar text-sm text-settings-muted">{t("settings.project.childReposEmpty")}</div>}
 				</ProjectSettingsSection>}
 	</>;
-	const worktreesBlock = capabilities.workflow ? <>
-					<ProjectSettingsSection title={t("settings.project.worktrees")} grouped>
-						<ProjectSettingsInputRow id="defaultBranch" label={t("settings.project.defaultBranch")} editLabel={t("settings.field.edit", { label: t("settings.project.defaultBranch") })} editIcon={<Pencil className="settings-inline-edit-icon" aria-hidden="true" />} value={draft.defaultBranch} placeholder={capabilities.requiredBranch ? undefined : "auto"} onChange={(defaultBranch) => patch({ defaultBranch })} />
-						{capabilities.sessionPrefix && <ProjectSettingsInputRow id="sessionPrefix" label={t("settings.project.sessionPrefix")} editLabel={t("settings.field.edit", { label: t("settings.project.sessionPrefix") })} editIcon={<Pencil className="settings-inline-edit-icon" aria-hidden="true" />} value={draft.sessionPrefix} placeholder={t("settings.project.sessionPrefixPlaceholder")} onChange={(sessionPrefix) => patch({ sessionPrefix })} />}
-						{capabilities.githubUser && <ProjectSettingsInputRow id="githubUser" label={t("settings.project.githubUser")} editLabel={t("settings.field.edit", { label: t("settings.project.githubUser") })} editIcon={<Pencil className="settings-inline-edit-icon" aria-hidden="true" />} value={draft.githubUser ?? ""} placeholder={t("settings.project.githubUserPlaceholder")} onChange={(githubUser) => patch({ githubUser })} />}
-						{capabilities.githubUser && githubAccountExtra}
-						{capabilities.githubUser && <ProjectSettingsInputRow id="canonicalRepoURL" label={t("settings.project.canonicalRepoUrl")} editLabel={t("settings.field.edit", { label: t("settings.project.canonicalRepoUrl") })} editIcon={<Pencil className="settings-inline-edit-icon" aria-hidden="true" />} value={draft.canonicalRepoURL ?? ""} placeholder={t("settings.project.canonicalRepoUrlPlaceholder")} onChange={(canonicalRepoURL) => patch({ canonicalRepoURL })} />}
-						{capabilities.githubUser && error && /canonical repo/i.test(error) && <p role="alert" className="px-(--settings-row-inset) text-xs text-error">{error}</p>}
-					</ProjectSettingsSection>
+	const repositoryBlock = capabilities.workflow ? <>
+					<ProjectRepositorySection values={draft} repository={section === "repository" ? repository : undefined} requiredBranch={capabilities.requiredBranch} showPrefix={capabilities.sessionPrefix} onChange={patch} />
+					{capabilities.githubUser && <ProjectGitHubAccessSection values={draft} projectId={githubProjectId} check={githubAccountExtra} error={error} onChange={patch} />}
 	</> : null;
 	const prBlock = capabilities.workflow ? <>
 					<ProjectSettingsSection title={t("settings.project.pullRequests")} grouped>
@@ -299,7 +295,7 @@ export function ProjectSettingsEditor({ githubAccountExtra, initialValues, secti
 	const general = <>
 		{topBlock}
 		{detailsBlock}
-		{capabilities.workflow && <>{worktreesBlock}{intakeBlock}{prBlock}</>}
+		{capabilities.workflow && <>{repositoryBlock}{intakeBlock}{prBlock}</>}
 		{capabilities.chatHibernation && sessionsBlock}
 		{generalExtra}
 	</>;
@@ -307,8 +303,8 @@ export function ProjectSettingsEditor({ githubAccountExtra, initialValues, secti
 		details: <>{detailsBlock}{generalExtra}</>,
 		repository: <>
 			{topBlock}
-			{worktreesBlock}
-			{capabilities.workflow && <ProjectSettingsSection title={t("settings.project.nav.repository")} grouped><ProjectWorktreeCommandsSection values={draft} onChange={patch} /></ProjectSettingsSection>}
+			{repositoryBlock}
+			{capabilities.workflow && <ProjectWorktreeSetupSection values={draft} onChange={patch} />}
 			{intakeBlock}
 		</>,
 		agents: <>{roleBlocks(roles.slice(0, 2))}{agentsError}</>,

@@ -85,10 +85,18 @@ export function tallpineReviewCommentUrl(run: PRReviewState["latestRun"]): strin
 	return `${run.prUrl}#pullrequestreview-${run.githubReviewId}`;
 }
 
-export function reviewVerdict(reviewState: PRReviewState): {
-	label: string;
-	tone: "neutral" | "running" | "success" | "danger";
-} {
+type ReviewVerdictLabel = { label: string; tone: "neutral" | "running" | "success" | "danger" };
+
+export function reviewVerdict(reviewState: PRReviewState): ReviewVerdictLabel {
+	const verdict = headVerdict(reviewState);
+	// A verdict that never reached the PR must not read like a posted review.
+	if (reviewState.latestRun?.postFailed && (reviewState.status === "up_to_date" || reviewState.status === "changes_requested")) {
+		return { label: appI18n.t("inspector.review.notPosted", { verdict: verdict.label }), tone: "danger" };
+	}
+	return verdict;
+}
+
+function headVerdict(reviewState: PRReviewState): ReviewVerdictLabel {
 	if (reviewState.status === "needs_review") {
 		return { label: appI18n.t("inspector.review.needed"), tone: "neutral" };
 	}

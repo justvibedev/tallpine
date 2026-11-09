@@ -27,7 +27,10 @@ func (c *Coordinator) claim(ctx context.Context, projectID domain.ProjectID, lan
 	if err != nil {
 		return PreparedBatch{}, err
 	}
-	if len(reports) > 0 {
+	// Only a first attempt sweeps. A retried batch may already be typed into a
+	// terminal under this key, and accepting that copy would acknowledge reports
+	// added since then without the orchestrator ever seeing them.
+	if len(reports) > 0 && firstAttempt(reports) {
 		extra, sweepErr := c.sweepSharedTargetLanes(ctx, projectID, lane, target, roster, token, reports[0].DeliveryBatchID)
 		if sweepErr != nil {
 			_ = c.release(ctx, PreparedBatch{ProjectID: projectID, Token: token, Reports: reports}, sweepErr)
@@ -42,6 +45,17 @@ func (c *Coordinator) claim(ctx context.Context, projectID domain.ProjectID, lan
 		})
 	}
 	return c.prepareClaimedBatch(ctx, projectID, token, reports)
+}
+
+// firstAttempt reports whether this claim is the batch's first (claiming counts
+// the attempt, so a fresh row reads 1).
+func firstAttempt(reports []domain.ReportRecord) bool {
+	for _, r := range reports {
+		if r.DeliveryAttempts > 1 {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Coordinator) prepareClaimedBatch(ctx context.Context, projectID domain.ProjectID, token string, reports []domain.ReportRecord) (PreparedBatch, error) {

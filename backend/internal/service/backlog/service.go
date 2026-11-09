@@ -156,6 +156,9 @@ func (s *Service) List(ctx context.Context, projectID domain.ProjectID, f ListFi
 				}
 			}
 		}
+		if v.OpenBlockers, err = s.listOpenBlockers(ctx, it); err != nil {
+			return nil, err
+		}
 		out = append(out, v)
 	}
 	if err := s.attachBadges(ctx, projectID, "", out); err != nil {
@@ -418,6 +421,9 @@ func (s *Service) view(ctx context.Context, item domain.BacklogItem) (View, erro
 			}
 		}
 		v.LinkViews = append(v.LinkViews, lv)
+	}
+	if v.OpenBlockers, err = s.openBlockers(ctx, full.Links); err != nil {
+		return View{}, err
 	}
 	one := []View{v}
 	if err := s.attachBadges(ctx, full.ProjectID, full.ID, one); err != nil {

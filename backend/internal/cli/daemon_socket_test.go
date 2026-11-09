@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -119,5 +120,49 @@ func TestCLISocketRequestsNameLoopbackOrigin(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the CLI request never reached the socket")
+	}
+}
+
+// B434: the TCP fallback needs the client opt-in; a listed port alone must
+// never receive the token (B176: TCP is closed by default).
+func TestDaemonEndpointTCPFallbackRequiresOptIn(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	accepted := make(chan struct{}, 1)
+	go func() {
+		if c, err := ln.Accept(); err == nil {
+			accepted <- struct{}{}
+			_ = c.Close()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	sock := "/nonexistent-tp-dir/d.sock"
+	get := func() error {
+		c := &commandContext{deps: Deps{HTTPClient: &http.Client{}}}
+		base, client := c.daemonEndpoint(sock, port, time.Second)
+		resp, err := client.Get(base)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		return err
+	}
+	t.Setenv("TALLPINE_LOOPBACK_TCP", "")
+	if err := get(); err == nil {
+		t.Fatal("expected socket error without opt-in")
+	}
+	select {
+	case <-accepted:
+		t.Fatal("port dialed without TALLPINE_LOOPBACK_TCP opt-in")
+	case <-time.After(200 * time.Millisecond):
+	}
+	t.Setenv("TALLPINE_LOOPBACK_TCP", "1")
+	_ = get()
+	select {
+	case <-accepted:
+	case <-time.After(time.Second):
+		t.Fatal("opt-in did not fall back to TCP")
 	}
 }

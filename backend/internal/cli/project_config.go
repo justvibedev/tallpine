@@ -156,6 +156,7 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 			"--tracker-intake=false disables intake and --no-ci=false clears the no-CI merge gate.\n\n" +
 			"The merge reads the config and writes it back in two requests with no revision check, so a " +
 			"concurrent config change (another set-config or a settings save) made in between is overwritten.\n\n" +
+			"Passing only --github-user pins (or, with an empty value, clears) the project's GitHub account through the settings route, which an orchestrator may use on its own project when the owner asks for it.\n\n" +
 			"Passing only --agent-rules, --orchestrator-rules, --orchestrator-compact-window, --orchestrator-idle-compact and/or --orchestrator-research-window writes just those fields " +
 			"through the rules endpoint; that is the only config change an orchestrator session may make, and only on its own project.\n\n" +
 			"--config-json REPLACES the whole config with the given object (overriding field flags), " +
@@ -172,6 +173,16 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := strings.TrimSpace(args[0])
 			var res projectResult
+			if cmd.Flags().Changed("github-user") && opts.githubUser != "" {
+				listed, err := requireSignedInGitHubUser(cmd.Context(), ctx, opts.githubUser, cmd.ErrOrStderr())
+				if err != nil {
+					return err
+				}
+				opts.githubUser = listed
+			}
+			if !opts.clear && opts.configJSON == "" && onlyGitHubUserFlag(cmd.Flags().Changed) {
+				return setGitHubUserOnly(cmd.Context(), ctx, cmd, id, opts.githubUser, opts.json)
+			}
 			if !opts.clear && opts.configJSON == "" && onlyRulesFlags(cmd.Flags().Changed) {
 				// The narrow rules endpoint keeps every other field server-side
 				// and is the one config write an orchestrator token may make on
@@ -198,13 +209,20 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 			if err := ctx.putJSON(cmd.Context(), "projects/"+url.PathEscape(id)+"/config", req, &res); err != nil {
 				return err
 			}
-			return reportProjectConfig(cmd, opts, res)
+			if err := reportProjectConfig(cmd, opts, res); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("github-user") && !opts.json {
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), githubAccountNotice)
+				return err
+			}
+			return nil
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&opts.defaultBranch, "default-branch", "", "Base branch for new worktrees; auto infers each repository's Git default")
-	f.StringVar(&opts.githubUser, "github-user", "", "Signed-in gh account to use for this project (default: auto-pick the account that can push to the repo)")
-	f.StringVar(&opts.canonicalRepoURL, "canonical-repo-url", "", "Explicit upstream HTTPS repository URL for PR claims (same provider, host, and port as origin)")
+	f.StringVar(&opts.githubUser, "github-user", "", "Signed-in gh account to use for this project; it must be signed in (see `tallpine github accounts`). Empty returns to auto-pick (the account that can push to the repo). Applies to sessions started afterwards")
+	f.StringVar(&opts.canonicalRepoURL, "canonical-repo-url", "", "Explicit upstream HTTPS repository URL for PR claims; may be on another host when the repo moved, then it replaces origin for PR tracking")
 	f.StringVar(&opts.sessionPrefix, "session-prefix", "", "Displayed session-id prefix")
 	f.StringVar(&opts.defaultSessionMode, "default-session-mode", "", "Interface for new worker sessions: tui or chat (empty clears; not the reasoning effort in agentConfig.mode)")
 	f.StringVar(&opts.model, "model", "", "Agent model override (e.g. claude-opus-4-5)")
@@ -264,7 +282,7 @@ var projectConfigFieldFlags = []string{
 	"env", "unset-env", "symlink", "post-create", "tracker-intake", "tracker-repo", "tracker-assignee", "reviewer",
 	"no-ci",
 	"plan-auto-approve",
-	"plan-auto-approve-inherit",
+	"plan-auto-approve-inherit", "plan-in-place",
 }
 
 // mergeProjectConfigFlags fetches the project's current config as raw JSON and

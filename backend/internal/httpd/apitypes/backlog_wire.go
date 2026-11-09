@@ -51,6 +51,7 @@ type BacklogItemResponse struct {
 	ClosedAt         *time.Time            `json:"closedAt,omitempty"`
 	Links            []BacklogLinkResponse `json:"links" description:"Present on single-item reads."`
 	LinkCounts       map[string]int        `json:"linkCounts" description:"Per-kind link counts on list reads."`
+	OpenBlockers     []string              `json:"openBlockers" description:"Refs of blocked_by items that are not done or dropped, on list and single-item reads. Starting the item is refused unless forced while any remain."`
 	AutoClose        string                `json:"autoClose,omitempty" description:"Set on an open item with a merged linked PR: why it has not auto-closed (scope local, another PR still open, untracked PR link, ...)."`
 	Badges           BacklogBadgesResponse `json:"badges"`
 	Plan             *BacklogItemPlan      `json:"plan,omitempty" description:"The item's plan summary on single-item reads; absent while the planner is off or the item is unplanned."`

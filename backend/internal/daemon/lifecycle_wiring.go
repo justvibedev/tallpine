@@ -305,7 +305,7 @@ func (m sessionLifecycleMessenger) Send(ctx context.Context, id domain.SessionID
 // (issue #2685). The returned service is mounted at httpd APIDeps.Sessions.
 // It also returns the manager so the caller can wire Reconcile into the boot
 // sequence.
-func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.Runtime, store *sqlite.Store, lcm *lifecycle.Manager, artifactVersions *artifactversions.Capturer, messenger ports.AgentMessenger, notifications notificationSink, agents ports.AgentResolver, agentReadiness ports.AgentReadinessProvider, previewLifecycle sessionmanager.PreviewLifecycle, browserLifecycle sessionmanager.BrowserLifecycle, browserCapabilities sessionmanager.BrowserCapabilityIssuer, sessionTokens *sessiontoken.Authority, chat sessionmanager.ChatLauncher, reviewerRecoveryDone <-chan struct{}, defaults sessionmanager.SessionModeDefaults, tracker ports.Tracker, codexOperationGate ports.CodexOperationGate, reviewers *reviewer.Resolver, reviewerAccounts *reviewcore.AccountEnvSlot, log *slog.Logger) (*sessionsvc.Service, reviewsvc.Manager, sessionLifecycle, error) {
+func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.Runtime, store *sqlite.Store, lcm *lifecycle.Manager, artifactVersions *artifactversions.Capturer, messenger ports.AgentMessenger, notifications notificationSink, agents ports.AgentResolver, agentReadiness ports.AgentReadinessProvider, previewLifecycle sessionmanager.PreviewLifecycle, browserLifecycle sessionmanager.BrowserLifecycle, browserCapabilities sessionmanager.BrowserCapabilityIssuer, sessionTokens *sessiontoken.Authority, chat sessionmanager.ChatLauncher, reviewerRecoveryDone <-chan struct{}, defaults sessionmanager.SessionModeDefaults, tracker ports.Tracker, codexOperationGate ports.CodexOperationGate, reviewers *reviewer.Resolver, reviewerAccounts *reviewcore.AccountEnvSlot, githubAccounts sessionmanager.GitHubAccountTokens, log *slog.Logger) (*sessionsvc.Service, reviewsvc.Manager, sessionLifecycle, error) {
 	gitWS, err := gitworktree.New(gitworktree.Options{
 		// Per-session worktrees live under the data dir, so a single TALLPINE_DATA_DIR
 		// override moves all durable per-user state together.
@@ -379,7 +379,6 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 			return nil, nil, nil, fmt.Errorf("reviewer resolver: %w", err)
 		}
 	}
-	reviewerChat, _ := chat.(reviewcore.ReviewerChatController)
 	if reviewerAccounts == nil {
 		reviewerAccounts = &reviewcore.AccountEnvSlot{}
 	}
@@ -400,14 +399,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		Sessions:   store,
 		PRs:        store,
 		Projects:   store,
-		Launcher: reviewcore.NewLauncher(reviewers, runtime, cfg.DataDir,
-			reviewcore.WithRunFilePath(cfg.RunFilePath),
-			reviewcore.WithReviewerTokens(sessionTokens),
-			reviewcore.WithAgentAccounts(reviewerAccounts),
-			reviewcore.WithReviewerLaunchAuth(reviewerLaunchAuth{agents: agents}),
-			reviewcore.WithAgentAuth(reviewerAgentAuth{readiness: agentReadiness}),
-			reviewcore.WithPolicy(policyOf(chat)),
-			reviewcore.WithReviewerChat(reviewerChat)),
+		Launcher:   newReviewerLauncher(cfg, reviewers, runtime, store, sessionTokens, reviewerAccounts, githubAccounts, agents, agentReadiness, chat),
 
 		ChatRecoveryDone: reviewerRecoveryDone,
 		PassDeadline:     cfg.ReviewPassDeadline,

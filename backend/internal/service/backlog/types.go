@@ -87,6 +87,8 @@ type View struct {
 	// ChildClosedCount is how many of the children are done or dropped.
 	ChildClosedCount int
 	Badges           Badges
+	// OpenBlockers are the refs of blocked_by targets that are not done or dropped; spawn refuses the item unless forced.
+	OpenBlockers []string
 	// Plan is the item's plan summary; nil while the planner is off or unplanned.
 	Plan *PlanSummary
 	// AutoClose says why an open item with a merged linked PR has not closed.

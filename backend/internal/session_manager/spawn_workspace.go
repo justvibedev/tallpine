@@ -79,11 +79,18 @@ func (m *Manager) refreshDefaultBranchesBestEffort(ctx context.Context, project 
 	// repository cannot multiply spawn latency by the number of child repos.
 	fetchCtx, cancel := context.WithTimeout(ctx, m.defaultBranchRefreshTimeout)
 	defer cancel()
+	// The project's account authenticates its own repository only: a workspace's
+	// child repos can belong to anyone, so they keep the machine's login.
+	projectEnv := m.projectGitEnv(fetchCtx, domain.ProjectID(project.ID))
 	for _, target := range targets {
 		if target.resolved.BaseRef == "" {
 			continue
 		}
-		if err := refresher.FetchDefaultBranch(fetchCtx, target.repoPath, target.resolved); err != nil {
+		var gitEnv []string
+		if filepath.Clean(target.repoPath) == filepath.Clean(project.Path) {
+			gitEnv = projectEnv
+		}
+		if err := refresher.FetchDefaultBranch(fetchCtx, target.repoPath, target.resolved, gitEnv); err != nil {
 			m.logger.Warn("spawn: default branch refresh failed; continuing with local refs",
 				"projectID", project.ID,
 				"repoPath", target.repoPath,
@@ -119,6 +126,7 @@ func (m *Manager) createSessionWorkspace(ctx context.Context, project domain.Pro
 
 			CloneWorktreeInclude: project.Config.CloneWorktreeInclude,
 			RefreshOrchestrator:  true,
+			RefreshGitEnv:        m.orchestratorRefreshGitEnv(ctx, cfg.Kind, cfg.ProjectID, true),
 		}
 		ws, err := m.workspace.Create(ctx, workspaceCfg)
 		if errors.Is(err, ports.ErrWorkspaceBranchCheckedOutElsewhere) && cfg.Kind == domain.KindOrchestrator && cfg.Branch == "" {

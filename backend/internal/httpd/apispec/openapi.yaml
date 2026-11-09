@@ -3425,6 +3425,31 @@ paths:
       summary: List the subdirectories of a directory on the daemon host
       tags:
       - fs
+  /api/v1/github/accounts:
+    get:
+      operationId: listGitHubAccounts
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubAccountsResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the gh accounts signed in to github.com (logins only, never tokens)
+      tags:
+      - projects
   /api/v1/github/pat:
     delete:
       operationId: deleteGitHubPAT
@@ -5188,6 +5213,46 @@ paths:
           description: Not Implemented
       summary: Report which GitHub login the project's token actually authenticates
         as and whether it can push to the repo
+      tags:
+      - projects
+  /api/v1/projects/{id}/github-accounts:
+    get:
+      operationId: getProjectGitHubAccounts
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubAccountsResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the gh accounts signed in to github.com with push access to the
+        project's repo and the account auto-pick chooses (logins only)
       tags:
       - projects
   /api/v1/projects/{id}/permissions:
@@ -19652,6 +19717,13 @@ components:
         note:
           description: Markdown body.
           type: string
+        openBlockers:
+          description: Refs of blocked_by items that are not done or dropped, on list
+            and single-item reads. Starting the item is refused unless forced while
+            any remain.
+          items:
+            type: string
+          type: array
         origin:
           $ref: '#/components/schemas/BacklogOriginResponse'
         parentId:
@@ -19701,6 +19773,7 @@ components:
       - updatedAt
       - links
       - linkCounts
+      - openBlockers
       - badges
       type: object
     BacklogLinkRequest:
@@ -20322,6 +20395,8 @@ components:
       type: object
     CleanupItem:
       properties:
+        attention:
+          type: boolean
         bytes:
           format: int64
           type: integer
@@ -22748,6 +22823,8 @@ components:
           items:
             $ref: '#/components/schemas/AttachmentInput'
           type: array
+        backlogAllowBlocked:
+          type: boolean
         backlogAllowDuplicate:
           type: boolean
         backlogForce:
@@ -22912,6 +22989,39 @@ components:
           items:
             type: string
           type: array
+      type: object
+    DomainQueuedReviewTrigger:
+      properties:
+        attempts:
+          type: integer
+        createdAt:
+          format: date-time
+          type: string
+        effort:
+          type: string
+        interfaceMode:
+          type: string
+        model:
+          type: string
+        nextAttemptAt:
+          format: date-time
+          type: string
+        pullRequestUrl:
+          type: string
+        reviewerHarness:
+          type: string
+        sessionId:
+          type: string
+        triggerSource:
+          type: string
+      required:
+      - sessionId
+      - pullRequestUrl
+      - reviewerHarness
+      - createdAt
+      - triggerSource
+      - attempts
+      - nextAttemptAt
       type: object
     DomainReviewRiskConfig:
       properties:
@@ -23178,6 +23288,36 @@ components:
       - name
       - path
       - gitRepo
+      type: object
+    GitHubAccountItem:
+      properties:
+        canPush:
+          enum:
+          - "yes"
+          - "no"
+          - unknown
+          type: string
+        login:
+          type: string
+      required:
+      - login
+      type: object
+    GitHubAccountsResponse:
+      properties:
+        accounts:
+          items:
+            $ref: '#/components/schemas/GitHubAccountItem'
+          type: array
+        autoPick:
+          type: string
+        override:
+          type: string
+        repo:
+          type: string
+        unavailable:
+          type: boolean
+      required:
+      - accounts
       type: object
     GitHubCredentialRequest:
       properties:
@@ -23788,6 +23928,10 @@ components:
           items:
             $ref: '#/components/schemas/DomainReviewerSurface'
           type: array
+        queuedReviews:
+          items:
+            $ref: '#/components/schemas/DomainQueuedReviewTrigger'
+          type: array
         reviewerActivityState:
           enum:
           - active
@@ -23815,6 +23959,7 @@ components:
       - reviews
       - runs
       - activeReviewers
+      - queuedReviews
       type: object
     ListSessionMemoryResponse:
       properties:
@@ -24336,6 +24481,7 @@ components:
           - review_changes_requested
           - orchestrator_approval
           - plan_waiting
+          - worktree_kept
           type: string
         urgency:
           description: 'How insistently clients should signal: critical = blocked
@@ -25879,6 +26025,8 @@ components:
           type: string
         modelReason:
           type: string
+        postFailed:
+          type: boolean
         prUrl:
           type: string
         reviewId:
@@ -26063,6 +26211,7 @@ components:
           - delivered
           - queued
           - duplicate
+          - reauth_required
           type: string
         sessionId:
           type: string
@@ -28221,6 +28370,8 @@ components:
           items:
             $ref: '#/components/schemas/AttachmentInput'
           type: array
+        backlogAllowBlocked:
+          type: boolean
         backlogAllowDuplicate:
           type: boolean
         backlogForce:
@@ -28974,6 +29125,10 @@ components:
           description: True when a new review pass was started; false when an existing
             run for the same commit was reused.
           type: boolean
+        queued:
+          description: True when the reviewer was busy on another head and the pass
+            was queued to start once it is free; nothing was created yet.
+          type: boolean
         reviewerHandleId:
           type: string
         reviewerSurface:
@@ -28991,6 +29146,7 @@ components:
       - reviews
       - runs
       - created
+      - queued
       - autoInjectEnabled
       type: object
     UnavailableChatAgent:

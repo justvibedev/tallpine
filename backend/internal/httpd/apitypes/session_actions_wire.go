@@ -84,9 +84,12 @@ type SendSessionMessageResponse struct {
 	// Outcome is "delivered" when Tallpine handed the message to the agent, "queued"
 	// when Tallpine accepted it but the agent will only see it after a running turn
 	// or an interface transition, and "duplicate" when a message with the same
-	// client message id was already accepted so nothing new was sent. Absent
-	// when the daemon cannot tell.
-	Outcome string `json:"outcome,omitempty" enum:"delivered,queued,duplicate"`
+	// client message id was already accepted so nothing new was sent, and
+	// "reauth_required" when the provider had refused the session's login, so
+	// the attempted turn reaches the agent only if that login has been renewed:
+	// delivery is unconfirmed and an immediate resend could deliver it twice.
+	// Absent when the daemon cannot tell.
+	Outcome string `json:"outcome,omitempty" enum:"delivered,queued,duplicate,reauth_required"`
 	// DeliveryID correlates the message (chat turn id, queued message id, or
 	// session-send delivery id) when the delivery path has one.
 	DeliveryID string `json:"deliveryId,omitempty"`

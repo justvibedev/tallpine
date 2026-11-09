@@ -115,11 +115,11 @@ func (s *Service) Issue(ctx context.Context, id domain.SessionID, host string) (
 	if !found {
 		return Credential{}, ErrUnavailable
 	}
-	if !hostAllowed(host, project.RepoOriginURL) {
+	if !hostAllowed(host, project.RepoOriginURL, project.Config.CredentialRepoURL(project.RepoOriginURL)) {
 		s.log.Warn("github credential refused: host not allowed", "session", id, "project", rec.ProjectID, "host", host)
 		return Credential{}, ErrHostNotAllowed
 	}
-	cred, err := s.token(ctx, project)
+	cred, err := s.token(ctx, project, host)
 	if err != nil {
 		s.log.Warn("github credential unavailable", "session", id, "project", rec.ProjectID, "host", host, "error", err)
 		return Credential{}, err
@@ -128,12 +128,20 @@ func (s *Service) Issue(ctx context.Context, id domain.SessionID, host string) (
 	return cred, nil
 }
 
-func hostAllowed(host, remote string) bool {
+func hostAllowed(host string, remotes ...string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" {
 		return false
 	}
-	return host == "github.com" || host == githubcreds.HostOf(remote)
+	if host == "github.com" {
+		return true
+	}
+	for _, remote := range remotes {
+		if host == githubcreds.HostOf(remote) {
+			return true
+		}
+	}
+	return false
 }
 
 // token resolves the credential in env mode's order: a token the project's own
@@ -141,7 +149,7 @@ func hostAllowed(host, remote string) bool {
 // project's gh account. A narrow token pinned on the daemon therefore keeps
 // scoping the agent when the stricter helper mode is turned on, instead of being
 // replaced by the broader account token.
-func (s *Service) token(ctx context.Context, project domain.ProjectRecord) (Credential, error) {
+func (s *Service) token(ctx context.Context, project domain.ProjectRecord, host string) (Credential, error) {
 	for _, name := range explicitTokenVariables {
 		if v := strings.TrimSpace(project.Config.Env[name]); v != "" {
 			return Credential{Username: "x-access-token", Token: v, Source: SourceProjectEnv}, nil
@@ -154,7 +162,11 @@ func (s *Service) token(ctx context.Context, project domain.ProjectRecord) (Cred
 		}
 	}
 	if s.accounts != nil {
-		token, err := s.accounts.TokenForProject(ctx, project.RepoOriginURL, project.Config.GitHubUser)
+		remote, ok := project.Config.AccountRemoteForHost(project.RepoOriginURL, host)
+		if !ok {
+			return Credential{}, ErrUnavailable
+		}
+		token, err := s.accounts.TokenForProject(ctx, remote, project.Config.GitHubUser)
 		if err != nil {
 			return Credential{}, ErrUnavailable
 		}

@@ -218,6 +218,7 @@ func (m *Manager) afterActivityCommit(ctx context.Context, next domain.SessionRe
 		if ender, ok := gate.(interface{ SessionTurnEnded(domain.SessionRecord) }); ok {
 			ender.SessionTurnEnded(next)
 		}
+		m.notifyOrchestratorIdle(next)
 		// Review comments held back during the turn are due now.
 		m.deliverDeferredAfterTurn(ctx, next.ID)
 	}

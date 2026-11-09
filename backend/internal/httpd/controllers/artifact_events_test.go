@@ -46,9 +46,13 @@ func openArtifactEvents(t *testing.T, url string) <-chan string {
 	return events
 }
 
+// watchEventDeadline bounds waiting for a filesystem-watch event; it only
+// costs time when the event never comes.
+const watchEventDeadline = 30 * time.Second
+
 func awaitArtifactEvent(t *testing.T, events <-chan string, want string) {
 	t.Helper()
-	timeout := time.After(3 * time.Second)
+	timeout := time.After(watchEventDeadline)
 	for {
 		select {
 		case got := <-events:

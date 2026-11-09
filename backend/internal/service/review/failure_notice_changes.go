@@ -96,6 +96,17 @@ func changesRequestedMessage(run domain.ReviewRun, pr domain.PullRequest, thread
 	b.WriteString(" requested changes on ")
 	b.WriteString(domain.SanitizeControlChars(run.PRURL))
 	b.WriteString(".\n")
+	if run.NotPostedToPR() {
+		// No inline comment will ever sync, so the review text is all the worker gets.
+		b.WriteString("The reviewer could not post this review to the PR, so no inline comments will arrive; the findings are below.\n")
+		if body := strings.TrimSpace(run.Body); body != "" {
+			b.WriteString("Review:\n")
+			b.WriteString(truncateNotice(domain.SanitizeControlChars(body), maxLocalReviewBody))
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "Address them and push. `%s review ls` shows every pass.", brand.CLIName)
+		return b.String()
+	}
 	if body := strings.TrimSpace(run.Body); body != "" {
 		b.WriteString("Summary: ")
 		b.WriteString(truncateNotice(domain.SanitizeControlChars(body), 600))
@@ -155,7 +166,8 @@ const maxUnreviewedPasses = 3
 // reviewer has had on this commit. The retry's own failure is announced as
 // usual. It reports whether a retry was started.
 func (s *Service) retryUnsubmittedRun(ctx context.Context, notice *failureNotice, run domain.ReviewRun) bool {
-	if run.Status != domain.ReviewRunFailed || !reviewcore.IsUnsubmittedReviewerFailure(run.Body) {
+	failedUnsubmitted := run.Status == domain.ReviewRunFailed && reviewcore.IsUnsubmittedReviewerFailure(run.Body)
+	if !failedUnsubmitted && !reviewcore.ReviewerGoneCancel(run) {
 		return false
 	}
 	runs, err := notice.store.ListReviewRunsBySession(ctx, run.SessionID)
@@ -169,7 +181,7 @@ func (s *Service) retryUnsubmittedRun(ctx context.Context, notice *failureNotice
 		}
 		// A pass that never reached the commit (usage limit, restart, trust
 		// dialog) does not use up its one retry, up to maxUnreviewedPasses.
-		if reviewcore.NeverReviewed(other.Body) && other.Status == domain.ReviewRunFailed {
+		if (reviewcore.NeverReviewed(other.Body) && other.Status == domain.ReviewRunFailed) || reviewcore.ReviewerGoneCancel(other) {
 			unreviewed++
 			if unreviewed < maxUnreviewedPasses {
 				continue
@@ -210,10 +222,38 @@ func (s *Service) retryUnsubmittedRun(ctx context.Context, notice *failureNotice
 		return false
 	}
 	if !result.Created && len(result.CreatedRuns) == 0 {
+		// The reviewer is busy with another pass (for example the first of two
+		// dead passes on one worker): park this one, so it resumes when the
+		// reviewer is free and its failure is not announced as final.
+		if result.SkipReason == "" && s.reviewerBusyOnAnotherHead(ctx, run) {
+			q := domain.QueuedReviewTrigger{SessionID: run.SessionID, PRURL: run.PRURL, Harness: run.Harness, Model: run.Model, TriggerSource: source}
+			if err := s.engine.QueueRerun(ctx, q); err == nil {
+				return true
+			}
+		}
 		// Skipped by policy or nothing eligible: nothing retried, so announce the failure.
 		return false
 	}
 	slog.Default().InfoContext(ctx, "retried a review pass that ended without a verdict", "session", run.SessionID, "run", run.ID)
+	return true
+}
+
+// reviewerBusyOnAnotherHead reports whether the run's reviewer is busy with a
+// pass that does not cover the run's own head, so a rerun parked now is not
+// made redundant by that pass.
+func (s *Service) reviewerBusyOnAnotherHead(ctx context.Context, run domain.ReviewRun) bool {
+	if s.engine == nil {
+		return false
+	}
+	running, err := s.engine.RunningFor(ctx, run.SessionID, run.Harness)
+	if err != nil || len(running) == 0 {
+		return false
+	}
+	for _, other := range running {
+		if other.PRURL == run.PRURL && other.TargetSHA == run.TargetSHA {
+			return false
+		}
+	}
 	return true
 }
 

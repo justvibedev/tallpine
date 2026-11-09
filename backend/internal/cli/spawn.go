@@ -283,7 +283,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 	f.StringVar(&opts.backlog, "backlog", "", "Backlog item ref (e.g. B12) to work on: its title, note, done-when and agent notes join the task, and the session is linked to it")
 	f.BoolVar(&opts.allowDuplicate, "allow-duplicate", false, "With --backlog, start the item even if a live session already holds it (--force does not imply this)")
 	f.StringVar(&opts.plan, "plan", "", "With --backlog, who plans an item that needs a plan: in-place (the spawned implementer writes the plan, waits read-only for approval, then builds; needs the project's planInPlace setting) or separate (a planner session via `tallpine plan start`). Default: follows the project's planInPlace setting")
-	f.BoolVar(&opts.backlogForce, "force", false, "With --backlog, start the item even if it is held")
+	f.BoolVar(&opts.backlogForce, "force", false, "With --backlog, start the item even if it is held or has an open blocker")
 	f.StringVar(&opts.trackerProvider, "tracker-provider", "github", "Issue tracker provider: github or gitlab (default: github)")
 	f.StringVar(&opts.name, "name", "", "Display name shown in the sidebar (required, max 100 characters)")
 	f.StringVar(&opts.claimPR, "claim-pr", "", "Claim PR ownership metadata only for the spawned session; does not check out the PR branch")

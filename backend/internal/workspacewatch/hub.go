@@ -9,6 +9,17 @@ import (
 // variable so tests can count and drive backends.
 var startRootWatch = watchRootNative
 
+// UseFSNotifyForTest routes watches through fsnotify instead of the platform's
+// native backend, until restore runs. macOS FSEvents is one system-wide
+// pipeline that falls a minute or more behind when other processes write many
+// files, so a test that is not about FSEvents should not depend on it. Call it
+// before any watch starts.
+func UseFSNotifyForTest() (restore func()) {
+	previous := startRootWatch
+	startRootWatch = watchRootFSNotify
+	return func() { startRootWatch = previous }
+}
+
 // shared is the process-wide registry of root watchers.
 var shared = &hub{roots: map[string]*rootWatch{}}
 

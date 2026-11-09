@@ -47,7 +47,7 @@ func inPlaceEnv(t *testing.T) *planEnv {
 // worker, attach it as the author. It returns the plan and the author.
 func (e *planEnv) startInPlace() (domain.BacklogPlan, domain.SessionID) {
 	e.t.Helper()
-	sp, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, false, "")
+	sp, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, false, false, "")
 	if err != nil || sp.PlanID == "" {
 		e.t.Fatalf("PrepareSpawnPlan = %+v, %v", sp, err)
 	}
@@ -74,7 +74,7 @@ func (e *planEnv) author(sid domain.SessionID) backlog.Actor {
 
 func TestInPlaceSpawnReservesDraftingPlanWithImplementerAuthor(t *testing.T) {
 	e := inPlaceEnv(t)
-	sp, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, false, "")
+	sp, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, false, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestInPlaceArmSelection(t *testing.T) {
 				d.Mode = func(context.Context, domain.ProjectID) domain.PlanningMode { return domain.PlanningAlways }
 				d.InPlace = func(context.Context, domain.ProjectID) bool { return tc.on }
 			})
-			sp, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, false, tc.arm)
+			sp, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, false, false, tc.arm)
 			if tc.reject {
 				if err == nil || apiCode(t, err) != tc.code {
 					t.Fatalf("err = %v, want %s", err, tc.code)
@@ -142,7 +142,7 @@ func TestInPlaceArmSelection(t *testing.T) {
 func TestInPlaceRefusesWhenAPlanIsOpen(t *testing.T) {
 	e := inPlaceEnv(t)
 	e.startInPlace()
-	_, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, true, "")
+	_, err := e.bl.PrepareSpawnPlan(e.ctx, "p1", e.item.Ref(), false, true, false, "")
 	if err == nil || apiCode(t, err) != "PLAN_OPEN" {
 		t.Fatalf("err = %v, want PLAN_OPEN", err)
 	}

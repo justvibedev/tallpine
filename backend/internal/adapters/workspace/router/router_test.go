@@ -40,7 +40,7 @@ func (w *recordingWorkspace) ResolveDefaultBranch(_ context.Context, _ string, _
 	return ports.WorkspaceDefaultBranch{Remote: "origin", Branch: "main", BaseRef: "refs/remotes/origin/main"}, nil
 }
 
-func (w *recordingWorkspace) FetchDefaultBranch(_ context.Context, _ string, _ ports.WorkspaceDefaultBranch) error {
+func (w *recordingWorkspace) FetchDefaultBranch(_ context.Context, _ string, _ ports.WorkspaceDefaultBranch, _ []string) error {
 	return nil
 }
 

@@ -24,6 +24,8 @@ type fakeCredSvc struct {
 	}
 }
 
+func (f *fakeCredSvc) ProjectGitEnv(context.Context, domain.ProjectID) []string { return nil }
+
 func (f *fakeCredSvc) Issue(_ context.Context, id domain.SessionID, host string) (githubcred.Credential, error) {
 	f.got.session, f.got.host = id, host
 	return f.cred, f.err

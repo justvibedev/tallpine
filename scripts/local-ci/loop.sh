@@ -3,10 +3,13 @@
 # This file lives in the repo; scripts/local-ci/install copies it to ~/.tallpine/local-ci/loop.sh,
 # which a service manager runs. The loop only schedules: the gate itself is `scripts/verify --all`.
 #   loop.sh           loop forever: re-run whenever origin/main moves (poll every POLL s, default 120; a cheap git ls-remote decides whether to fetch)
-#   loop.sh --once    evaluate current origin/main once, even if already recorded
+#   loop.sh --once    evaluate current origin/main once, even if already recorded; exits 1 if origin is unreachable
 # Appends "main\t<sha>\t<pass|fail|superseded>\t<summary>" to $OUT/local-ci.tsv; full log in
 # $OUT/local-ci-main-<sha8>.log; itemised failures (and [flaky-retried] items) in
 # $OUT/local-ci-main-<sha8>-failures.txt.  Start with ~/.tallpine/local-ci/start.sh (detached, pid file).
+# GitHub access: $H/github-user (one login) pins the gh account for this repo; without it the loop uses the
+# ambient login and falls back to any other signed-in gh account that can reach the repo. While origin is
+# unreachable, $H/fetch-failing holds the failure and the orchestrator is told (see note_fetch_failure).
 H="${TALLPINE_LOCAL_CI_DIR:-$HOME/.tallpine/local-ci}"
 OUT="${OUT:-$H/results}"
 REPO_URL="${REPO_URL:-https://github.com/justvibedev/tallpine-dev.git}"
@@ -62,7 +65,7 @@ superseded_by_request() {
   need="$(head -n1 "$m" 2>/dev/null | tr -d '[:space:]')"; [ -n "$need" ] || return 1
   # Local check first: a run that already includes the request never needs a GitHub fetch.
   if git -C "$WORK" cat-file -e "$need^{commit}" 2>/dev/null && git -C "$WORK" merge-base --is-ancestor "$need" "$sha" 2>/dev/null; then return 1; fi
-  git -C "$WORK" fetch -q origin main 2>/dev/null
+  ci_git -C "$WORK" fetch -q origin main 2>/dev/null
   git -C "$WORK" cat-file -e "$need^{commit}" 2>/dev/null || return 1
   git -C "$WORK" merge-base --is-ancestor "$need" "$sha" 2>/dev/null && return 1
   head="$(git -C "$WORK" rev-parse origin/main 2>/dev/null)"
@@ -269,17 +272,76 @@ print(t if any(x["id"]==t for x in live) else min(live,key=lambda x:x.get("creat
   err="$("$cli" send --session "$sid" --message "$msg" 2>&1 >/dev/null)" && echo "[$(date)] notified $sid" || echo "[$(date)] notify $sid failed: ${err:-no output}"
 }
 
+# B590: the repo is private and the machine-wide gh login can be any account, so which account reaches it
+# is decided here, per repo: $H/github-user if set, else the ambient login, else any other gh account that can.
+export GIT_TERMINAL_PROMPT=0
+CI_GH_LOGIN=""; CI_OUT=""; FETCH_ERR="$H/.fetch.err"; FETCH_STATE="$H/fetch-failing"
+pinned_gh_login() { head -1 "$H/github-user" 2>/dev/null | tr -cd 'A-Za-z0-9-'; }
+gh_logins() { gh auth status --hostname github.com 2>&1 | sed -nE 's/.*Logged in to github\.com (account|as) ([A-Za-z0-9-]+).*/\2/p' | awk '!seen[$0]++'; }
+# ci_git <git args...>: git, as CI_GH_LOGIN when one is chosen. The token stays out of argv: git asks gh for it.
+ci_git() {
+  [ -n "$CI_GH_LOGIN" ] || { git "$@"; return; }
+  git -c credential.helper= -c "credential.helper=!f() { [ \"\$1\" = get ] && { echo username=x-access-token; echo \"password=\$(gh auth token --hostname github.com --user $CI_GH_LOGIN)\"; }; }; f" "$@"
+}
+# ci_try <git args...>: stdout in CI_OUT, the last stderr in FETCH_ERR. Tries the current account, then others.
+ci_try() {
+  local pinned login
+  pinned="$(pinned_gh_login)"; [ -z "$pinned" ] || CI_GH_LOGIN="$pinned"
+  CI_OUT="$(ci_git "$@" 2>"$FETCH_ERR")" && return 0
+  [ -z "$pinned" ] || return 1
+  for login in $(gh_logins); do
+    [ "$login" != "$CI_GH_LOGIN" ] || continue
+    CI_OUT="$(CI_GH_LOGIN="$login" ci_git "$@" 2>"$FETCH_ERR")" || continue
+    echo "[$(date)] origin is reachable as gh account $login; using it for this repo"
+    CI_GH_LOGIN="$login"; return 0
+  done
+  return 1
+}
+# Fetch failures must not read as "nothing new on main" (B590: 1283 silent failures, main untested for days).
+# $FETCH_STATE: "<consecutive failures> <first epoch> <last notified epoch>", then the error on line 2.
+note_fetch_failure() {
+  local now err count=0 first notified=0 mins
+  now="$(date +%s)"; first="$now"
+  err="$(tail -c 300 "$FETCH_ERR" 2>/dev/null | sed -E 's#(https?://)[^/@ ]+@#\1#g' | tr -s '\n\t' ' ')"
+  err="${err:-origin returned no main branch}"
+  [ ! -f "$FETCH_STATE" ] || read -r count first notified <"$FETCH_STATE"
+  count=$((count + 1))
+  echo "[$(date)] cannot reach origin (failure $count): $err"
+  if [ "$count" -ge "${FETCH_FAIL_NOTIFY_AFTER:-3}" ] && [ $((now - notified)) -ge "${FETCH_RENOTIFY_EVERY:-21600}" ]; then
+    mins=$(((now - first) / 60)); notified="$now"
+    send_to_orchestrator "[local-ci] cannot reach origin for ${mins}m ($count failed checks): $err. Main is not being tested and build requests are waiting. Check gh auth status, or pin an account that can reach the repo in $H/github-user."
+  fi
+  printf '%s %s %s\n%s\n' "$count" "$first" "$notified" "$err" >"$FETCH_STATE"
+}
+note_fetch_ok() {
+  local count first notified=0
+  [ -f "$FETCH_STATE" ] || return 0
+  read -r count first notified <"$FETCH_STATE"
+  rm -f "$FETCH_STATE"
+  echo "[$(date)] origin reachable again after $count failed checks"
+  [ "${notified:-0}" = 0 ] || send_to_orchestrator "[local-ci] origin is reachable again after $count failed checks; main is being tested."
+}
+# The tick for an unreachable origin: record it, keep the maintenance going, never evaluate a stale origin/main.
+fetch_failed_tick() {
+  note_fetch_failure
+  [ "$1" != "--once" ] || exit 1
+  [ -z "${sha:-}" ] || security_weekly "$sha"
+  housekeeping_daily; sleep "$POLL"
+}
+
 [ "${LOOP_SOURCE_ONLY:-0}" = 1 ] && return 0 2>/dev/null # tests source the functions only
 install_kill_trap
-[ -d "$WORK/.git" ] || git clone -q "$REPO_URL" "$WORK"
 while true; do
   date +%s >"$H/heartbeat"  # B207: epoch of the last loop tick; stale (> ~POLL*3) means the loop is dead
   # Cheap check first: fetch (and maybe run CI) only when the remote main moved from what we last saw.
-  remote="$(git -C "$WORK" ls-remote origin refs/heads/main 2>/dev/null | cut -f1)"
-  if [ "$1" != "--once" ] && [ -n "$remote" ] && [ "$remote" = "$sha" ]; then
-    security_weekly "$sha"; housekeeping_daily; sleep "$POLL"; continue
+  if [ ! -d "$WORK/.git" ] && ! ci_try clone -q "$REPO_URL" "$WORK"; then fetch_failed_tick "$1"; continue; fi
+  remote=""; ! ci_try -C "$WORK" ls-remote origin refs/heads/main || remote="$(printf '%s' "$CI_OUT" | cut -f1)"
+  if [ -z "$remote" ]; then fetch_failed_tick "$1"; continue; fi
+  if [ "$1" != "--once" ] && [ "$remote" = "$sha" ]; then
+    note_fetch_ok; security_weekly "$sha"; housekeeping_daily; sleep "$POLL"; continue
   fi
-  git -C "$WORK" fetch -q origin main 2>&1
+  if ! ci_try -C "$WORK" fetch -q origin main; then fetch_failed_tick "$1"; continue; fi
+  note_fetch_ok
   sha="$(git -C "$WORK" rev-parse origin/main)"
   if [ "$1" = "--once" ] || ! grep -q "^main	$sha	" "$TSV" 2>/dev/null; then
     git -C "$WORK" checkout -q --force --detach "$sha" && git -C "$WORK" clean -qfdx -e node_modules

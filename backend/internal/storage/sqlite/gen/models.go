@@ -886,6 +886,19 @@ type ReviewRun struct {
 	ModelReason       string
 }
 
+type ReviewTriggerQueue struct {
+	SessionID     string
+	PRURL         string
+	Harness       string
+	CreatedAt     time.Time
+	Model         string
+	Effort        string
+	InterfaceMode string
+	TriggerSource string
+	Attempts      int64
+	NextAttemptAt time.Time
+}
+
 type Session struct {
 	ID                               domain.SessionID
 	ProjectID                        *domain.ProjectID
@@ -993,6 +1006,11 @@ type SessionArtifactVersion struct {
 	Source       string
 	Harness      string
 	RestoredFrom int64
+}
+
+type SessionAutoReviewOverride struct {
+	SessionID string
+	Enabled   int64
 }
 
 type SessionCleanupFact struct {

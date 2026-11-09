@@ -35,8 +35,16 @@ func (p *triggerPass) carryApprovals() (TriggerResult, bool, error) {
 			continue
 		}
 		prior, found := latestVerdictRun(p.runs, pr.URL)
-		if !found || prior.Harness != p.harness ||
+		// Any reviewer's approval carries: the risk pick may name a stronger
+		// reviewer than the one that approved, but an identical patch needs no
+		// second review (B546).
+		if !found ||
 			domain.TallpineReviewGateForHead(p.runs, pr.URL, prior.TargetSHA) != domain.TallpineReviewGateApproved {
+			continue
+		}
+		// An approval on this very head by another reviewer is a finished review,
+		// not a rebase: a requested second opinion must still run.
+		if prior.TargetSHA == pr.HeadSHA {
 			continue
 		}
 		same, err := e.samePatch(p.ctx, p.worker.Metadata.WorkspacePath, pr, prior.TargetSHA)
@@ -49,11 +57,14 @@ func (p *triggerPass) carryApprovals() (TriggerResult, bool, error) {
 		}
 		now := e.clock()
 		carried := domain.ReviewRun{
-			ID: e.newID(), ReviewID: prior.ReviewID, SessionID: p.workerID, Harness: prior.Harness,
-			Model: prior.Model, TriggerSource: p.source, PRURL: pr.URL, TargetSHA: pr.HeadSHA,
+			ID: e.newID(), ReviewID: prior.ReviewID, SessionID: p.workerID, Harness: p.harness,
+			Model: carriedModel(prior, p.harness), TriggerSource: p.source, PRURL: pr.URL, TargetSHA: pr.HeadSHA,
 			Status: domain.ReviewRunComplete, Verdict: domain.VerdictApproved,
-			Body:      fmt.Sprintf("Approval carried over from %s: this head has an identical patch (git patch-id), so it was not reviewed again.", shortSHA(prior.TargetSHA)),
-			CreatedAt: now, DeliveredAt: &now,
+			// The approval stands on the prior pass's posted review, so this run links
+			// to it and does not read as a review that failed to post.
+			GithubReviewID: prior.GithubReviewID,
+			Body:           fmt.Sprintf("Approval carried over from %s: this head has an identical patch (git patch-id), so it was not reviewed again.", shortSHA(prior.TargetSHA)),
+			CreatedAt:      now, DeliveredAt: &now,
 		}
 		if err := e.store.InsertReviewRun(p.ctx, carried); err != nil {
 			return TriggerResult{}, false, err
@@ -123,4 +134,13 @@ func gitPatchID(ctx stdctx.Context, workspace, base, sha string) (string, error)
 		return "", nil
 	}
 	return fields[0], nil
+}
+
+// carriedModel keeps the prior run's model only when the same reviewer carries
+// it; another harness does not run that model.
+func carriedModel(prior domain.ReviewRun, harness domain.ReviewerHarness) string {
+	if prior.Harness == harness {
+		return prior.Model
+	}
+	return ""
 }

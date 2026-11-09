@@ -76,6 +76,9 @@ func (b *boot) wireReview() error {
 		Notifier: b.notificationWriter,
 	})
 	b.chatSvc.SetReportCoordinator(b.reportCoordinator)
+	b.lcStack.LCM.SetOrchestratorIdleObserver(func(rec domain.SessionRecord) {
+		b.reportCoordinator.Available(rec.ID, rec.Metadata.ControllerGeneration)
+	})
 	reportDeliveryDone := b.reportCoordinator.Start(b.ctx)
 	b.cleanup(func() {
 		b.stop()

@@ -171,6 +171,7 @@ type agentLauncher struct {
 	accounts   ports.AgentAccountProviderEnv
 	launchAuth ReviewerLaunchAuth
 	policy     PolicyDecider
+	github     reviewerGitHub
 
 	// launchedHome is the Claude config dir each live reviewer handle was
 	// started under, so a reused reviewer can be told apart from the worker's

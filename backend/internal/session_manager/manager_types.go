@@ -269,6 +269,7 @@ type Manager struct {
 	sessionTokens       SessionTokenIssuer
 	agentAccounts       ports.AgentAccountLaunchEnv
 	githubAccounts      GitHubAccountTokens
+	gitCredentials      ports.ProjectGitCredentials
 	policy              PolicyEngine
 	// goos overrides runtime.GOOS for decisions that depend on it (tests only).
 	goos              string
@@ -379,6 +380,8 @@ type Manager struct {
 	// actually became active (the agent accepted the prompt). New fills in the
 	// sendConfirm* defaults; tests in this package shrink the timings directly.
 	sendConfirm sendConfirmConfig
+	// semanticPastes stops a report batch being re-typed during one running turn.
+	semanticPastes semanticPasteLedger
 	// interfaceTransition bounds only contradictory stale-idle proof. Turns and
 	// user-paced waits reported through the activity boundary remain unbounded.
 	interfaceTransition interfaceTransitionConfig

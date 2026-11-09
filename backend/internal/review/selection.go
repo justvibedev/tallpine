@@ -278,7 +278,7 @@ func (e *Engine) riskReviewerFor(ctx stdctx.Context, worker domain.SessionRecord
 				slog.Warn("review risk: changed paths unavailable", "session", worker.ID, "pr", pr.URL, "err", err)
 				continue
 			}
-			if file, glob, ok := domain.MatchReviewRisk(globs, changed); ok {
+			if file, glob, ok := domain.MatchReviewRisk(globs, withoutTestPaths(changed)); ok {
 				if pick.reason == "" {
 					pick.reason = fmt.Sprintf("risky path %s matches %s", file, glob)
 				}
@@ -332,4 +332,20 @@ func gitChangedPaths(ctx stdctx.Context, workspace string, pr domain.PullRequest
 		}
 	}
 	return paths, nil
+}
+
+// withoutTestPaths drops test-only files: a test change never makes a PR risky.
+func withoutTestPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		switch {
+		case strings.HasSuffix(p, "_test.go"),
+			strings.HasSuffix(p, ".test.ts"), strings.HasSuffix(p, ".test.tsx"),
+			strings.HasSuffix(p, ".spec.ts"), strings.HasSuffix(p, ".spec.tsx"),
+			strings.Contains("/"+p, "/testdata/"), strings.Contains("/"+p, "/__tests__/"):
+		default:
+			out = append(out, p)
+		}
+	}
+	return out
 }

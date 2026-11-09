@@ -85,6 +85,8 @@ type Service struct {
 	mu    sync.Mutex
 	locks map[domain.ProjectID]*sync.Mutex
 
+	credentials ports.ProjectGitCredentials // optional: fetch and push as the project's account
+
 	beforeUpdate func() // test hook: runs between reading and moving the target
 }
 
@@ -94,6 +96,19 @@ func New(sessions Sessions, store Store, branches DefaultBranchResolver, log *sl
 		log = slog.Default()
 	}
 	return &Service{sessions: sessions, store: store, branches: branches, log: log, locks: map[domain.ProjectID]*sync.Mutex{}}
+}
+
+// SetGitCredentials completes daemon wiring; nil keeps the machine's git login.
+func (s *Service) SetGitCredentials(credentials ports.ProjectGitCredentials) {
+	s.credentials = credentials
+}
+
+// projectGitEnv runs one git process as the project's GitHub account.
+func (s *Service) projectGitEnv(ctx context.Context, project domain.ProjectID) []string {
+	if s.credentials == nil {
+		return nil
+	}
+	return s.credentials.ProjectGitEnv(ctx, project)
 }
 
 func (s *Service) lock(project domain.ProjectID) func() {
@@ -151,8 +166,10 @@ func (s *Service) Land(ctx context.Context, id domain.SessionID, req Request) (R
 	defer s.lock(rec.ProjectID)()
 	hosted := domain.HasHostedRemote(project.RepoOriginURL)
 	tipRef := "refs/heads/" + target
+	var authEnv []string
 	if hosted {
-		if _, err := git(ctx, repo, "", "fetch", "--no-tags", "origin", "+refs/heads/"+target+":refs/remotes/origin/"+target); err != nil {
+		authEnv = s.projectGitEnv(ctx, rec.ProjectID)
+		if _, err := gitEnv(ctx, repo, "", authEnv, "fetch", "--no-tags", "origin", "+refs/heads/"+target+":refs/remotes/origin/"+target); err != nil {
 			return Result{}, fmt.Errorf("%w: fetch origin %s: %w", ErrBadTarget, target, err)
 		}
 		tipRef = "refs/remotes/origin/" + target
@@ -199,18 +216,44 @@ func (s *Service) Land(ctx context.Context, id domain.SessionID, req Request) (R
 		if err != nil && len(res.UpdatedCheckouts) == 0 {
 			return Result{}, err
 		}
+		if note := aheadOfOriginNote(ctx, repo, target, commit); note != "" {
+			res.Notes = append(res.Notes, note)
+		}
 		return res, err
 	}
-	return s.pushAndFollow(ctx, repo, target, commit, res)
+	return s.pushAndFollow(ctx, repo, target, commit, res, authEnv)
+}
+
+// aheadOfOriginNote says the landed commit was not pushed because origin is
+// not a hosted remote. It asks origin itself (not a tracking ref), so it works
+// without upstream config; it is empty when there is no origin or it matches.
+func aheadOfOriginNote(ctx context.Context, repo, target, commit string) string {
+	out, err := git(ctx, repo, "", "ls-remote", "origin", "refs/heads/"+target)
+	if err != nil {
+		return ""
+	}
+	remote := ""
+	if f := strings.Fields(out); len(f) > 0 {
+		remote = f[0]
+	}
+	if remote == commit {
+		return ""
+	}
+	if remote != "" {
+		if n, err := git(ctx, repo, "", "rev-list", "--count", remote+".."+commit); err == nil {
+			return fmt.Sprintf("local %s is now %s commit(s) ahead of origin/%s; not pushed because origin is not a hosted remote", target, n, target)
+		}
+	}
+	return fmt.Sprintf("local %s now differs from origin/%s; not pushed because origin is not a hosted remote", target, target)
 }
 
 // pushAndFollow pushes the squash with no force, then fast-forwards the local
 // target when it is behind the new commit. A rejected push moves nothing.
-func (s *Service) pushAndFollow(ctx context.Context, repo, target, commit string, res Result) (Result, error) {
+func (s *Service) pushAndFollow(ctx context.Context, repo, target, commit string, res Result, authEnv []string) (Result, error) {
 	if s.beforeUpdate != nil {
 		s.beforeUpdate()
 	}
-	if _, err := git(ctx, repo, "", "push", "--porcelain", "origin", commit+":refs/heads/"+target); err != nil {
+	if _, err := gitEnv(ctx, repo, "", authEnv, "push", "--porcelain", "origin", commit+":refs/heads/"+target); err != nil {
 		return Result{}, fmt.Errorf("%w: origin %s moved or refused the push: %w", ErrPushRejected, target, err)
 	}
 	res.Pushed = true

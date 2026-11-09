@@ -15,6 +15,8 @@ import (
 // GitHubAccountChecker inspects the account a project's sessions would use.
 type GitHubAccountChecker interface {
 	CheckProject(ctx context.Context, id domain.ProjectID) (insp ghaccount.Inspection, repo, override string, found bool, err error)
+	// Accounts lists the signed-in gh accounts (logins only); an empty id lists logins only.
+	Accounts(ctx context.Context, id domain.ProjectID) (res ghaccount.AccountList, found bool, err error)
 }
 
 // ProjectGitHubAccountCheckResponse says which GitHub login the project's token
@@ -39,6 +41,7 @@ type ProjectGitHubAccountController struct {
 // Register mounts the route.
 func (c *ProjectGitHubAccountController) Register(r chi.Router) {
 	r.Get("/projects/{id}/github-account-check", c.check)
+	c.registerAccounts(r)
 }
 
 func (c *ProjectGitHubAccountController) check(w http.ResponseWriter, r *http.Request) {

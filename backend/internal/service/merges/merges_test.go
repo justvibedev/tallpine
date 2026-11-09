@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/service/merges"
 	"tallpine.eu/tallpine/backend/internal/storage/sqlite/sqlitetest"
 )
@@ -132,5 +133,55 @@ func TestDigestHidesStaleOpenPRsOfTerminatedSessions(t *testing.T) {
 	}
 	if len(got) != 2 || !got[1] || !got[3] {
 		t.Fatalf("in flight = %+v, want #1 and #3 only", d.InFlight)
+	}
+}
+
+// An in-flight PR whose head already contains a merged PR's merge commit needs
+// no rebase warning; one that does not contain it still gets it.
+func TestDigestSkipsMergedOverlapWhenHeadContainsMergeCommit(t *testing.T) {
+	ctx := context.Background()
+	st := sqlitetest.MustOpen(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := st.UpsertProject(ctx, domain.ProjectRecord{ID: "p", Path: "/tmp/p", RegisteredAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	write := func(n int, merged bool, head, mergeSHA string) {
+		t.Helper()
+		rec, err := st.CreateSession(ctx, domain.SessionRecord{ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pr := domain.PullRequest{URL: "https://github.com/o/r/pull/" + strings.Repeat("1", n), SessionID: rec.ID, Number: n, Merged: merged,
+			MergedAtProvider: now.Add(-time.Hour), UpdatedAt: now, Title: "pr", HeadSHA: head, MergeCommitSHA: mergeSHA, Paths: []string{"a.go"}}
+		if !merged {
+			pr.MergedAtProvider = time.Time{}
+		}
+		if err := st.WriteSCMObservation(ctx, pr, nil, nil, nil, nil, ports.ReviewWritePreserve); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(1, true, "m-head", "merge1")
+	write(2, false, "has-merge", "")
+	write(3, false, "lacks-merge", "")
+	svc := merges.New(merges.Deps{Store: st, Now: func() time.Time { return now },
+		Contains: func(_ context.Context, _ domain.ProjectID, head, ancestor string) bool {
+			return head == "has-merge" && ancestor == "merge1"
+		}})
+	d, err := svc.Digest(ctx, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contained, notContained bool
+	for _, o := range d.Overlaps {
+		if o.WithMerged && o.With == 1 {
+			contained = contained || o.Number == 2
+			notContained = notContained || o.Number == 3
+		}
+	}
+	if contained {
+		t.Errorf("#2 head contains #1's merge commit but still got a rebase overlap: %+v", d.Overlaps)
+	}
+	if !notContained {
+		t.Errorf("#3 head lacks #1's merge commit and must still warn: %+v", d.Overlaps)
 	}
 }

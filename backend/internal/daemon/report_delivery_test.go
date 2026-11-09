@@ -72,3 +72,28 @@ func TestReportSemanticDeliveryMarksAComposerDraftAsBusy(t *testing.T) {
 		t.Fatalf("Submit error = %v, want other failures left as they are", err)
 	}
 }
+
+// B545: a terminal orchestrator that is mid-turn, still starting, or otherwise
+// unavailable for now takes the 30s busy retry. As a failure it would back off to
+// minutes, and to an hourly retry after enough attempts.
+func TestReportSemanticDeliveryTreatsTransientRefusalsAsBusy(t *testing.T) {
+	for _, cause := range []error{
+		sessionmanager.ErrSemanticAcceptancePending,
+		sessionmanager.ErrStartupPending,
+		sessionmanager.ErrOperationInProgress,
+		sessionmanager.ErrAwaitingDecision,
+	} {
+		sessions := &reportDeliverySession{sendErr: fmt.Errorf("send tp-1: %w", cause)}
+		delivery := reportSemanticDelivery{sessions: sessions}
+		err := delivery.Submit(context.Background(), "tp-1", "report context", "report-batch:abc123")
+		if !errors.Is(err, reportsvc.ErrOrchestratorBusy) || !errors.Is(err, cause) {
+			t.Errorf("Submit error = %v, want ErrOrchestratorBusy wrapping %v", err, cause)
+		}
+	}
+
+	sessions := &reportDeliverySession{sendErr: sessionmanager.ErrSemanticAcceptanceUnsupported}
+	err := reportSemanticDelivery{sessions: sessions}.Submit(context.Background(), "tp-1", "report context", "report-batch:abc123")
+	if errors.Is(err, reportsvc.ErrOrchestratorBusy) {
+		t.Fatalf("Submit error = %v, want a real failure to stay a failure", err)
+	}
+}

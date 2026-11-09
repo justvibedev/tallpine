@@ -27,13 +27,18 @@ const (
 	// NotificationPlanWaiting means a plan reached awaiting_answers or
 	// awaiting_approval and waits on the owner. Surfaced once as unseen.
 	NotificationPlanWaiting NotificationType = "plan_waiting"
+	// NotificationWorktreeKept means cleanup kept an ended session's worktree
+	// (salvage failed, unmerged work, a nested repo) and said why. A settled
+	// fact: sent once per worktree and reason.
+	NotificationWorktreeKept NotificationType = "worktree_kept"
 )
 
 // Valid reports whether t is one of the v1 notification kinds.
 func (t NotificationType) Valid() bool {
 	switch t {
 	case NotificationNeedsInput, NotificationReadyToMerge, NotificationPRMerged, NotificationPRClosedUnmerged,
-		NotificationReviewCompleted, NotificationReviewChangesRequested, NotificationOrchestratorApproval, NotificationPlanWaiting:
+		NotificationReviewCompleted, NotificationReviewChangesRequested, NotificationOrchestratorApproval, NotificationPlanWaiting,
+		NotificationWorktreeKept:
 		return true
 	default:
 		return false

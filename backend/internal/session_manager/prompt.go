@@ -94,7 +94,7 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 	sections := make([]string, 0, 6)
 	switch cfg.Role {
 	case sessionPromptRoleOrchestrator:
-		sections = append(sections, orchestratorSystemPrompt(cfg.Project), needsYouReplyPrompt)
+		sections = append(sections, orchestratorSystemPrompt(cfg.Project), needsYouReplyPrompt, orchestratorGitIsolationPrompt(), orchestratorGitHubAccountPrompt())
 		if rules := strings.TrimSpace(cfg.OrchestratorRules); rules != "" {
 			sections = append(sections, "## Project-Specific Orchestrator Rules\n"+rules)
 		}
@@ -276,7 +276,7 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 - Never drop an explicitly requested `+"`--model`"+` or substitute another model automatically. If `+"`tallpine spawn --model ...`"+` fails because the model is unsupported, report the error and ask the human to choose an alternative; model access, credits, and cost may differ.
 - `+"`tallpine send --session <session-id> --message \"<message>\"`"+` - message a worker.
 - `+"`tallpine session claim-pr <worker-session-id> <pr-ref>`"+` - attach an existing PR for authorized implementation continuation to a worker session. Never use it for review-only work. Orchestrators must pass the target worker session explicitly; never rely on the orchestrator's own `+"`TALLPINE_SESSION_ID`"+`.
-- `+"`tallpine session kill <session-id>`"+` - terminate a session when appropriate.
+- `+"`tallpine session kill <session-id>`"+` - end a worker you spawned once it is finished: after its PR is merged or closed, or once you have read the result of a one-off review, research, plan or verification task. Do not kill a worker that still has unmerged work or is waiting on an answer.
 - `+"`tallpine review trigger <worker-session-id>`"+` - start Tallpine's native adversarial reviewer on a worker's PR heads. Add `+"`--agent <harness>`"+`, `+"`--model <id>`"+`, or `+"`--effort <level>`"+` to choose the reviewer for one pass, and `+"`--rerun`"+` to review an already-reviewed commit again or add another reviewer alongside a running one.
 - `+"`tallpine review ls <worker-session-id>`"+` - inspect a worker's review state and verdicts.
 - `+"`tallpine backlog ls`"+` / `+"`tallpine backlog show <ref>`"+`: the project's backlog. Read it only when the human asks about ideas, next work or follow-ups. Put work you're deferring there with `+"`tallpine backlog add`"+`, never in your harness task list. Never start a held item unprompted.
@@ -457,21 +457,6 @@ An active orchestrator session exists for this project.
 Message it only for true blockers, cross-session coordination, or decisions you cannot resolve locally:
 
 `+"`tallpine send --session %s --message \"<your message>\"`", orchestratorID)
-}
-
-// workerMultiPRPrompt explains the branch convention Tallpine uses to attribute pull
-// requests to this session.
-func workerMultiPRPrompt() string {
-	return `## Pull Requests for This Session
-
-Tallpine attributes PRs to this session when the source branch is this session branch or lives under this session namespace.
-
-- If your current branch ends in ` + "`/root`" + `, create independent PR branches as siblings under the same namespace, for example ` + "`<namespace>/<topic>`" + ` from ` + "`<namespace>/root`" + `. Do not create ` + "`<namespace>/root/<topic>`" + `.
-- For a workspace project whose recorded session branch is ` + "`tp/<session-id>`" + ` or a collision variant such as ` + "`tp/<session-id>-2`" + `, use hyphen siblings such as ` + "`<session-branch>-<topic>`" + ` in each registered repository. The bare session ref prevents Git from creating slash children. Keep the full collision suffix. Claim a child-repository PR explicitly with ` + "`tallpine session claim-pr <full-pr-url>`" + ` when needed.
-- Otherwise, create each source branch as a child of this session branch, for example ` + "`<current-branch>/<topic>`" + `.
-- To stack a PR on top of another, create the new branch from the parent branch and target the parent branch in the PR. Use ` + "`<parent-branch>/<topic>`" + ` when Git permits slash children, or another ` + "`<session-branch>-<topic>`" + ` for bare workspace refs.
-
-Keep branch names inside this session namespace so Tallpine can track every PR you open.`
 }
 
 func projectContextSection(project promptProject) string {

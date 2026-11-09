@@ -39,7 +39,7 @@ func (q *Queries) InsertPRPath(ctx context.Context, arg InsertPRPathParams) erro
 
 const listMergeDigestPRs = `-- name: ListMergeDigestPRs :many
 SELECT p.url, p.number, p.pr_state, p.title, p.head_sha, p.session_id,
-       p.updated_at, p.merged_at_provider,
+       p.updated_at, p.merged_at_provider, p.merge_commit_sha,
        COALESCE(l.lane_item_id, '') AS lane_item_id
 FROM pr p
 JOIN sessions s ON s.id = p.session_id
@@ -64,6 +64,7 @@ type ListMergeDigestPRsRow struct {
 	SessionID        domain.SessionID
 	UpdatedAt        time.Time
 	MergedAtProvider sql.NullTime
+	MergeCommitSha   string
 	LaneItemID       string
 }
 
@@ -89,6 +90,7 @@ func (q *Queries) ListMergeDigestPRs(ctx context.Context, arg ListMergeDigestPRs
 			&i.SessionID,
 			&i.UpdatedAt,
 			&i.MergedAtProvider,
+			&i.MergeCommitSha,
 			&i.LaneItemID,
 		); err != nil {
 			return nil, err

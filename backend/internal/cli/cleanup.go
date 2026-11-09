@@ -265,6 +265,9 @@ func newCleanupStatusCommand(ctx *commandContext) *cobra.Command {
 				if err := printCleanupReport(out, *status.LastRun); err != nil {
 					return err
 				}
+				if err := printKeptWorktrees(out, *status.LastRun); err != nil {
+					return err
+				}
 			} else if _, err := fmt.Fprintln(out, "\nNo cleanup has run yet."); err != nil {
 				return err
 			}

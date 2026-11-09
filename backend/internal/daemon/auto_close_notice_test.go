@@ -22,7 +22,7 @@ func TestAutoCloseNotifyClosed_SkipsOnlyTheRequestingOrchestrator(t *testing.T) 
 			orchestrator: func(context.Context, domain.ProjectID, string) (domain.SessionID, bool) { return "orch-1", true },
 			send:         func(_ context.Context, to domain.SessionID, _ string) error { sent = append(sent, to); return nil },
 		}
-		h.NotifyClosed(context.Background(), domain.SessionRecord{ID: "w-1", ProjectID: "p1"}, tc.requester)
+		h.NotifyClosed(context.Background(), domain.SessionRecord{ID: "w-1", ProjectID: "p1"}, tc.requester, "")
 		if len(sent) != tc.wantSent {
 			t.Fatalf("requester %q: sent %v, want %d notices", tc.requester, sent, tc.wantSent)
 		}

@@ -50,3 +50,45 @@ func TestReportStoreQuietReportState(t *testing.T) {
 		t.Fatalf("non-quiet newest = %v %v", q, sup)
 	}
 }
+
+// B557: the close notice relays only a turn_ended still held undelivered.
+func TestReportStoreLatestHeldTurnEndedReport(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "tp")
+	sess, err := s.CreateSession(ctx, sampleRecord("tp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	mk := func(id, message string, at time.Time, quiet bool) {
+		t.Helper()
+		rec := domain.ReportRecord{ID: id, SessionID: sess.ID, ProjectID: sess.ProjectID, Message: message, Synthesized: true, CreatedAt: at, DeliveryState: domain.ReportPending, AvailableAt: at, RepeatCount: 1, Quiet: quiet}
+		if _, err := s.CreateReport(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := func(step, message string, found bool) {
+		t.Helper()
+		got, ok, err := s.LatestHeldTurnEndedReport(ctx, sess.ID)
+		if err != nil || ok != found || got != message {
+			t.Fatalf("%s: got %q %v %v, want %q %v", step, got, ok, err, message, found)
+		}
+	}
+	want("no reports", "", false)
+	mk("not-quiet", "[auto] turn_ended: not held", now, false)
+	mk("other-kind", "[auto] usage_limited: held", now.Add(time.Second), true)
+	want("only ineligible reports", "", false)
+	mk("old", "[auto] turn_ended: old", now.Add(2*time.Second), true)
+	mk("new", "[auto] turn_ended: new", now.Add(3*time.Second), true)
+	want("newest held", "[auto] turn_ended: new", true)
+	if _, ok, err := s.ClaimReport(ctx, "new", "tok", now.Add(time.Hour)); err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	want("claimed for delivery is skipped", "[auto] turn_ended: old", true)
+	worker := domain.ReportRecord{ID: "worker", SessionID: sess.ID, ProjectID: sess.ProjectID, State: domain.ReportCheckpoint, Note: "later", CreatedAt: now.Add(time.Minute), DeliveryState: domain.ReportPending, AvailableAt: now, RepeatCount: 1}
+	if _, err := s.CreateReport(ctx, worker); err != nil {
+		t.Fatal(err)
+	}
+	want("superseded by a worker report", "", false)
+}

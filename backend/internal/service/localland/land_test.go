@@ -422,3 +422,75 @@ func TestConcurrentLandsSerialize(t *testing.T) {
 		t.Fatalf("main = %s, want %s", got, second.NewSHA)
 	}
 }
+
+func TestLandNonHostedOriginNotesLocalAheadOfOrigin(t *testing.T) {
+	f := newFixture(t)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	run(t, f.repo, "init", "--bare", origin)
+	run(t, f.repo, "remote", "add", "origin", origin)
+	run(t, f.repo, "push", "origin", "main")
+	id, _ := f.worker(t, "w1", "a.txt", "a\n")
+	f.approve(id, run(t, f.store.sessions[id].Metadata.WorkspacePath, "rev-parse", "HEAD"))
+
+	res, err := f.svc.Land(context.Background(), id, Request{})
+	if err != nil {
+		t.Fatalf("Land: %v", err)
+	}
+	if res.Pushed || len(res.Notes) != 1 || !strings.Contains(res.Notes[0], "1 commit(s) ahead of origin/main") {
+		t.Fatalf("result = %+v", res)
+	}
+}
+
+type fakeGitCredentials struct {
+	env      []string
+	projects []domain.ProjectID
+}
+
+func (f *fakeGitCredentials) ProjectGitEnv(_ context.Context, project domain.ProjectID) []string {
+	f.projects = append(f.projects, project)
+	return f.env
+}
+
+// `tallpine session land` fetches and pushes as the project's account, not the
+// machine's active one: GIT_TRACE from the credential env reaches real git.
+func TestLandHostedRemoteFetchesAndPushesAsProjectAccount(t *testing.T) {
+	f, bare := remoteFixture(t)
+	trace := filepath.Join(t.TempDir(), "trace")
+	creds := &fakeGitCredentials{env: []string{"GIT_TRACE=" + trace}}
+	f.svc.SetGitCredentials(creds)
+	id, head := f.worker(t, "w1", "a.txt", "a\n")
+	f.approve(id, head)
+	res, err := f.svc.Land(context.Background(), id, Request{})
+	if err != nil || !res.Pushed {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if got := run(t, bare, "rev-parse", "main"); got != res.NewSHA {
+		t.Fatalf("origin main = %s, want %s", got, res.NewSHA)
+	}
+	b, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"fetch", "push"} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("git %s ran without the project's account; trace: %s", want, b)
+		}
+	}
+	if len(creds.projects) != 1 || creds.projects[0] != f.store.sessions[id].ProjectID {
+		t.Fatalf("credentials asked for %v", creds.projects)
+	}
+}
+
+func TestLandNonHostedOriginDoesNotLookUpAnAccount(t *testing.T) {
+	f := newFixture(t)
+	creds := &fakeGitCredentials{env: []string{"GIT_MARK=1"}}
+	f.svc.SetGitCredentials(creds)
+	id, head := f.worker(t, "w1", "a.txt", "a\n")
+	f.approve(id, head)
+	if _, err := f.svc.Land(context.Background(), id, Request{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(creds.projects) != 0 {
+		t.Fatalf("looked up an account for a local land: %v", creds.projects)
+	}
+}

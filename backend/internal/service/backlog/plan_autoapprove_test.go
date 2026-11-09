@@ -113,3 +113,27 @@ func TestPlanAutoApprove_SweepApprovesWaitingPlansWhenTurnedOn(t *testing.T) {
 		t.Fatalf("plan = %+v, %v, %v, want approved by auto", cur, ok, err)
 	}
 }
+
+func TestPlanAutoApprove_HoldsPlanThatNeedsTheOwner(t *testing.T) {
+	for _, d := range []string{
+		"| q | a |\n|---|---|\n| Q1 | use X (not confirmed by owner) |",
+		"| Q1 | Y: overrides owner answer to Q1 |",
+		"| Q1 | overriding owner |", "| Q1 | overriding the owner |", "| Q1 | override the owner |",
+		"| Q1 | overrode an owner answer |", "| Q1 | unconfirmed by the owner |", "| Q1 | not  confirmed\nby owner |",
+	} {
+		on := true
+		e := newPlanEnvWith(t, true, func(pd *backlog.PlanDeps) {
+			pd.AutoApprove = func(context.Context, domain.ProjectID) bool { return on }
+		})
+		in := goodSubmit()
+		in.Decisions = d
+		got, err := e.submitWith(in)
+		if err != nil || got.Status != domain.PlanAwaitingApproval {
+			t.Fatalf("submit = %+v, %v, want awaiting approval for %q", got, err, d)
+		}
+		e.plans.ApproveWaiting(e.ctx, "p1")
+		if cur, _, _ := e.plans.Current(e.ctx, e.item.ID); cur.Status != domain.PlanAwaitingApproval {
+			t.Fatalf("sweep approved a plan needing the owner: %+v", cur)
+		}
+	}
+}

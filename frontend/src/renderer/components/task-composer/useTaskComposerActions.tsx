@@ -146,7 +146,7 @@ export function useTaskComposerActions(props: TaskComposerProps, state: ReturnTy
 				approvalMode,
 				attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
 				taskPreparation: submittedPreparation || undefined,
-				...(backlog && !isStandalone ? { backlogRef: backlog.ref, ...(backlog.force ? { backlogForce: true } : {}) } : {}),
+				...(backlog && !isStandalone ? { backlogRef: backlog.ref, ...(backlog.force ? { backlogForce: true } : {}), ...(backlog.allowBlocked ? { backlogAllowBlocked: true } : {}) } : {}),
 			};
 			const { taskPreparation: _, attachments: _attachments, ...requestPayload } = request;
 			const payload = JSON.stringify({ ...requestPayload, attachmentIds: attachments.map((attachment) => attachment.id) });

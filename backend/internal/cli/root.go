@@ -235,6 +235,7 @@ func NewRootCommand(deps Deps) *cobra.Command {
 	root.AddCommand(newMigrateFromVoCommand())
 	root.AddCommand(newPolicyCommand(ctx))
 	root.AddCommand(newSettingsCommand(ctx))
+	root.AddCommand(newGitHubCommand(ctx))
 	root.AddCommand(newRetentionCommand(ctx))
 	root.AddCommand(newGitCredentialCommand(ctx), newGHExecCommand(ctx), newCommitCommand(ctx))
 	root.AddCommand(newUpdateCommand(ctx))

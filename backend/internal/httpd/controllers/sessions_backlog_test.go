@@ -57,7 +57,7 @@ func TestSpawnWithBacklogLinksSessionAndAddsTaskContext(t *testing.T) {
 	}
 
 	body, status, _ := doRequest(t, srv, http.MethodPost, "/api/v1/sessions",
-		`{"projectId":"tp","kind":"worker","harness":"codex","displayName":"leak","parentSessionId":"","backlogRef":"`+item.Ref()+`"}`)
+		`{"projectId":"tp","kind":"worker","harness":"codex","displayName":"leak","parentSessionId":"","backlogRef":"`+item.Ref()+`","backlogForce":true}`)
 	if status != http.StatusCreated {
 		t.Fatalf("spawn = %d: %s", status, body)
 	}
@@ -175,7 +175,7 @@ func TestDelegateWithBacklogLinksWorkerAndAddsTaskContext(t *testing.T) {
 	}
 
 	body, status, _ := doRequest(t, srv, http.MethodPost, "/api/v1/orchestrators/delegate",
-		`{"projectId":"tp","brief":"`+item.Ref()+`: Fix leak","backlogRef":"`+item.Ref()+`"}`)
+		`{"projectId":"tp","brief":"`+item.Ref()+`: Fix leak","backlogRef":"`+item.Ref()+`","backlogForce":true}`)
 	if status != http.StatusAccepted {
 		t.Fatalf("delegate = %d: %s", status, body)
 	}

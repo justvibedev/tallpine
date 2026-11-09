@@ -55,7 +55,7 @@ func retryAlreadyCovered(runs []domain.ReviewRun, failed domain.ReviewRun) bool 
 		if run.Status == domain.ReviewRunRunning {
 			return true
 		}
-		if run.CreatedAt.After(failed.CreatedAt) && (run.Status != domain.ReviewRunFailed || !NeverReviewed(run.Body)) {
+		if run.CreatedAt.After(failed.CreatedAt) && (run.Status != domain.ReviewRunFailed || !NeverReviewed(run.Body)) && !ReviewerGoneCancel(run) {
 			return true
 		}
 	}

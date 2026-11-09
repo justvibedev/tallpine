@@ -75,6 +75,9 @@ type Item struct {
 	Bytes  int64      `json:"bytes"`
 	Status ItemStatus `json:"status"`
 	Reason string     `json:"reason,omitempty"`
+	// Attention marks a kept item whose reason the owner can act on (a
+	// worktree cleanup could not salvage), not an expected wait.
+	Attention bool `json:"attention,omitempty"`
 }
 
 // CategoryReport sums one category's items.
@@ -123,6 +126,9 @@ var statusRank = map[ItemStatus]int{
 func (c *CategoryReport) finish() {
 	sort.SliceStable(c.Items, func(i, j int) bool {
 		a, b := c.Items[i], c.Items[j]
+		if a.Attention != b.Attention {
+			return a.Attention
+		}
 		if statusRank[a.Status] != statusRank[b.Status] {
 			return statusRank[a.Status] < statusRank[b.Status]
 		}

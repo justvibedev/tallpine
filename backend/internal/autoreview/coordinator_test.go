@@ -25,8 +25,16 @@ func (f *fakeStore) ListLiveSessions(context.Context) ([]domain.SessionRecord, e
 	}
 	return []domain.SessionRecord{f.session}, nil
 }
+
+// GetProject mirrors the session fixture's flag into the project setting when a
+// test leaves it unset: the project setting is what decides Auto review now.
 func (f *fakeStore) GetProject(context.Context, string) (domain.ProjectRecord, bool, error) {
-	return f.project, true, nil
+	p := f.project
+	if p.Config.AutoReview == nil {
+		on := f.session.AutoReviewEnabled
+		p.Config.AutoReview = &on
+	}
+	return p, true, nil
 }
 func (f *fakeStore) ListPRsBySession(context.Context, domain.SessionID) ([]domain.PullRequest, error) {
 	return f.prs, nil
@@ -172,6 +180,29 @@ func TestExistingHeadReasonCapsFailedAutoRetriesPerHead(t *testing.T) {
 				{PRURL: prURL, TargetSHA: "sha1", Harness: domain.ReviewerCodex, TriggerSource: domain.ReviewTriggerManual, Status: domain.ReviewRunFailed},
 			},
 			want: "",
+		},
+		{
+			name: "reviewer-gone cancel leaves the head eligible",
+			runs: []domain.ReviewRun{
+				domain.ReviewRun{PRURL: prURL, TargetSHA: "sha1", Harness: domain.ReviewerCodex, Status: domain.ReviewRunCancelled, Body: "cancelled because reviewer terminal is unavailable"},
+			},
+			want: "",
+		},
+		{
+			name: "reviewer-gone cancels stop at the retry limit",
+			runs: []domain.ReviewRun{
+				domain.ReviewRun{PRURL: prURL, TargetSHA: "sha1", Harness: domain.ReviewerCodex, Status: domain.ReviewRunCancelled, Body: "cancelled because reviewer terminal is unavailable"},
+				domain.ReviewRun{PRURL: prURL, TargetSHA: "sha1", Harness: domain.ReviewerCodex, Status: domain.ReviewRunCancelled, Body: "cancelled because reviewer terminal is unavailable"},
+				domain.ReviewRun{PRURL: prURL, TargetSHA: "sha1", Harness: domain.ReviewerCodex, Status: domain.ReviewRunCancelled, Body: "cancelled because reviewer terminal is unavailable"},
+			},
+			want: retryLimitReason,
+		},
+		{
+			name: "a cancel by a person still blocks the head",
+			runs: []domain.ReviewRun{
+				{PRURL: prURL, TargetSHA: "sha1", Harness: domain.ReviewerCodex, Status: domain.ReviewRunCancelled, Body: "cancelled by user"},
+			},
+			want: "cancelled_same_sha",
 		},
 	}
 	for _, tt := range tests {

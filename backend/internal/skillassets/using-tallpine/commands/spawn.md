@@ -18,8 +18,8 @@ tallpine spawn [flags]
 | `--kind string` | Session role: `worker` or `orchestrator` | `worker` |
 | `--harness string` | Agent harness to use (see list below) | Project `worker.agent`; required if the project has none |
 | `--issue string` | Issue id to associate with the session | - |
-| `--backlog string` | Backlog item (e.g. `B12`) to work on: its title, note, done-when and agent notes join the worker's task and the session is linked to the item. The item must be open and not a parent; held items need `--force`. Open blockers print a warning | - |
-| `--force` | With `--backlog`, start a held item anyway | `false` |
+| `--backlog string` | Backlog item (e.g. `B12`) to work on: its title, note, done-when and agent notes join the worker's task and the session is linked to the item. The item must be open and not a parent; held items and items with an open blocker need `--force` (a forced blocked item still prints a warning) | - |
+| `--force` | With `--backlog`, start a held item, or one with an open blocker, anyway | `false` |
 | `--model string` | Agent model override for this session only; overrides project/role config | - |
 | `--effort string` | Reasoning effort for this session only. Accepted by `codex`, `claude-code` and `deepseek-harness` (off, low, medium, high, xhigh, max; deepseek-harness maps them to off/low/high/max); other harnesses reject it | - |
 | `--name string` | Display name shown in the sidebar (max 100 characters) | Required |

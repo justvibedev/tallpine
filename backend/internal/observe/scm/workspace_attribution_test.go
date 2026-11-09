@@ -111,6 +111,7 @@ func TestMatchSession_WorkspaceOwnership(t *testing.T) {
 		{"exact", "tp/p-1", []sessionRepo{bare}, "p-1"},
 		{"stacked descendant", "tp/p-1/topic/stack", []sessionRepo{bare}, "p-1"},
 		{"root slash sibling", "tp/p-1/fix", []sessionRepo{workspace("p-1", "tp/p-1/root")}, "p-1"},
+		{"root stacked sibling", "tp/p-1/fix-more", []sessionRepo{workspace("p-1", "tp/p-1/root")}, "p-1"},
 		{"custom exact", "feature/a", []sessionRepo{workspace("p-1", "feature/a")}, "p-1"},
 		{"custom stack", "feature/a/stack", []sessionRepo{workspace("p-1", "feature/a")}, "p-1"},
 		{"custom sibling excluded", "feature/b", []sessionRepo{workspace("p-1", "feature/a")}, ""},

@@ -24,7 +24,7 @@ func (s *Store) MergeDigestPRs(ctx context.Context, project domain.ProjectID, me
 	out := make([]domain.MergeDigestPR, 0, len(rows))
 	for _, r := range rows {
 		p := domain.MergeDigestPR{
-			URL: r.URL, Number: int(r.Number), State: r.PRState, Title: r.Title, HeadSHA: r.HeadSha,
+			URL: r.URL, Number: int(r.Number), State: r.PRState, Title: r.Title, HeadSHA: r.HeadSha, MergeCommitSHA: r.MergeCommitSha,
 			SessionID: r.SessionID, LaneItemID: r.LaneItemID, UpdatedAt: r.UpdatedAt, Paths: paths[r.URL],
 		}
 		if r.MergedAtProvider.Valid {

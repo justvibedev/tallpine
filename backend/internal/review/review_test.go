@@ -357,12 +357,6 @@ func (f fakePRs) ListPRsBySession(_ context.Context, _ domain.SessionID) ([]doma
 	return f.prs, nil
 }
 
-type fakeProjects struct{ cfg domain.ProjectConfig }
-
-func (f fakeProjects) GetProject(_ context.Context, id string) (domain.ProjectRecord, bool, error) {
-	return domain.ProjectRecord{ID: id, Config: f.cfg}, true, nil
-}
-
 type chatReviewAdapter struct{}
 
 func (chatReviewAdapter) ReviewCommand(context.Context, ports.ReviewInvocation) (ports.ReviewCommandSpec, error) {
@@ -2817,55 +2811,29 @@ func TestAutoTriggerDoesNotAppendPRToLiveRunningReviewer(t *testing.T) {
 	}
 }
 
-func TestAutoTriggerReconcilesDeadReviewerBeforeRunningGate(t *testing.T) {
-	pr1 := "https://github.com/o/r/pull/1"
-	pr2 := "https://github.com/o/r/pull/2"
-	store := &fakeStore{
-		review: &domain.Review{ID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode, ReviewerHandleID: "review-mer-1"},
-		runs: []domain.ReviewRun{{
-			ID: "run-1", ReviewID: "rev-1", SessionID: "mer-1", Harness: domain.ReviewerClaudeCode,
-			PRURL: pr1, TargetSHA: "sha1", Status: domain.ReviewRunRunning,
-		}},
-	}
-	launcher := &fakeLauncher{alive: false, handle: "review-mer-1"}
-	prs := fakePRs{prs: []domain.PullRequest{
-		{URL: pr1, Number: 1, HeadSHA: "sha1"},
-		{URL: pr2, Number: 2, HeadSHA: "sha2"},
-	}}
-	eng := newEngineForTest(store, fakeSessions{rec: liveWorker(), ok: true}, prs, fakeProjects{}, launcher)
-
-	res, err := triggerWithSource(context.Background(), eng, "mer-1", domain.ReviewerClaudeCode, domain.AgentConfig{}, domain.ReviewTriggerAuto)
-	if err != nil {
-		t.Fatalf("TriggerWithSource: %v", err)
-	}
-	if !res.Created || res.Run.PRURL != pr2 {
-		t.Fatalf("dead reviewer did not release pending PR: result=%+v", res)
-	}
-	if store.runs[0].Status != domain.ReviewRunCancelled || len(store.runs) != 2 {
-		t.Fatalf("stale run was not reconciled before retry: %+v", store.runs)
-	}
-	if !launcher.aliveChecked || !launcher.spawned || launcher.notified {
-		t.Fatalf("pending PR should launch a fresh reviewer: %+v", launcher)
-	}
-}
-
 func TestAutoTriggerRevalidatesSessionPolicyUnderLock(t *testing.T) {
 	tests := []struct {
 		name       string
 		mutate     func(*domain.SessionRecord)
 		wantReason string
 	}{
-		{name: "disabled", mutate: func(worker *domain.SessionRecord) { worker.AutoReviewEnabled = false }, wantReason: "disabled"},
+		{name: "disabled", wantReason: "disabled"},
 		{name: "active", mutate: func(worker *domain.SessionRecord) { worker.Activity.State = domain.ActivityActive }, wantReason: "not_idle"},
 		{name: "idle threshold reset", mutate: func(worker *domain.SessionRecord) { worker.Activity.LastActivityAt = time.Unix(-59, 0).UTC() }, wantReason: "idle_threshold_not_met"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			worker := liveWorker()
-			tt.mutate(&worker)
+			if tt.mutate != nil {
+				tt.mutate(&worker)
+			}
 			store := &fakeStore{}
 			launcher := &fakeLauncher{handle: "review-mer-1"}
-			eng := newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), fakeProjects{}, launcher)
+			projects := fakeProjects{}
+			if tt.name == "disabled" {
+				projects = autoOffProjects()
+			}
+			eng := newEngineForTest(store, fakeSessions{rec: worker, ok: true}, prAt("sha1"), projects, launcher)
 
 			result, err := triggerWithSource(context.Background(), eng, "mer-1", domain.ReviewerClaudeCode, domain.AgentConfig{}, domain.ReviewTriggerAuto)
 			if err != nil {

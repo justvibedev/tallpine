@@ -58,3 +58,17 @@ func reportProjectConfig(cmd *cobra.Command, opts projectSetConfigOptions, res p
 	_, err := fmt.Fprintf(cmd.OutOrStdout(), "updated config for project %s\n", res.Project.ID)
 	return err
 }
+
+// onlyGitHubUserFlag reports whether --github-user is the only config field
+// flag given, so it can go through the settings route an orchestrator may use.
+func onlyGitHubUserFlag(changed func(string) bool) bool {
+	if !changed("github-user") {
+		return false
+	}
+	for _, f := range projectConfigFieldFlags {
+		if f != "github-user" && changed(f) {
+			return false
+		}
+	}
+	return true
+}

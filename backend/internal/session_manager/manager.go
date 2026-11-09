@@ -26,9 +26,13 @@ import (
 var (
 	ErrNotFound                      = errors.New("session: not found")
 	ErrSemanticAcceptanceUnsupported = errors.New("session: semantic message acceptance unsupported")
-	ErrNotRestorable                 = errors.New("session: not restorable (not terminal)")
-	ErrTerminated                    = errors.New("session: terminated")
-	ErrAgentExited                   = errors.New("session: agent exited")
+	// ErrSemanticAcceptancePending means the message is typed but the agent is
+	// still mid-turn, so it has not accepted it yet. This is not a failure: it
+	// clears by itself when the turn ends.
+	ErrSemanticAcceptancePending = errors.New("session: semantic message not yet accepted by the running turn")
+	ErrNotRestorable             = errors.New("session: not restorable (not terminal)")
+	ErrTerminated                = errors.New("session: terminated")
+	ErrAgentExited               = errors.New("session: agent exited")
 	// ErrAgentStoppedByUser refuses a send to a Chat whose agent was stopped
 	// on purpose; only an explicit Resume brings it back.
 	ErrAgentStoppedByUser  = errors.New("session: agent was stopped; resume it to deliver messages")
@@ -213,6 +217,8 @@ type SessionTokenIssuer interface {
 type sendConfirmConfig struct {
 	// pollInterval is the gap between activity reads.
 	pollInterval time.Duration
+	// semanticAcceptance overrides semanticAcceptanceTimeout when positive.
+	semanticAcceptance time.Duration
 	// attemptDeadline is how long to wait for active after each Enter.
 	attemptDeadline time.Duration
 	// maxAttempts bounds how many times Enter is (re)sent, counting the initial

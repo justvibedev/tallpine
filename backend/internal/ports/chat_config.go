@@ -241,6 +241,13 @@ const (
 	// already accepted, so nothing new was sent; whether the original has been
 	// delivered or is still queued is not reported.
 	MessageDuplicate MessageOutcome = "duplicate"
+	// MessageReauthRequired means the session's provider had refused its login
+	// when the message arrived, so delivery is unconfirmed either way. The turn
+	// still ran, because only a turn can show the login is back: the agent gets
+	// the message if the login has since been renewed, and resending would then
+	// deliver it twice. The conversation account tells the two apart once the
+	// turn ends: a refused turn leaves the reauth demand set.
+	MessageReauthRequired MessageOutcome = "reauth_required"
 )
 
 // MessageReceipt reports the delivery outcome of one accepted message. ID is the

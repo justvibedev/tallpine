@@ -100,6 +100,9 @@ func TestApprove_ChildSpawnGetsParentPlan(t *testing.T) {
 	e := newPlanEnv(t, true)
 	e.approved(twoPRSubmit())
 	kids := e.children()
+	if _, err := e.bl.SetState(e.ctx, "p1", kids[0].ID, domain.BacklogDone, ""); err != nil { // child 1 merged
+		t.Fatal(err)
+	}
 	got, err := e.bl.PrepareSpawn(e.ctx, "p1", kids[1].Ref(), false)
 	if err != nil {
 		t.Fatal(err)
@@ -259,6 +262,9 @@ func TestStale_ChildOnlyByItsOwnFiles(t *testing.T) {
 	p := e.approved(twoPRSubmit())
 	e.setBase(p.ID, "abc123")
 	kids := e.children()
+	if _, err := e.bl.SetState(e.ctx, "p1", kids[0].ID, domain.BacklogDone, ""); err != nil { // child 1 merged
+		t.Fatal(err)
+	}
 	if _, err := e.bl.PrepareSpawn(e.ctx, "p1", kids[1].Ref(), false); err != nil {
 		t.Fatalf("child 2 after child 1 merged = %v, want startable", err)
 	}
@@ -277,6 +283,9 @@ func TestChild_MatchedByKeyNotTitle(t *testing.T) {
 	p := e.approved(in)
 	e.setBase(p.ID, "abc123")
 	kids := e.children()
+	if _, err := e.bl.SetState(e.ctx, "p1", kids[0].ID, domain.BacklogDone, ""); err != nil { // child 1 merged
+		t.Fatal(err)
+	}
 	renamed := "Renamed by the owner"
 	if _, err := e.bl.Update(e.ctx, "p1", kids[1].Ref(), backlog.UpdateInput{Title: &renamed}); err != nil {
 		t.Fatal(err)
@@ -398,7 +407,7 @@ func TestReplan_KeepsStartedAndDoneChildren(t *testing.T) {
 	p := e.approved(in)
 	e.setBase(p.ID, "abc123")
 	kids := e.children()
-	if err := e.bl.LinkSession(e.ctx, kids[0].ID, "sess-x", "human"); err != nil {
+	if err := e.bl.LinkSession(e.ctx, kids[0].ID, e.workerSession().ID, "human"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.bl.SetState(e.ctx, "p1", kids[1].Ref(), domain.BacklogDone, "merged"); err != nil {
@@ -426,7 +435,7 @@ func TestReplan_KeepsStartedAndDoneChildren(t *testing.T) {
 		t.Fatalf("live = %v, want kept A and new D", got)
 	}
 	// The kept child gets no stale refusal and no PR line from the new plan.
-	got, err := e.bl.PrepareSpawn(e.ctx, "p1", kids[0].Ref(), false)
+	got, err := e.bl.PrepareSpawnAllowDuplicate(e.ctx, "p1", kids[0].Ref(), false, true)
 	if err != nil || strings.Contains(got.Context, "You build PR") {
 		t.Fatalf("kept child spawn = %v / %q", err, got.Context)
 	}

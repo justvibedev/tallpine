@@ -38,7 +38,7 @@ against the contract layer below.
 For capability claims, compare the worker, Chat-driver, and reviewer registries
 separately. For user flows, check the renderer and daemon wiring as well as
 DTOs. The public manual uses the latest stable desktop release as its user
-baseline: **v0.13.6**.
+baseline: **v0.13.7**.
 Contributor docs describe the checked-out revision of `main`, which can be ahead
 of that release. Gated Cloud behavior needs a
 separate deployed-environment check; source and a healthy public endpoint do

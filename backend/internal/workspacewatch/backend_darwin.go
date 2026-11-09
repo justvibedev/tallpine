@@ -107,22 +107,7 @@ type fseventsFilter struct {
 
 func (f *fseventsFilter) run(ctx context.Context, stream *fsevents.EventStream, changes chan struct{}) {
 	defer close(changes)
-	defer func() {
-		// The stream's callback blocks on Events; keep draining until Stop has
-		// torn the dispatch queue down.
-		stopped := make(chan struct{})
-		go func() {
-			for {
-				select {
-				case <-stream.Events:
-				case <-stopped:
-					return
-				}
-			}
-		}()
-		stream.Stop()
-		close(stopped)
-	}()
+	defer stopFSEventStream(stream)
 	for {
 		select {
 		case <-ctx.Done():
@@ -136,6 +121,23 @@ func (f *fseventsFilter) run(ctx context.Context, stream *fsevents.EventStream, 
 			}
 		}
 	}
+}
+
+// stopFSEventStream stops stream. Its callback blocks on Events, so they are
+// drained until Stop has torn the dispatch queue down.
+func stopFSEventStream(stream *fsevents.EventStream) {
+	stopped := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stream.Events:
+			case <-stopped:
+				return
+			}
+		}
+	}()
+	stream.Stop()
+	close(stopped)
 }
 
 // relevant reports whether a delivered batch changes the workspace model.

@@ -215,3 +215,10 @@ func TestBranchCreatedLocallyDistinguishesCreatedFromFetched(t *testing.T) {
 		t.Error("a missing branch was treated as created locally")
 	}
 }
+
+// B588 review: a reflog git cannot read is reported, not treated as empty.
+func TestWorkspaceVisitedBranches_ReportsUnreadableReflog(t *testing.T) {
+	if _, ok := WorkspaceVisitedBranches(context.Background(), t.TempDir()); ok {
+		t.Fatal("a non-repository must report an unreadable reflog")
+	}
+}

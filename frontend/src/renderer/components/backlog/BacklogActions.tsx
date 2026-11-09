@@ -26,7 +26,14 @@ export function BacklogActions({ item, workspaces, onOpenSession, children }: { 
 	const [confirmStart, setConfirmStart] = useState(false);
 	const orchestrator = findProjectOrchestrator([...workspaces], item.projectId);
 	const noOrchestrator = orchestrator ? undefined : t("backlog.reason.noOrchestrator");
-	const startWorker = (force: boolean) => requestNewTask(item.projectId, undefined, { ref: item.ref, title: item.title, ...(force ? { force: true } : {}) });
+	// A held item or one with an open blocker is refused unless overridden, so confirm first. force overrides a hold (and the plan checks); allowBlocked only an open blocker.
+	const needsConfirm = item.hold !== "" || item.openBlockers.length > 0;
+	const startWorker = (override: boolean) =>
+		requestNewTask(item.projectId, undefined, {
+			ref: item.ref,
+			title: item.title,
+			...(override ? (item.hold !== "" ? { force: true } : { allowBlocked: true }) : {}),
+		});
 	// Both chat actions only fill the orchestrator's draft; the user reads it and sends it.
 	const toChat = (text: string) => {
 		if (!orchestrator) return;
@@ -69,7 +76,7 @@ export function BacklogActions({ item, workspaces, onOpenSession, children }: { 
 					type="button"
 					size="sm"
 					disabledReason={item.childCount > 0 ? t("backlog.reason.parent") : undefined}
-					onClick={() => (item.hold !== "" ? setConfirmStart(true) : startWorker(false))}
+					onClick={() => (needsConfirm ? setConfirmStart(true) : startWorker(false))}
 				>
 					{t("backlog.action.start")}
 				</BacklogReasonButton>
@@ -105,7 +112,7 @@ export function BacklogActions({ item, workspaces, onOpenSession, children }: { 
 			<ConfirmDialog
 				open={confirmStart}
 				title={t("backlog.startHeld.title", { ref: item.ref })}
-				description={t("backlog.startHeld.description", { reason: item.hold })}
+				description={[item.hold !== "" ? t("backlog.startHeld.description", { reason: item.hold }) : "", item.openBlockers.length > 0 ? t("backlog.startBlocked.description") : ""].filter(Boolean).join(" ")}
 				confirmLabel={t("backlog.action.start")}
 				onConfirm={() => {
 					setConfirmStart(false);

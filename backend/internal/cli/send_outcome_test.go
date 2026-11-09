@@ -38,6 +38,7 @@ func TestSend_PrintsDeliveryOutcome(t *testing.T) {
 	}{
 		{"delivered", `{"ok":true,"outcome":"delivered","deliveryId":"session-send:abc"}`, "delivered to demo-1 (id session-send:abc)"},
 		{"queued", `{"ok":true,"outcome":"queued","deliveryId":"turn-7"}`, "queued for next turn in demo-1 (id turn-7)"},
+		{"reauth required", `{"ok":true,"outcome":"reauth_required","deliveryId":"turn-9"}`, "accepted for demo-1 (id turn-9) but delivery is unconfirmed"},
 		{"steered past an open question", `{"ok":true,"outcome":"delivered","deliveryId":"act-1","waitingOnInput":true}`, "delivered to demo-1 (id act-1) into its running turn, which was waiting on an in-chat question"},
 		{"queued behind an open question", `{"ok":true,"outcome":"queued","deliveryId":"turn-8","waitingOnInput":true}`, "NOT delivered yet: its running turn is waiting on an in-chat question"},
 		{"duplicate", `{"ok":true,"outcome":"duplicate"}`, "not sent to demo-1: a message with this id was already accepted"},
@@ -58,5 +59,19 @@ func TestSend_PrintsDeliveryOutcome(t *testing.T) {
 				t.Fatalf("stdout = %q, want to contain %q", out, tc.want)
 			}
 		})
+	}
+}
+
+// B524: while a turn runs it is the attempt that decides whether the login is
+// back, so the list must not tell the sender to send again.
+func TestActivityWithReauthDoesNotInviteAResendWhileATurnRuns(t *testing.T) {
+	if got := activityWithReauth("active", true); got != "active" {
+		t.Fatalf("running turn = %q, want no sign-in hint", got)
+	}
+	if got := activityWithReauth("waiting_input", true); !strings.Contains(got, "sign-in required") {
+		t.Fatalf("waiting session = %q, want the sign-in hint", got)
+	}
+	if got := activityWithReauth("waiting_input", false); got != "waiting_input" {
+		t.Fatalf("no refusal = %q", got)
 	}
 }

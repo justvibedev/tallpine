@@ -10,7 +10,7 @@ INSERT OR IGNORE INTO pr_paths (pr_url, path) VALUES (?, ?);
 -- longer polled, so its stored 'open' state may be stale: it counts as in flight
 -- only if it changed since merged_since.
 SELECT p.url, p.number, p.pr_state, p.title, p.head_sha, p.session_id,
-       p.updated_at, p.merged_at_provider,
+       p.updated_at, p.merged_at_provider, p.merge_commit_sha,
        COALESCE(l.lane_item_id, '') AS lane_item_id
 FROM pr p
 JOIN sessions s ON s.id = p.session_id

@@ -101,10 +101,39 @@ func (s *Service) planMadeChildren(ctx context.Context, parent domain.BacklogIte
 	var out []domain.BacklogItem
 	for _, k := range kids {
 		if _, ok := k.Fields[planPRField]; ok {
-			out = append(out, k)
+			out = append(out, s.withoutAbandonedWork(ctx, k))
 		}
 	}
 	return out, nil
+}
+
+// withoutAbandonedWork treats a child whose every linked worker ended with no
+// live PR as unstarted (only when its effective scope, its own or its open
+// run's, expects a PR: a local child never has one), so a re-plan retires it instead of leaving a duplicate
+// beside the new split (B451). Any PR link, live session or lookup failure keeps it started.
+func (s *Service) withoutAbandonedWork(ctx context.Context, k domain.BacklogItem) domain.BacklogItem {
+	if k.State != domain.BacklogOpen || k.LinkCounts[domain.BacklogLinkPR] > 0 || k.LinkCounts[domain.BacklogLinkSession] == 0 {
+		return k
+	}
+	if sc := s.effectiveScope(ctx, k); sc != domain.BacklogScopePR && sc != domain.BacklogScopePRMerge {
+		return k
+	}
+	facts, err := s.store.BacklogFactsFor(ctx, k.ID)
+	if err != nil || len(facts.Sessions) == 0 || len(facts.PRs)+len(facts.AckedPRs) > 0 {
+		return k
+	}
+	for _, sess := range facts.Sessions {
+		if !sess.Terminated {
+			return k
+		}
+	}
+	counts := make(map[domain.BacklogLinkKind]int, len(k.LinkCounts))
+	for kind, n := range k.LinkCounts {
+		counts[kind] = n
+	}
+	delete(counts, domain.BacklogLinkSession)
+	k.LinkCounts = counts
+	return k
 }
 
 // planChildStarted: work began on the child (a session or PR is linked).

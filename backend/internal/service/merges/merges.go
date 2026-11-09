@@ -33,6 +33,10 @@ type Deps struct {
 	Store    Store
 	LaneName func(ctx context.Context, itemID string) string
 	Now      func() time.Time
+	// Contains reports whether commit head has commit ancestor in its history
+	// (git merge-base --is-ancestor). nil, or any uncertainty (false), keeps the
+	// overlap warning.
+	Contains func(ctx context.Context, project domain.ProjectID, head, ancestor string) bool
 }
 
 // Service builds merge digests.
@@ -161,7 +165,7 @@ func (s *Service) Digest(ctx context.Context, project domain.ProjectID) (Digest,
 			})
 		}
 		for _, m := range merged {
-			if shared := sharedPaths(a.Paths, m.Paths); len(shared) > 0 {
+			if shared := sharedPaths(a.Paths, m.Paths); len(shared) > 0 && !s.containsMerge(ctx, project, a, m) {
 				out.Overlaps = append(out.Overlaps, MergeOverlap{
 					Number: a.Number, With: m.Number, WithMerged: true, CrossLane: a.LaneItemID != m.LaneItemID, Paths: shared,
 					Advice: "#" + strconv.Itoa(m.Number) + " merged touching the same files: rebase #" + strconv.Itoa(a.Number) + " before merging (" + strings.Join(shared, ", ") + ")",
@@ -170,6 +174,15 @@ func (s *Service) Digest(ctx context.Context, project domain.ProjectID) (Digest,
 		}
 	}
 	return out, nil
+}
+
+// containsMerge reports whether in-flight PR f's head already has merged PR m's
+// merge commit, so no rebase is needed for it.
+func (s *Service) containsMerge(ctx context.Context, project domain.ProjectID, f, m domain.MergeDigestPR) bool {
+	if s.d.Contains == nil || f.HeadSHA == "" || m.MergeCommitSHA == "" {
+		return false
+	}
+	return s.d.Contains(ctx, project, f.HeadSHA, m.MergeCommitSHA)
 }
 
 func sharedPaths(a, b []string) []string {

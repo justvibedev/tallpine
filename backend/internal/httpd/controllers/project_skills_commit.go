@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 
+	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apispec"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
 	"tallpine.eu/tallpine/backend/internal/ports"
@@ -16,7 +17,7 @@ import (
 // The git workspace adapter satisfies it.
 type DefaultBranchResolver interface {
 	ResolveDefaultBranch(ctx context.Context, repoPath, configuredBranch string) (ports.WorkspaceDefaultBranch, error)
-	FetchDefaultBranch(ctx context.Context, repoPath string, target ports.WorkspaceDefaultBranch) error
+	FetchDefaultBranch(ctx context.Context, repoPath string, target ports.WorkspaceDefaultBranch, gitEnv []string) error
 }
 
 // ProjectSkillCommitTarget is the branch new sessions start from. NeedsPush is
@@ -60,7 +61,7 @@ type PushProjectSkillsBranchResponse struct {
 	Branch string `json:"branch"`
 }
 
-func (c *ProjectSkillsController) resolveTarget(ctx context.Context, path, configured string, refresh bool) (skillbridge.CommitTarget, bool) {
+func (c *ProjectSkillsController) resolveTarget(ctx context.Context, path, configured string, refresh bool, gitEnv []string) (skillbridge.CommitTarget, bool) {
 	if c.DefaultBranch == nil || path == "" {
 		return skillbridge.CommitTarget{}, false
 	}
@@ -71,13 +72,22 @@ func (c *ProjectSkillsController) resolveTarget(ctx context.Context, path, confi
 	if refresh {
 		// Like spawn: refresh the tracking ref so the commit is built on the
 		// current remote head. A failed fetch falls back to the cached ref.
-		_ = c.DefaultBranch.FetchDefaultBranch(ctx, path, t)
+		_ = c.DefaultBranch.FetchDefaultBranch(ctx, path, t, gitEnv)
 	}
-	return skillbridge.CommitTarget{Remote: t.Remote, Branch: t.Branch, BaseRef: t.BaseRef}, true
+	return skillbridge.CommitTarget{Remote: t.Remote, Branch: t.Branch, BaseRef: t.BaseRef, PushEnv: gitEnv}, true
+}
+
+// projectGitEnv runs one git process as the project's GitHub account; nil when
+// the project has none or the controller is not wired for it.
+func (c *ProjectSkillsController) projectGitEnv(ctx context.Context, id domain.ProjectID) []string {
+	if c.GitCredentials == nil {
+		return nil
+	}
+	return c.GitCredentials.ProjectGitEnv(ctx, id)
 }
 
 func (c *ProjectSkillsController) commitTarget(ctx context.Context, path, configured string) *ProjectSkillCommitTarget {
-	t, ok := c.resolveTarget(ctx, path, configured, false)
+	t, ok := c.resolveTarget(ctx, path, configured, false, nil)
 	if !ok {
 		return nil
 	}
@@ -101,7 +111,7 @@ func (c *ProjectSkillsController) commit(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	target, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, true)
+	target, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, true, c.projectGitEnv(r.Context(), p.id))
 	if !ok {
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "DEFAULT_BRANCH_UNRESOLVED", "the branch new sessions start from could not be resolved", nil)
 		return
@@ -147,12 +157,13 @@ func (c *ProjectSkillsController) pushBranch(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	target, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, false)
+	gitEnv := c.projectGitEnv(r.Context(), p.id)
+	target, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, false, gitEnv)
 	if !ok || !target.NeedsPush() {
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "DEFAULT_BRANCH_UNRESOLVED", "the project has no remote to push to", nil)
 		return
 	}
-	branch, err := skillbridge.PushAsBranch(r.Context(), p.path, target.Remote, in.SHA)
+	branch, err := skillbridge.PushAsBranch(r.Context(), p.path, target.Remote, in.SHA, gitEnv)
 	if err != nil {
 		envelope.WriteAPIError(w, r, http.StatusBadGateway, "bad_gateway", "SKILLS_PUSH_FAILED", err.Error(), nil)
 		return
@@ -192,7 +203,7 @@ func (c *ProjectSkillsController) remove(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var resp RemoveProjectSkillResponse
-	if t, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, false); ok && skillbridge.TrackedAt(r.Context(), p.path, t.BaseRef, in.Path) {
+	if t, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, false, nil); ok && skillbridge.TrackedAt(r.Context(), p.path, t.BaseRef, in.Path) {
 		resp = RemoveProjectSkillResponse{LocalOnly: true, Branch: t.Branch}
 	}
 	switch err := skillbridge.RemoveBridged(p.path, in.Path); {

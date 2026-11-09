@@ -1,6 +1,7 @@
 package turnnotify
 
 import (
+	"time"
 	"unicode/utf8"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -36,4 +37,13 @@ func truncate(s string, n int) string {
 	}
 	r := []rune(s)
 	return string(r[:n-1]) + "…"
+}
+
+// usageLimitDetail is Message's detail for KindUsageLimited.
+func usageLimitDetail(until time.Time, auto bool) string {
+	out := until.UTC().Format(time.RFC3339)
+	if auto {
+		out += "|auto"
+	}
+	return out
 }

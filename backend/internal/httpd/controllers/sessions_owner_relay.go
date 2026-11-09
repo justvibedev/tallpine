@@ -36,6 +36,8 @@ func (c *SessionsController) ownerRelayBlock(r *http.Request, ref string) (block
 		return "", "OWNER_RELAY_NOT_FOUND", "Your chat has no message the owner typed: ask the owner"
 	case !found:
 		return "", "OWNER_RELAY_NOT_FOUND", "That message is not in your own chat"
+	case !m.IsGenuineOwnerTurn() && ref == "last":
+		return "", "OWNER_RELAY_LAST_UNUSABLE", "The owner's newest message (" + m.ID + ") cannot be verified as plain owner text, so nothing was sent and no older message was used: quote what you need and ask the owner to confirm"
 	case !m.IsGenuineOwnerTurn():
 		return "", "OWNER_RELAY_NOT_OWNER", "That message is not one the owner typed (an agent turn, a relayed or framed message, or an [auto] notice)"
 	case len(m.Text) > maxRelayedOwnerText:

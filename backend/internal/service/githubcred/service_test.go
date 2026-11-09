@@ -28,10 +28,12 @@ type fakeAccounts struct {
 	token string
 	calls int
 	err   error
+	repo  string
 }
 
-func (f *fakeAccounts) TokenForProject(context.Context, string, string) (string, error) {
+func (f *fakeAccounts) TokenForProject(_ context.Context, repo, _ string) (string, error) {
 	f.calls++
+	f.repo = repo
 	return f.token, f.err
 }
 
@@ -117,4 +119,65 @@ func TestIssue_HostsAndSessions(t *testing.T) {
 	if _, err := s.Issue(context.Background(), "p-9", "github.com"); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("unknown session: %v", err)
 	}
+}
+
+// B592: a project moved from Bitbucket to GitHub resolves its account and
+// allowed host from the canonical repository, not the stale origin.
+func TestIssue_MovedProjectUsesCanonicalRepo(t *testing.T) {
+	moved := domain.ProjectRecord{ID: "p", RepoOriginURL: "git@bitbucket.org:acme/app.git", Config: domain.ProjectConfig{CanonicalRepoURL: "https://github.com/acme/app"}}
+	accounts := &fakeAccounts{token: "t"}
+	s, _ := newService(t, "helper", moved, accounts, nil)
+	if _, err := s.Issue(context.Background(), "p-1", "github.com"); err != nil || accounts.repo != "https://github.com/acme/app" {
+		t.Fatalf("repo=%q err=%v", accounts.repo, err)
+	}
+}
+
+// A non-GitHub canonical host must not widen where the GitHub token is offered.
+func TestIssue_NonGitHubCanonicalHostRefused(t *testing.T) {
+	p := domain.ProjectRecord{ID: "p", RepoOriginURL: "git@github.com:acme/app.git", Config: domain.ProjectConfig{CanonicalRepoURL: "https://gitlab.com/acme/app"}}
+	s, _ := newService(t, "helper", p, &fakeAccounts{token: "t"}, nil)
+	if _, err := s.Issue(context.Background(), "p-1", "gitlab.com"); !errors.Is(err, ErrHostNotAllowed) {
+		t.Fatalf("err=%v, want ErrHostNotAllowed", err)
+	}
+}
+
+// Checkout and push stay on origin after a move: a GitHub-family origin host is
+// still issued a credential, resolved from the origin (not the canonical repo).
+func TestIssue_OriginHostStillAllowedAfterCanonicalMove(t *testing.T) {
+	domain.SetGitHubEnterpriseHosts([]string{"ghes.corp.example"})
+	t.Cleanup(func() { domain.SetGitHubEnterpriseHosts(nil) })
+	p := domain.ProjectRecord{ID: "p", RepoOriginURL: "git@ghes.corp.example:o/r.git", Config: domain.ProjectConfig{CanonicalRepoURL: "https://github.com/o/r"}}
+	accounts := &fakeAccounts{token: "t"}
+	s, _ := newService(t, "helper", p, accounts, nil)
+	if _, err := s.Issue(context.Background(), "p-1", "ghes.corp.example"); err != nil || accounts.repo != p.RepoOriginURL {
+		t.Fatalf("origin host: repo=%q err=%v", accounts.repo, err)
+	}
+	if _, err := s.Issue(context.Background(), "p-1", "github.com"); err != nil || accounts.repo != "https://github.com/o/r" {
+		t.Fatalf("canonical host: repo=%q err=%v", accounts.repo, err)
+	}
+}
+
+// B592: the GitHub account token for the moved-to repo is never served to the
+// old non-GitHub origin host; no account resolves from a Bitbucket origin.
+func TestIssue_MovedProjectDoesNotServeGitHubTokenToOldOriginHost(t *testing.T) {
+	p := domain.ProjectRecord{ID: "p", RepoOriginURL: "https://bitbucket.org/acme/app.git", Config: domain.ProjectConfig{GitHubUser: "work", CanonicalRepoURL: "https://github.com/acme/app"}}
+	accounts := &originBlindAccounts{}
+	s, _ := newService(t, "helper", p, accounts, nil)
+	if got, err := s.Issue(context.Background(), "p-1", "bitbucket.org"); err == nil || got.Token != "" {
+		t.Fatalf("bitbucket.org was served %+v err=%v", got, err)
+	}
+	if got, err := s.Issue(context.Background(), "p-1", "github.com"); err != nil || got.Token != "gh-token" {
+		t.Fatalf("github.com: %+v %v", got, err)
+	}
+}
+
+// originBlindAccounts mimics the real resolver: only a GitHub remote resolves an account.
+type originBlindAccounts struct{}
+
+func (originBlindAccounts) TokenForProject(_ context.Context, repo, override string) (string, error) {
+	// Like the real resolver, a non-empty override wins before the remote is parsed.
+	if override != "" || strings.Contains(repo, "github.com") {
+		return "gh-token", nil
+	}
+	return "", nil
 }

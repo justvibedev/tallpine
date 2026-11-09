@@ -328,6 +328,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 	};
 	return <ProjectSettingsEditor initialValues={initialValues} section={section} disabled={!hostConnected} managedKeys={managedKeys}
 		githubAccountExtra={hostId || isScratchProject ? undefined : <ProjectGitHubAccountCheck projectId={projectId} />}
+		githubProjectId={hostId || isScratchProject ? undefined : projectId}
 		generalExtra={hostId ? undefined : <ProjectSettingsChanges projectId={projectId} />}
 		securityExtra={hostId ? undefined : <ProjectSecuritySection projectId={projectId} />}
 		generalTop={hostId || isScratchProject ? undefined : ({ setDefaultBranch }) => <DefaultBranchNotice projectId={projectId} onSwitch={setDefaultBranch} />}

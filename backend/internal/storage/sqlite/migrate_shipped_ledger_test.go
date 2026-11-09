@@ -261,4 +261,7 @@ var shippedMigrations = map[int64]string{
 	20261105100000000: "20261105100000000_session_num_floors.sql",
 	20261105100000001: "20261105100000001_deleted_session_account_usage.sql",
 	20261105100000002: "20261105100000002_session_delete_cdc.sql",
+	20261108100000000: "20261108100000000_session_auto_review_override.sql",
+	20261108120000000: "20261108120000000_worktree_kept_notifications.sql",
+	20261108130000000: "20261108130000000_review_trigger_queue.sql",
 }

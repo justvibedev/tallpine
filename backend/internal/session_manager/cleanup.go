@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -228,10 +229,20 @@ func (m *Manager) cleanupWorkspaceUnderGate(ctx context.Context, rec domain.Sess
 			return reclaim, "workspace teardown failed"
 		}
 	case reason == "":
-		// A sweep-found session gets only a released record, never a failure,
+		// A sweep-found session gets only a released record, never a failure
+		// (except the unresolvable-repo case below),
 		// so an old preserved worktree does not start showing a cleanup error
 		// in the app; later runs skip the released one.
 		m.recordSettledWorkspaceCleanup(ctx, rec, domain.DispositionRemoved)
+	case (reason == archivedProjectReason || reason == repoMissingReason) && workspaceGone(ws.Path):
+		// The project's repo can never be resolved (archived, or its recorded
+		// repo is deleted while the worktree is already gone), so a background
+		// pass would fail the same way every tick. Record a failure (not a
+		// retried state): the reconciler's candidate scan skips it, and only a
+		// user-triggered cleanup revisits it.
+		if err := m.recordWorkspaceCleanup(ctx, rec, domain.DispositionFailed, "WORKSPACE_CLEANUP_FAILED"); err != nil {
+			m.logger.Warn("record archived-project cleanup", "sessionID", rec.ID, "error", err)
+		}
 	}
 	return reclaim, reason
 }
@@ -355,6 +366,17 @@ func (m *Manager) cleanupOne(ctx context.Context, rec domain.SessionRecord, ws p
 	return reclaim, ""
 }
 
+// workspaceGone reports a workspace path that no longer exists on disk.
+func workspaceGone(path string) bool {
+	_, err := os.Lstat(path)
+	return path != "" && errors.Is(err, os.ErrNotExist)
+}
+
+const (
+	archivedProjectReason = "project is archived or unregistered — remove worktree manually"
+	repoMissingReason     = "project repository is missing; remove worktree manually"
+)
+
 // cleanupSkipReason renders a workspace teardown refusal as a short
 // user-facing reason for the cleanup report. Deliberately not the raw error:
 // it flows to the API response and CLI output, and teardown errors embed
@@ -377,10 +399,10 @@ func cleanupSkipReason(err error) string {
 		return "worktree is in use; will retry on a later run"
 	}
 	if errors.Is(err, ports.ErrWorkspaceRepoUnavailable) {
-		return "project repository is missing; remove worktree manually"
+		return repoMissingReason
 	}
 	if errors.Is(err, ErrProjectNotResolvable) {
-		return "project is archived or unregistered — remove worktree manually"
+		return archivedProjectReason
 	}
 	return "workspace teardown failed"
 }

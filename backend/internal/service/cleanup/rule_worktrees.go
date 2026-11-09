@@ -158,10 +158,11 @@ type WorktreeRule struct {
 	remover WorktreeRemover
 	inspect WorktreeInspector
 
-	salvage *Salvager
+	salvage    *Salvager
+	notifyKept KeptNotifier
 
 	mu      sync.Mutex
-	refused map[domain.SessionID]time.Time
+	refused map[domain.SessionID]refusal
 }
 
 // SetSalvager makes the rule salvage a worktree's leftover work and remove it
@@ -174,7 +175,7 @@ func NewWorktreeRule(root string, remover WorktreeRemover, inspect WorktreeInspe
 	if inspect == nil {
 		inspect = GitInspect
 	}
-	return &WorktreeRule{root: root, remover: remover, inspect: inspect, refused: map[domain.SessionID]time.Time{}}
+	return &WorktreeRule{root: root, remover: remover, inspect: inspect, refused: map[domain.SessionID]refusal{}}
 }
 
 // Category implements Rule.
@@ -190,12 +191,26 @@ func (r *WorktreeRule) recentlyRefused(id domain.SessionID, now time.Time) bool 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	at, ok := r.refused[id]
-	return ok && now.Sub(at) < refusalBackoff
+	return ok && now.Sub(at.at) < refusalBackoff
 }
 
-func (r *WorktreeRule) noteRefusal(id domain.SessionID, now time.Time) {
+// refusal is when a worktree was last kept and the reason, so a backed-off
+// light pass can keep reporting an actionable reason (see noteKept).
+type refusal struct {
+	at     time.Time
+	reason string
+}
+
+// keptReason is the reason recorded at the last refusal.
+func (r *WorktreeRule) keptReason(id domain.SessionID) string {
 	r.mu.Lock()
-	r.refused[id] = now
+	defer r.mu.Unlock()
+	return r.refused[id].reason
+}
+
+func (r *WorktreeRule) noteRefusal(id domain.SessionID, now time.Time, reason string) {
+	r.mu.Lock()
+	r.refused[id] = refusal{at: now, reason: reason}
 	r.mu.Unlock()
 }
 
@@ -341,6 +356,10 @@ func (r *WorktreeRule) Run(ctx context.Context, run *Run) error {
 			continue
 		case run.Pass == PassLight && r.recentlyRefused(rec.ID, run.Now):
 			item.Reason = "kept at the last attempt; retried in the daily pass"
+			// An actionable reason stays visible (and flagged) between full passes.
+			if last := r.keptReason(rec.ID); keptReasonKey(last) != "" {
+				item.Reason, item.Attention = last, true
+			}
 			run.Add(item)
 			continue
 		}
@@ -353,8 +372,9 @@ func (r *WorktreeRule) Run(ctx context.Context, run *Run) error {
 		sv, why := r.salvage.step(ctx, rec, false)
 		if keep := r.inspectAll(ctx, paths, run.Policy.Worktrees.RequireMerged, sv); keep != "" {
 			item.Reason = withWhy(keep, why)
+			r.noteKept(ctx, run, &item)
 			if !run.DryRun {
-				r.noteRefusal(rec.ID, run.Now)
+				r.noteRefusal(rec.ID, run.Now, item.Reason)
 			}
 			run.Add(item)
 			continue
@@ -373,10 +393,11 @@ func (r *WorktreeRule) Run(ctx context.Context, run *Run) error {
 		switch {
 		case err != nil:
 			item.Status, item.Reason = StatusFailed, err.Error()
-			r.noteRefusal(rec.ID, run.Now)
+			r.noteRefusal(rec.ID, run.Now, item.Reason)
 		case outcome.Kept != "":
 			item.Bytes, item.Reason = 0, outcome.Kept
-			r.noteRefusal(rec.ID, run.Now)
+			r.noteKept(ctx, run, &item)
+			r.noteRefusal(rec.ID, run.Now, item.Reason)
 		case outcome.AlreadyGone:
 			item.Bytes = 0
 			item.Status, item.Reason = StatusKept, "already removed"

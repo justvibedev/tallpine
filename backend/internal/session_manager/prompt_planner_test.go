@@ -12,7 +12,7 @@ import (
 // plannerPrompt is a behavioural prompt: moving the plan-format text into
 // domain.PlanFormatPrompt (shared with plan-in-place, B335) must not change a byte.
 func TestPlannerPromptIsByteIdentical(t *testing.T) {
-	const want = "a26265a7164caa41565058ef4cbb39b3107bcd53845c9039c71b713a22d53fb9"
+	const want = "34301b45382c2fef808366e6a9a4c08dc2a982ca69e2db35d5d802fd524e8b9c"
 	if got := fmt.Sprintf("%x", sha256.Sum256([]byte(plannerPrompt))); got != want {
 		t.Fatalf("plannerPrompt sha256 = %s, want %s", got, want)
 	}

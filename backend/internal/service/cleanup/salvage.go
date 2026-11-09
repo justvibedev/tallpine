@@ -424,23 +424,36 @@ func (s *Salvager) pruneSalvage(ctx context.Context, run *Run) {
 		if err != nil {
 			continue
 		}
+		newest := newestStamp(dir, stamps)
 		for _, st := range stamps {
 			info, err := st.Info()
-			if err != nil || !st.IsDir() || !info.ModTime().Before(cutoff) {
+			if err != nil || !st.IsDir() {
 				continue
 			}
 			path := filepath.Join(dir, st.Name())
-			item := Item{SessionID: domain.SessionID(sess.Name()), What: "salvaged work", Path: path, Status: StatusFreed}
-			item.Bytes, _ = dirSize(ctx, path)
-			if run.DryRun {
-				item.Status = StatusWouldFree
-			} else if err := os.RemoveAll(path); err != nil {
-				item.Status, item.Reason = StatusFailed, err.Error()
+			switch {
+			case !strings.HasPrefix(st.Name(), ".") && st.Name() < newest && sameWork(path, filepath.Join(dir, newest)):
+				// Before B537 every hourly pass left another snapshot of the
+				// same work; the newest one holds all of it, so this is redundant.
+				removeSalvage(ctx, run, sess.Name(), path, "superseded by a newer snapshot")
+			case info.ModTime().Before(cutoff):
+				removeSalvage(ctx, run, sess.Name(), path, "")
 			}
-			run.Add(item)
 		}
 		if !run.DryRun {
 			_ = os.Remove(dir) // only succeeds once empty.
 		}
 	}
+}
+
+// removeSalvage deletes one snapshot directory and records it.
+func removeSalvage(ctx context.Context, run *Run, session, path, reason string) {
+	item := Item{SessionID: domain.SessionID(session), What: "salvaged work", Path: path, Status: StatusFreed, Reason: reason}
+	item.Bytes, _ = dirSize(ctx, path)
+	if run.DryRun {
+		item.Status = StatusWouldFree
+	} else if err := os.RemoveAll(path); err != nil {
+		item.Status, item.Reason = StatusFailed, err.Error()
+	}
+	run.Add(item)
 }

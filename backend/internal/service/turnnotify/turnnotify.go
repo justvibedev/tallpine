@@ -154,6 +154,8 @@ type Observer struct {
 	turns  map[domain.SessionID]*turn
 	closed bool
 	wake   chan struct{}
+	// finishing holds turn-end text while its signal is being applied (B557).
+	finishing map[domain.SessionID]string
 }
 
 // Close stops all pending notifications and ignores later signals. The daemon
@@ -205,12 +207,13 @@ func New(d Deps) *Observer {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Observer{Deps: d, turns: map[domain.SessionID]*turn{}, wake: make(chan struct{}, 1)}
+	return &Observer{Deps: d, turns: map[domain.SessionID]*turn{}, wake: make(chan struct{}, 1), finishing: map[domain.SessionID]string{}}
 }
 
 // ApplyActivitySignal forwards to the wrapped pipeline and, if it accepted the
 // signal, updates the per-turn notification state.
 func (o *Observer) ApplyActivitySignal(ctx context.Context, id domain.SessionID, s ports.ActivitySignal) error {
+	defer o.trackFinishing(id, s)()
 	if err := o.Next.ApplyActivitySignal(ctx, id, s); err != nil {
 		return err
 	}
@@ -788,11 +791,11 @@ func Message(kind string, rec domain.SessionRecord, last string) string {
 			b.WriteString(framedWithin(rec, last, domain.MaxReportTextCharacters-utf8.RuneCountInString(b.String())))
 			return truncate(b.String(), domain.MaxReportTextCharacters)
 		default:
-			b.WriteString("\nLast message: ")
+			b.WriteString(lastMessageLabel)
 		}
 		b.WriteString(framedWithin(rec, truncate(last, MaxExcerptCharacters), domain.MaxReportTextCharacters-utf8.RuneCountInString(b.String())))
 		// A label with nothing after it (no room for the frame) is noise.
-		if out := b.String(); strings.HasSuffix(out, "\nLast message: ") || strings.HasSuffix(out, "\nError: ") {
+		if out := b.String(); strings.HasSuffix(out, lastMessageLabel) || strings.HasSuffix(out, "\nError: ") {
 			return truncate(strings.TrimRight(out, " "), domain.MaxReportTextCharacters)
 		}
 	}
@@ -809,13 +812,4 @@ func (o *Observer) workerBusy(id domain.SessionID) bool {
 		return false
 	}
 	return rec.Activity.State.IsBusy()
-}
-
-// usageLimitDetail is Message's detail for KindUsageLimited.
-func usageLimitDetail(until time.Time, auto bool) string {
-	out := until.UTC().Format(time.RFC3339)
-	if auto {
-		out += "|auto"
-	}
-	return out
 }

@@ -59,6 +59,8 @@ func TestRiskyPathSelectsOpusAndRecordsReason(t *testing.T) {
 		{"chat service", cfg, []string{"README.md", "backend/internal/service/chat/x.go"}, "claude-opus-5-5"},
 		{"migration anywhere", cfg, []string{"x/y/migrations/1.sql"}, "claude-opus-5-5"},
 		{"storage", cfg, []string{"backend/internal/storage/sqlite/a.go"}, "claude-opus-5-5"},
+		{"test-only match keeps default (B546)", cfg, []string{"backend/internal/httpd/controllers/x_test.go"}, "claude-sonnet-5-5"},
+		{"test plus real file escalates", cfg, []string{"backend/internal/httpd/controllers/x_test.go", "backend/internal/httpd/a.go"}, "claude-opus-5-5"},
 		{"safe path keeps default", cfg, []string{"frontend/src/a.ts", "backend/internal/service/other/a.go"}, "claude-sonnet-5-5"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

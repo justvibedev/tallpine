@@ -353,8 +353,8 @@ func backlogItemResponse(v backlogsvc.View) BacklogItemResponse {
 		Origin:     BacklogOriginResponse{Kind: string(v.Origin.Kind), SessionID: v.Origin.SessionID, Excerpt: v.Origin.Excerpt},
 		AgentNotes: v.AgentNotes, Fields: fields, ClosedReason: v.ClosedReason,
 		CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt, ClosedAt: v.ClosedAt, Links: links, LinkCounts: counts,
-		AutoClose: v.AutoClose,
-		Badges:    BacklogBadgesResponse{Active: v.Badges.Active, InReview: v.Badges.InReview, Landed: v.Badges.Landed},
+		AutoClose: v.AutoClose, OpenBlockers: append([]string{}, v.OpenBlockers...),
+		Badges: BacklogBadgesResponse{Active: v.Badges.Active, InReview: v.Badges.InReview, Landed: v.Badges.Landed},
 	}
 }
 

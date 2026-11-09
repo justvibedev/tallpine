@@ -35,7 +35,7 @@ var NotRewritten = []ColumnRef{
 	{"pr_comment", "pr_url"}, {"pr_comment", "file"}, {"pr_comment", "url"},
 	{"pr_review_threads", "pr_url"}, {"pr_review_threads", "path"},
 	{"workspace_repos", "relative_path"}, {"workspace_repos", "repo_origin_url"},
-	{"review_run", "pr_url"}, {"pr_reviews", "pr_url"}, {"pr_reviews", "url"},
+	{"review_run", "pr_url"}, {"review_trigger_queue", "pr_url"}, {"pr_reviews", "pr_url"}, {"pr_reviews", "url"},
 	{"projects", "repo_origin_url"}, {"review", "pr_url"},
 	{"pr_url_alias", "alias_url"}, {"pr_url_alias", "canonical_url"},
 	{"usage_bindings", "native_root_id"}, {"usage_sources", "file_identity"},

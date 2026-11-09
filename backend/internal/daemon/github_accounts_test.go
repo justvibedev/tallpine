@@ -162,3 +162,99 @@ func TestGhTokenSourceTokenForRepoFallsBackWhenAccountTokenFails(t *testing.T) {
 		t.Fatalf("token = %q, %v; want the global token when the account's token fails", tok, err)
 	}
 }
+
+type oneProject struct{ rec domain.ProjectRecord }
+
+func (o oneProject) GetProject(context.Context, string) (domain.ProjectRecord, bool, error) {
+	return o.rec, true, nil
+}
+
+// B592: a project moved from Bitbucket to GitHub reports the account and repo
+// of its canonical repository in Settings, not "no account".
+func TestGitHubAccountCheckerUsesCanonicalRepoForMovedProject(t *testing.T) {
+	t.Setenv(envGitHubUser, "")
+	rec := domain.ProjectRecord{ID: "p", RepoOriginURL: "git@bitbucket.org:acme/app.git", Config: domain.ProjectConfig{CanonicalRepoURL: "https://github.com/acme/app"}}
+	c := githubAccountChecker{accounts: testAccounts(stubProjects{rec}), projects: oneProject{rec}}
+	insp, repo, _, found, err := c.CheckProject(context.Background(), "p")
+	if err != nil || !found || repo != "acme/app" || insp.Status == ghaccount.StatusNoAccount {
+		t.Fatalf("insp=%+v repo=%q found=%v err=%v", insp, repo, found, err)
+	}
+}
+
+// A canonical URL on a non-GitHub host must not hide a GitHub origin's account
+// override: Settings and the SCM observer still resolve from the origin.
+func TestGitHubAccountsNonGitHubCanonicalKeepsOriginOverride(t *testing.T) {
+	t.Setenv(envGitHubUser, "")
+	rec := domain.ProjectRecord{ID: "p", RepoOriginURL: "git@github.com:acme/app.git", Config: domain.ProjectConfig{GitHubUser: "alice", CanonicalRepoURL: "https://bitbucket.org/x/y"}}
+	a := testAccounts(stubProjects{rec})
+	if got := a.LoginForRepo(context.Background(), "acme", "app"); got != "alice" {
+		t.Fatalf("SCM login = %q, want override alice", got)
+	}
+	c := githubAccountChecker{accounts: a, projects: oneProject{rec}}
+	if _, repo, _, _, err := c.CheckProject(context.Background(), "p"); err != nil || repo != "acme/app" {
+		t.Fatalf("repo=%q err=%v", repo, err)
+	}
+}
+
+// A github.com origin with a canonical URL on a GHE host keeps its override and
+// its Settings account: ghaccount only parses github.com remotes, so the origin
+// must still be tried.
+func TestGitHubAccountsGitHubComOriginWithGHECanonical(t *testing.T) {
+	t.Setenv(envGitHubUser, "")
+	rec := domain.ProjectRecord{ID: "p", RepoOriginURL: "git@github.com:acme/app.git", Config: domain.ProjectConfig{GitHubUser: "alice", CanonicalRepoURL: "https://acme.ghe.com/new/app"}}
+	a := testAccounts(stubProjects{rec})
+	if got := a.LoginForRepo(context.Background(), "acme", "app"); got != "alice" {
+		t.Fatalf("SCM login = %q, want override alice", got)
+	}
+	c := githubAccountChecker{accounts: a, projects: oneProject{rec}}
+	if insp, repo, _, _, err := c.CheckProject(context.Background(), "p"); err != nil || repo != "acme/app" || insp.Status == ghaccount.StatusNoAccount {
+		t.Fatalf("insp=%+v repo=%q err=%v", insp, repo, err)
+	}
+}
+
+type getProject struct{ rows stubProjects }
+
+func (g getProject) GetProject(_ context.Context, id string) (domain.ProjectRecord, bool, error) {
+	for _, r := range g.rows {
+		if r.ID == id {
+			return r, true, nil
+		}
+	}
+	return domain.ProjectRecord{}, false, nil
+}
+
+func TestGitHubAccountCheckerAccounts(t *testing.T) {
+	t.Setenv(envGitHubUser, "")
+	rows := stubProjects{
+		{ID: "gh", RepoOriginURL: "git@github.com:acme/app.git", Config: domain.ProjectConfig{GitHubUser: "alice"}},
+		{ID: "bb", RepoOriginURL: "git@bitbucket.org:acme/app.git"},
+	}
+	accts := testAccounts(rows)
+	accts.resolver.Identity = nil // no GitHub round trip for `GET /user`
+	c := githubAccountChecker{accounts: accts, projects: getProject{rows}}
+	ctx := context.Background()
+
+	res, found, err := c.Accounts(ctx, "gh")
+	if err != nil || !found || res.Repo != "acme/app" || res.Override != "alice" || res.AutoPick != "bob" {
+		t.Fatalf("github project: %+v found=%v err=%v", res, found, err)
+	}
+	pushes := map[string]string{}
+	for _, a := range res.Accounts {
+		pushes[a.Login] = a.Push
+	}
+	if pushes["bob"] != ghaccount.PushYes || pushes["alice"] == ghaccount.PushYes {
+		t.Fatalf("push per account = %v", pushes)
+	}
+
+	// A non-GitHub origin has no repo to check and auto-pick cannot choose.
+	res, found, err = c.Accounts(ctx, "bb")
+	if err != nil || !found || res.Repo != "" || res.AutoPick != "" || res.Accounts[0].Push != "" {
+		t.Fatalf("bitbucket project: %+v found=%v err=%v", res, found, err)
+	}
+	if _, found, _ = c.Accounts(ctx, "missing"); found {
+		t.Fatal("unknown project must not be found")
+	}
+	if res, _, _ = c.Accounts(ctx, ""); len(res.Accounts) != 2 || res.Repo != "" {
+		t.Fatalf("machine-wide: %+v", res)
+	}
+}

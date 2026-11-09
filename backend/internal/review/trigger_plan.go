@@ -85,7 +85,15 @@ func (p *triggerPass) loadWorker() (TriggerResult, bool, error) {
 		return TriggerResult{}, false, fmt.Errorf("%w: worker session %q", ErrNotFound, p.workerID)
 	}
 	if p.source == domain.ReviewTriggerAuto {
-		if reason := autoReviewSessionReason(worker, p.e.clock()); reason != "" {
+		active := worker.AutoReviewEnabled
+		if p.e.projects != nil {
+			proj, found, err := p.e.projects.GetProject(p.ctx, string(worker.ProjectID))
+			if err != nil {
+				return TriggerResult{}, false, err
+			}
+			active = AutoReviewActive(p.ctx, p.e.projects, worker, proj, found)
+		}
+		if reason := autoReviewSessionReason(worker, active, p.e.clock()); reason != "" {
 			return TriggerResult{SkipReason: reason}, true, nil
 		}
 	}
@@ -265,6 +273,9 @@ func (p *triggerPass) planReviews() (TriggerResult, bool, error) {
 			// A person's rerun reuses the pass already running for this reviewer;
 			// an agent asked for new work and must hear that none started.
 			if opts.Rerun && source == domain.ReviewTriggerAgent {
+				if res, done, err := p.queueBusyRerun(); done || err != nil {
+					return res, done, err
+				}
 				return TriggerResult{}, false, nothingToReviewError(p.reviews, p.runs, harness, true)
 			}
 			return TriggerResult{
@@ -307,7 +318,11 @@ func prDueForTrigger(state PRReviewState, runs []domain.ReviewRun, harness domai
 		return false
 	case opts.Rerun:
 		// An explicit rerun reviews the head again, except that one reviewer
-		// is never started twice on the same head concurrently.
+		// is never started twice on the same head concurrently, and a queued
+		// rerun is satisfied by a pass the reviewer ran on the head meanwhile.
+		if !opts.QueuedSince.IsZero() && reviewedSince(runs, state, harness, opts.QueuedSince) {
+			return false
+		}
 		return !headRunningForHarness(runs, state.PRURL, state.TargetSHA, harness)
 	case opts.RejectReviewedHead:
 		// Any pass on this head, running or complete, by any reviewer, means

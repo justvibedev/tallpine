@@ -166,11 +166,11 @@ func (p *PlanService) approveInPlace(ctx context.Context, plan domain.BacklogPla
 	}
 	switch {
 	case !delivered && len(rest) > 0:
-		p.notifyOrchestrator(ctx, plan, fmt.Sprintf("Plan for %s is approved and split into %d PRs, but its implementer has ended. Spawn `tallpine spawn --backlog <ref>` for %s, in order (each is blocked by the one before).", ref, n, strings.Join(append([]string{buildRef}, rest...), ", ")))
+		p.notifyOrchestrator(ctx, plan, fmt.Sprintf("Plan for %s is approved and split into %d PRs, but its implementer has ended. Spawn `tallpine spawn --backlog <ref>` for the first now and each next one once the one before it is done (each is blocked by the one before; a blocked spawn is refused): %s.", ref, n, strings.Join(append([]string{buildRef}, rest...), ", ")))
 	case !delivered:
 		p.notifyOrchestrator(ctx, plan, fmt.Sprintf("Plan for %s is approved but its implementer has ended. Spawn one with `tallpine spawn --backlog %s`: it receives the decisions and its PR entry.", ref, buildRef))
 	case len(rest) > 0:
-		p.notifyOrchestrator(ctx, plan, fmt.Sprintf("Plan for %s is approved and split into %d PRs. Its implementer builds PR 1 in place (%s). Spawn `tallpine spawn --backlog <ref>` for %s, in order.", ref, n, buildRef, strings.Join(rest, ", ")))
+		p.notifyOrchestrator(ctx, plan, fmt.Sprintf("Plan for %s is approved and split into %d PRs. Its implementer builds PR 1 in place (%s). Spawn `tallpine spawn --backlog <ref>` for %s one at a time, each once the one before it is done (a blocked spawn is refused).", ref, n, buildRef, strings.Join(rest, ", ")))
 	default:
 		p.notifyOrchestrator(ctx, plan, fmt.Sprintf("Plan for %s is approved. Its implementer builds in place; do not spawn another.", ref))
 	}

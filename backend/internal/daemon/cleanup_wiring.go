@@ -67,7 +67,7 @@ var (
 // newCleanup builds the cleanup engine over the rules this daemon can run. A
 // session manager without per-session cleanup leaves the worktree rule out
 // rather than guessing.
-func newCleanup(dataDir, systemTemp string, store *sqlite.Store, sessMgr any, pruner cleanupsvc.ArtifactPruner, artifacts *artifactstorage.Service, policy *agentpolicy.Engine, log *slog.Logger) *cleanupsvc.Service {
+func newCleanup(dataDir, systemTemp string, store *sqlite.Store, sessMgr any, pruner cleanupsvc.ArtifactPruner, artifacts *artifactstorage.Service, policy *agentpolicy.Engine, owner ownerNotifier, log *slog.Logger) *cleanupsvc.Service {
 	var rules []cleanupsvc.Rule
 	root := filepath.Join(dataDir, "worktrees")
 	// Dirty worktrees of ended sessions without an open PR are salvaged
@@ -82,6 +82,7 @@ func newCleanup(dataDir, systemTemp string, store *sqlite.Store, sessMgr any, pr
 		remover = worktreeRemover{mgr: cleaner}
 		rule := cleanupsvc.NewWorktreeRule(root, remover, nil)
 		rule.SetSalvager(salvager)
+		rule.SetKeptNotifier(keptWorktreeNotifier(owner))
 		rules = append(rules, rule)
 	}
 	// Session retention (B161) runs after the worktree rule, under the

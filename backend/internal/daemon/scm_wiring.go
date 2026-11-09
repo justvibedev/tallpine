@@ -222,7 +222,7 @@ func knownProjectHosts(ctx context.Context) []string {
 	}
 	var hosts []string
 	for _, p := range projects {
-		if id, err := domain.ParseRepositoryIdentity(p.RepoOriginURL); err == nil {
+		if id, err := domain.ParseRepositoryIdentity(p.Config.CredentialRepoURL(p.RepoOriginURL)); err == nil {
 			hosts = append(hosts, id.Host)
 		}
 	}

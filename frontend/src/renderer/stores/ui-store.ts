@@ -63,7 +63,7 @@ export type GlobalToast = {
 };
 
 /** A backlog item a new worker starts on: the New Task dialog prefills its brief and sends the ref. */
-export type NewTaskBacklog = { ref: string; title: string; force?: boolean };
+export type NewTaskBacklog = { ref: string; title: string; force?: boolean; allowBlocked?: boolean };
 
 export type GlobalToastOptions = Pick<GlobalToast, "tone" | "placement" | "dismissible" | "durationMs" | "dedupeKey" | "action">;
 

@@ -15,12 +15,18 @@ import (
 // git runs git in dir (ports.DefaultGit().Plain: writes and push keep the
 // user's credentials) with hooks off and no prompts. stdin may be empty.
 func git(ctx context.Context, dir, stdin string, args ...string) (string, error) {
+	return gitEnv(ctx, dir, stdin, nil, args...)
+}
+
+// gitEnv is git with extra environment entries for this process only.
+func gitEnv(ctx context.Context, dir, stdin string, extraEnv []string, args ...string) (string, error) {
 	full := append([]string{"-c", "core.hooksPath=" + os.DevNull}, args...)
 	cmd := ports.DefaultGit().Plain(ctx, dir, full...)
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
 	}
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(cmd.Env, extraEnv...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

@@ -13,6 +13,11 @@ Plain `tallpine send` prints what happened to the message:
 - `delivered to <session> (id …)`: the agent received it.
 - `queued for next turn in <session> (id …)`: Tallpine accepted it, but the agent
   will only see it after its current turn (or an interface transition).
+- `accepted for <session> (id …) but delivery is unconfirmed`: the session's
+  provider refused its login on an earlier turn, so this attempt reaches the
+  agent only if the login was renewed since. Do not resend yet, it could deliver
+  twice. Once the turn ends, resend only if `tallpine session ls` still shows
+  sign-in required, after running the harness login.
 - `sent to <session>; delivery outcome not reported by the daemon`: an older
   daemon that does not report receipts.
 

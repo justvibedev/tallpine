@@ -12,7 +12,7 @@ BackgroundTaskPayload: id kind,omitempty model,omitempty name startedAt,omitempt
 BacklogBadgesResponse: active inReview landed
 BacklogDeleteResponse: deleted skipped
 BacklogItemPlan: id itemChanged stale status
-BacklogItemResponse: agentNotes autoClose,omitempty badges childClosedCount childCount closedAt,omitempty closedReason,omitempty createdAt doneWhen fields hold id linkCounts links note origin parentId,omitempty parentRef,omitempty plan,omitempty position projectId ref scope,omitempty state title updatedAt
+BacklogItemResponse: agentNotes autoClose,omitempty badges childClosedCount childCount closedAt,omitempty closedReason,omitempty createdAt doneWhen fields hold id linkCounts links note openBlockers origin parentId,omitempty parentRef,omitempty plan,omitempty position projectId ref scope,omitempty state title updatedAt
 BacklogLinkRequest: kind ref
 BacklogLinkResponse: createdAt createdBy,omitempty display kind ref
 BacklogOriginResponse: excerpt,omitempty kind sessionId,omitempty
@@ -36,7 +36,7 @@ CleanupCategoryReport: category error,omitempty failed freed freedBytes items it
 CleanupContainersPolicy: enabled volumeRetentionDays
 CleanupGoBuildCachePolicy: enabled
 CleanupHarnessCachesPolicy: enabled retentionDays
-CleanupItem: bytes path,omitempty projectId,omitempty reason,omitempty sessionId,omitempty status what
+CleanupItem: attention,omitempty bytes path,omitempty projectId,omitempty reason,omitempty sessionId,omitempty status what
 CleanupPolicy: artifacts automatic backlog branches containers goBuildCache harnessCaches sessionTemp systemTemp worktrees
 CleanupRunReport: categories dryRun error,omitempty finishedAt freedBytes id pass startedAt trigger
 CleanupRunRequest: confirmArtifacts,omitempty dryRun,omitempty only,omitempty pass,omitempty
@@ -63,7 +63,7 @@ GitHubCredentialResponse: source token username
 KillSessionResponse: artifactsDeleted,omitempty cleanupPending,omitempty freed,omitempty ok sessionId
 ListAutomationRunsResponse: nextCursor,omitempty runs
 ListAutomationsResponse: automations nextCursor,omitempty
-ListReviewsResponse: activeReviewers reviewerActivityState,omitempty reviewerHandleId reviewerHarness,omitempty reviewerSurface,omitempty reviews runs
+ListReviewsResponse: activeReviewers queuedReviews reviewerActivityState,omitempty reviewerHandleId reviewerHarness,omitempty reviewerSurface,omitempty reviews runs
 ListSessionPRsResponse: linkedPrs prs sessionId
 ListSessionsResponse: archived,omitempty nextCursor,omitempty sessions
 MergePRRequest: expectedHeadSha prUrl
@@ -120,14 +120,14 @@ SetReviewActivityRequest: agentSessionId,omitempty event,omitempty launchId,omit
 SettingValue: key locked lockedBy,omitempty source value writable
 SettingsChange: actor changedAt id key newValue oldValue projectId,omitempty
 SettingsValuesResponse: project,omitempty values
-SpawnSessionRequest: approvalMode,omitempty attachments,omitempty backlogAllowDuplicate,omitempty backlogForce,omitempty backlogPlan,omitempty backlogRef,omitempty branch,omitempty clientRequestId,omitempty displayName,omitempty effort,omitempty harness,omitempty issueId,omitempty kind,omitempty mode,omitempty model,omitempty parentSessionId,omitempty projectId,omitempty prompt,omitempty requestedOutput,omitempty role,omitempty trackerProvider,omitempty
+SpawnSessionRequest: approvalMode,omitempty attachments,omitempty backlogAllowBlocked,omitempty backlogAllowDuplicate,omitempty backlogForce,omitempty backlogPlan,omitempty backlogRef,omitempty branch,omitempty clientRequestId,omitempty displayName,omitempty effort,omitempty harness,omitempty issueId,omitempty kind,omitempty mode,omitempty model,omitempty parentSessionId,omitempty projectId,omitempty prompt,omitempty requestedOutput,omitempty role,omitempty trackerProvider,omitempty
 StartBacklogRunRequest: refs,omitempty scope selection
 SteerConversationRequest: attachments,omitempty clientMessageId,omitempty recoverOnly,omitempty senderSessionId,omitempty text
 SteerOrSendConversationResponse: activityId,omitempty duplicate outcome providerTurnId,omitempty state,omitempty turnId,omitempty
 SubmitReviewInput: body,omitempty githubReviewId,omitempty reviews,omitempty runId,omitempty verdict,omitempty
 SubmitReviewItem: body,omitempty githubReviewId,omitempty runId verdict
 TriggerReviewRequest: agentConfig,omitempty enableAutoInject,omitempty harness,omitempty head,omitempty interfaceMode,omitempty prUrl,omitempty rejectReviewedHead,omitempty rerun,omitempty source,omitempty
-TriggerReviewResponse: autoInjectEnabled created reviewerHandleId reviewerSurface,omitempty reviews runs
+TriggerReviewResponse: autoInjectEnabled created queued reviewerHandleId reviewerSurface,omitempty reviews runs
 UpdateAutomationRequest: cron,omitempty displayName,omitempty enabled,omitempty harness,omitempty kind,omitempty prompt,omitempty rrule,omitempty timezone,omitempty
 UpdateResult: commit finishedAt message startedAt state
 UpdateSettingsValuesRequest: project,omitempty set,omitempty unset,omitempty

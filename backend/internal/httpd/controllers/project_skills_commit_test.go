@@ -1,6 +1,7 @@
 package controllers_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/adapters/workspace/gitworktree"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/controllers"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	projectsvc "tallpine.eu/tallpine/backend/internal/service/project"
 )
 
@@ -33,6 +35,11 @@ func gitT(t *testing.T, dir string, args ...string) string {
 // origin holding AGENTS.md, resolved with the production default-branch
 // resolver.
 func skillsCommitRouter(t *testing.T, defaultBranch string) (r chi.Router, checkout, origin string) {
+	t.Helper()
+	return skillsCommitRouterWith(t, defaultBranch, nil)
+}
+
+func skillsCommitRouterWith(t *testing.T, defaultBranch string, credentials ports.ProjectGitCredentials) (r chi.Router, checkout, origin string) {
 	t.Helper()
 	for _, k := range []string{"GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"} {
 		t.Setenv(k, "t")
@@ -56,8 +63,9 @@ func skillsCommitRouter(t *testing.T, defaultBranch string) (r chi.Router, check
 	cfg := &domain.ProjectConfig{DefaultBranch: defaultBranch, Env: map[string]string{"HOME": home, "CLAUDE_CONFIG_DIR": ""}}
 	r = chi.NewRouter()
 	(&controllers.ProjectSkillsController{
-		Projects:      skillsProjects{projectsvc.GetResult{Project: &projectsvc.Project{Path: checkout, Config: cfg}}},
-		DefaultBranch: gitworktree.NewDefaultBranchResolver(""),
+		Projects:       skillsProjects{projectsvc.GetResult{Project: &projectsvc.Project{Path: checkout, Config: cfg}}},
+		DefaultBranch:  gitworktree.NewDefaultBranchResolver(""),
+		GitCredentials: credentials,
 	}).Register(r)
 	return r, checkout, origin
 }
@@ -239,5 +247,45 @@ func TestProjectSkillsAPI_DefaultBranchCheckSuggestsAheadAndNewerBranch(t *testi
 	got := get()
 	if got.DefaultBranch != "master" || got.Suggestion == nil || got.Suggestion.Branch != "main" || got.Suggestion.Ahead != 3 || !got.Suggestion.CheckedOut {
 		t.Fatalf("check = %+v %+v", got, got.Suggestion)
+	}
+}
+
+type fakeGitCredentials struct {
+	env      []string
+	projects []domain.ProjectID
+}
+
+func (f *fakeGitCredentials) ProjectGitEnv(_ context.Context, project domain.ProjectID) []string {
+	f.projects = append(f.projects, project)
+	return f.env
+}
+
+// Committing a skill refreshes and pushes as the project's account: the fetch
+// and the push both see GIT_TRACE from the credential env.
+func TestProjectSkillsAPI_CommitFetchesAndPushesAsProjectAccount(t *testing.T) {
+	trace := filepath.Join(t.TempDir(), "trace")
+	creds := &fakeGitCredentials{env: []string{"GIT_TRACE=" + trace}}
+	r, _, _ := skillsCommitRouterWith(t, "main", creds)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/projects/p/skills/offers/claude-md/apply", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/projects/p/skills/commit", strings.NewReader(`{"paths":["CLAUDE.md"]}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("commit: %d %s", rec.Code, rec.Body)
+	}
+	b, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"fetch", "push"} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("git %s ran without the project's account; trace: %s", want, b)
+		}
+	}
+	if len(creds.projects) == 0 || creds.projects[0] != "p" {
+		t.Fatalf("credentials asked for %v, want p", creds.projects)
 	}
 }

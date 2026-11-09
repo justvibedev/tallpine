@@ -66,6 +66,8 @@ type CleanupItem struct {
 	Bytes     int64  `json:"bytes"`
 	Status    string `json:"status" enum:"freed,would_free,needs_confirmation,kept,failed"`
 	Reason    string `json:"reason,omitempty"`
+	// Attention marks a kept item the owner can act on, such as a worktree cleanup could not salvage.
+	Attention bool `json:"attention,omitempty"`
 }
 
 // CleanupPolicy is the automatic cleanup configuration.

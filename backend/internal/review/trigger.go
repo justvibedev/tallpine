@@ -15,10 +15,13 @@ type TriggerResult struct {
 	Run              domain.ReviewRun
 	ReviewerHandleID string
 	Created          bool
-	Reviews          []PRReviewState
-	Runs             []domain.ReviewRun
-	CreatedRuns      []domain.ReviewRun
-	ReviewerSurface  domain.ReviewerSurface
+	// Queued is set when the pass could not start because the reviewer is busy
+	// and was parked to start once it is free; nothing was created.
+	Queued          bool
+	Reviews         []PRReviewState
+	Runs            []domain.ReviewRun
+	CreatedRuns     []domain.ReviewRun
+	ReviewerSurface domain.ReviewerSurface
 	// SkipReason is set only for a normal automatic-trigger policy race, such
 	// as the worker becoming active after the coordinator's initial read.
 	SkipReason string
@@ -37,6 +40,8 @@ type SessionReviews struct {
 	// selected reviewer first, so clients can open each of several reviewers
 	// working on the same worker at once.
 	ActiveReviewers []domain.ReviewerSurface
+	// Queued lists the passes waiting for the reviewer to be free.
+	Queued []domain.QueuedReviewTrigger
 }
 
 // CancelResult is the review state after a reviewer pane cancellation.
@@ -86,6 +91,9 @@ type TriggerOptions struct {
 	// is skipped when that reviewer already has another pass on the commit by
 	// the time the worker lock is held.
 	RetryOfRunID string
+	// QueuedSince marks a rerun that waited in the trigger queue since then:
+	// it is skipped when the reviewer already reviewed the head after that.
+	QueuedSince time.Time
 }
 
 // TriggerWithOptions starts reviews for every PR on the worker session that needs review.
@@ -164,9 +172,9 @@ func validateTriggerRequest(workerID domain.SessionID, opts TriggerOptions) (dom
 	return source, nil
 }
 
-func autoReviewSessionReason(worker domain.SessionRecord, now time.Time) string {
+func autoReviewSessionReason(worker domain.SessionRecord, enabled bool, now time.Time) string {
 	switch {
-	case !worker.AutoReviewEnabled:
+	case !enabled:
 		return "disabled"
 	case worker.Kind != domain.KindWorker:
 		return "not_worker"

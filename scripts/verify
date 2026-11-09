@@ -228,9 +228,11 @@ go_test() {
 # non-Go files, so the go_re gate would skip them on TS-only changes (B326:
 # #651 moved legacy 'ao' literals into packages/shared and broke main).
 # Always run them in --lint (make lint) and --changed; --full covers them via go-test.
+# ./internal/testenv holds TestTestMainsUseTestenv: a new package without a testenv TestMain
+# fails it, but changed-mode only tests the touched packages (B518).
 go_invariants() {
 	(cd backend && nice -n "$NICE" go test -count=1 -timeout="$GO_TEST_TIMEOUT" \
-		./internal/brand/ ./internal/privacyguard/) 2>&1 | grep -vE '^(ok|\?)[[:space:]]'
+		./internal/brand/ ./internal/privacyguard/ ./internal/testenv/) 2>&1 | grep -vE '^(ok|\?)[[:space:]]'
 	return "${PIPESTATUS[0]}"
 }
 

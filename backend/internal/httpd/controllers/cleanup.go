@@ -210,7 +210,7 @@ func cleanupReportDTO(r cleanupsvc.Report) CleanupRunReport {
 		for _, item := range cat.Items {
 			dto.Items = append(dto.Items, CleanupItem{
 				SessionID: string(item.SessionID), ProjectID: string(item.ProjectID), What: item.What,
-				Path: item.Path, Bytes: item.Bytes, Status: string(item.Status), Reason: item.Reason,
+				Path: item.Path, Bytes: item.Bytes, Status: string(item.Status), Reason: item.Reason, Attention: item.Attention,
 			})
 		}
 		out.Categories = append(out.Categories, dto)

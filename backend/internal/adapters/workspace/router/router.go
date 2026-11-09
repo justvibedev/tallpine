@@ -58,8 +58,8 @@ func (w *Workspace) ResolveDefaultBranch(ctx context.Context, repoPath, configur
 }
 
 // FetchDefaultBranch delegates default-branch fetching to the git workspace adapter.
-func (w *Workspace) FetchDefaultBranch(ctx context.Context, repoPath string, target ports.WorkspaceDefaultBranch) error {
-	return w.git.FetchDefaultBranch(ctx, repoPath, target)
+func (w *Workspace) FetchDefaultBranch(ctx context.Context, repoPath string, target ports.WorkspaceDefaultBranch, gitEnv []string) error {
+	return w.git.FetchDefaultBranch(ctx, repoPath, target, gitEnv)
 }
 
 // RenameTaskBranch delegates task branch naming to the Git adapter.

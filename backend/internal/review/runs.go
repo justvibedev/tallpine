@@ -7,20 +7,35 @@ import (
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
+// CountsTowardAutoRetryLimit reports whether a pass on a head used up one of
+// the automatic pass's retries without reviewing it: a failed auto pass, or a
+// pass cancelled because its reviewer vanished. The engine and the auto-review
+// coordinator share this rule so the two gates cannot drift apart.
+func CountsTowardAutoRetryLimit(run domain.ReviewRun) bool {
+	return (run.Status == domain.ReviewRunFailed && run.TriggerSource == domain.ReviewTriggerAuto) || ReviewerGoneCancel(run)
+}
+
+// TransientAutoSkip reports whether an automatic trigger was skipped only
+// because the worker is busy right now, so the same pass can start later.
+func TransientAutoSkip(reason string) bool {
+	return reason == "not_idle" || reason == "idle_threshold_not_met"
+}
+
 func autoReviewHeadBlocked(runs []domain.ReviewRun, prURL, targetSHA string, harness domain.ReviewerHarness) bool {
-	failedAutoRuns := 0
+	retries := 0
 	for _, run := range runs {
 		if run.PRURL != prURL || run.TargetSHA != targetSHA || (run.Harness != harness && run.Harness != "") {
 			continue
 		}
-		if run.Status == domain.ReviewRunRunning || run.Status == domain.ReviewRunCancelled || run.Verdict == domain.VerdictApproved || run.Verdict == domain.VerdictChangesRequested {
-			return true
-		}
-		if run.Status == domain.ReviewRunFailed && run.TriggerSource == domain.ReviewTriggerAuto {
-			failedAutoRuns++
-			if failedAutoRuns >= autoReviewFailedRetryLimit {
+		if CountsTowardAutoRetryLimit(run) {
+			retries++
+			if retries >= autoReviewFailedRetryLimit {
 				return true
 			}
+			continue
+		}
+		if run.Status == domain.ReviewRunRunning || run.Status == domain.ReviewRunCancelled || run.Verdict == domain.VerdictApproved || run.Verdict == domain.VerdictChangesRequested {
+			return true
 		}
 	}
 	return false

@@ -45,7 +45,7 @@ func (c *ProjectSkillsController) branchCheck(w http.ResponseWriter, r *http.Req
 		return
 	}
 	resp := ProjectDefaultBranchCheckResponse{}
-	t, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, false)
+	t, ok := c.resolveTarget(r.Context(), p.path, p.baseBranch, false, nil)
 	if !ok {
 		envelope.WriteJSON(w, http.StatusOK, resp)
 		return

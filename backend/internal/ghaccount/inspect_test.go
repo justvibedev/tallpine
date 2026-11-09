@@ -41,3 +41,38 @@ func TestInspectStatuses(t *testing.T) {
 		})
 	}
 }
+
+func TestSignedInListsLoginsAndPushPerAccount(t *testing.T) {
+	repo := Repo{Owner: "acme", Name: "app"}
+	r, gh, _, _ := newTestResolver([]string{"alice", "bob", "carol"}, map[string][]string{"tok-bob": {repo.Key()}})
+	r.Identity = fakeIdentity{login: "bob"}
+	gh.tokens["carol"] = ""
+
+	got, err := r.SignedIn(context.Background(), &repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// alice's token reports as bob (mismatch) and carol has no token: unknown.
+	want := []Account{{"alice", PushUnknown}, {"bob", PushYes}, {"carol", PushUnknown}}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+
+	// Without a repo only logins come back, with no API call per account.
+	got, err = r.SignedIn(context.Background(), nil)
+	if err != nil || len(got) != 3 || got[0].Push != "" {
+		t.Fatalf("logins only: %+v %v", got, err)
+	}
+}
+
+func TestSignedInBypassesLoginCache(t *testing.T) {
+	r, gh, _, _ := newTestResolver([]string{"a"}, nil)
+	if _, err := r.SignedIn(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	gh.logins = []string{"a", "b"}
+	got, _ := r.SignedIn(context.Background(), nil)
+	if len(got) != 2 {
+		t.Fatalf("a sign-in made after the first call must show up: %+v", got)
+	}
+}

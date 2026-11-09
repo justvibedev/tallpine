@@ -1287,7 +1287,7 @@ func TestFetchDefaultBranchRefreshesRemoteTrackingRef(t *testing.T) {
 	if target.BaseRef != "refs/remotes/origin/main" {
 		t.Fatalf("base ref = %q, want refs/remotes/origin/main", target.BaseRef)
 	}
-	if err := ws.FetchDefaultBranch(context.Background(), repo, target); err != nil {
+	if err := ws.FetchDefaultBranch(context.Background(), repo, target, nil); err != nil {
 		t.Fatalf("fetch default branch: %v", err)
 	}
 	if got := gitOutput(t, git, repo, "rev-parse", "refs/remotes/origin/main"); got != freshMain {
@@ -1339,7 +1339,7 @@ func TestResolveDefaultBranchFallsBackToLocalHeadWhenExplicitBranchHasNoRemoteTr
 	if target != want {
 		t.Fatalf("target = %#v, want %#v", target, want)
 	}
-	if err := ws.FetchDefaultBranch(context.Background(), repo, target); err != nil {
+	if err := ws.FetchDefaultBranch(context.Background(), repo, target, nil); err != nil {
 		t.Fatalf("fetch default branch local fallback: %v", err)
 	}
 }
@@ -1376,7 +1376,7 @@ func TestWorkspaceIntegrationRefreshesInferredChildBaseBeforeMaterialization(t *
 	if got, want := childTarget.BaseRef, "refs/remotes/origin/dev"; got != want {
 		t.Fatalf("inferred child base ref = %q, want %q", got, want)
 	}
-	if err := ws.FetchDefaultBranch(context.Background(), childRepo, childTarget); err != nil {
+	if err := ws.FetchDefaultBranch(context.Background(), childRepo, childTarget, nil); err != nil {
 		t.Fatalf("refresh inferred child default: %v", err)
 	}
 
@@ -1456,7 +1456,7 @@ func TestWorkspaceIntegrationCanonicalBaseRefAvoidsRemoteNameCollision(t *testin
 	if got, want := target.BaseRef, "refs/remotes/upstream/main"; got != want {
 		t.Fatalf("qualified base ref = %q, want %q", got, want)
 	}
-	if err := ws.FetchDefaultBranch(context.Background(), repo, target); err != nil {
+	if err := ws.FetchDefaultBranch(context.Background(), repo, target, nil); err != nil {
 		t.Fatalf("fetch qualified default: %v", err)
 	}
 	info, err := ws.Create(context.Background(), ports.WorkspaceConfig{

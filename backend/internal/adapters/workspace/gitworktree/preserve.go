@@ -291,12 +291,17 @@ func (w *Workspace) isDirty(ctx context.Context, path string) (bool, error) {
 		return false, fmt.Errorf("gitworktree: status %q: %w", path, err)
 	}
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(line) == "" || isNodeModulesSymlink(path, line) {
-			continue
+		if StatusLineIsWork(path, line) {
+			return true, nil
 		}
-		return true, nil
 	}
 	return false, nil
+}
+
+// StatusLineIsWork reports whether one `git status --porcelain` line is work
+// worth preserving, the rule isDirty applies to a worktree.
+func StatusLineIsWork(root, line string) bool {
+	return strings.TrimSpace(line) != "" && !isNodeModulesSymlink(root, line)
 }
 
 // isNodeModulesSymlink reports whether a porcelain status line is an untracked

@@ -320,7 +320,7 @@ func (p *PlanService) Submit(ctx context.Context, projectID domain.ProjectID, ac
 	if err != nil {
 		return domain.BacklogPlan{}, err
 	}
-	if p.autoApproveOn(ctx, projectID) {
+	if p.autoApproveOn(ctx, projectID) && !decisionsNeedOwner(plan.DecisionsMD) {
 		// The project opted into unattended approval (a human's setting). Same
 		// side effects as an approval by the owner; on failure the plan stays
 		// submitted and the owner is asked as usual.
@@ -459,7 +459,7 @@ func (p *PlanService) approve(ctx context.Context, projectID domain.ProjectID, a
 	}
 	next := fmt.Sprintf("`tallpine spawn --backlog %s`", item.Ref())
 	if len(children) > 0 {
-		next = fmt.Sprintf("`tallpine spawn --backlog <ref>` for each of the %d child items of %s, in order (each is blocked by the one before)", len(children), item.Ref())
+		next = fmt.Sprintf("`tallpine spawn --backlog <ref>` for the first of the %d child items of %s now, and for each next one once the one before it is done (each is blocked by the one before; a blocked spawn is refused)", len(children), item.Ref())
 	}
 	p.notifyOrchestrator(ctx, plan, fmt.Sprintf("Plan for %s is approved. Spawn the implementer with %s: it receives the decisions and its PR entry.", item.Ref(), next))
 	return plan, nil

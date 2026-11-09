@@ -58,7 +58,7 @@ func TestPrepareSpawnValidatesTheItem(t *testing.T) {
 	}
 }
 
-func TestPrepareSpawnBuildsContextAndWarnsAboutOpenBlockers(t *testing.T) {
+func TestPrepareSpawnRefusesOpenBlockersUnlessForced(t *testing.T) {
 	e := newLifecycleEnv(t)
 	ctx := e.ctx
 	blocker := e.item("blocker", "")
@@ -75,7 +75,11 @@ func TestPrepareSpawnBuildsContextAndWarnsAboutOpenBlockers(t *testing.T) {
 	e.link(target, domain.BacklogLinkBlockedBy, blocker.Ref())
 	e.link(target, domain.BacklogLinkBlockedBy, closed.Ref())
 
-	got, err := e.svc.PrepareSpawn(ctx, "p1", target.Ref(), false)
+	_, err = e.svc.PrepareSpawn(ctx, "p1", target.Ref(), false)
+	if apiCode(t, err) != "BACKLOG_ITEM_BLOCKED" || !strings.Contains(err.Error(), "blocked by "+blocker.Ref()) {
+		t.Fatalf("unforced spawn of a blocked item = %v, want BACKLOG_ITEM_BLOCKED naming the blocker", err)
+	}
+	got, err := e.svc.PrepareSpawn(ctx, "p1", target.Ref(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,5 +212,35 @@ func TestPrepareSpawnRefusesWhenLiveSessionHoldsItem(t *testing.T) {
 	e.endSession(sess)
 	if _, err := e.svc.PrepareSpawn(e.ctx, "p1", it.Ref(), false); err != nil {
 		t.Fatalf("after end: %v", err)
+	}
+}
+
+func TestOpenBlockersOnListAndGetSkipClosedBlockers(t *testing.T) {
+	e := newLifecycleEnv(t)
+	open := e.item("open blocker", "")
+	closed := e.item("closed blocker", "")
+	if _, err := e.svc.SetState(e.ctx, "p1", closed.ID, domain.BacklogDone, ""); err != nil {
+		t.Fatal(err)
+	}
+	target := e.item("target", "")
+	e.link(target, domain.BacklogLinkBlockedBy, open.Ref())
+	e.link(target, domain.BacklogLinkBlockedBy, closed.Ref())
+
+	got, err := e.svc.Get(e.ctx, "p1", target.Ref())
+	if err != nil || len(got.OpenBlockers) != 1 || got.OpenBlockers[0] != open.Ref() {
+		t.Fatalf("get = %v, %v; want only the open blocker", got.OpenBlockers, err)
+	}
+	list, err := e.svc.List(e.ctx, "p1", backlog.ListFilter{State: "open"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range list {
+		want := 0
+		if v.ID == target.ID {
+			want = 1
+		}
+		if len(v.OpenBlockers) != want {
+			t.Errorf("list %s open blockers = %v, want %d", v.Ref(), v.OpenBlockers, want)
+		}
 	}
 }

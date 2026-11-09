@@ -308,7 +308,7 @@ func (e *Engine) failRunningRestoredRuns(ctx stdctx.Context, runs []domain.Revie
 		if run.Status != domain.ReviewRunRunning {
 			continue
 		}
-		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", run.AutoInjectReview); err != nil {
+		if _, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, ReviewerRestoreFailedPrefix+body, "", run.AutoInjectReview); err != nil {
 			return fmt.Errorf("fail review run %q after reviewer restore: %w", run.ID, err)
 		}
 	}

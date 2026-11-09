@@ -242,6 +242,7 @@ type Manager struct {
 	processes        sessionProcessReaper
 	projects         projectConfigLoader
 	operationGateMu  sync.RWMutex
+	orchestratorIdle func(domain.SessionRecord) // guarded by operationGateMu
 	operationGate    sessionOperationGate
 	// dataDir backs ReconcileSessionOutputType's artifact-dir fallback for
 	// sessions rows created before session_output_type/artifact_dir existed.

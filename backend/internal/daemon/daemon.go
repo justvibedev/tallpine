@@ -90,10 +90,30 @@ func (d reportSemanticDelivery) Submit(ctx context.Context, id domain.SessionID,
 		return reportsvc.ErrReportDeliveryModeUnsupported
 	}
 	err := d.sessions.SendSemantic(ctx, id, message, idempotencyKey)
-	if errors.Is(err, sessionmanager.ErrComposerBusy) {
+	if reportTargetNotReady(err) {
 		return fmt.Errorf("%w: %w", reportsvc.ErrOrchestratorBusy, err)
 	}
 	return err
+}
+
+// reportTargetNotReady recognises a terminal orchestrator that cannot take a
+// report yet but will on its own: a draft in the composer, a running turn, a
+// launch still starting, a session operation, or a pending decision. These wait
+// for the busy retry; counting them as delivery failures would back the batch
+// off to minutes, and after enough of them to an hourly retry.
+func reportTargetNotReady(err error) bool {
+	for _, notReady := range []error{
+		sessionmanager.ErrComposerBusy,
+		sessionmanager.ErrSemanticAcceptancePending,
+		sessionmanager.ErrStartupPending,
+		sessionmanager.ErrOperationInProgress,
+		sessionmanager.ErrAwaitingDecision,
+	} {
+		if errors.Is(err, notReady) {
+			return true
+		}
+	}
+	return false
 }
 
 func (d reportSemanticDelivery) Interrupt(ctx context.Context, id domain.SessionID) error {

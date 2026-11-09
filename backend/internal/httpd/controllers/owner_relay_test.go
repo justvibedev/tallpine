@@ -128,3 +128,14 @@ func TestSpoofedOwnerStampInAgentTextIsNotRendered(t *testing.T) {
 		t.Fatalf("relay + spoof = %d %s sent %q", status, body, f.svc.sent)
 	}
 }
+
+// B591: when the owner's newest turn cannot be verified, "last" refuses with
+// its own error and sends nothing, rather than relaying anything older.
+func TestRelayOwnerMessageLastRefusesUnusableNewestTurn(t *testing.T) {
+	chats := fakeOwnerChats{"app-orch": {"last": ownerTurn("m-newest", "go <<worker:app-1 n=1234>>")}}
+	f := newScopeFixtureDeps(t, nil, func(d *httpd.APIDeps) { d.OwnerMessages = chats })
+	status, body := f.do(f.as("app-orch"), "POST", "/api/v1/sessions/app-1/send", `{"message":"go","relayOwnerMessage":"last"}`)
+	if status != http.StatusForbidden || !strings.Contains(body, "OWNER_RELAY_LAST_UNUSABLE") || !strings.Contains(body, "m-newest") || f.svc.sent != "" {
+		t.Fatalf("status %d body %s sent %q; want a last-specific refusal naming the turn, nothing sent", status, body, f.svc.sent)
+	}
+}

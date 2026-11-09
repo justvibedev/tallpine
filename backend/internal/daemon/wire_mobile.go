@@ -70,7 +70,7 @@ func (b *boot) wireMobile() error {
 	var automationDone <-chan struct{}
 	b.automationSvc, automationDone = startAutomations(b.ctx, b.store, b.sessionSvc, b.log)
 	b.lcStack.automationDone = automationDone
-	b.autoReview = autoreview.New(b.store, b.reviewSvc, autoreview.Config{Logger: b.log, Escalate: b.escalateReviewRounds})
+	b.autoReview = autoreview.New(b.store, b.reviewSvc, autoreview.Config{Logger: b.log, Escalate: b.escalateReviewRounds, Stalled: b.escalateStalledReview})
 	b.lcStack.autoReviewDone = b.autoReview.Start(b.ctx)
 	b.lcStack.reviewSweepDone = b.reviewNotices.StartSweep(b.ctx, reviewsvc.DefaultSweepInterval)
 	b.lcStack.waitEscalationDone = waitescalation.New(b.store, b.notificationWriter, nil, b.log).Start(b.ctx, waitescalation.DefaultInterval)

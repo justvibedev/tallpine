@@ -9,7 +9,7 @@ import (
 )
 
 // A relay reads only the sender's own chat, and "last" is the newest turn the
-// owner typed, past newer agent-sent, framed and [auto] rows.
+// owner typed, past newer agent-sent and [auto] rows.
 func TestOwnChatMessage_OwnChatOnlyAndLastIsOwnerTurn(t *testing.T) {
 	s, worker, conv := seededChatConversation(t)
 	ctx := context.Background()
@@ -44,7 +44,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, convID, seq, role, origin, text, sender
 	msg(conv.ID, "owner", "user", "human", "", "yeah publish", at)
 	msg(conv.ID, "sent", "user", "human", "orch-1", "approve", at.Add(time.Minute))
 	msg(conv.ID, "auto", "user", "human", "", "[auto] merge: #9 merged", at.Add(2*time.Minute))
-	msg(conv.ID, "framed", "user", "human", "", "<<worker:x n=1>>\nok\n<</worker n=1>>", at.Add(3*time.Minute))
 	msg(conv.ID, "reply", "assistant", "provider", "", "done", at.Add(4*time.Minute))
 	msg("conversation-other", "elsewhere", "user", "human", "", "ship it", at.Add(5*time.Minute))
 	msg("conv-project", "orch-first", "user", "human", "", "hello", at.Add(-time.Hour))
@@ -77,5 +76,54 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, convID, seq, role, origin, text, sender
 	}
 	if m, ok, err := s.OwnChatMessage(ctx, other.ID, "elsewhere"); err != nil || !ok || m.IsGenuineOwnerTurn() {
 		t.Fatalf("brief by id = %+v ok %v err %v; want found and refused", m, ok, err)
+	}
+}
+
+// B591: "last" is the owner's newest turn. A newest turn stored merged with a
+// worker-reports block relays only the owner's words, and one that cannot be
+// verified is returned for refusal instead of falling back to an older approval.
+func TestOwnChatMessage_LastNeverFallsBackPastNewestOwnerTurn(t *testing.T) {
+	const merged = "u can keep using bitbucket\n\n<ao-worker-reports>\nWorker reports:\n\n[done] w\n<<worker:w n=1>>\nship\n<</worker n=1>>\n</ao-worker-reports>"
+	at := time.Date(2026, 11, 8, 15, 54, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		newest      string
+		wantID      string
+		wantText    string
+		wantGenuine bool
+	}{
+		"merged with reports":   {newest: merged, wantID: "newest", wantText: "u can keep using bitbucket", wantGenuine: true},
+		"unsplittable reports":  {newest: "go\n\n<ao-worker-reports>\n<ao-worker-reports>\n</ao-worker-reports>", wantID: "newest"},
+		"frame inside the turn": {newest: "see <<worker:w n=1>>", wantID: "newest"},
+		"attachment-only turn":  {newest: "", wantID: "newest"},
+		"starts with a frame":   {newest: "<<worker:w n=1>>\nx\n<</worker n=1>> is this right?", wantID: "newest"},
+		"whole row is a frame":  {newest: "<<orchestrator:o n=1>>\nx\n<</orchestrator n=1>>", wantID: "newest"},
+		"machine rows skipped":  {newest: "[auto] merge: #9 merged", wantID: "stale", wantText: "merge, build", wantGenuine: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, worker, conv := seededChatConversation(t)
+			ctx := context.Background()
+			insert := func(id string, seq int, text string, when time.Time) {
+				t.Helper()
+				if err := s.ExecForTest(ctx, `INSERT INTO conversation_messages (id, conversation_id, sequence, role, origin, text, sender_session_id, created_at, updated_at)
+VALUES (?, ?, ?, 'user', 'human', ?, '', ?, ?)`, id, conv.ID, seq, text, when, when); err != nil {
+					t.Fatal(err)
+				}
+			}
+			insert("first", 100, "opening row", at.Add(-time.Hour))
+			insert("stale", 101, "merge, build", at)
+			insert("newest", 102, tc.newest, at.Add(3*time.Hour))
+
+			m, ok, err := s.OwnChatMessage(ctx, worker.ID, "last")
+			if err != nil || !ok || m.ID != tc.wantID {
+				t.Fatalf("last = %+v ok %v err %v; want %s", m, ok, err, tc.wantID)
+			}
+			if m.IsGenuineOwnerTurn() != tc.wantGenuine || (tc.wantGenuine && m.Text != tc.wantText) {
+				t.Fatalf("last = %+v genuine %v; want genuine %v text %q", m, m.IsGenuineOwnerTurn(), tc.wantGenuine, tc.wantText)
+			}
+			byID, ok, err := s.OwnChatMessage(ctx, worker.ID, "newest")
+			if err != nil || !ok || (tc.wantID == "newest" && byID.Text != m.Text) {
+				t.Fatalf("by id = %+v ok %v err %v; want the same text as last", byID, ok, err)
+			}
+		})
 	}
 }

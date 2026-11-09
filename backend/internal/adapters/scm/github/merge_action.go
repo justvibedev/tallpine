@@ -34,9 +34,14 @@ func (p *Provider) MergePullRequest(ctx context.Context, request ports.SCMMergeR
 	}
 
 	payload := struct {
-		SHA         string `json:"sha"`
-		MergeMethod string `json:"merge_method"`
+		SHA           string `json:"sha"`
+		MergeMethod   string `json:"merge_method"`
+		CommitTitle   string `json:"commit_title,omitempty"`
+		CommitMessage string `json:"commit_message,omitempty"`
 	}{SHA: expectedHead, MergeMethod: string(request.Method)}
+	// An explicit commit_message replaces GitHub's default, so squashMessage
+	// rebuilds the default content and appends the PR-body trailers.
+	payload.CommitTitle, payload.CommitMessage = p.squashMessage(ctx, request.PR)
 	resp, err := p.clientFor(request.PR.Repo.Host).doREST(ctx, http.MethodPut,
 		repoPath(request.PR.Repo.Owner, request.PR.Repo.Name, "pulls", strconv.Itoa(request.PR.Number), "merge"),
 		nil, payload)

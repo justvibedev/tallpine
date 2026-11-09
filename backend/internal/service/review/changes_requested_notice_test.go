@@ -179,3 +179,21 @@ func TestChangesRequestedWakeBeforeObserverSyncListsNoStaleThreads(t *testing.T)
 		t.Fatalf("message %q lacks the summary or the syncing note", msg)
 	}
 }
+
+// B590: when the review never reached the PR no inline comment will sync, so the
+// worker needs the findings themselves, not a promise and a trimmed summary.
+func TestChangesRequestedMessageCarriesFindingsWhenNotPosted(t *testing.T) {
+	findings := strings.Repeat("x", 900) + " the last finding"
+	run := domain.ReviewRun{Harness: domain.ReviewerClaudeCode, PRURL: "https://github.com/o/r/pull/1", Status: domain.ReviewRunComplete, Verdict: domain.VerdictChangesRequested, Body: findings}
+	msg := changesRequestedMessage(run, domain.PullRequest{Number: 1}, nil)
+	if !strings.Contains(msg, "could not post this review") || !strings.Contains(msg, "the last finding") {
+		t.Fatalf("message must say the post failed and carry every finding: %q", msg)
+	}
+	if strings.Contains(msg, "as the PR syncs") {
+		t.Fatalf("message promises inline comments that will never arrive: %q", msg)
+	}
+	run.GithubReviewID = "12345"
+	if msg := changesRequestedMessage(run, domain.PullRequest{Number: 1}, nil); strings.Contains(msg, "could not post") {
+		t.Fatalf("a posted review must not read as a failure: %q", msg)
+	}
+}

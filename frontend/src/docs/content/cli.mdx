@@ -155,7 +155,7 @@ Important flags include:
 | `--skip-agent-check` | Skip only the CLI-side install/auth preflight. |
 | `--effort <level>` | Reasoning effort for this session only; empty defers to the agent or model default. |
 | `--backlog <ref>` | Work on a [backlog](#tallpine-backlog) item (for example `B12`): its title, note and done-when join the task and the session is linked to it. |
-| `--force` | With `--backlog`, start the item even if it is held. |
+| `--force` | With `--backlog`, start the item even if it is held or has an open blocker. |
 | `--output artifact` | Ask the agent to write a file in its artifact directory instead of opening a PR. |
 
 Tallpine chooses a project in this order: `--project`, `TALLPINE_PROJECT_ID`, the project for `TALLPINE_SESSION_ID`, then the closest registered project containing the current directory. Before spawning, Tallpine refreshes the selected agent's readiness unless you use `--skip-agent-check`. Readiness is advisory.
@@ -197,7 +197,7 @@ tallpine send --session tp-123 --message "Please address the failing test"
 
 `--session` and `--message` are required for ordinary sends. When called from a session with `TALLPINE_SESSION_ID`, Tallpine prefixes the sender identity.
 
-A plain send prints its outcome: `delivered to <session>` when the agent received the message, or `queued for next turn in <session> (id …)` when it was accepted but the agent will only see it after its current turn. A session that cannot take the message right now refuses it with an error. If a Chat session's running turn is waiting on an in-chat question (a form the agent opened), a plain send is steered into that turn so the agent gets it as the answer. When the agent cannot take guidance mid-turn, the send queues and says the message is not delivered until the question is answered in the app.
+A plain send prints its outcome: `delivered to <session>` when the agent received the message, or `queued for next turn in <session> (id …)` when it was accepted but the agent will only see it after its current turn, or `accepted for <session> … but delivery is unconfirmed` when the session's provider refused its login on an earlier turn. That attempt reaches the agent only if the login was renewed since, so do not resend until the turn ends; resend only if `tallpine session ls` still shows sign-in required, after running the harness login. A session that cannot take the message right now refuses it with an error. If a Chat session's running turn is waiting on an in-chat question (a form the agent opened), a plain send is steered into that turn so the agent gets it as the answer. When the agent cannot take guidance mid-turn, the send queues and says the message is not delivered until the question is answered in the app.
 
 Use `--steer` to steer an active supported Chat turn or submit a normal turn when idle. `--client-message-id` supplies a stable delivery handle. If delivery is uncertain, recover the recorded result without resending:
 

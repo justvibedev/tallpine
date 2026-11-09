@@ -156,6 +156,11 @@ func (s *Store) CommitProviderSwitch(ctx context.Context, rec domain.SessionReco
 		}); err != nil {
 			return fmt.Errorf("save switched conversation settings: %w", err)
 		}
+		// Cleared here, not before the switch, so a failed switch keeps the
+		// source state.
+		if err := clearProviderReportedState(ctx, q, branch.ConversationID); err != nil {
+			return err
+		}
 		sequence, err := q.NextConversationSequence(ctx, gen.NextConversationSequenceParams{UpdatedAt: rec.UpdatedAt, ID: branch.ConversationID})
 		if err != nil {
 			return fmt.Errorf("allocate provider switch activity sequence: %w", err)
@@ -333,6 +338,10 @@ func (s *Store) commitChatSpawn(
 			if err := q.BindProjectConversationSession(ctx, gen.BindProjectConversationSessionParams{
 				CurrentSessionID: &rec.ID, UpdatedAt: rec.UpdatedAt, ID: conversation.ID,
 			}); err != nil {
+				return err
+			}
+			// The retired predecessor may have run another harness.
+			if err := clearProviderReportedState(ctx, q, conversation.ID); err != nil {
 				return err
 			}
 		}

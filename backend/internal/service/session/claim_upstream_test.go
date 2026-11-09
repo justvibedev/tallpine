@@ -85,7 +85,7 @@ func TestClaimPRExplicitCanonicalRepository(t *testing.T) {
 func TestClaimPRRejectsInvalidPersistedCanonicalIdentity(t *testing.T) {
 	t.Parallel()
 
-	for _, canonical := range []string{"upstream", "https://gitlab.com/acme/repo", "https://evil.ghe.io/acme/repo"} {
+	for _, canonical := range []string{"upstream", "http://github.com/acme/repo", "https://user:x@github.com/acme/repo"} {
 		t.Run(canonical, func(t *testing.T) {
 			st := newFakeStore()
 			st.sessions["demo-1"] = domain.SessionRecord{ID: "demo-1", ProjectID: "demo", Kind: domain.KindWorker, Metadata: domain.SessionMetadata{WorkspacePath: "/ws"}}

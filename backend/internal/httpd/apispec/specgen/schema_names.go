@@ -10,6 +10,8 @@ var schemaNames = map[string]string{ // #nosec G101 -- Public OpenAPI type names
 	"ControllersProjectSkillCreated":                       "ProjectSkillCreated",
 	"ControllersRemoveProjectSkillResponse":                "RemoveProjectSkillResponse",
 	"ControllersProjectGitHubAccountCheckResponse":         "ProjectGitHubAccountCheckResponse",
+	"ControllersGitHubAccountsResponse":                    "GitHubAccountsResponse",
+	"ControllersGitHubAccountItem":                         "GitHubAccountItem",
 	"ControllersProjectBranchSuggestion":                   "ProjectBranchSuggestion",
 	"ControllersProjectDefaultBranchCheckResponse":         "ProjectDefaultBranchCheckResponse",
 	"ControllersRemoveProjectSkillRequest":                 "RemoveProjectSkillRequest",
