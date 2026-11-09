@@ -11,6 +11,9 @@ type DevImportProjectsRequest = apitypes.DevImportProjectsRequest
 // MergePRRequest aliases apitypes.MergePRRequest.
 type MergePRRequest = apitypes.MergePRRequest
 
+// MergePreflightResponse aliases apitypes.MergePreflightResponse.
+type MergePreflightResponse = apitypes.MergePreflightResponse
+
 // MergePRResponse aliases apitypes.MergePRResponse.
 type MergePRResponse = apitypes.MergePRResponse
 

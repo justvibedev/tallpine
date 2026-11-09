@@ -18,7 +18,10 @@ const (
 	// IdleCompactWait is how long an orchestrator must have been quiet.
 	IdleCompactWait = 10 * time.Minute
 	// IdleCompactStalledWorker is how long a worker with an open task may go
-	// without activity before it no longer holds idle compaction back.
+	// without activity before it no longer holds idle compaction back. It is
+	// measured from Activity.LastActivityAt, which is turn-level (it does not
+	// advance during a turn), so a single turn longer than this reads as
+	// stalled; that only releases the compaction hold and is never a status.
 	IdleCompactStalledWorker = 2 * time.Hour
 )
 

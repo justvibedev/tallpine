@@ -2,6 +2,7 @@ package backlog
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -21,7 +22,9 @@ type AutoClose struct {
 	Reason string
 }
 
-// DecideAutoClose applies the "every linked PR merged" rule to an item and its facts.
+// DecideAutoClose applies the "every linked PR merged" rule to an item and its
+// facts; an item with a done-when also needs a merged PR whose title says
+// "closes <ref>".
 func DecideAutoClose(item domain.BacklogItem, facts store.BacklogFacts) AutoClose {
 	var merged, open, closed []int64
 	for _, pr := range facts.PRs {
@@ -56,11 +59,42 @@ func DecideAutoClose(item domain.BacklogItem, facts store.BacklogFacts) AutoClos
 		out.Reason = "waiting for " + prList("open", open)
 	case len(closed) > 0:
 		out.Reason = prList("closed without merge", closed)
+	case strings.TrimSpace(item.DoneWhen) != "" && !claimsDoneWhen(item.Ref(), facts.PRs):
+		out.Reason = prList("merged", merged) + " does not claim the done-when: put \"closes " + item.Ref() + "\" in the PR title to close it, or close the item by hand"
 	default:
 		out.Close = true
 		out.Reason = domain.BacklogReasonMerged(merged)
 	}
 	return out
+}
+
+// A qualifier next to a claim cancels it: before ("partly closes B12") or after
+// ("closes B12 part 1", "(closes B12, partial)").
+var (
+	claimQualifiedBefore = regexp.MustCompile(`(?i)\b(?:partly|partially|partial|not|never|part\s+of)\s+(?:\w+\s+)?$`)
+	claimQualifiedAfter  = regexp.MustCompile(`(?i)\b(?:part\s*\d+|part\s+of|partly|partially|partial|wip|step\s*\d+)\b`)
+)
+
+// claimsDoneWhen reports whether a merged PR says in its title that it fully
+// delivers the item: the exact word "closes" before the item ref ("closes B12").
+// Other verbs do not count, and a qualifier before it ("partly closes B12",
+// "does not closes B12") or after it ("closes B12 part 1") cancels it, so a partial PR never closes the item.
+func claimsDoneWhen(ref string, prs []store.BacklogPRFact) bool {
+	if ref == "" {
+		return false
+	}
+	claim := regexp.MustCompile(`(?i)\bcloses\s+` + regexp.QuoteMeta(ref) + `\b`)
+	for _, pr := range prs {
+		if pr.State != "merged" {
+			continue
+		}
+		for _, loc := range claim.FindAllStringIndex(pr.Title, -1) {
+			if !claimQualifiedBefore.MatchString(pr.Title[:loc[0]]) && !claimQualifiedAfter.MatchString(pr.Title[loc[1]:]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func prList(what string, numbers []int64) string {

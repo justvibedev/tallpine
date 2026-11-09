@@ -35,6 +35,13 @@ type MergePRResponse struct {
 	StateChangedAt time.Time      `json:"stateChangedAt"`
 }
 
+// MergePreflightResponse is the body of POST /api/v1/prs/{id}/merge-preflight
+// (200): every merge precondition passed and nothing was merged.
+type MergePreflightResponse struct {
+	OK       bool `json:"ok"`
+	PRNumber int  `json:"prNumber"`
+}
+
 // ResolveCommentsResponse is the body of POST /api/v1/prs/{id}/resolve-comments (200).
 type ResolveCommentsResponse struct {
 	OK       bool `json:"ok"`

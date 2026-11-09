@@ -65,6 +65,7 @@ type Reports interface {
 type Tracker struct {
 	path     string
 	store    Store
+	jobs     JobLister
 	clock    func() time.Time
 	mu       sync.Mutex
 	resumed  map[domain.SessionID]bool // messaged by Resume this run
@@ -84,6 +85,9 @@ func New(dataDir string, store Store) *Tracker {
 // those whose chat host did not survive, since a plain restart detaches and
 // leaves chat hosts running their turns.
 func (t *Tracker) RecordIfQuit(ctx context.Context, deliberateQuit bool) error {
+	if err := t.recordJobs(ctx); err != nil {
+		slog.Default().WarnContext(ctx, "restart resume: could not save running background jobs", "err", err)
+	}
 	if !deliberateQuit {
 		// A bare /shutdown (the installer's) says nothing about whether the app
 		// stops the agents afterwards. Note who was mid-turn; the next boot
@@ -109,6 +113,7 @@ func (t *Tracker) RecordUnclean(ctx context.Context, survived func(domain.Sessio
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.dropSurvivedJobs(survived)
 	entries := t.load()
 	known := map[domain.SessionID]bool{}
 	for _, e := range entries {
@@ -230,12 +235,14 @@ func (t *Tracker) pass(ctx context.Context, sender Sender) int {
 			// Active state older than that is stale and still needs the note.
 			continue
 		}
-		if err := sender.Send(ctx, e.SessionID, messageFor(rec.Kind, e.InterruptedAt), nil); err != nil {
+		jobs := t.lostJobsFor(e.SessionID)
+		if err := sender.Send(ctx, e.SessionID, messageFor(rec.Kind, e.InterruptedAt)+resumeJobsNotice(rec, jobs), nil); err != nil {
 			slog.Default().WarnContext(ctx, "restart resume: send failed; will retry", "session", e.SessionID, "err", err)
 			keep = append(keep, e)
 			continue
 		}
-		slog.Default().InfoContext(ctx, "restart resume: resume message sent", "session", e.SessionID, "kind", rec.Kind)
+		slog.Default().InfoContext(ctx, "restart resume: resume message sent", "session", e.SessionID, "kind", rec.Kind, "lost_jobs", len(jobs))
+		t.forgetLostJobs(e.SessionID)
 		t.mu.Lock()
 		if t.resumed == nil {
 			t.resumed = map[domain.SessionID]bool{}

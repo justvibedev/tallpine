@@ -316,6 +316,38 @@ func (w workerPlanSource) ApprovedPlanForWorker(ctx context.Context, id domain.S
 	return "", nil, false, nil
 }
 
+// LinkedItemForWorker returns the live backlog item the worker was started on,
+// read fresh so reviewers see edits made after the worker started. Items the
+// worker itself filed (--defer, agent create) link with CreatedBy == the
+// session and are not candidates; with zero or several candidates it reports
+// none.
+func (w workerPlanSource) LinkedItemForWorker(ctx context.Context, id domain.SessionID) (domain.BacklogItem, bool, error) {
+	items, err := w.store.ListLiveBacklogItemsLinkedTo(ctx, domain.BacklogLinkSession, string(id))
+	if err != nil {
+		return domain.BacklogItem{}, false, err
+	}
+	var found []domain.BacklogItem
+	for _, it := range items {
+		full, ok, err := w.store.GetBacklogItem(ctx, it.ID)
+		if err != nil {
+			return domain.BacklogItem{}, false, err
+		}
+		if !ok {
+			continue
+		}
+		for _, l := range full.Links {
+			if l.Kind == domain.BacklogLinkSession && l.Ref == string(id) && l.CreatedBy != string(id) {
+				found = append(found, full)
+				break
+			}
+		}
+	}
+	if len(found) != 1 {
+		return domain.BacklogItem{}, false, nil
+	}
+	return found[0], true, nil
+}
+
 // ownerNotifier writes a stored notification (and so the push) for the human.
 type ownerNotifier interface {
 	Notify(ctx context.Context, intent ports.NotificationIntent) error

@@ -35,6 +35,9 @@ const fseventsRescan = fsevents.MustScanSubDirs | fsevents.KernelDropped | fseve
 // maxIgnoreCache bounds the remembered ignored directories of one root.
 const maxIgnoreCache = 4096
 
+// maxPendingFSEvents bounds the events held while the filter is busy.
+const maxPendingFSEvents = 1 << 16
+
 // watchRootNative watches root with one recursive FSEvents stream. kqueue,
 // fsnotify's macOS backend, needs a descriptor for every directory and every
 // file in it, thousands per worktree; FSEvents needs none per path.
@@ -108,11 +111,19 @@ type fseventsFilter struct {
 func (f *fseventsFilter) run(ctx context.Context, stream *fsevents.EventStream, changes chan struct{}) {
 	defer close(changes)
 	defer stopFSEventStream(stream)
+	f.consume(ctx, stream.Events, changes)
+}
+
+// consume reports relevant batches until ctx ends. The filter can be slow (it
+// runs git) on a loaded machine, so it reads coalesced batches: a reader held
+// up here would block the stream's callback and stall this FSEvents client.
+func (f *fseventsFilter) consume(ctx context.Context, events <-chan []fsevents.Event, changes chan struct{}) {
+	batches := coalesceFSEvents(ctx, events)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case batch := <-stream.Events:
+		case batch := <-batches:
 			if f.relevant(ctx, batch) {
 				select {
 				case changes <- struct{}{}:
@@ -121,6 +132,39 @@ func (f *fseventsFilter) run(ctx context.Context, stream *fsevents.EventStream, 
 			}
 		}
 	}
+}
+
+// coalesceFSEvents always accepts from events, merging what arrives while the
+// reader of the returned channel is busy.
+func coalesceFSEvents(ctx context.Context, events <-chan []fsevents.Event) <-chan []fsevents.Event {
+	out := make(chan []fsevents.Event)
+	go func() {
+		var pending []fsevents.Event
+		for {
+			var send chan<- []fsevents.Event
+			if len(pending) > 0 {
+				send = out
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case batch := <-events:
+				pending = appendPendingFSEvents(pending, batch)
+			case send <- pending:
+				pending = nil
+			}
+		}
+	}()
+	return out
+}
+
+// appendPendingFSEvents collapses a backlog past maxPendingFSEvents into one
+// rescan event, which makes the model re-read and so loses nothing.
+func appendPendingFSEvents(pending, batch []fsevents.Event) []fsevents.Event {
+	if len(pending)+len(batch) > maxPendingFSEvents {
+		return []fsevents.Event{{Flags: fsevents.MustScanSubDirs}}
+	}
+	return append(pending, batch...)
 }
 
 // stopFSEventStream stops stream. Its callback blocks on Events, so they are

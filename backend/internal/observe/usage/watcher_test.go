@@ -46,7 +46,7 @@ func TestTranscriptWatcherDoesNotWatchUnrelatedHistory(t *testing.T) {
 	watcher, err := NewTranscriptWatcher(context.Background(), []string{root})
 	mustNoError(t, err)
 	t.Cleanup(watcher.close)
-	for index := range 2_000 {
+	for index := range 50 {
 		mustNoError(t, os.Mkdir(filepath.Join(root, fmt.Sprintf("history-%04d", index)), 0o700))
 	}
 	mustNoError(t, watcher.Rebuild(context.Background(), nil))

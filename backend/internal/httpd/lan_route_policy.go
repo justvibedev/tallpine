@@ -148,6 +148,7 @@ var lanRouteTable = []lanRouteRule{
 	mobile(anyMethod, "/api/v1/orchestrators/*/research"),
 	mobile(anyMethod, "/api/v1/orchestrators/delegate"),
 	mobile("POST", "/api/v1/prs/*/merge"),
+	loopback("POST", "/api/v1/prs/*/merge-preflight"),
 	mobile("POST", "/api/v1/prs/*/resolve-comments"),
 	mobile(anyMethod, "/api/v1/notifications"),
 	mobile(anyMethod, "/api/v1/notifications/*"),

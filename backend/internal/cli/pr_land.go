@@ -35,11 +35,14 @@ func newPRLandCommand(ctx *commandContext) *cobra.Command {
 2. If the PR head differs, accepts it only when the rebased patch equals the
    approved patch (git diff <old-base> <approved-head> vs <new-base> <pr-head>,
    with index lines and hunk line numbers normalized); otherwise refuses.
+   Where the daemon review gate applies (project NoCI), the rebase also needs
+   an approval recorded on the new head (project approveIdenticalPatch plus
+   tallpine review trigger); the daemon decides, in --dry-run too.
 3. Refuses unless GitHub mergeStateStatus is CLEAN.
 4. Merges via the daemon (POST prs/<n>/merge), pinned to the head.
 5. --kill-worker terminates the worker session after the merge.
 
---dry-run prints the decision and changes nothing.`,
+--dry-run asks the daemon to run the merge preconditions and changes nothing.`,
 		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			prNumber, err := normalizePRNumber(args[0])
@@ -140,7 +143,14 @@ func (c *commandContext) landPR(cmd *cobra.Command, prNumber, sessionID string, 
 		return fmt.Errorf("refusing to land PR #%d: mergeStateStatus is %q, want CLEAN", number, status)
 	}
 
+	// Preflight on the daemon merge gate, which alone knows whether a review
+	// approval on the current head is required (project NoCI setting), so the
+	// dry run and the real land agree. The real land is gated by the same checks.
 	if dryRun {
+		var res apitypes.MergePreflightResponse
+		if err := c.postJSON(ctx, "prs/"+url.PathEscape(prNumber)+"/merge-preflight", apitypes.MergePRRequest{PRURL: prURL, ExpectedHeadSHA: head}, &res); err != nil {
+			return withMergePreconditionReason(err)
+		}
 		_, err := fmt.Fprintf(out, "dry-run: would squash-merge PR #%d at %s via the daemon\n", number, head)
 		return err
 	}

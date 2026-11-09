@@ -222,6 +222,8 @@ done
 # One compound command ending in exit: bash reads a script as it runs, so this
 # keeps a checkout or edit during a long build from being read mid-run.
 {
+  # B263: the stale-checkout guard runs before cmd_install/cmd_rollback arm their own failure notice, so arm it here.
+  case "${command_name}" in install | rollback) notify_armed=1 notify_what="${command_name}"; trap on_exit EXIT ;; esac
   case "${command_name}" in build|install|rollback|publish) require_fresh_script "${command_name}" "${positional[@]:1}" ;; esac
   case "${command_name}" in
   request-build)

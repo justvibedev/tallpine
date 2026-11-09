@@ -137,7 +137,8 @@ func TestList_SkipsUnreadableSubdirInsteadOfFailing(t *testing.T) {
 
 func TestList_BoundsTraversalOfEmptyDirectories(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < MaxVisited+50; i++ {
+	const maxVisited = 20
+	for i := 0; i < maxVisited+50; i++ {
 		if err := os.Mkdir(filepath.Join(dir, fmt.Sprintf("d%05d", i)), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -145,9 +146,9 @@ func TestList_BoundsTraversalOfEmptyDirectories(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "zzz.txt"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	files, err := List(context.Background(), dir)
+	files, _, err := walkBounded(context.Background(), dir, maxVisited)
 	if err != nil {
-		t.Fatalf("List: %v", err)
+		t.Fatalf("walkBounded: %v", err)
 	}
 	if len(files) != 0 {
 		t.Fatalf("files = %+v, want the traversal cut off before reaching zzz.txt", files)

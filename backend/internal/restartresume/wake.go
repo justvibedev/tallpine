@@ -60,7 +60,7 @@ func wakeCandidate(rec domain.SessionRecord) bool {
 // WakeIdle sends every idle chat worker whose provider died one restart notice
 // and files an orchestrator-visible report.
 //
-// Skipped: workers mid-turn, exited or blocked; TUI workers; workers whose
+// Skipped: workers mid-turn or exited, blocked workers with no lost jobs; TUI workers; workers whose
 // provider host survived the restart (skip reports true); workers Resume just
 // messaged (Send has no activity ack, so they can still read idle); workers
 // hibernated before the last quit (nothing of theirs was running; a message
@@ -77,6 +77,7 @@ func (t *Tracker) WakeIdle(ctx context.Context, sender Sender, skip func(domain.
 	now := t.clock().UTC()
 	t.mu.Lock()
 	sent := t.pruneWake(recs)
+	t.pruneLostJobs(recs)
 	parked := t.loadParked()
 	resumed := map[domain.SessionID]bool{}
 	for id := range t.resumed {
@@ -93,8 +94,11 @@ func (t *Tracker) WakeIdle(ctx context.Context, sender Sender, skip func(domain.
 		t.mu.Unlock()
 	}()
 	for _, rec := range recs {
+		// A blocked worker with lost jobs is still told: the quit ended the dialog
+		// it was blocked on along with the jobs.
+		jobs := t.lostJobsFor(rec.ID)
 		if !wakeCandidate(rec) || rec.Activity.State == domain.ActivityExited ||
-			rec.Activity.State == domain.ActivityActive || rec.Activity.State == domain.ActivityBlocked {
+			rec.Activity.State == domain.ActivityActive || rec.Activity.State == domain.ActivityBlocked && len(jobs) == 0 {
 			continue
 		}
 		if rec.HibernatedAt != nil && !parked[rec.ID] {
@@ -106,7 +110,7 @@ func (t *Tracker) WakeIdle(ctx context.Context, sender Sender, skip func(domain.
 		if at, ok := sent[rec.ID]; ok && !rec.Activity.LastActivityAt.After(at) {
 			continue
 		}
-		if err := sender.Send(ctx, rec.ID, WakeMessage(now), nil); err != nil {
+		if err := sender.Send(ctx, rec.ID, WakeMessage(now)+lostJobsSentence(jobs), nil); err != nil {
 			slog.Default().WarnContext(ctx, "restart wake: send failed", "session", rec.ID, "err", err)
 			if parked[rec.ID] {
 				retry[rec.ID] = true
@@ -114,7 +118,8 @@ func (t *Tracker) WakeIdle(ctx context.Context, sender Sender, skip func(domain.
 			continue
 		}
 		woken++
-		slog.Default().InfoContext(ctx, "restart wake: notice sent", "session", rec.ID)
+		slog.Default().InfoContext(ctx, "restart wake: notice sent", "session", rec.ID, "lost_jobs", len(jobs))
+		t.forgetLostJobs(rec.ID)
 		t.mu.Lock()
 		sent = t.loadWake()
 		sent[rec.ID] = t.clock().UTC()

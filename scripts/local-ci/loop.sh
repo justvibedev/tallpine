@@ -27,15 +27,38 @@ case "$BUDGET" in ""|*[!0-9]*) BUDGET=12 ;; esac # non-numeric: default
 export GOCACHE="$H/gocache" GOMODCACHE="$H/gomod" GOFLAGS="-buildvcs=false -p=$((BUDGET / 4))" VERIFY_NICE=15
 export VERIFY_CORE_BUDGET="$BUDGET" GOMAXPROCS=$((BUDGET / 4))
 
+# lock_fingerprint prints the given lockfiles without each one's own package
+# version: a release bumps that, and it changes nothing npm would install.
+lock_fingerprint() {
+  node -e '
+    const fs = require("fs");
+    for (const file of process.argv.slice(1)) {
+      let raw;
+      try { raw = fs.readFileSync(file, "utf8"); } catch { console.log(file, "absent"); continue; }
+      try {
+        const lock = JSON.parse(raw);
+        delete lock.version;
+        if (lock.packages && lock.packages[""]) delete lock.packages[""].version;
+        console.log(file, JSON.stringify(lock));
+      } catch { console.log(file, "unparsed", raw); }
+    }' "$@"
+}
+
+# npm writes node_modules/.package-lock.json last, so a tree without it never
+# finished installing.
+npm_tree_complete() { [ -f "$1/node_modules/.package-lock.json" ]; }
+
 npmseed() {
-  local h; h="$((node -v; cat package-lock.json frontend/package-lock.json frontend/src/docs/package-lock.json packages/product-ui/package-lock.json packages/shared/package-lock.json 2>/dev/null) | shasum | cut -d' ' -f1)"
-  if [ "$h" != "$(cat "$H/npm.hash" 2>/dev/null)" ] || [ ! -d frontend/node_modules ] || [ ! -d node_modules ] || [ ! -d frontend/src/docs/node_modules ] || [ ! -d packages/product-ui/node_modules ]; then
+  local h; h="$( (node -v; lock_fingerprint package-lock.json frontend/package-lock.json frontend/src/docs/package-lock.json packages/product-ui/package-lock.json packages/shared/package-lock.json) | shasum | cut -d' ' -f1)"
+  if [ "$h" != "$(cat "$H/npm.hash" 2>/dev/null)" ] || ! npm_tree_complete . || ! npm_tree_complete frontend || ! npm_tree_complete frontend/src/docs || ! npm_tree_complete packages/product-ui; then
+    rm -f "$H/npm.hash" # an interrupted install must not match a later run's stamp
     npm ci --ignore-scripts --no-audit --no-fund && (cd frontend && npm ci --ignore-scripts --no-audit --no-fund) \
       && (cd frontend/src/docs && npm ci --ignore-scripts --no-audit --no-fund) \
       && (cd packages/product-ui && npm ci --ignore-scripts --no-audit --no-fund) \
       && (cd frontend && npm rebuild better-sqlite3) && echo "$h" >"$H/npm.hash"
   fi
 }
+
 mobile_seed() { # packages/mobile: npm ci (with patch-package postinstall) when the lock changes
   local h; h="$((node -v; cat packages/mobile/package-lock.json packages/mobile/patches/* 2>/dev/null) | shasum | cut -d' ' -f1)"
   if [ "$h" != "$(cat "$H/mobile.npm.hash" 2>/dev/null)" ] || [ ! -d packages/mobile/node_modules ]; then

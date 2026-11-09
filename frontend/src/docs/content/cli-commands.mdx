@@ -2013,11 +2013,14 @@ Land a worker's PR in one step (orchestrator only). Run from a checkout of the P
 2. If the PR head differs, accepts it only when the rebased patch equals the
    approved patch (git diff <old-base> <approved-head> vs <new-base> <pr-head>,
    with index lines and hunk line numbers normalized); otherwise refuses.
+   Where the daemon review gate applies (project NoCI), the rebase also needs
+   an approval recorded on the new head (project approveIdenticalPatch plus
+   tallpine review trigger); the daemon decides, in --dry-run too.
 3. Refuses unless GitHub mergeStateStatus is CLEAN.
 4. Merges via the daemon (POST prs/<n>/merge), pinned to the head.
 5. --kill-worker terminates the worker session after the merge.
 
---dry-run prints the decision and changes nothing.
+--dry-run asks the daemon to run the merge preconditions and changes nothing.
 
 Usage:
   tallpine pr land <pr-number> [flags]

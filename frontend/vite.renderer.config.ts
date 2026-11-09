@@ -200,6 +200,8 @@ export default defineConfig({
 		injectCspMeta,
 	],
 	test: {
+		// Vitest-only, so Forge builds of this config do not create a run dir.
+		globalSetup: "./vitest.tmpdir.ts",
 		testTimeout: 20_000,
 		// Anchor node_modules at any depth: a bare "node_modules/**" replaces
 		// vitest's default "**/node_modules/**" and only matches the root.

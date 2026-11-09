@@ -26,7 +26,7 @@ ORDER BY l.created_at, l.ref;
 -- PRs reachable from an item: linked directly, or owned by a linked session.
 -- direct marks a pr link; created_at_provider lets the caller drop PRs a
 -- reused session opened before it was linked to the item.
-SELECT p.url, p.number, p.pr_state, p.session_id, p.created_at_provider,
+SELECT p.url, p.number, p.pr_state, p.title, p.session_id, p.created_at_provider,
   CAST(p.url IN (SELECT bl.ref FROM backlog_links bl WHERE bl.item_id = sqlc.arg(target_item) AND bl.kind = 'pr') AS INTEGER) AS direct
 FROM pr p
 WHERE p.url IN (SELECT bl.ref FROM backlog_links bl WHERE bl.item_id = sqlc.arg(target_item) AND bl.kind = 'pr')

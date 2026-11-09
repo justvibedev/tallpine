@@ -51,3 +51,18 @@ func TestPRsRoutes_Merge_PassesRequester(t *testing.T) {
 		}
 	}
 }
+
+// Only the preflight route may set DryRun, and it must always set it: it is the
+// only thing stopping that route from really merging.
+func TestPRsRoutes_MergePreflightIsDryRunAndMergeIsNot(t *testing.T) {
+	for path, wantDry := range map[string]bool{"/api/v1/prs/42/merge-preflight": true, "/api/v1/prs/42/merge": false} {
+		svc := &fakePRService{}
+		r := chi.NewRouter()
+		r.Route("/api/v1", func(r chi.Router) { (&controllers.PRsController{Svc: svc, Scope: ownPRScope{}}).Register(r) })
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(validMergeBody)))
+		if rec.Code != http.StatusOK || svc.mergeRequest.DryRun != wantDry {
+			t.Fatalf("%s: status %d DryRun %v, want 200 and %v", path, rec.Code, svc.mergeRequest.DryRun, wantDry)
+		}
+	}
+}

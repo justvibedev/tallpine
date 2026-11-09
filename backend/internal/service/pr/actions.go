@@ -19,6 +19,8 @@ type MergeRequest struct {
 	PRID            string
 	PRURL           string
 	ExpectedHeadSHA string
+	// DryRun stops after the precondition checks, before any merge.
+	DryRun bool
 	// Requester is the scoped agent session making the request; empty for the
 	// app or CLI user.
 	Requester domain.SessionID
@@ -31,6 +33,8 @@ type MergeResult struct {
 	State          domain.PRState
 	MergeCommitSHA string
 	StateChangedAt time.Time
+	// DryRun is true when the preconditions passed and nothing was merged.
+	DryRun bool
 }
 
 // ResolveResult is the successful outcome of a resolve-comments operation.

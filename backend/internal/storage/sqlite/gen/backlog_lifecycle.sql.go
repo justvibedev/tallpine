@@ -129,7 +129,7 @@ func (q *Queries) SelectBacklogLinkedSessions(ctx context.Context, itemID string
 }
 
 const selectBacklogPRFacts = `-- name: SelectBacklogPRFacts :many
-SELECT p.url, p.number, p.pr_state, p.session_id, p.created_at_provider,
+SELECT p.url, p.number, p.pr_state, p.title, p.session_id, p.created_at_provider,
   CAST(p.url IN (SELECT bl.ref FROM backlog_links bl WHERE bl.item_id = ?1 AND bl.kind = 'pr') AS INTEGER) AS direct
 FROM pr p
 WHERE p.url IN (SELECT bl.ref FROM backlog_links bl WHERE bl.item_id = ?1 AND bl.kind = 'pr')
@@ -141,6 +141,7 @@ type SelectBacklogPRFactsRow struct {
 	URL               string
 	Number            int64
 	PRState           domain.PRState
+	Title             string
 	SessionID         domain.SessionID
 	CreatedAtProvider sql.NullTime
 	Direct            int64
@@ -162,6 +163,7 @@ func (q *Queries) SelectBacklogPRFacts(ctx context.Context, targetItem string) (
 			&i.URL,
 			&i.Number,
 			&i.PRState,
+			&i.Title,
 			&i.SessionID,
 			&i.CreatedAtProvider,
 			&i.Direct,

@@ -48,10 +48,11 @@ func (r *landRunner) merged() bool { return r.didMerge }
 
 func landRoutes(reviews string) map[string]mergeRoute {
 	return map[string]mergeRoute{
-		"GET /api/v1/sessions":            {200, `{"sessions":[{"id":"s1","prs":[{"url":"https://github.com/o/r/pull/42","number":42}]}]}`},
-		"GET /api/v1/sessions/s1/reviews": {200, reviews},
-		"POST /api/v1/prs/42/merge":       {200, `{"ok":true,"prNumber":42}`},
-		"POST /api/v1/sessions/s1/kill":   {200, `{"sessionId":"s1","freed":true}`},
+		"GET /api/v1/sessions":                {200, `{"sessions":[{"id":"s1","prs":[{"url":"https://github.com/o/r/pull/42","number":42}]}]}`},
+		"GET /api/v1/sessions/s1/reviews":     {200, reviews},
+		"POST /api/v1/prs/42/merge":           {200, `{"ok":true,"prNumber":42}`},
+		"POST /api/v1/prs/42/merge-preflight": {200, `{"ok":true,"prNumber":42}`},
+		"POST /api/v1/sessions/s1/kill":       {200, `{"sessionId":"s1","freed":true}`},
 	}
 }
 
@@ -128,8 +129,8 @@ func TestPRLandNonCleanRefused(t *testing.T) {
 
 func TestPRLandDryRunDoesNotMergeOrKill(t *testing.T) {
 	r := &landRunner{state: "CLEAN", head: testHeadSHA}
-	out, reqs, err := runLand(t, landRoutes(approvedReviews), r, "--dry-run", "--kill-worker")
-	if err != nil || r.merged() || contains(*reqs, "POST /api/v1/sessions/s1/kill") || !strings.Contains(out, "dry-run: would squash-merge") {
+	out, reqs, _, err := runLandBody(t, landRoutes(approvedReviews), r, "--dry-run", "--kill-worker")
+	if err != nil || !contains(*reqs, "POST /api/v1/prs/42/merge-preflight") || contains(*reqs, "POST /api/v1/prs/42/merge") || contains(*reqs, "POST /api/v1/sessions/s1/kill") || !strings.Contains(out, "dry-run: would squash-merge") {
 		t.Fatalf("err=%v out=%q calls=%v reqs=%v", err, out, r.calls, *reqs)
 	}
 }
@@ -175,5 +176,35 @@ func TestPRLandKillWorkerAfterMerge(t *testing.T) {
 	n := len(*reqs)
 	if err != nil || n < 2 || (*reqs)[n-2] != "POST /api/v1/prs/42/merge" || (*reqs)[n-1] != "POST /api/v1/sessions/s1/kill" {
 		t.Fatalf("err=%v reqs=%v", err, *reqs)
+	}
+}
+
+const landBlockedBody = `{"message":"PR merge preconditions are not met: review approval is required","code":"PR_PRECONDITIONS_UNMET","details":{"reason":"review_approval_required","detail":"review approval is required"}}`
+
+// B597: an identical rebase where the daemon gate does not apply merges, and the
+// dry run reports the same daemon answer instead of its own patch comparison.
+func TestPRLandIdenticalRebaseDryRunAndRealAgreeWhenGateApplies(t *testing.T) {
+	for _, args := range [][]string{nil, {"--dry-run"}} {
+		routes := landRoutes(approvedReviews)
+		routes["POST /api/v1/prs/42/merge"] = mergeRoute{422, landBlockedBody}
+		routes["POST /api/v1/prs/42/merge-preflight"] = mergeRoute{422, landBlockedBody}
+		r := &landRunner{state: "CLEAN", head: landNewHead, diffOld: landRebaseDiff, diffNew: landRebaseDiff}
+		_, reqs, _, err := runLandBody(t, routes, r, args...)
+		if err == nil || !strings.Contains(err.Error(), "review_approval_required") {
+			t.Fatalf("args=%v err=%v", args, err)
+		}
+		if len(args) > 0 && (!contains(*reqs, "POST /api/v1/prs/42/merge-preflight") || contains(*reqs, "POST /api/v1/prs/42/merge")) {
+			t.Fatalf("dry-run must use only the preflight route: %v", *reqs)
+		}
+	}
+}
+
+func TestPRLandIdenticalRebaseDryRunAndRealAgreeWhenGateDoesNotApply(t *testing.T) {
+	for _, args := range [][]string{nil, {"--dry-run"}} {
+		r := &landRunner{state: "CLEAN", head: landNewHead, diffOld: landRebaseDiff, diffNew: landRebaseDiff}
+		out, _, err := runLand(t, landRoutes(approvedReviews), r, args...)
+		if err != nil || (len(args) == 0 && !r.merged()) || (len(args) > 0 && !strings.Contains(out, "would squash-merge")) {
+			t.Fatalf("args=%v err=%v out=%q", args, err, out)
+		}
 	}
 }

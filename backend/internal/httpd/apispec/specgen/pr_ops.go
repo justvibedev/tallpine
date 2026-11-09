@@ -28,6 +28,20 @@ func prOperations() []operation {
 			},
 		},
 		{
+			method: http.MethodPost, path: "/api/v1/prs/{id}/merge-preflight", id: "mergePRPreflight", tag: "prs",
+			summary:    "Check every merge precondition without merging",
+			pathParams: []any{controllers.PRIDParam{}},
+			reqBody:    controllers.MergePRRequest{},
+			resps: []respUnit{
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusOK, controllers.MergePreflightResponse{}},
+				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusConflict, envelope.APIError{}},
+				{http.StatusUnprocessableEntity, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
 			method: http.MethodPost, path: "/api/v1/prs/{id}/resolve-comments", id: "resolveComments", tag: "prs",
 			summary:    "Resolve review threads on a pull request",
 			pathParams: []any{controllers.PRIDParam{}},

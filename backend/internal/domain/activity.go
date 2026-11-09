@@ -45,6 +45,14 @@ func (a ActivityState) IsBusy() bool { return a == ActivityActive }
 
 // Activity captures the persisted activity reading: the state and when it was
 // last observed.
+//
+// LastActivityAt is turn-level, not a heartbeat: it marks when State was last
+// entered (an activity transition), and same-state repeats do not advance it
+// (see lifecycle sameActivity). A chat worker's long turn that runs many tool
+// calls therefore keeps the timestamp from the start of the turn. Do not use
+// it as a liveness or stuck signal while State is active; use runtime probes
+// or live provider work instead. Where it is compared to a window it answers
+// "how long since the last transition", e.g. idle-for or quiet-since checks.
 type Activity struct {
 	State          ActivityState `json:"state"`
 	LastActivityAt time.Time     `json:"lastActivityAt"`

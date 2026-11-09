@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/autoreview"
+	"tallpine.eu/tallpine/backend/internal/bgtasks"
 	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd"
@@ -56,7 +57,10 @@ func (b *boot) wireMobile() error {
 	// at a bare shutdown or still stored as mid-turn after a crash are recorded
 	// at boot (RecordUnclean) only if their chat host did not survive; a
 	// surviving host kept its turn, so activity alone proves nothing.
-	b.resumeTracker = restartresume.New(b.cfg.DataDir, b.store)
+	// A closure: the background task tracker is wired after this.
+	b.resumeTracker = restartresume.New(b.cfg.DataDir, b.store).WithJobs(func(id domain.SessionID) []bgtasks.Info {
+		return b.bgTasks.Running(id)
+	})
 	if reconcileErr := b.sessMgr.ReconcileStartupSafety(b.ctx); reconcileErr != nil {
 		b.stop()
 		b.managedPreview.Close()

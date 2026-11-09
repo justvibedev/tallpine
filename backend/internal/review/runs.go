@@ -121,7 +121,7 @@ func (e *Engine) reviewLaunchSpec(
 		PRURL:           run.PRURL,
 		TargetSHA:       run.TargetSHA,
 		ReviewQueue:     queue,
-		TaskContext:     taskContext(worker.Metadata.Prompt),
+		TaskContext:     taskContext(e.taskTextFor(ctx, worker)),
 		PlanDecisions:   decisions,
 		PlanFocus:       focus,
 	}

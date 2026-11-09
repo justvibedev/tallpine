@@ -186,7 +186,9 @@ with tests in `cross_project_test.go` and `agent_create_test.go`:
   `outcome=orchestrator_brief_delivered` with `creator_session`.
 - **Audit.** Allowed cross-project requests log a daemon `WARN` line
   (`audit=agent_scope`, `outcome=cross_project_allowed`, with action, role,
-  session, project); creates also log `outcome=project_created`. See the Audit
+  session, project); Dev mode writes log `outcome=dev_mode_allowed` with
+  `scope=own_project|unknown` (or `cross_project_allowed` when the route's
+  session or project path parameter shows another project); creates also log `outcome=project_created`. See the Audit
   section above.
 
 ## Follow-ups

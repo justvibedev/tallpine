@@ -357,7 +357,7 @@ func (p *PlanService) failPlan(ctx context.Context, id, reason string) {
 func plannerTask(item domain.BacklogItem, record string, extra ...string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Plan backlog item %s. Use `tallpine plan questions %s` and `tallpine plan submit %s` as your standing instructions say.\n\n", item.Ref(), item.Ref(), item.Ref())
-	b.WriteString(spawnContext(item))
+	b.WriteString(item.TaskContext())
 	if strings.TrimSpace(record) != "" {
 		b.WriteString("\n\nThe owner already answered; do not ask again. Questions and answers so far:\n")
 		b.WriteString(record)

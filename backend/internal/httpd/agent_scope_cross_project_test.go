@@ -104,3 +104,44 @@ func TestCrossProjectCreatorLosesRightsWhenProjectIsRemovedAndReregistered(t *te
 		t.Fatalf("PUT config on a re-registered project = %d, want 403", got)
 	}
 }
+
+// Dev mode logs every write, and calls it cross-project only when the route's
+// session or project parameter shows it; everything else is unknown.
+func TestDevModeAuditScope(t *testing.T) {
+	store, tokens := newAgentScopeFixture()
+	logs := &bytes.Buffer{}
+	scopes := newAgentScopes(tokens, store, slog.New(slog.NewJSONHandler(logs, nil)))
+	scopes.devMode = func(context.Context, domain.ProjectID) bool { return true }
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner), logs: logs}
+	token := store.tokenFor(tokens, "app-orch")
+	for _, c := range []struct{ path, scope, outcome string }{
+		{"/api/v1/sessions/app-2/reviews/trigger", "own_project", "dev_mode_allowed"},
+		{"/api/v1/sessions/web-1/reviews/trigger", "cross_project", "cross_project_allowed"},
+		{"/api/v1/projects/app/config", "own_project", "dev_mode_allowed"},
+		{"/api/v1/projects/web/config", "cross_project", "cross_project_allowed"},
+		{"/api/v1/sessions", "unknown", "dev_mode_allowed"},
+		{"/api/v1/projects/clone", "unknown", "dev_mode_allowed"},
+		{"/api/v1/projects/initialize", "unknown", "dev_mode_allowed"},
+		{"/api/v1/projects/web", "cross_project", "cross_project_allowed"},
+		{"/api/v1/projects/app", "own_project", "dev_mode_allowed"},
+		{"/api/v1/sessions/web-1", "cross_project", "cross_project_allowed"},
+		{"/api/v1/sessions/app-2", "own_project", "dev_mode_allowed"},
+	} {
+		logs.Reset()
+		method := "POST"
+		switch {
+		case strings.HasSuffix(c.path, "/config"):
+			method = "PUT"
+		case strings.Count(c.path, "/") == 4 && !strings.HasSuffix(c.path, "/sessions"):
+			method = "DELETE"
+		}
+		if rec := h.do(token, method, c.path); rec.Code != 200 {
+			t.Fatalf("%s = %d", c.path, rec.Code)
+		}
+		out := logs.String()
+		if !strings.Contains(out, `"outcome":"`+c.outcome+`"`) || !strings.Contains(out, `"scope":"`+c.scope+`"`) {
+			t.Errorf("%s: want %s/%s, got %s", c.path, c.outcome, c.scope, out)
+		}
+	}
+}

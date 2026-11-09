@@ -183,24 +183,16 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 	if !strings.EqualFold(fresh.PR.HeadSHA, expectedHead) {
 		return MergeResult{}, ErrPRHeadChanged
 	}
-	if ports.NoCIGateApplies(fresh) {
-		noCI, err := s.projectNoCI(ctx, tracked.SessionID)
-		if err != nil {
-			return MergeResult{}, err
-		}
-		if noCI {
-			gate, err := s.noCIReviewGate(ctx, tracked, expectedHead)
-			if err != nil {
-				return MergeResult{}, err
-			}
-			if blocker := gate.Blocker(); blocker != domain.MergeBlockerNone {
-				return MergeResult{}, &PreconditionError{Blocker: blocker}
-			}
-			fresh = ports.ApplyNoCIPolicy(fresh, true, gate)
-		}
+	fresh, err = s.applyNoCIGate(ctx, tracked, expectedHead, fresh)
+	if err != nil {
+		return MergeResult{}, err
 	}
 	if blocker := mergeBlocker(fresh, review); blocker != domain.MergeBlockerNone {
 		return MergeResult{}, &PreconditionError{Blocker: blocker}
+	}
+
+	if request.DryRun {
+		return MergeResult{PRNumber: tracked.Number, Method: string(ports.SCMMergeSquash), DryRun: true}, nil
 	}
 
 	out, err := s.merger.MergePullRequest(ctx, ports.SCMMergeRequest{PR: ref, ExpectedHeadSHA: expectedHead, Method: ports.SCMMergeSquash})
@@ -267,37 +259,6 @@ func (s *ActionService) fetchMergeReadiness(ctx context.Context, ref ports.SCMPR
 		return ports.SCMObservation{}, ports.SCMReviewObservation{}, fmt.Errorf("refresh pull request reviews before merge: %w", err)
 	}
 	return observations[0], review, nil
-}
-
-// projectNoCI reports whether the PR's owning project opted into
-// ProjectConfig.NoCI. A missing session or project means no opt-in.
-func (s *ActionService) projectNoCI(ctx context.Context, sessionID domain.SessionID) (bool, error) {
-	if s.policy == nil || sessionID == "" {
-		return false, nil
-	}
-	sess, ok, err := s.policy.GetSession(ctx, sessionID)
-	if err != nil {
-		return false, fmt.Errorf("load pull request session: %w", err)
-	}
-	if !ok {
-		return false, nil
-	}
-	project, ok, err := s.policy.GetProject(ctx, string(sess.ProjectID))
-	if err != nil {
-		return false, fmt.Errorf("load pull request project: %w", err)
-	}
-	return ok && project.Config.NoCI, nil
-}
-
-// noCIReviewGate judges the Tallpine review passes the PR's owning session recorded
-// against exactly head. The provider review decision is not used: it is not
-// tied to a commit (see domain.CIWithNoCIPolicy).
-func (s *ActionService) noCIReviewGate(ctx context.Context, tracked domain.PullRequest, head string) (domain.TallpineReviewGate, error) {
-	runs, err := s.policy.ListReviewRunsBySession(ctx, tracked.SessionID)
-	if err != nil {
-		return "", fmt.Errorf("load Tallpine review runs: %w", err)
-	}
-	return domain.TallpineReviewGateForHead(runs, tracked.URL, head), nil
 }
 
 // mergeBlocker judges a fresh provider read and returns the first failed

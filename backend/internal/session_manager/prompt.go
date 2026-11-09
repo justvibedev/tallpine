@@ -54,13 +54,17 @@ type projectRulesConfig struct {
 	AgentRulesFile string
 }
 
+// backlogCloseInstruction tells a backlog-spawned worker how its PR closes the
+// item: a merge only closes an item whose PR title claims it.
+const backlogCloseInstruction = "\n\nWhen your PR fully meets this item's done-when, its title must contain `closes B<n>` (this item's reference, for example `closes B12`). When it only partly meets it, the title must not contain that phrase, so the merge leaves the item open."
+
 func buildTaskPrompt(cfg taskPromptConfig) string {
 	prompt := buildIssueTaskPrompt(cfg)
 	backlog := strings.TrimSpace(cfg.BacklogContext)
 	if cfg.Role != sessionPromptRoleWorker || backlog == "" {
 		return prompt
 	}
-	section := "## Backlog item\n\nThis task comes from the project backlog. Treat the item below as the task description and acceptance criteria.\n\n" + backlog
+	section := domain.BacklogPromptHeader + backlog + backlogCloseInstruction
 	if prompt == "" {
 		return "Work on this backlog item.\n\n" + section
 	}

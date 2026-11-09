@@ -38,6 +38,19 @@ check "failing send: warns once per session" '[[ "$(grep -c "could not notify se
 # The window is proven by attempts, not the clock: the first session retries until the shared deadline passes, so
 # the second gets exactly its one always-made attempt. A window per session would give it more.
 check "failing send: retried, and both sessions share one window" '[[ "$(grep -c "^send|--session|orch-1|" "${nrc}")" -ge 2 && "$(grep -c "^send|--session|orch-2|" "${nrc}")" -eq 1 ]] || { cat "${nrc}"; false; }'
+# B263: the stale-checkout guard refuses before cmd_install runs; that refusal must notify too.
+sc="${T}/stale-checkout"; mkdir -p "${sc}/scripts" "${sc}/backend/internal/brand"
+cp -R "${script_dir}/release-local" "${script_dir}/release-local.d" "${script_dir}/lib" "${script_dir}/release-local-publish.sh" "${sc}/scripts/"
+cp "${script_dir}/../backend/internal/brand/brand.go" "${sc}/backend/internal/brand/"
+git -C "${sc}" init -q && git -C "${sc}" add -A && git -C "${sc}" -c user.name=t -c user.email=t@t commit -qm base
+git -C "${sc}" update-ref refs/heads/main HEAD
+echo "# newer" >>"${sc}/scripts/release-local"
+git -C "${sc}" -c user.name=t -c user.email=t@t commit -qam newer
+git -C "${sc}" update-ref refs/remotes/origin/main HEAD && git -C "${sc}" reset -q --hard HEAD~1
+fake_cli "${napps}/${product}.app" "${nrc}" 0; : >"${nrc}"
+env -u TALLPINE_RELEASE_SKIP_STALE_CHECK "${sc}/scripts/release-local" --state-dir "${nst}" --app-dir "${napps}" --no-fetch --yes --force \
+  install "${T}/nonexistent.app" --notify orch-1 --log "${T}/the.log" >"${T}/out" 2>&1 && bad "stale checkout refuses install" || ok "stale checkout refuses install"
+check "stale-checkout refusal sends a FAILED message with the reason" 'grep -q "^send|--session|orch-1|--message|\[release\] install of unknown FAILED: this checkout .*is behind it.*; log ${T}/the.log|" "${nrc}" || { cat "${nrc}" "${T}/out"; false; }'
 pkill -f "${nst}/" 2>/dev/null || true
 
 # B357: the detached run's output is followed by byte count; output appended between the size read and the

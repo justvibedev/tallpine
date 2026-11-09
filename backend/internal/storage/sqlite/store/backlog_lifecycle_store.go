@@ -22,6 +22,7 @@ type BacklogPRFact struct {
 	URL       string
 	Number    int64
 	State     string
+	Title     string
 	SessionID string
 	// Direct is true for a pr link; false when the PR is reached through a session link.
 	Direct bool
@@ -165,7 +166,7 @@ func (s *Store) BacklogFactsFor(ctx context.Context, itemID string) (BacklogFact
 		ackedSet[u] = true
 	}
 	for _, r := range prs {
-		fact := BacklogPRFact{URL: r.URL, Number: r.Number, State: string(r.PRState), SessionID: string(r.SessionID), Direct: r.Direct != 0}
+		fact := BacklogPRFact{URL: r.URL, Number: r.Number, State: string(r.PRState), Title: r.Title, SessionID: string(r.SessionID), Direct: r.Direct != 0}
 		// A merge that predates a manual reopen no longer counts: the reopen wins.
 		if fact.State == "merged" && ackedSet[fact.URL] {
 			f.AckedPRs = append(f.AckedPRs, fact)

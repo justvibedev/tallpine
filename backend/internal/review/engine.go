@@ -104,6 +104,9 @@ type Deps struct {
 	// Plans, when set, supplies the approved plan of the backlog item a worker
 	// builds so the reviewer can check the code against it (B205). Nil: none.
 	Plans PlanSource
+	// Items, when set, supplies the current text of the backlog item a worker
+	// builds, so the reviewer judges against its present done-when (B601).
+	Items ItemSource
 	// ChatRecoveryDone gates operations that could mistake a recovering reviewer for an exited one.
 	ChatRecoveryDone <-chan struct{}
 	// PassDeadline fails a running pass that has not submitted a result this
@@ -140,6 +143,7 @@ type Engine struct {
 	projects   Projects
 	launcher   Launcher
 	plans      PlanSource
+	items      ItemSource
 	clock      func() time.Time
 	newID      func() string
 
@@ -203,6 +207,7 @@ func New(d Deps) *Engine {
 		projects:     d.Projects,
 		launcher:     d.Launcher,
 		plans:        d.Plans,
+		items:        d.Items,
 		clock:        clock,
 		newID:        newID,
 		triggerLocks: make(map[domain.SessionID]*sync.Mutex),

@@ -180,7 +180,7 @@ func crossProjectEnabled(decider controllers.PolicyDecider) func(context.Context
 // project, next to the refusals audit writes.
 func (s *agentScopes) auditCross(r *http.Request, agent requestscope.Agent, action string) {
 	s.log.Warn("daemon allowed a cross-project agent request",
-		"audit", "agent_scope", "outcome", "cross_project_allowed", "action", action,
+		"audit", "agent_scope", "outcome", "cross_project_allowed", "scope", "cross_project", "action", action,
 		"method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr,
 		"role", string(agent.Role), "session", string(agent.SessionID), "project", string(agent.ProjectID))
 }

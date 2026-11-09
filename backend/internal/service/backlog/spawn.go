@@ -103,7 +103,7 @@ func (s *Service) PrepareSpawnPlan(ctx context.Context, projectID domain.Project
 		warning = fmt.Sprintf("%s is blocked by %s", item.Ref(), strings.Join(v.OpenBlockers, ", "))
 	}
 	scope := s.effectiveScope(ctx, item)
-	out := SpawnItem{ID: item.ID, Ref: item.Ref(), ParentID: item.ParentID, Context: spawnContext(item) + fmt.Sprintf("\n\nPublishing: %s", publishingBrief(scope)), Warning: warning}
+	out := SpawnItem{ID: item.ID, Ref: item.Ref(), ParentID: item.ParentID, Context: item.TaskContext() + fmt.Sprintf("\n\nPublishing: %s", publishingBrief(scope)), Warning: warning}
 	if s.plans.Enabled() {
 		extra, planID, err := s.planForSpawn(ctx, item, force, arm)
 		if err != nil {
@@ -131,24 +131,6 @@ func (s *Service) LinkSession(ctx context.Context, itemID string, sessionID doma
 	}
 	_, err := s.store.AddBacklogLink(ctx, itemID, domain.BacklogLink{Kind: domain.BacklogLinkSession, Ref: string(sessionID), CreatedBy: createdBy}, s.now().UTC())
 	return err
-}
-
-// spawnContext is the backlog section of a worker's task prompt: the item's
-// title, note, done-when and the orchestrator's notes. Agent notes reach the
-// item's workers only; they are never exported.
-func spawnContext(i domain.BacklogItem) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Backlog item %s: %s\n", i.Ref(), i.Title)
-	if n := strings.TrimSpace(i.Note); n != "" {
-		fmt.Fprintf(&b, "\nNote:\n%s\n", n)
-	}
-	if d := strings.TrimSpace(i.DoneWhen); d != "" {
-		fmt.Fprintf(&b, "\nDone when:\n%s\n", d)
-	}
-	if a := strings.TrimSpace(i.AgentNotes); a != "" {
-		fmt.Fprintf(&b, "\nOrchestrator notes:\n%s\n", a)
-	}
-	return strings.TrimRight(b.String(), "\n")
 }
 
 // effectiveScope is the item's scope, else the scope of the project's open

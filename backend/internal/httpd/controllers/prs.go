@@ -55,10 +55,21 @@ func (c *PRsController) agentMayActOnPR(ctx context.Context, agent requestscope.
 // Register mounts the PR action routes on the supplied router.
 func (c *PRsController) Register(r chi.Router) {
 	r.Post("/prs/{id}/merge", c.merge)
+	r.Post("/prs/{id}/merge-preflight", c.mergePreflight)
 	r.Post("/prs/{id}/resolve-comments", c.resolveComments)
 }
 
 func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
+	c.mergeOrPreflight(w, r, false)
+}
+
+// mergePreflight runs every merge precondition on its own route, never the
+// merge route, so a daemon that predates it answers 404 and nothing merges.
+func (c *PRsController) mergePreflight(w http.ResponseWriter, r *http.Request) {
+	c.mergeOrPreflight(w, r, true)
+}
+
+func (c *PRsController) mergeOrPreflight(w http.ResponseWriter, r *http.Request, preflight bool) {
 	if c.Svc == nil {
 		apispec.NotImplemented(w, r, "POST", "/api/v1/prs/{id}/merge")
 		return
@@ -92,9 +103,13 @@ func (c *PRsController) merge(w http.ResponseWriter, r *http.Request) {
 	if agent, ok := scopedAgent(r); ok {
 		requester = agent.SessionID
 	}
-	res, err := c.Svc.Merge(r.Context(), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA, Requester: requester})
+	res, err := c.Svc.Merge(r.Context(), prsvc.MergeRequest{PRID: prID, PRURL: in.PRURL, ExpectedHeadSHA: in.ExpectedHeadSHA, DryRun: preflight, Requester: requester})
 	if err != nil {
 		writePRError(w, r, err)
+		return
+	}
+	if preflight {
+		envelope.WriteJSON(w, http.StatusOK, MergePreflightResponse{OK: true, PRNumber: res.PRNumber})
 		return
 	}
 	envelope.WriteJSON(w, http.StatusOK, MergePRResponse{

@@ -39,7 +39,7 @@ func TestWorkerTaskPromptGetsBacklogContextAsTaskText(t *testing.T) {
 	}
 	// Alongside an issue the issue prompt stays first.
 	both := buildTaskPrompt(taskPromptConfig{Role: sessionPromptRoleWorker, IssueID: "42", BacklogContext: ctx})
-	if !strings.HasPrefix(both, "Work on issue 42.") || !strings.HasSuffix(both, "tests pass") {
+	if !strings.HasPrefix(both, "Work on issue 42.") || !strings.HasSuffix(both, backlogCloseInstruction) || !strings.Contains(both, "tests pass") {
 		t.Fatalf("issue + backlog prompt = %q", both)
 	}
 	// Orchestrators never get it, and without a context nothing changes.
@@ -48,5 +48,20 @@ func TestWorkerTaskPromptGetsBacklogContextAsTaskText(t *testing.T) {
 	}
 	if got := buildTaskPrompt(taskPromptConfig{Role: sessionPromptRoleWorker, Prompt: "p"}); got != "p" {
 		t.Fatalf("plain task prompt = %q", got)
+	}
+}
+
+func TestBacklogWorkerPromptCarriesTheClosesConvention(t *testing.T) {
+	ctx := "Backlog item B12: Fix leak\n\nDone when:\ntests pass"
+	for name, prompt := range map[string]string{"with prompt": "Do the work.", "promptless": ""} {
+		got := buildTaskPrompt(taskPromptConfig{Role: sessionPromptRoleWorker, Prompt: prompt, BacklogContext: ctx})
+		for _, want := range []string{"title must contain `closes B<n>`", "only partly meets it, the title must not contain"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: prompt lacks %q", name, want)
+			}
+		}
+	}
+	if got := buildTaskPrompt(taskPromptConfig{Role: sessionPromptRoleWorker, Prompt: "Do the work."}); strings.Contains(got, "closes B<n>") {
+		t.Errorf("worker without a backlog item got the closes convention")
 	}
 }

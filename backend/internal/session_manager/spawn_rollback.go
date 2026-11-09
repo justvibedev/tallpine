@@ -273,7 +273,8 @@ func (m *Manager) RollbackSpawn(ctx context.Context, id domain.SessionID) (delet
 func expectedWorkspaceRefusal(err error) bool {
 	return errors.Is(err, ports.ErrWorkspaceDirty) ||
 		errors.Is(err, ports.ErrWorkspaceRepoUnavailable) ||
-		errors.Is(err, ports.ErrWorkspaceDeferred)
+		errors.Is(err, ports.ErrWorkspaceDeferred) ||
+		errors.Is(err, ErrProjectNotResolvable)
 }
 
 // terminateWithPreservedWorkspace records terminal intent for a session whose

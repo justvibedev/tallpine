@@ -37,7 +37,7 @@ func inPlaceBrief(ref string) string {
 // its session ended: the item, the standing brief and the record so far.
 func (p *PlanService) inPlaceTask(ctx context.Context, item domain.BacklogItem, record string) string {
 	var b strings.Builder
-	b.WriteString(spawnContext(item) + fmt.Sprintf("\n\nPublishing: %s", publishingBrief(p.bl.effectiveScope(ctx, item))) + "\n\n" + inPlaceBrief(item.Ref()))
+	b.WriteString(item.TaskContext() + fmt.Sprintf("\n\nPublishing: %s", publishingBrief(p.bl.effectiveScope(ctx, item))) + "\n\n" + inPlaceBrief(item.Ref()))
 	if strings.TrimSpace(record) != "" {
 		b.WriteString("\n\nThe owner already answered; do not ask again. Questions and answers so far:\n" + record)
 	}
@@ -156,7 +156,7 @@ func (p *PlanService) approveInPlace(ctx context.Context, plan domain.BacklogPla
 		for _, id := range childIDs[1:] {
 			rest = append(rest, p.refOf(ctx, id))
 		}
-		msg += fmt.Sprintf("\n\nYou build PR 1 of %d of this plan: %s (backlog item %s)", n, plan.PRSplit[0].Title, buildRef)
+		msg += fmt.Sprintf("\n\nYou build PR 1 of %d of this plan: %s (backlog item %s). When this PR fully meets that item's done-when, its title must contain `closes %s`; it must never name %s, which is closed by hand once the whole plan has landed.", n, plan.PRSplit[0].Title, buildRef, buildRef, ref)
 	case n == 1:
 		msg += fmt.Sprintf("\n\nYou build PR 1 of 1 of this plan: %s", plan.PRSplit[0].Title)
 	}

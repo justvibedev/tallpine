@@ -393,6 +393,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 	}
 	reviewEngine := reviewcore.New(reviewcore.Deps{
 		Plans: reviewPlans,
+		Items: workerPlanSource{store: store},
 		// The manager's installer gate is bound after the installer is built.
 		HarnessUse: mgr,
 		Store:      store,

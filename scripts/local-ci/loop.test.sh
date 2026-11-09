@@ -206,5 +206,37 @@ run_failing_loop "a failing fetch"
 mv "$tmp/up2" "$tmp/up2.gone"
 run_failing_loop "a failing ls-remote"
 
+# npmseed installs only when what npm would install changed or a tree is incomplete.
+seed="$tmp/seed"; npmbin="$tmp/npmbin"; mkdir -p "$npmbin" "$H"
+cat >"$npmbin/npm" <<'NPM'
+#!/usr/bin/env bash
+echo "$PWD $*" >>"$NPM_LOG"
+[ "$1" = ci ] || exit 0
+[ -z "${NPM_FAIL:-}" ] || exit 1
+rm -rf node_modules; mkdir node_modules; : >node_modules/.package-lock.json
+NPM
+chmod +x "$npmbin/npm"
+export NPM_LOG="$tmp/npm.log"
+seed_locks() { # own version, dependency version
+  local d
+  for d in . frontend frontend/src/docs packages/product-ui; do
+    mkdir -p "$seed/$d"
+    printf '{"name":"x","version":"%s","lockfileVersion":3,"packages":{"":{"name":"x","version":"%s"},"node_modules/a":{"version":"%s"}}}\n' "$1" "$1" "$2" >"$seed/$d/package-lock.json"
+  done
+}
+seed_installs() { : >"$NPM_LOG"; (cd "$seed" && PATH="$npmbin:$PATH" npmseed); grep -c ' ci ' "$NPM_LOG"; }
+expect_installs() { # want, scenario
+  local got; got="$(seed_installs)"
+  [ "$got" = "$1" ] || { fails=$((fails + 1)); echo "FAIL: npmseed $2: $got npm ci runs, want $1"; }
+}
+seed_locks 1.0.0 1.0.0; expect_installs 4 "on first run"
+expect_installs 0 "with nothing changed"
+seed_locks 1.0.1 1.0.0; expect_installs 0 "after a release bumped only the package version"
+seed_locks 1.0.1 2.0.0; expect_installs 4 "after a dependency changed"
+rm "$seed/frontend/node_modules/.package-lock.json"; expect_installs 4 "with an incomplete tree"
+rm -rf "$seed/packages/product-ui/node_modules"; expect_installs 4 "with a missing tree"
+seed_locks 1.0.1 3.0.0; NPM_FAIL=1 expect_installs 1 "when the install fails"
+seed_locks 1.0.1 2.0.0; expect_installs 4 "back on the last good lockfile after a failed install"
+
 [ "$fails" = 0 ] && echo "local-ci loop tests: ok"
 exit "$fails"

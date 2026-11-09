@@ -87,3 +87,50 @@ func TestWorkerPlanSource_ApprovedPlanForWorker(t *testing.T) {
 		t.Error("a worker with no linked item has no plan")
 	}
 }
+
+// The reviewer reads the current text of the item the worker was started on:
+// an edit after the worker started is visible, and an item the worker filed
+// itself is never picked, even when its id sorts first (B601).
+func TestWorkerPlanSource_LinkedItemForWorkerIsCurrent(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := store.UpsertProject(ctx, domain.ProjectRecord{ID: "mer", Path: "/tmp/mer", RegisteredAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(id, doneWhen, createdBy string) domain.BacklogItem {
+		t.Helper()
+		it, err := store.CreateBacklogItem(ctx, domain.BacklogItem{
+			ID: id, ProjectID: "mer", Title: id, DoneWhen: doneWhen, State: domain.BacklogOpen, Scope: domain.BacklogScopeLocal,
+			Origin: domain.BacklogOrigin{Kind: domain.BacklogOriginHuman}, CreatedAt: now, UpdatedAt: now,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.AddBacklogLink(ctx, it.ID, domain.BacklogLink{Kind: domain.BacklogLinkSession, Ref: "w1", CreatedBy: createdBy}, now); err != nil {
+			t.Fatal(err)
+		}
+		return it
+	}
+	src := workerPlanSource{store: store}
+	if _, ok, err := src.LinkedItemForWorker(ctx, "other"); err != nil || ok {
+		t.Fatalf("unlinked worker: ok=%v err=%v", ok, err)
+	}
+	spawned := mk("b-spawned", "old", "human")
+	mk("a-deferred", "followup", "w1") // sorts before the spawned item
+	if _, err := store.UpdateBacklogItem(ctx, spawned.ID, now, func(i *domain.BacklogItem) error { i.DoneWhen = "new"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := src.LinkedItemForWorker(ctx, "w1")
+	if err != nil || !ok || got.ID != "b-spawned" || got.DoneWhen != "new" {
+		t.Fatalf("got %+v ok=%v err=%v", got, ok, err)
+	}
+	mk("c-second", "other", "human") // ambiguous: two spawn-linked items
+	if _, ok, err := src.LinkedItemForWorker(ctx, "w1"); err != nil || ok {
+		t.Fatalf("ambiguous: ok=%v err=%v", ok, err)
+	}
+}

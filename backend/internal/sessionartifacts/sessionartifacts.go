@@ -59,6 +59,12 @@ func List(ctx context.Context, dir string) ([]domain.SessionArtifactFile, error)
 // listed (keyed by absolute path), which is what ListCached validates against.
 // A missing root is (nil, nil, nil).
 func walk(ctx context.Context, dir string) ([]domain.SessionArtifactFile, map[string]time.Time, error) {
+	return walkBounded(ctx, dir, MaxVisited)
+}
+
+// walkBounded is walk with the visit bound as a parameter, so a test can prove
+// the bound without creating a MaxVisited-sized tree.
+func walkBounded(ctx context.Context, dir string, maxVisited int) ([]domain.SessionArtifactFile, map[string]time.Time, error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return nil, nil, nil
@@ -84,7 +90,7 @@ func walk(ctx context.Context, dir string) ([]domain.SessionArtifactFile, map[st
 			return nil
 		}
 		visited++
-		if len(files) >= MaxFiles || visited > MaxVisited {
+		if len(files) >= MaxFiles || visited > maxVisited {
 			return filepath.SkipAll
 		}
 		if d.Type()&os.ModeSymlink != 0 {

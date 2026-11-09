@@ -157,6 +157,10 @@ func (m *Manager) cleanupTerminated(ctx context.Context, rec domain.SessionRecor
 		return
 	}
 	rec = cur
+	if m.preservedInArchivedProject(ctx, rec) {
+		result.Skipped = append(result.Skipped, CleanupSkip{SessionID: rec.ID, Reason: archivedProjectReason})
+		return
+	}
 	if check != nil {
 		paths, err := m.sessionWorktreePaths(ctx, rec)
 		if err != nil {
@@ -422,3 +426,30 @@ func normalizeWorkspacePath(p string) string {
 }
 
 // ---- helpers ----
+
+// preservedInArchivedProject reports a session without a pending cleanup record
+// for its current generation whose worktree is still on disk, whose project is
+// archived, and whose teardown depends on the project resolver. Resolver
+// teardown can never succeed, so it is refused up front, before any inspection
+// or teardown attempt, and nothing is recorded (the worktree is preserved for
+// manual removal). Not matched: a worktree already gone (that path records the
+// failure so the reconciler stops revisiting it); a session with an accepted
+// (pending) cleanup, which must reach teardown so its record settles (a
+// failed or preserved record is already settled and is skipped, unchanged); and a
+// session with a recorded repo path or workspace-project rows, whose teardown
+// bypasses the resolver and can still succeed; and a scratch project, whose
+// adapter needs only the managed path.
+func (m *Manager) preservedInArchivedProject(ctx context.Context, rec domain.SessionRecord) bool {
+	path := rec.Metadata.WorkspacePath
+	if path == "" || workspaceGone(path) || rec.Metadata.WorkspaceRepoPath != "" {
+		return false
+	}
+	if facts, tracked, err := m.store.GetSessionCleanupFacts(ctx, rec.ID); err != nil || (tracked && facts.SessionGeneration == rec.CleanupGeneration && facts.WorkspaceDisposition == domain.DispositionPending) {
+		return false
+	}
+	if _, isWorkspaceProject, err := m.workspaceProjectRows(ctx, rec); err != nil || isWorkspaceProject {
+		return false
+	}
+	project, found, err := m.store.GetProject(ctx, string(rec.ProjectID))
+	return err == nil && found && !project.ArchivedAt.IsZero() && project.Kind.WithDefault() != domain.ProjectKindScratch
+}

@@ -226,3 +226,67 @@ func fseventsDelivers(t *testing.T, root string) bool {
 		}
 	}
 }
+
+// A stalled reader blocks the stream's callback, which is what makes this a
+// stalled FSEvents client. Keep accepting batches while git is running.
+func TestFSEventsConsumerKeepsDrainingWhileFilterIsBusy(t *testing.T) {
+	root := t.TempDir()
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nexec /bin/sleep 3\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := &fseventsFilter{root: root, realRoot: realRoot, git: gitWorkspace{available: true}, ignoredDirs: map[string]struct{}{}}
+	events := make(chan []fsevents.Event)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f.consume(ctx, events, make(chan struct{}, 1))
+	}()
+	batch := []fsevents.Event{{Path: filepath.Join(realRoot, "a.txt"), Flags: fsevents.ItemIsFile | fsevents.ItemCreated}}
+	for i := range 64 {
+		select {
+		case events <- batch:
+		case <-time.After(1500 * time.Millisecond):
+			t.Fatalf("batch %d not accepted while the filter runs git", i)
+		}
+	}
+	cancel()
+	<-done
+}
+
+func TestCoalesceFSEventsMergesWhileReaderIsBusy(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := make(chan []fsevents.Event)
+	out := coalesceFSEvents(ctx, events)
+	for _, path := range []string{"/r/a", "/r/b"} {
+		events <- []fsevents.Event{{Path: path}}
+	}
+	merged := <-out
+	if len(merged) != 2 || merged[0].Path != "/r/a" || merged[1].Path != "/r/b" {
+		t.Fatalf("merged = %+v", merged)
+	}
+}
+
+func TestFSEventsBacklogPastCapBecomesRescan(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := make(chan []fsevents.Event)
+	out := coalesceFSEvents(ctx, events)
+	events <- make([]fsevents.Event, maxPendingFSEvents+1)
+	backlog := <-out
+	if len(backlog) != 1 || backlog[0].Flags&fsevents.MustScanSubDirs == 0 {
+		t.Fatalf("backlog has %d events, want one rescan", len(backlog))
+	}
+	f := &fseventsFilter{ignoredDirs: map[string]struct{}{}}
+	if !f.relevant(ctx, backlog) {
+		t.Fatal("rescan must report a change")
+	}
+}

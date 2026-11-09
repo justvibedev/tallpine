@@ -2853,6 +2853,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/prs/{id}/merge-preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check every merge precondition without merging */
+        post: operations["mergePRPreflight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/prs/{id}/resolve-comments": {
         parameters: {
             query?: never;
@@ -8223,6 +8240,10 @@ export interface components {
             state: "merged";
             /** Format: date-time */
             stateChangedAt: string;
+        };
+        MergePreflightResponse: {
+            ok: boolean;
+            prNumber: number;
         };
         MergesMergeEntry: {
             headSha?: string;
@@ -21381,6 +21402,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MergePRResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    mergePRPreflight: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PR number. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePRRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergePreflightResponse"];
                 };
             };
             /** @description Bad Request */

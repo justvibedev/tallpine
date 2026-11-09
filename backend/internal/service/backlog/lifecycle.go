@@ -13,7 +13,8 @@ import (
 // database. It is idempotent and holds no state, so any trigger (a CDC event, a
 // report, the sweep) may call it any number of times.
 //
-//   - Every linked PR merged: done, "merged #N". Not for scope local.
+//   - Every linked PR merged: done, "merged #N". Not for scope local. An item
+//     with a done-when also needs a merged PR titled "closes <ref>".
 //   - A PR closed unmerged, or a linked session ended without merging: the item
 //     stays open and gets one note line.
 func (s *Service) Reconcile(ctx context.Context, itemID string) error {

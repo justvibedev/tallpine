@@ -6,6 +6,8 @@
 //	             the file's content "fail" ends the turn with a provider error
 //	             (-32603 internal error; -32000 would read as "sign in again",
 //	             which is a different, auth-wait path with no turn_ended notice).
+//	BGJOB-<name> starts a real background child process, writes its pid to
+//	             $TALLPINE_FAKEACP_DIR/pid-<name>, and reports it as an async task.
 //	anything else ends the turn immediately.
 package main
 
@@ -15,9 +17,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"tallpine.eu/tallpine/backend/internal/process"
 )
 
 var (
@@ -25,6 +30,7 @@ var (
 	outMu sync.Mutex
 	dir   = os.Getenv("TALLPINE_FAKEACP_DIR")
 	hold  = regexp.MustCompile(`HOLD-[A-Za-z0-9]+`)
+	bgJob = regexp.MustCompile(`BGJOB-[A-Za-z0-9]+`)
 )
 
 func send(v any) {
@@ -82,7 +88,9 @@ func main() {
 
 // stallOnce hangs the first session/load or session/resume after
 // $TALLPINE_FAKEACP_DIR/stall-load appears, across agent processes, so the daemon's
-// handshake timeout fires once and the retry succeeds.
+// handshake timeout fires once and the retry succeeds. The "stalled" file holds
+// the hung agent's pid. A hung agent reads nothing, so closing its stdin does not
+// end it: only a signal does.
 func stallOnce() {
 	if _, err := os.Stat(filepath.Join(dir, "stall-load")); err != nil {
 		return
@@ -91,8 +99,24 @@ func stallOnce() {
 	if err != nil {
 		return
 	}
+	_, _ = f.WriteString(strconv.Itoa(os.Getpid()))
 	_ = f.Close()
 	time.Sleep(time.Hour)
+}
+
+// startBackgroundJob runs a real child process, as a harness's background Bash
+// does, records its pid in $TALLPINE_FAKEACP_DIR/pid-<name>, and reports it with
+// the frame the real ACP adapter emits.
+func startBackgroundJob(sid, name string) {
+	cmd := process.Command("sleep", "300")
+	if cmd.Start() != nil {
+		return
+	}
+	go func() { _ = cmd.Wait() }()
+	_ = os.WriteFile(filepath.Join(dir, "pid-"+name), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
+	send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+		"sessionId": sid, "update": map[string]any{"sessionUpdate": "async_task_spawned",
+			"asyncTaskId": "task-" + name, "name": "job " + name, "taskType": "local_bash"}}})
 }
 
 func prompt(id json.RawMessage, sid, cwd, text string) {
@@ -100,6 +124,9 @@ func prompt(id json.RawMessage, sid, cwd, text string) {
 	if f, err := os.OpenFile(filepath.Join(dir, "prompts.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 		_, _ = f.WriteString(line)
 		_ = f.Close()
+	}
+	if name := bgJob.FindString(text); name != "" && !strings.Contains(cwd, "background-tasks") {
+		startBackgroundJob(sid, strings.TrimPrefix(name, "BGJOB-"))
 	}
 	fail := false
 	if name := hold.FindString(text); name != "" && !strings.Contains(cwd, "background-tasks") {

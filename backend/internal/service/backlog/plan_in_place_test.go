@@ -297,6 +297,10 @@ func TestInPlaceApproveSplitLinksAuthorToChildOne(t *testing.T) {
 	if len(e.sessions.sent) != 1 || !strings.Contains(e.sessions.sent[0], "PR 1 of 2") {
 		t.Fatalf("author message = %q", e.sessions.sent)
 	}
+	// The author is spawned on the parent, so it must be told to claim child 1, never the parent.
+	if want := "`closes " + kids[0].Ref() + "`"; !strings.Contains(e.sessions.sent[0], want) || !strings.Contains(e.sessions.sent[0], "never name "+e.item.Ref()) {
+		t.Fatalf("author message lacks the closes instruction for %s: %q", kids[0].Ref(), e.sessions.sent[0])
+	}
 	if len(e.notify.sent) != 1 || !strings.Contains(e.notify.sent[0], kids[1].Ref()) || strings.Contains(e.notify.sent[0], kids[0].Ref()+",") {
 		t.Fatalf("orchestrator note = %q", e.notify.sent)
 	}

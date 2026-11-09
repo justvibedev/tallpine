@@ -79,7 +79,7 @@ func (s *agentScopes) serve(w http.ResponseWriter, r *http.Request, token string
 	if agent.Role == requestscope.RoleOrchestrator && s.devMode != nil && s.devMode(r.Context(), agent.ProjectID) && !devModeDenied(r.URL.Path) {
 		agent.DevMode = true
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			s.auditCross(r, agent, "dev_mode")
+			s.auditDevMode(r, agent)
 		}
 		next.ServeHTTP(w, r.WithContext(requestscope.WithAgent(r.Context(), agent)))
 		return
@@ -281,22 +281,6 @@ func (s *agentScopes) checkTarget(r *http.Request, target agentTarget, param str
 	return "it targets another session", ""
 }
 
-// checkWorkerTasks lets an agent stop background tasks of its own session, and
-// an orchestrator those of a worker of its own project; nothing else.
-func (s *agentScopes) checkWorkerTasks(ctx context.Context, id domain.SessionID, agent requestscope.Agent) string {
-	if id == agent.SessionID {
-		return ""
-	}
-	if agent.Role != requestscope.RoleOrchestrator {
-		return "it targets another session"
-	}
-	rec, found, err := s.store.GetSession(ctx, id)
-	if err != nil || !found || rec.Kind != domain.KindWorker || agent.ProjectID == "" || rec.ProjectID != agent.ProjectID {
-		return "it targets a session that is not a worker of this project"
-	}
-	return ""
-}
-
 func (s *agentScopes) audit(r *http.Request, agent requestscope.Agent, token, outcome, reason string) {
 	attrs := []any{
 		"audit", "agent_scope", "outcome", outcome, "reason", reason,
@@ -422,6 +406,7 @@ var baseAgentRules = []agentRule{
 	// only, within their project).
 	{"POST", "/api/v1/prs/{id}/resolve-comments", workerUp, targetNone},
 	{"POST", "/api/v1/prs/{id}/merge", orchestrator, targetNone},
+	{"POST", "/api/v1/prs/{id}/merge-preflight", orchestrator, targetNone},
 	// Cues: create and list the own project's, never invoke or edit them.
 	{"GET,POST", "/api/v1/projects/{projectId}/cues", workerUp, targetOwnProject},
 	// Backlog: any agent files into the own project's inbox (a worker's POST is

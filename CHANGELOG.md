@@ -4,6 +4,23 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.8]
+
+### Changed
+- Restart and resume messages name the background jobs a restart killed (#1076).
+- Dev mode audit lines state their real scope instead of always saying cross-project (#1073).
+- The reviewer sees the backlog item's current done-when (#1077).
+
+### Fixed
+- `pr land` dry-run matches the real land for a rebased head (#1074).
+- Merging a PR closes a backlog item that has a done-when only if the PR title claims it (#1078).
+- Cleanup no longer repeats a warning on every sweep of archived-project sessions (#1075).
+- `release-local` notifies `--notify` sessions when the stale-checkout guard refuses (#1079).
+- The workspace watcher keeps draining FSEvents while its filter runs git (#1070). This is one part of an ongoing investigation into macOS UI lag and fseventsd growth, which is not resolved.
+
+### Internal
+- Test, CI, and internal-doc changes only (#1069, #1071, #1072, #1080, #1081).
+
 ## [0.13.7]
 
 ### Added
