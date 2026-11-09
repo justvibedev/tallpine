@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -89,15 +90,13 @@ func (w *Workspace) StashUncommitted(ctx context.Context, info ports.WorkspaceIn
 
 	// Stage all tracked and non-ignored untracked files into the temp index.
 	// GIT_INDEX_FILE overrides the index so the real index is never touched.
-	addCmd := tallpineprocess.CommandContext(ctx, w.binary, addAllTempIndexArgs(path)...)
-	addCmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpIdxPath)
+	addCmd := w.tempIndexGit(ctx, tmpIdxPath, addAllTempIndexArgs(path))
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		return "", commandError{args: append([]string{w.binary}, addAllTempIndexArgs(path)...), output: string(out), err: err}
 	}
 
 	// Write the staged tree to get a tree SHA.
-	writeTreeCmd := tallpineprocess.CommandContext(ctx, w.binary, writeTreeArgs(path)...)
-	writeTreeCmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpIdxPath)
+	writeTreeCmd := w.tempIndexGit(ctx, tmpIdxPath, writeTreeArgs(path))
 	treeOut, err := writeTreeCmd.CombinedOutput()
 	if err != nil {
 		return "", commandError{args: append([]string{w.binary}, writeTreeArgs(path)...), output: string(treeOut), err: err}
@@ -144,6 +143,13 @@ func (w *Workspace) StashUncommitted(ctx context.Context, info ports.WorkspaceIn
 
 func isNotGitRepositoryError(err error) bool {
 	return strings.Contains(err.Error(), "not a git repository")
+}
+
+// tempIndexGit is hardened git over the temp index, so the real one is not touched.
+func (w *Workspace) tempIndexGit(ctx context.Context, tmpIdxPath string, args []string) *exec.Cmd {
+	cmd := tallpineprocess.CommandContext(ctx, w.binary, hardenedGitArgs(args)...)
+	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+tmpIdxPath)
+	return cmd
 }
 
 // countIgnoredPaths returns the number of entries listed by
@@ -273,7 +279,7 @@ func (w *Workspace) AddExclude(ctx context.Context, info ports.WorkspaceInfo, pa
 // returned commandError. Exit code detection happens in the caller.
 func (w *Workspace) runCherryPickNoCommit(ctx context.Context, worktree, commitSHA string) error {
 	args := cherryPickNoCommitArgs(worktree, commitSHA)
-	cmd := tallpineprocess.CommandContext(ctx, w.binary, args...)
+	cmd := tallpineprocess.CommandContext(ctx, w.binary, hardenedGitArgs(args)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return commandError{args: append([]string{w.binary}, args...), output: string(out), err: err}

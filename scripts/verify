@@ -7,7 +7,7 @@
 #   scripts/verify --full     # everything the old CI workflows ran              (make verify)
 #   scripts/verify --lint     # gofmt + golangci-lint only                          (make lint)
 #   scripts/verify --lint-changed  # --lint on what changed vs the base only (make lint-changed): gofmt on changed
-#                             # files, golangci-lint --new-from-rev on changed packages, size-ratchet --changed,
+#                             # files, golangci-lint on whole changed packages, heredoc-guard on changed shell, size-ratchet --changed,
 #                             # frontend typecheck (tsgo) when frontend files changed. Workers use this, never make lint.
 #   scripts/verify --all      # --full plus every job the local CI loop runs: the merge gate
 #                             # (scripts/local-ci/loop.sh runs exactly this)
@@ -298,39 +298,62 @@ vitest_failure_details() {
 		}' "$@" 2>/dev/null
 }
 
+# vitest_failed_files <json> <root>: space-separated root-relative failed test files.
+vitest_failed_files() {
+	node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1]));console.log(r.testResults.filter(t=>t.status==="failed").map(t=>require("path").relative(process.argv[2],t.name)).join(" "))' "$@" 2>/dev/null
+}
+
+# vitest_retry <label> <dir> <config> [extra first-run args...]: run vitest in <dir>
+# (repo-relative) with <config>; re-run only the failed files once. A file that
+# passes on the retry is reported as flaky, one that fails again fails the step.
+vitest_retry() {
+	local label="$1" dir="$2" config="$3"
+	shift 3
+	local base_args=(run --config "$config" --maxWorkers="$VITEST_CAP" --reporter=dot)
+	local json1="$log_dir/$label-1.json" rc
+	(cd "$dir" && with_slot nice -n "$NICE" npx vitest "${base_args[@]}" "$@" --reporter=json --outputFile.json="$json1") >"$log_dir/$label-1.out" 2>&1
+	rc=$?
+	tail -n 25 "$log_dir/$label-1.out"
+	[ $rc -eq 0 ] && return 0
+	local files
+	files="$(vitest_failed_files "$json1" "$repo/$dir")"
+	[ "$retry" = 1 ] && [ -n "$files" ] || return $rc
+	echo "=== retrying failed files once: $files"
+	local json2="$log_dir/$label-2.json"
+	# shellcheck disable=SC2086
+	(cd "$dir" && nice -n "$NICE" npx vitest "${base_args[@]}" --reporter=json --outputFile.json="$json2" $files) >"$log_dir/$label-2.out" 2>&1
+	rc=$?
+	tail -n 25 "$log_dir/$label-2.out"
+	local still f recovered=""
+	still="$(vitest_failed_files "$json2" "$repo/$dir")"
+	for f in $files; do
+		case " $still " in *" $f "*) ;; *) flaky+=("$label: $f (failed, then passed on retry)"); recovered="$recovered $f" ;; esac
+	done
+	# The log dir is deleted when verify exits: keep the first-run evidence.
+	# shellcheck disable=SC2086
+	[ -n "$recovered" ] && vitest_failure_details "$json1" "$repo/$dir" $recovered >>"$log_dir/flaky-detail.txt"
+	return $rc
+}
+
 fe_vitest() {
 	need_modules frontend || return 1
 	node_abi || return 1
 	# Vitest defaults to one worker per core; on a shared machine that
 	# oversubscribes the CPU and stalls 1.5s jsdom tests past their 20s timeout.
 	# Cap it like the Go steps (VITEST_CAP); VERIFY_VITEST_WORKERS overrides.
-	local args=(run --config vite.renderer.config.ts --reporter=dot --maxWorkers="$VITEST_CAP")
-	if [ "$mode" = changed ]; then
-		args+=(--changed "$base" --passWithNoTests)
-	fi
-	local json1="$log_dir/vitest1.json" rc
-	(cd frontend && with_slot nice -n "$NICE" npx vitest "${args[@]}" --reporter=json --outputFile.json="$json1") >"$log_dir/vitest1.out" 2>&1
-	rc=$?
-	tail -n 25 "$log_dir/vitest1.out"
-	[ $rc -eq 0 ] && return 0
-	local files
-	files="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1]));console.log(r.testResults.filter(t=>t.status==="failed").map(t=>require("path").relative(process.argv[2],t.name)).join(" "))' "$json1" "$repo/frontend" 2>/dev/null)"
-	[ "$retry" = 1 ] && [ -n "$files" ] || return $rc
-	echo "=== retrying failed files once: $files"
-	local json2="$log_dir/vitest2.json"
-	# shellcheck disable=SC2086
-	(cd frontend && nice -n "$NICE" npx vitest run --config vite.renderer.config.ts --maxWorkers="$VITEST_CAP" --reporter=dot --reporter=json --outputFile.json="$json2" $files) >"$log_dir/vitest2.out" 2>&1
-	rc=$?
-	tail -n 25 "$log_dir/vitest2.out"
-	local still f
-	still="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1]));console.log(r.testResults.filter(t=>t.status==="failed").map(t=>require("path").relative(process.argv[2],t.name)).join(" "))' "$json2" "$repo/frontend" 2>/dev/null)"
-	local recovered=""
-	for f in $files; do
-		case " $still " in *" $f "*) ;; *) flaky+=("fe-vitest: $f (failed, then passed on retry)"); recovered="$recovered $f" ;; esac
-	done
-	# The log dir is deleted when verify exits: keep the first-run evidence.
-	# shellcheck disable=SC2086
-	[ -n "$recovered" ] && vitest_failure_details "$json1" "$repo/frontend" $recovered >>"$log_dir/flaky-detail.txt"
+	local args=()
+	[ "$mode" = changed ] && args+=(--changed "$base" --passWithNoTests)
+	vitest_retry fe-vitest frontend vite.renderer.config.ts ${args[@]+"${args[@]}"}
+}
+
+# packages/mobile `npm run check` (typecheck, unit tests, e2e tests), with the
+# vitest runs retried once per failed file like fe-vitest (B625).
+mobile_check() {
+	need_modules packages/mobile || return 1
+	(cd packages/mobile && nice -n "$NICE" npm run -s typecheck) || return 1
+	local rc=0
+	vitest_retry mobile packages/mobile vitest.config.ts || rc=1
+	vitest_retry mobile-e2e packages/mobile vitest.e2e.config.ts || rc=1
 	return $rc
 }
 
@@ -416,7 +439,7 @@ if [ "$mode" != lint ]; then
 			[ "$broad" = 1 ] && step docs-build in_dir frontend/src/docs npm run -s build
 	fi
 	touched '^backend/internal/cli/|^frontend/src/docs/(content|scripts)/' && step docs-cli docs_cli
-	touched '^packages/mobile/' && step mobile in_dir packages/mobile npm run -s check
+	touched '^packages/mobile/' && step mobile mobile_check
 	touched '^scripts/tallpine-e2e-pod-gate' && step e2e-gate node --test scripts/tallpine-e2e-pod-gate.test.mjs
 	touched '^scripts/golden-eval/' && step golden-eval-test node --test scripts/golden-eval/*.test.mjs
 	touched '^scripts/.*\.sh$|^scripts/[^/.]+$' && step heredoc-guard bash scripts/heredoc-guard.test.sh

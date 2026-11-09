@@ -332,7 +332,7 @@ func (w *Workspace) remoteExists(ctx context.Context, repo, remote string) (bool
 }
 
 func runCommand(ctx context.Context, binary string, args ...string) ([]byte, error) {
-	cmd := tallpineprocess.CommandContext(ctx, binary, args...)
+	cmd := tallpineprocess.CommandContext(ctx, binary, hardenedGitArgs(args)...)
 	cmd.Env = os.Environ()
 	if readsGitMessages(args) {
 		cmd.Env = untranslatedGitEnv(cmd.Env)

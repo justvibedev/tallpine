@@ -315,7 +315,7 @@ func TestCredentialsAvailableGHEComViaGhOnly(t *testing.T) {
 			o.EnterpriseHosts, o.HostTokens = nil, nil
 			o.KnownHosts = func(context.Context) []string { return known }
 		})
-		p.hosts.ghToken = func(host string) TokenSource { return ghTok(host) }
+		p.hosts.ghToken = func(host string, _ bool) TokenSource { return ghTok(host) }
 		return p
 	}
 	if ok, err := mk([]string{"acme.ghe.com"}).SCMCredentialsAvailable(ctx()); err != nil || !ok {
@@ -346,5 +346,28 @@ func TestCredentialsAvailableEnterpriseWhenGhExitsNonZero(t *testing.T) {
 	})
 	if ok, err := bare.SCMCredentialsAvailable(ctx()); ok || err == nil {
 		t.Fatalf("no enterprise creds must surface the error: %v, %v", ok, err)
+	}
+}
+
+func TestGHEComTenantNeverGetsAmbientToken(t *testing.T) {
+	f := newHostFake(t)
+	var gotStored = map[string]bool{}
+	p := newEnterpriseProvider(t, f, func(o *ProviderOptions) {
+		o.EnterpriseHosts, o.HostTokens = []string{"corp.ghe.com"}, nil
+	})
+	p.hosts.ghToken = func(host string, stored bool) TokenSource {
+		gotStored[host] = stored
+		return StaticTokenSource("x")
+	}
+	p.hosts.get("stranger.ghe.com")
+	listed := p.hosts.get("corp.ghe.com")
+	if listed.restBase != "https://api.corp.ghe.com" {
+		t.Fatalf("listed tenant base = %q, want api.corp.ghe.com", listed.restBase)
+	}
+	if !gotStored["stranger.ghe.com"] {
+		t.Fatal("unconfigured repo-named tenant must use stored gh login only")
+	}
+	if gotStored["corp.ghe.com"] {
+		t.Fatal("a listed tenant may use the ambient token")
 	}
 }

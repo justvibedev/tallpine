@@ -94,18 +94,44 @@ var codexManagedHooks = []codexHookSpec{
 // hooks through a login shell, which may replace PATH, so every hook invokes
 // this exact Tallpine executable instead of relying on a bare `tallpine` lookup.
 func appendSessionHookFlags(cmd *[]string) error {
+	executable, err := hookExecutable()
+	if err != nil {
+		return err
+	}
+	appendSessionHookFlagsForExecutable(cmd, executable)
+	return nil
+}
+
+func hookExecutable() (string, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("resolve Tallpine hook executable: %w", err)
+		return "", fmt.Errorf("resolve Tallpine hook executable: %w", err)
 	}
 	if !filepath.IsAbs(executable) {
 		executable, err = filepath.Abs(executable)
 		if err != nil {
-			return fmt.Errorf("make Tallpine hook executable absolute: %w", err)
+			return "", fmt.Errorf("make Tallpine hook executable absolute: %w", err)
 		}
 	}
-	appendSessionHookFlagsForExecutable(cmd, executable)
-	return nil
+	return executable, nil
+}
+
+// GitGuardThreadConfig is the per-thread config that makes every shell command in
+// a Codex chat pass through Tallpine's git guard. The app-server ignores the
+// --dangerously-bypass-hook-trust flag and leaves hooks from -c untrusted, so the
+// hook and the trust bypass both ride thread/start, where Codex honors them
+// (verified live on codex-cli 0.167.0). Only the guard is delivered: chat activity
+// comes over the protocol, so the terminal's activity hooks would report it twice.
+func GitGuardThreadConfig() map[string]any {
+	executable, err := hookExecutable()
+	if err != nil {
+		executable = brand.CLIName
+	}
+	hook := map[string]any{"type": "command", "command": shellQuoteHookExecutable(executable) + " hooks codex git-guard", "timeout": codexHookTimeout}
+	return map[string]any{
+		"bypass_hook_trust": true,
+		"hooks":             map[string]any{"PreToolUse": []any{map[string]any{"hooks": []any{hook}}}},
+	}
 }
 
 func appendSessionHookFlagsForExecutable(cmd *[]string, executable string) {

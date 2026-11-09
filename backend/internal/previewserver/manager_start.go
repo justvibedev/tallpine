@@ -11,6 +11,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/agentlaunch"
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/statefence"
 )
 
 // Start loads a named configuration, replaces any existing managed server for
@@ -21,6 +22,7 @@ func (m *Manager) Start(
 	workspacePath string,
 	configurationName string,
 	projectEnv map[string]string,
+	fence Fence,
 ) (Status, error) {
 	releaseOperation := m.acquireOperation(sessionID)
 	operationLocked := true
@@ -43,6 +45,12 @@ func (m *Manager) Start(
 		validationPort = 1
 	}
 	if _, err := resolveTargetURL(cfg.URL, validationPort); err != nil {
+		return stoppedStatus(sessionID), err
+	}
+	// Before the stop below, so a fence that cannot be built leaves a running
+	// server alone.
+	fenceProfile, fenceEnv, err := fence.resolve(workspacePath)
+	if err != nil {
 		return stoppedStatus(sessionID), err
 	}
 	if _, err := m.stop(context.Background(), sessionID); err != nil {
@@ -75,9 +83,14 @@ func (m *Manager) Start(
 		args[i] = interpolatePort(arg, port)
 	}
 
-	cmd := previewCommand(executable, args...)
+	argv := append([]string{executable}, args...)
+	if fenceProfile != "" {
+		argv = statefence.Wrap(argv, fenceProfile)
+	}
+	cmd := previewCommand(argv[0], argv[1:]...)
 	cmd.Dir = workingDir
-	cmd.Env = previewEnvironment(os.Environ(), projectEnv, cfg.Env, sessionID, port)
+	// Appended last so a launch.json env cannot move TMPDIR out of the fence.
+	cmd.Env = append(previewEnvironment(os.Environ(), projectEnv, cfg.Env, sessionID, port), fenceEnv...)
 	logs := newLineBuffer(maxBufferedLogLines)
 	cmd.Stdout = logs
 	cmd.Stderr = logs

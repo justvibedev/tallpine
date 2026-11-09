@@ -156,7 +156,7 @@ func (p *PlanService) approveInPlace(ctx context.Context, plan domain.BacklogPla
 		for _, id := range childIDs[1:] {
 			rest = append(rest, p.refOf(ctx, id))
 		}
-		msg += fmt.Sprintf("\n\nYou build PR 1 of %d of this plan: %s (backlog item %s). When this PR fully meets that item's done-when, its title must contain `closes %s`; it must never name %s, which is closed by hand once the whole plan has landed.", n, plan.PRSplit[0].Title, buildRef, buildRef, ref)
+		msg += fmt.Sprintf("\n\nYou build PR 1 of %d of this plan: %s (backlog item %s). When this PR fully meets that item's done-when, its title must contain `closes %s`; it must never name %s, which closes itself once all its children close.", n, plan.PRSplit[0].Title, buildRef, buildRef, ref)
 	case n == 1:
 		msg += fmt.Sprintf("\n\nYou build PR 1 of 1 of this plan: %s", plan.PRSplit[0].Title)
 	}

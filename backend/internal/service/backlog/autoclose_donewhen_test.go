@@ -100,7 +100,19 @@ func TestOnlyUnqualifiedClosesClaimsDoneWhen(t *testing.T) {
 		"closes B1 part 1":                 false,
 		"feat: x (closes B1, partial)":     false,
 		"closes B1 partially":              false,
-		"feat: x (B226, closes B1)":        true,
+		"fix(editor): keep partial drafts on reload (closes B1)": true,
+		"fix(ui): remove WIP banner (closes B1)":                 true,
+		"Part of B226, closes B1":                                true,
+		"fix(x): partial fix, closes B1":                         false,
+		"feat(x): Part 1: add parser, closes B1":                 false,
+		"fix(x): part 1 of 3: closes B1":                         false,
+		"fix(x)!: Part 1/2: closes B1":                           false,
+		"feat: add parser (part 1/3), closes B1":                 false,
+		"feat: add parser, part 2 of 3: closes B1":               false,
+		"Part 1: closes B1":                                      false,
+		"WIP: closes B1":                                         false,
+		"(partial) closes B1":                                    false,
+		"feat: x (B226, closes B1)":                              true,
 	}
 	for title, want := range cases {
 		prs := []store.BacklogPRFact{{State: "merged", Title: title}}

@@ -101,11 +101,11 @@ func TestResumeSendsOnceToInterruptedWorkersAndSkipsStopped(t *testing.T) {
 	if !strings.Contains(sender.sent["w-1"][0], "interrupted by an app restart") {
 		t.Fatalf("message = %q", sender.sent["w-1"][0])
 	}
-	if len(reports.ids) != 1 || !strings.HasPrefix(reports.ids[0], "rpt_restart_resume_w-1_") {
-		t.Fatalf("reports = %v, want one report for w-1", reports.ids)
+	if len(reports.ids) != 2 || !strings.HasPrefix(reports.ids[0], "rpt_restart_resume_w-1_") || !strings.HasPrefix(reports.ids[1], "rpt_restart_not_resumed_") {
+		t.Fatalf("reports = %v, want a report for w-1 and a not-resumed notice for w-3", reports.ids)
 	}
-	if len(reports.loud) != 0 {
-		t.Fatalf("turn_resumed filed loud %v; it must be quiet (B192)", reports.loud)
+	if len(reports.loud) != 1 || reports.loud[0] != reports.ids[1] {
+		t.Fatalf("loud = %v; only the not-resumed notice may wake the orchestrator (B192, B622)", reports.loud)
 	}
 	if got := tr.load(); len(got) != 1 || got[0].SessionID != "w-3" {
 		t.Fatalf("pending = %v, want only the exited w-3 kept for a later boot", got)
@@ -224,7 +224,7 @@ func TestWakeIdleIsIdempotentAcrossTwoDaemonStarts(t *testing.T) {
 		worker("w-dead", domain.ActivityIdle, true),
 		worker("w-exited", domain.ActivityExited, false),
 	)
-	st.recs["orch"] = domain.SessionRecord{ID: "orch", Kind: domain.KindOrchestrator, Activity: domain.Activity{State: domain.ActivityIdle}}
+	seedLostJobs(tr, "w-idle", "w-active", "w-dead", "w-exited")
 	snd, rep := &fakeSender{}, &fakeReports{}
 	if n := tr.WakeIdle(ctx, snd, nil); n != 1 {
 		t.Fatalf("first start woke %d, want 1", n)
@@ -249,30 +249,9 @@ func TestWakeIdleIsIdempotentAcrossTwoDaemonStarts(t *testing.T) {
 	rec.Activity.LastActivityAt = time.Now().Add(time.Minute)
 	st.recs["w-idle"] = rec
 	third := New(filepathDir(tr), st)
+	seedLostJobs(third, "w-idle")
 	if n := third.WakeIdle(ctx, snd, nil); n != 1 {
 		t.Fatalf("restart after activity woke %d, want 1", n)
-	}
-}
-
-func TestWakeIdleSkipsWorkersWhoseHostSurvived(t *testing.T) {
-	ctx := context.Background()
-	tr, _ := newTracker(t, worker("kept", domain.ActivityIdle, false), worker("gone", domain.ActivityIdle, false))
-	snd := &fakeSender{}
-	n := tr.WakeIdle(ctx, snd, func(id domain.SessionID) bool { return id == "kept" })
-	if n != 1 || len(snd.sent["kept"]) != 0 || len(snd.sent["gone"]) != 1 {
-		t.Fatalf("woke %d, sent=%v: a surviving host must not be told its jobs stopped", n, snd.sent)
-	}
-}
-
-func TestWakeIdleRetriesAfterFailedSend(t *testing.T) {
-	ctx := context.Background()
-	tr, _ := newTracker(t, worker("w-1", domain.ActivityIdle, false))
-	snd := &fakeSender{failed: 1}
-	if n := tr.WakeIdle(ctx, snd, nil); n != 0 {
-		t.Fatalf("failed send counted as woken: %d", n)
-	}
-	if n := tr.WakeIdle(ctx, snd, nil); n != 1 {
-		t.Fatalf("retry woke %d, want 1", n)
 	}
 }
 
@@ -292,20 +271,11 @@ func TestQuitParkedWorkerGetsOneNoticeAndEarlierHibernatedNone(t *testing.T) {
 	at := time.Now()
 	rec.HibernatedAt = &at
 	st.recs["parked"] = rec
+	seedLostJobs(tr, "parked", "earlier")
 	snd := &fakeSender{}
 	again := New(filepathDir(tr), st) // next boot
 	if n := again.WakeIdle(ctx, snd, nil); n != 1 || len(snd.sent["parked"]) != 1 || len(snd.sent["earlier"]) != 0 {
 		t.Fatalf("woke %d, sent=%v: want one notice for the quit-parked worker, none for the earlier-hibernated one", n, snd.sent)
-	}
-}
-
-func TestWakeIdleSkipsTUIWorkers(t *testing.T) {
-	tui := worker("tui", domain.ActivityIdle, false)
-	tui.Mode = domain.SessionModeTUI
-	tr, _ := newTracker(t, tui)
-	snd := &fakeSender{}
-	if n := tr.WakeIdle(context.Background(), snd, nil); n != 0 || len(snd.sent) != 0 {
-		t.Fatalf("woke %d, sent=%v: a TUI worker's terminal host survives, its jobs still run", n, snd.sent)
 	}
 }
 
@@ -320,6 +290,7 @@ func TestResumedWorkerGetsExactlyOneMessageAcrossBothPasses(t *testing.T) {
 	st.recs["w-1"] = rec
 	snd := &fakeSender{}
 	tr.Resume(ctx, snd)
+	seedLostJobs(tr, "w-1") // only the resumed guard can stop this one
 	tr.WakeIdle(ctx, snd, nil)
 	if got := snd.sent["w-1"]; len(got) != 1 {
 		t.Fatalf("messages across Resume+WakeIdle = %q, want exactly one", got)
@@ -347,6 +318,7 @@ func TestParkedSetServesOnePassOnly(t *testing.T) {
 	rec.Activity.LastActivityAt = time.Now().Add(time.Hour)
 	st.recs["w"] = rec
 	next := New(filepathDir(tr), st)
+	seedLostJobs(next, "w")
 	if n := next.WakeIdle(ctx, snd, nil); n != 0 || len(snd.sent["w"]) != 1 {
 		t.Fatalf("second start woke %d, messages %q: a stale parked entry revived a hibernated worker", n, snd.sent["w"])
 	}

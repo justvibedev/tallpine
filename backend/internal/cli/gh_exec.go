@@ -78,9 +78,15 @@ func (c *commandContext) ghExec(ctx context.Context, args []string, stdout, stde
 
 // findRealGH returns the first gh on PATH that is not in shimDir.
 func findRealGH(path, shimDir string) (string, error) {
-	name := "gh"
+	return findOnPathOutside("gh", path, shimDir)
+}
+
+// findOnPathOutside returns the first executable tool on PATH that is not in
+// shimDir, so a shim never runs itself.
+func findOnPathOutside(tool, path, shimDir string) (string, error) {
+	name := tool
 	if runtime.GOOS == "windows" {
-		name = "gh.exe"
+		name += ".exe"
 	}
 	shim := cleanDir(shimDir)
 	for _, dir := range filepath.SplitList(path) {
@@ -92,7 +98,7 @@ func findRealGH(path, shimDir string) (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", errors.New("tallpine gh: the gh CLI is not installed (not found on PATH outside the session shim)")
+	return "", fmt.Errorf("tallpine %s: the %s CLI is not installed (not found on PATH outside the session shim)", tool, tool)
 }
 
 func cleanDir(dir string) string {
@@ -106,6 +112,15 @@ func cleanDir(dir string) string {
 }
 
 // exitCodeError carries the exit status of a child process out as this command's.
-type exitCodeError struct{ code int }
+// A silent one has already said everything on stderr, so main prints nothing.
+type exitCodeError struct {
+	code   int
+	silent bool
+}
 
-func (e exitCodeError) Error() string { return fmt.Sprintf("exit status %d", e.code) }
+func (e exitCodeError) Error() string {
+	if e.silent {
+		return ""
+	}
+	return fmt.Sprintf("exit status %d", e.code)
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	claudecodeagent "tallpine.eu/tallpine/backend/internal/adapters/agent/claudecode"
 	codexagent "tallpine.eu/tallpine/backend/internal/adapters/agent/codex"
@@ -97,13 +98,27 @@ func (b *boot) wireAgents() error {
 			if agentID != string(domain.HarnessClaudeCode) {
 				return nil, nil
 			}
-			return b.agentAccountSvc.NewSessionLaunchEnv(discoveryCtx, domain.AgentHarness(agentID))
+			env, err := b.agentAccountSvc.NewSessionLaunchEnv(discoveryCtx, domain.AgentHarness(agentID))
+			return claudeEnvWithProjectLogin(discoveryCtx, b.store, env), err
 		},
 		ModelDiscoveryFingerprintEnv: func(discoveryCtx context.Context, agentID string) (map[string]string, error) {
 			if agentID != string(domain.HarnessClaudeCode) {
 				return nil, nil
 			}
-			return b.agentAccountSvc.NewSessionLaunchEnvReadOnly(discoveryCtx, domain.AgentHarness(agentID))
+			env, err := b.agentAccountSvc.NewSessionLaunchEnvReadOnly(discoveryCtx, domain.AgentHarness(agentID))
+			return claudeEnvWithProjectLogin(discoveryCtx, b.store, env), err
+		},
+		ReadinessAuthEnv: func(authCtx context.Context, agentID string) map[string]string {
+			if agentID != string(domain.HarnessClaudeCode) {
+				return nil
+			}
+			// A failed account lookup leaves a nil env, which may still pick a signed-in
+			// project folder; the account's own env is never overridden.
+			env, _ := b.agentAccountSvc.NewSessionLaunchEnvReadOnly(authCtx, domain.AgentHarness(agentID))
+			if env = claudeEnvWithProjectLogin(authCtx, b.store, env); strings.TrimSpace(env[claudeConfigDirKey]) == "" {
+				return nil
+			}
+			return env
 		},
 		CodexAccountRoot:       filepath.Join(b.cfg.StateDir, "harnesses", "codex", "accounts"),
 		CodexPendingRoot:       filepath.Join(b.cfg.StateDir, "harnesses", "codex", "pending-accounts"),

@@ -22,14 +22,23 @@ func WakeMessage(at time.Time) string {
 	return fmt.Sprintf("App restarted at %s; background jobs and monitors you started were stopped. Re-check state (git status, your task, any open PR or running checks) and continue.", at.UTC().Format(time.RFC3339))
 }
 
+// wakeMessageFor words the notice for the session kind: the orchestrator has
+// no task or PR of its own to re-check, it has reports and worker states.
+func wakeMessageFor(k domain.SessionKind, at time.Time) string {
+	if k == domain.KindOrchestrator {
+		return fmt.Sprintf("App restarted at %s; background jobs and monitors you started were stopped. Re-check your workers' states and any unread reports, then continue.", at.UTC().Format(time.RFC3339))
+	}
+	return WakeMessage(at)
+}
+
 // WakeID is the stable report id for one worker's restart notice.
 func WakeID(id domain.SessionID, at time.Time) string {
 	return "rpt_restart_wake_" + string(id) + "_" + at.UTC().Format("20060102T150405")
 }
 
-// RecordParked durably notes the chat workers a deliberate quit is about to
+// RecordParked durably notes the chat agents a deliberate quit is about to
 // park (ParkAll marks each asleep and ends its process tree, monitors and
-// background jobs included), so the next boot can tell them from workers that
+// background jobs included), so the next boot can tell them from agents that
 // idle hibernation put to sleep earlier. Call it next to Record, before agents
 // are parked.
 func (t *Tracker) RecordParked(ctx context.Context) error {
@@ -50,24 +59,26 @@ func (t *Tracker) RecordParked(ctx context.Context) error {
 	return nil
 }
 
-// wakeCandidate is a live chat-mode worker. A TUI worker's agent runs in a
-// terminal host that outlives the daemon and a quit, so its jobs still run.
+// wakeCandidate is a live chat-mode worker or orchestrator. A TUI agent runs in
+// a terminal host that outlives the daemon and a quit, so its jobs still run.
 func wakeCandidate(rec domain.SessionRecord) bool {
-	return rec.Kind == domain.KindWorker && !rec.IsTerminated && !rec.IsTaskPreparation &&
+	return resumable(rec.Kind) && !rec.IsTerminated && !rec.IsTaskPreparation &&
 		domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat
 }
 
-// WakeIdle sends every idle chat worker whose provider died one restart notice
-// and files an orchestrator-visible report.
+// WakeIdle tells every idle chat agent that lost a background job to the
+// restart, naming the jobs, so it can rebuild state without waiting for someone
+// to open its chat. Sending starts a model turn, and wakes a sleeping session.
+// A worker's notice also reaches its orchestrator through the restart report.
 //
-// Skipped: workers mid-turn or exited, blocked workers with no lost jobs; TUI workers; workers whose
-// provider host survived the restart (skip reports true); workers Resume just
-// messaged (Send has no activity ack, so they can still read idle); workers
-// hibernated before the last quit (nothing of theirs was running; a message
-// would revive them); and workers whose last notice is still unanswered (no
-// activity since, so a crash loop does not spam them). A worker that ran since
-// its last notice gets a fresh one. A failed send is not recorded, so a later
-// start retries it.
+// Skipped: agents with no recorded lost job, whatever else is true of them;
+// agents mid-turn or exited; TUI agents; agents whose provider host survived
+// the restart (skip reports true); agents Resume just messaged (Send has no
+// activity ack, so they can still read idle); agents hibernated before the last
+// quit (nothing of theirs was running; a message would revive them); and agents
+// whose last notice is still unanswered (no activity since). A delivered notice
+// consumes the job list, so each restart pings at most once; a failed send
+// keeps it, so a later start retries.
 func (t *Tracker) WakeIdle(ctx context.Context, sender Sender, skip func(domain.SessionID) bool) int {
 	recs, err := t.store.ListAllSessions(ctx)
 	if err != nil {
@@ -94,11 +105,11 @@ func (t *Tracker) WakeIdle(ctx context.Context, sender Sender, skip func(domain.
 		t.mu.Unlock()
 	}()
 	for _, rec := range recs {
-		// A blocked worker with lost jobs is still told: the quit ended the dialog
+		// A blocked agent with lost jobs is still told: the quit ended the dialog
 		// it was blocked on along with the jobs.
 		jobs := t.lostJobsFor(rec.ID)
-		if !wakeCandidate(rec) || rec.Activity.State == domain.ActivityExited ||
-			rec.Activity.State == domain.ActivityActive || rec.Activity.State == domain.ActivityBlocked && len(jobs) == 0 {
+		if !wakeCandidate(rec) || len(jobs) == 0 || rec.Activity.State == domain.ActivityExited ||
+			rec.Activity.State == domain.ActivityActive {
 			continue
 		}
 		if rec.HibernatedAt != nil && !parked[rec.ID] {
@@ -110,7 +121,7 @@ func (t *Tracker) WakeIdle(ctx context.Context, sender Sender, skip func(domain.
 		if at, ok := sent[rec.ID]; ok && !rec.Activity.LastActivityAt.After(at) {
 			continue
 		}
-		if err := sender.Send(ctx, rec.ID, WakeMessage(now)+lostJobsSentence(jobs), nil); err != nil {
+		if err := sender.Send(ctx, rec.ID, wakeMessageFor(rec.Kind, now)+lostJobsSentence(jobs), nil); err != nil {
 			slog.Default().WarnContext(ctx, "restart wake: send failed", "session", rec.ID, "err", err)
 			if parked[rec.ID] {
 				retry[rec.ID] = true

@@ -8,8 +8,8 @@
 // period and the session is idle, so a finished monitor can never leave a
 // worker waiting forever. Task state lives in memory and is cleared when a
 // session's harness is replaced (Clear). A harness that outlives a daemon
-// restart (persistent host) keeps its tasks, which stay invisible here until
-// they end; the restart wake skips those workers.
+// restart (persistent host) keeps its tasks; the restart bookkeeping re-seeds
+// them (Restore) so they stay visible and end normally.
 package bgtasks
 
 import (
@@ -276,6 +276,14 @@ func (t *Tracker) CancelStop(id domain.SessionID, taskID string) {
 	defer t.mu.Unlock()
 	if s := t.sessions[id]; s != nil {
 		delete(s.stopRequested, taskID)
+	}
+}
+
+// Restore re-seeds running tasks a surviving harness kept across a daemon
+// restart. Unlike Apply it never counts as news for the agent.
+func (t *Tracker) Restore(id domain.SessionID, infos []Info) {
+	for _, in := range infos {
+		t.Apply(id, ports.ChatAsyncTask{ID: in.ID, Name: in.Name, TaskType: in.Kind, Model: in.Model, State: ports.ChatAsyncTaskRunning})
 	}
 }
 

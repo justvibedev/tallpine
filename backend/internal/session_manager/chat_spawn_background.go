@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
@@ -91,16 +92,19 @@ func (m *Manager) runRecordBackgroundTask(ctx context.Context, rec domain.Sessio
 		Model: rec.Metadata.Model, Effort: rec.Metadata.Effort, Permissions: backgroundTaskPermissions(rec.Harness),
 	}
 	// Not the worker's scratch env: the task gets a temp dir inside its own
-	// workspace, removed with it, unless the project's env names one.
-	env, err := m.runtimeEnvFor(rec.ID, rec.ProjectID, rec.IssueID, nil, m.accountOverride(rec.ID), false, "")
-	if err != nil {
-		m.logger.Warn("session agent account env incomplete", "session", rec.ID, "error", err)
-	}
+	// workspace, removed with it, unless the project's env names one. It gets
+	// none of the project's secrets, only the Claude folder variables, so an
+	// agent signed in through a project-level CLAUDE_CONFIG_DIR is signed in here
+	// as it is in the session.
 	var projectEnv map[string]string
 	if rec.ProjectID != "" {
 		if project, err := m.loadProject(ctx, rec.ProjectID); err == nil {
 			projectEnv = project.Config.Env
 		}
+	}
+	env, err := m.runtimeEnvFor(rec.ID, rec.ProjectID, rec.IssueID, claudeFolderEnv(projectEnv), m.accountOverride(rec.ID), false, "")
+	if err != nil {
+		m.logger.Warn("session agent account env incomplete", "session", rec.ID, "error", err)
 	}
 	if err := applyBackgroundTaskTempEnv(env, projectEnv, workspace, envKeysCaseInsensitive); err != nil {
 		return "", fmt.Errorf("create background task temp dir: %w", err)
@@ -131,4 +135,21 @@ func backgroundTaskPermissions(domain.AgentHarness) ports.PermissionMode {
 	// Every driver gets Tallpine's workspace sandbox so title generation cannot
 	// inherit a bypass policy.
 	return ports.PermissionModeAcceptEdits
+}
+
+// claudeFolderEnv is the part of a project's env that says which Claude login a
+// launch uses: the config folder and its keychain scope, never a credential.
+func claudeFolderEnv(projectEnv map[string]string) map[string]string {
+	var out map[string]string
+	for _, key := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"} {
+		for name, value := range projectEnv {
+			if name == key || (envKeysCaseInsensitive && strings.EqualFold(name, key)) {
+				if out == nil {
+					out = map[string]string{}
+				}
+				out[key] = value
+			}
+		}
+	}
+	return out
 }

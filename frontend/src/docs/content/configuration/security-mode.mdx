@@ -1,0 +1,99 @@
+---
+title: Security mode
+description: What Security mode does and does not do, why it is off by default, how to turn it on per app or project, how to enforce it with a managed profile, and where agents are not fenced.
+---
+
+Security mode is one switch that raises Tallpine's baseline for every agent it launches. This page is for administrators and security reviewers. It says what the switch changes, what it leaves alone, and where it stops. The wider picture, with a per-harness comparison, is on [Security](/security). Exact settings and managed-file syntax are in [Agent policy and managed config](/configuration/agent-policy).
+
+## The limit, stated first
+
+**Security mode does not protect against another malicious app running as the same macOS user.** Tallpine's secrets (the install token, the session key and the database) are files readable by your user. Security mode keeps *fenced agents* from reading them. It does nothing about any other process you start or install, which runs with your user's full access and can read those files and drive the Tallpine daemon directly. The daemon's install token stops other users and containers, not other programs of the same user. If a hostile program already runs as you, Security mode is not the control that helps.
+
+It is also not a network control. A fenced agent can still reach any address, so anything it is allowed to read it could send out.
+
+## What it does
+
+When Security mode is on, three agent-policy rules are raised to a floor:
+
+| Rule | Floor | Effect on an agent |
+| --- | --- | --- |
+| `protectState` | `on` | A file fence denies reads of Tallpine's own state: the install token, the session key, the database and similar files. |
+| `envFilter` | `allowlist` | The agent gets only the environment variables it needs, not everything in the daemon's environment (cloud keys, `GH_TOKEN` and so on). |
+| `githubCreds` | `helper` | GitHub access goes through Tallpine's credential helper instead of a token placed in the agent's environment. |
+
+A looser value that a user or project set for one of these is raised to the floor. A stricter value is kept. A value locked by an administrator is never touched.
+
+Security mode changes no permission mode and no permission cap, and it does not refuse a session because its harness or OS cannot be fenced: that agent still starts, with the other two floors, and the session shows **Not fenced** with the reason. The one exception is a launch where Tallpine cannot locate its own state files: it is refused (`POLICY_REQUIRES_FENCE`) rather than started behind an empty fence. The hardened managed profile (below) also refuses sessions that cannot be fenced.
+
+## What it does not do
+
+- **No protection from other apps of the same user** (see above).
+- **No network control.** Egress is unrestricted.
+- **It is a file fence, not a data-loss tool.** A fenced agent can still read your home folder, other worktrees and credential files such as `~/.ssh`, `~/.aws` and `~/.npmrc`. Only the hardened profile hides those.
+- **It does not police the harness.** Each harness keeps access to its own folders and sign-in.
+- **It does not stop prompt injection.** It limits what a steered agent can reach; it does not stop the agent being steered.
+- **Docker:** the fence closes the Docker socket. A project can open it with `allowDocker`, which is set by the user (never by an agent) and gives the agent full access to the host.
+- **Git:** inside the fence, `git push` to a remote that is a local folder fails. `https://` and `ssh://` remotes work.
+
+## Why it is off by default
+
+A fresh install, and an upgrade, behave as before until someone turns Security mode on. The fence changes how normal work behaves (for example local-folder git remotes, and different write limits), it only works on macOS, and for some harnesses it cannot apply in every mode. Turning it on silently would break working setups and give a false sense of coverage where a harness is not fenced. So it is an informed choice: on where agents work on code or issues you did not write, and for managed fleets.
+
+## Turn it on
+
+**For the whole app:** Settings > Security > **Protected**. The same tab offers Standard (off) and Unrestricted (for developing Tallpine itself; it turns Security mode off). The app refuses to turn both on. (A both-on combination that was stored earlier is not changed, and Unrestricted wins; see Enforce below.)
+
+**For one project:** Project settings > General > Security mode, set to inherit, on or off. A project's off beats the app's on, and a project can turn it on when the app has it off. The control is disabled while the app is Unrestricted.
+
+**From the command line:**
+
+```bash
+tallpine policy set security-mode on             # the app
+tallpine policy set security-mode on --project <id>
+tallpine policy show --project <id>              # see what is in force and why
+```
+
+Turning it off needs you (the install token), not an agent. An orchestrator may turn it on for its own project only. Changes apply to sessions started, relaunched or restored afterwards; running sessions are not restarted.
+
+## Enforce it with a managed profile
+
+Administrators deliver policy as a managed file (a macOS configuration profile for the domain `ee.justdev.tallpine`, for example through [Jamf](/configuration/jamf)). Two ways to enforce:
+
+```json
+{ "schemaVersion": 2, "rules": { "securityMode": { "enabled": true } } }
+```
+
+A managed `enabled: true` locks Security mode on, shown read-only in Settings. A managed `enabled: false` locks it off (the hardened profile overrides it and applies Security mode on).
+
+**Unrestricted (Dev mode) beats Security mode.** If a user already chose Unrestricted, a managed `enabled: true` (or `TALLPINE_AGENT_SECURITY_MODE`) shows Security mode as on and locked, but the three floors are **not** raised and agents are not fenced. To enforce it on such machines, also set managed `devMode.enabled` to `false`, or use the hardened profile, which forces Dev mode off. The environment variable `TALLPINE_AGENT_SECURITY_MODE` locks it from the daemon's environment. A managed per-rule value looser than a floor wins over the floor.
+
+```json
+{ "schemaVersion": 2, "profile": "hardened" }
+```
+
+The **hardened profile** implies Security mode on and goes further: the fence is required, credential folders such as `~/.ssh` and `~/.aws` are hidden from agents, project environment values are encrypted at rest, and permissions are capped at `auto`. A session that cannot be fenced is **refused** (`POLICY_REQUIRES_FENCE`) instead of started. Because of the cap, Codex and DeepSeek Harness (which then always use their own sandbox) are refused, as is every agent on Linux and Windows; Claude Code and Kiro on macOS run. Details are on [Security](/security#hardened-profile). Check the result with `tallpine policy show`.
+
+## Platforms and harnesses
+
+The fence works on **macOS only**. On Linux and Windows nothing is fenced; the environment filter and GitHub helper still apply.
+
+| Harness | Fenced with Security mode on (macOS) | How |
+| --- | --- | --- |
+| Claude Code | Yes, in every permission mode, terminal and chat | Tallpine turns on Claude's own sandbox with Tallpine's secret files denied, and denies the same files to Claude's file tools. |
+| Kiro | Yes, in every permission mode | Tallpine wraps the whole process in a macOS sandbox profile. Needs the system `sandbox-exec` tool. |
+| Codex | **Only** when it runs with no sandbox of its own (bypass, or default, which is full access) | In accept edits and auto, Codex's own sandbox runs, macOS does not allow a sandbox inside a sandbox, and the session shows **Not fenced**. |
+| DeepSeek Harness | **Only** in bypass | In its other modes its own sandbox runs and the session shows **Not fenced**: Tallpine's secrets stay readable to it. |
+| Any other harness | **No** | Not fenced. |
+
+**Reviewer agents** (the ones that review pull requests) are fenced differently: Claude Code and Kiro reviewers follow the rows above, but **Codex and DeepSeek Harness reviewers are never fenced, in any mode**, with Security mode on. Reviewers read untrusted pull request content, so keep that in mind. Under the hardened profile those reviewers are refused.
+
+"Not fenced" means exactly that for the file fence: those agents can read Tallpine's secret files. They still get the environment filter and the GitHub helper.
+
+## What happens to agents when it is on
+
+- A new, relaunched or restored session is checked against the policy. Where the fence applies, the agent runs inside it; its shell cannot read Tallpine's state, and commands the sandbox denies cannot be retried outside it.
+- Where it cannot apply, the session starts anyway and its inspector shows "Not fenced: reason", with a link to the project switch. Reviewer sessions keep no such record: their gap appears only in the daemon log.
+- Agents receive a filtered environment and GitHub access through the helper. A workflow that relied on a secret in the daemon's environment needs that variable added to the allowlist (`envFilter.passthrough`).
+- Repository-supplied Claude settings and hooks do not load for a fenced Claude Code session; Kiro's repository config still loads.
+- Normal work (git fetch and push over `https`/`ssh`, `gh`, tests, builds, package installs, local dev servers) is kept working by design. Report anything that breaks.
+- Sessions that are already running keep their old settings until relaunched.

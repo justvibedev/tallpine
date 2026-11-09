@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getSessionStatusView } from "../../lib/session-presentation";
 import type { ResolvedBacklogLink } from "../../lib/backlog-link-status";
-import { tallpineBridge } from "../../lib/bridge";
+import { openLinkInSystemBrowser } from "../../lib/external-link-policy";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 
@@ -30,7 +30,7 @@ export function BacklogLinkRow({ resolved, onOpenSession, onRemove }: BacklogLin
 					{label}
 				</button>
 			) : link.kind === "pr" && /^https?:\/\//.test(link.ref) ? (
-				<button type="button" onClick={() => void tallpineBridge.app.openExternal(link.ref)} className="min-w-0 truncate text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+				<button type="button" onClick={() => void openLinkInSystemBrowser(link.ref)} className="min-w-0 truncate text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
 					{pr ? t("backlog.pr.label", { number: pr.number }) : link.display}
 				</button>
 			) : (

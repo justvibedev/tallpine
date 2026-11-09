@@ -12,6 +12,7 @@ Tallpine does not claim any compliance framework or third-party certification.
 - **Off by default.** A fresh install runs agents the way they would run without Tallpine. You turn protection on with one switch: **Settings > Security > Protected**.
 - **Tallpine protects its own things**: the keys and database that control Tallpine. A protected agent cannot read Tallpine's secrets. Kiro, Codex and DeepSeek Harness, when fenced, also cannot write outside their own work folder, their own state and a few caches.
 - **Tallpine does not police the harness.** Each agent keeps the access it needs to its own folders and sign-in (for example Kiro keeps `~/.aws`, Codex keeps `~/.codex`). Bugs or weak defaults inside a harness are for that harness's vendor to fix.
+- **It does not protect against another malicious app running as the same user.** Tallpine's secrets are readable by your user; Security mode keeps only fenced agents away from them. See [Security mode](/configuration/security-mode).
 - **It is a file fence, not a firewall.** Network access is not restricted. Anything an agent is allowed to read could be sent anywhere.
 
 ## What Tallpine protects
@@ -54,7 +55,7 @@ One choice for the whole app:
 | **Protected** | Security mode on. Agents are fenced off Tallpine's files, get only the environment variables they need, and get GitHub access through Tallpine's helper instead of a token in their environment. |
 | **Unrestricted** | Dev mode. Orchestrators may do anything you can in Tallpine and new sessions start without the fence. Only for a development machine you trust. |
 
-A project can override the app setting in **Project settings > General > Security mode**. Protected never refuses to start a session: if an agent cannot be fenced, it still starts and shows **Not fenced**. Changes apply to sessions started, relaunched or restored after the change. The same switch is available as `tallpine policy set security-mode on|off`.
+A project can override the app setting in **Project settings > General > Security mode**. Protected does not refuse a session because its agent cannot be fenced: it still starts and shows **Not fenced**. The one exception is a launch where Tallpine cannot locate its own state files: it is refused (`POLICY_REQUIRES_FENCE`) rather than started behind an empty fence. Changes apply to sessions started, relaunched or restored after the change. The same switch is available as `tallpine policy set security-mode on|off`.
 
 ### The file fence (macOS)
 

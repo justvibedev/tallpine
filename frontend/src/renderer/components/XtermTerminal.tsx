@@ -21,6 +21,7 @@
 //    the new PTY size immediately, including during synchronized redraws.
 
 import { tallpineBridge } from "../lib/bridge";
+import { openLinkInSystemBrowser } from "../lib/external-link-policy";
 import { TerminalSearch } from "./TerminalSearch";
 import { LinkPreviewCard, LinkPreviewCardLoading } from "./LinkPreviewCard";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
@@ -159,7 +160,7 @@ export function XtermTerminal(props: XtermTerminalProps) {
 								onSelect={() => {
 									const { link } = contextMenu;
 									setContextMenuOpen(false);
-									if (link) void tallpineBridge.app.openExternal(link);
+									if (link) void openLinkInSystemBrowser(link);
 								}}
 							>
 								{t("link.openInExternalBrowser")}

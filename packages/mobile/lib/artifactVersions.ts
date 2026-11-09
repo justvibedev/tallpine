@@ -99,7 +99,7 @@ export const BASE_PAGE_CSS = "html{background:var(--background);color:var(--fore
 	+ ":root{--viz-series-1:var(--chart-1);--viz-series-2:var(--chart-2);--viz-series-3:var(--chart-3);--viz-series-4:var(--chart-4);--viz-series-5:var(--chart-5);--viz-series-6:var(--chart-6);--viz-text:var(--foreground);--viz-muted:var(--muted-foreground);--viz-bg:var(--background);--viz-panel:var(--card);--viz-border:var(--border);--viz-accent:var(--accent);--viz-accent-text:var(--accent-foreground);--viz-accent-bg:var(--muted);--viz-warning:var(--warning);--blue:var(--chart-1);--green:var(--success);--orange:var(--warning);--yellow:var(--chart-3);--purple:var(--chart-4);--red:var(--destructive)}";
 
 // A BOM, whitespace and comments may precede the doctype.
-const LEADING_DOCTYPE = /^\uFEFF?(?:\s|<!--[\s\S]*?-->)*<!doctype[^>]*>/i;
+const LEADING_DOCTYPE = /^\uFEFF?(?:\s|<!--(?:(?!-->)[\s\S])*-->)*<!doctype[^>]*>/i;
 const PAGE_VIEWPORT = /<meta\s[^>]*name\s*=\s*["']?viewport/i;
 
 /**

@@ -337,8 +337,8 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 		}
 		// w2's delivered queued send ends a turn of its own, so w2 owes the
 		// orchestrator one turn_ended notice too; each must arrive exactly once.
-		// The second w2 turn is its resume note, or the idle-worker wake
-		// (restartresume.WakeMessage) when B558 skipped the note.
+		// The only other w2 turn is its resume note: the idle-worker wake pings
+		// only agents that lost a background job, and w2 lost none.
 		w2Notes := count(restartNote, "repo-3")
 		orchNotes := count(restartNote, "repo-orchestrator")
 		if w2Notes > 1 || orchNotes > 1 {
@@ -349,7 +349,7 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 			subs []string
 			want int
 		}{
-			// w2 now ends two turns after the restart: the resume note and the queued send.
+			// w2 ends a turn for the queued send, plus one for its resume note when it got one.
 			// B218: w1, with nothing pending, gets exactly one restart note; w2 and
 			// the orchestrator got at most one (checked above), none when a turn of
 			// theirs ended after the restart first (B558). The idle probes got none.
@@ -357,7 +357,7 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 			{"(3) needs_input report", []string{"REPORT-needs-w1"}, 1},
 			{"(3) done report", []string{"REPORT-done-w2"}, 1},
 			{"(4) queued send", []string{"QUEUED-behind-w2"}, 1},
-			{"(4) queued send's turn notice", []string{"[auto] turn_ended", "[w2]"}, 2},
+			{"(4) queued send's turn notice", []string{"[auto] turn_ended", "[w2]"}, 1 + w2Notes},
 			{"(5) failure notice", []string{"[auto] turn_ended", "[w1]"}, w1Notices},
 			{"(5) send held behind the failed turn", []string{"QUEUED-behind-fail"}, heldDelivered},
 		} {

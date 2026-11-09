@@ -124,3 +124,30 @@ func TestAsyncTaskIsNotPublishedWhenItsArchiveRollsBack(t *testing.T) {
 		t.Fatalf("task published %d times for an archive row that rolled back", n)
 	}
 }
+
+// Jobs re-seeded at boot for a host that survived the restart belong to that
+// host. When the session instead gets a fresh provider (the reconnect failed),
+// no controller ever closed to clear them, so the start must.
+func TestFreshProviderStartDropsJobsRestoredForTheOldHost(t *testing.T) {
+	st := openStore(t)
+	tracker := bgtasks.New(nil, nil, 0)
+	tracker.Restore(testSession, []bgtasks.Info{{ID: "old-job", Name: "CI watch", Kind: "monitor"}})
+	svc := chatsvc.New(chatsvc.Options{
+		Store: st, Sessions: st,
+		Drivers:          fakeRegistry{driver: fakeDriver{conv: newFakeConversation()}},
+		Log:              slog.New(slog.DiscardHandler),
+		NewID:            func() string { return "fresh-start" },
+		OnAsyncTask:      tracker.Apply,
+		OnAsyncTasksGone: tracker.Clear,
+	})
+	if _, err := svc.Start(context.Background(), chatsvc.StartConfig{
+		SessionID: testSession, ProjectID: testProject, Harness: domain.HarnessClaudeCode,
+		WorkspacePath: t.TempDir(),
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Stop(context.Background(), testSession) })
+	if got := tracker.Running(testSession); len(got) != 0 {
+		t.Fatalf("running after a fresh provider start = %v, want none", got)
+	}
+}

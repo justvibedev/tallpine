@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/policytest"
+	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules/protectstate"
 	"tallpine.eu/tallpine/backend/internal/config"
 	"tallpine.eu/tallpine/backend/internal/httpd"
 	"tallpine.eu/tallpine/backend/internal/httpd/requestscope"
@@ -18,6 +19,15 @@ import (
 )
 
 func newTrustServer(t *testing.T, agent bool, capped bool, managed *fakeManagedPreviewServer, workspace string) *httptest.Server {
+	t.Helper()
+	var rules map[string]map[string]any
+	if capped {
+		rules = map[string]map[string]any{"permissionCap": {"max": "accept_edits"}}
+	}
+	return newPolicyTrustServer(t, agent, rules, config.Config{}, managed, workspace)
+}
+
+func newPolicyTrustServer(t *testing.T, agent bool, rules map[string]map[string]any, cfg config.Config, managed *fakeManagedPreviewServer, workspace string) *httptest.Server {
 	t.Helper()
 	svc := newFakeSessionService()
 	sess := svc.sessions["tp-1"]
@@ -28,12 +38,12 @@ func newTrustServer(t *testing.T, agent bool, capped bool, managed *fakeManagedP
 		PreviewServer:       managed,
 		SessionCapabilities: allowSessionCapability{},
 	}
-	if capped {
-		engine, _ := policytest.Engine(t, map[string]map[string]any{"permissionCap": {"max": "accept_edits"}})
+	if rules != nil {
+		engine, _ := policytest.Engine(t, rules)
 		deps.AgentPolicy = engine
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	router := httpd.NewRouterWithControl(config.Config{}, log, nil, deps, httpd.ControlDeps{})
+	router := httpd.NewRouterWithControl(cfg, log, nil, deps, httpd.ControlDeps{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if agent {
 			r = r.WithContext(requestscope.WithAgent(r.Context(), requestscope.Agent{Role: requestscope.RoleWorker, SessionID: "tp-1", ProjectID: "tp"}))
@@ -81,6 +91,38 @@ func TestPreviewTrust_AgentUncappedUnchanged(t *testing.T) {
 	srv := newTrustServer(t, true, false, managed, ws)
 	if _, status, _ := doRequest(t, srv, http.MethodPost, "/api/v1/sessions/tp-1/preview/server", `{}`); status != http.StatusOK {
 		t.Fatalf("uncapped agent start status=%d", status)
+	}
+}
+
+var securityModeRules = map[string]map[string]any{protectstate.Name: {protectstate.FieldMode: protectstate.On}}
+
+func TestPreviewTrust_AgentRefusedUnderSecurityMode(t *testing.T) {
+	ws := capWorkspace(t)
+	managed := &fakeManagedPreviewServer{}
+	agent := newPolicyTrustServer(t, true, securityModeRules, config.Config{}, managed, ws)
+	body, status, _ := doRequest(t, agent, http.MethodPost, "/api/v1/sessions/tp-1/preview/server", `{}`)
+	assertErrorCode(t, body, status, http.StatusForbidden, "PREVIEW_AGENT_START_FORBIDDEN")
+	if !strings.Contains(string(body), "Security mode") {
+		t.Fatalf("refusal should name Security mode: %s", body)
+	}
+	if managed.startWorkspace != "" {
+		t.Fatal("agent started a preview server under Security mode")
+	}
+}
+
+func TestPreviewTrust_HumanStartIsFencedUnderSecurityMode(t *testing.T) {
+	ws := capWorkspace(t)
+	managed := &fakeManagedPreviewServer{}
+	cfg := config.Config{RunFilePath: "/state/running.json", DataDir: "/state/data"}
+	human := newPolicyTrustServer(t, false, securityModeRules, cfg, managed, ws)
+	if _, status, _ := doRequest(t, human, http.MethodPost, "/api/v1/sessions/tp-1/preview/server", `{}`); status != http.StatusOK {
+		t.Fatalf("human start status=%d", status)
+	}
+	if !protectstate.Of(managed.startFence.Decision).Enabled() {
+		t.Fatal("human start must carry the session's protectState decision")
+	}
+	if managed.startFence.RunFile != cfg.RunFilePath || managed.startFence.DataDir != cfg.DataDir || managed.startFence.SessionID != "tp-1" {
+		t.Fatalf("fence = %+v", managed.startFence)
 	}
 }
 

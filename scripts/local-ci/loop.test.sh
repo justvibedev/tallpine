@@ -106,6 +106,14 @@ printf '#!/bin/bash\nsleep 3\n' >"$WORK/scripts/verify"
 ( cd "$WORK" && SNAPSHOT_EVERY=1 SUPERSEDE_CHECK=1000 run_verify_supervised "$new" "$tmp/s.log" "$tmp/s.rc" --all >/dev/null 2>&1 )
 grep -q 'sleep 3' "$tmp/s.ps" && head -1 "$tmp/s.ps" | grep -q '^# ' && grep -q 'PPID' "$tmp/s.ps" || { fails=$((fails + 1)); echo "FAIL: no ps snapshot of the verify tree: $(cat "$tmp/s.ps" 2>&1)"; }
 
+# B602: a verify run gets its own TMPDIR under the CI dir, and nothing it leaves there survives.
+mkdir -p "$H/tmp/verify-scratch"; echo stale >"$H/tmp/verify-scratch/left-by-killed-run"
+printf '#!/bin/bash\necho "$TMPDIR" >"%s"; ls "$TMPDIR" >>"%s"; touch "$TMPDIR/go-build1"\n' "$tmp/td" "$tmp/td" >"$WORK/scripts/verify"
+( cd "$WORK" && SUPERSEDE_CHECK=1000 run_verify_supervised "$new" "$tmp/s.log" "$tmp/s.rc" --all >/dev/null 2>&1 )
+[ "$(sed -n 1p "$tmp/td")" = "$H/tmp/verify-scratch" ] || { fails=$((fails + 1)); echo "FAIL: verify TMPDIR was $(sed -n 1p "$tmp/td")"; }
+grep -q left-by-killed-run "$tmp/td" && { fails=$((fails + 1)); echo "FAIL: a killed run's scratch was not swept"; }
+[ ! -e "$H/tmp/verify-scratch" ] || { fails=$((fails + 1)); echo "FAIL: verify scratch survived the run"; }
+
 # B360: LOOP_CORE_BUDGET is clamped (non-numeric -> 12, below 4 -> 4) so -p / GOMAXPROCS are never 0.
 for b in 0 abc 2 ""; do
 	got="$(LOOP_CORE_BUDGET="$b" bash -c "$(sed -n '/^BUDGET=/,/^export VERIFY_CORE/p' "$here/loop.sh"); echo \"\$GOFLAGS \$GOMAXPROCS\"")"

@@ -40,6 +40,7 @@ func TestResumeAndWakeShareOneRestartLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.recs["w-1"] = worker("w-1", domain.ActivityIdle, false)
+	seedLostJobs(tr, "w-2")
 	sender, reports := &fakeSender{}, &fakeReports{}
 	tr.Resume(ctx, sender)
 	tr.WakeIdle(ctx, sender, nil)
@@ -55,6 +56,7 @@ func TestRestartLineGoesToEachWorkersOwnProject(t *testing.T) {
 	a, b := worker("a-1", domain.ActivityIdle, false), worker("b-1", domain.ActivityIdle, false)
 	a.ProjectID, b.ProjectID = "pa", "pb"
 	tr, _ := newTracker(t, a, b)
+	seedLostJobs(tr, "a-1", "b-1")
 	rec := &projectReports{}
 	tr.WakeIdle(ctx, &fakeSender{}, nil)
 	tr.NotifyRestart(ctx, rec)

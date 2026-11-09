@@ -37,9 +37,23 @@ type FenceRequiredError struct {
 	Harness string
 	GOOS    string
 	Reason  string
+	// Message replaces the generated text, for a refusal that is not about the
+	// harness or the organization's profile (ErrFenceNoRunFile).
+	Message string
+}
+
+// ErrFenceNoRunFile refuses a launch protectState must fence when its env does
+// not name Tallpine's run file: the state to hide cannot be located, so the
+// fence would be empty. Whoever turned protectState on (user, project or managed
+// profile) gets this rather than an unfenced agent.
+var ErrFenceNoRunFile = &FenceRequiredError{
+	Message: "Tallpine refused to start this session unfenced: Security mode is on, but the launch does not name Tallpine's run file, so the files to protect cannot be located. Restart the Tallpine daemon and try again",
 }
 
 func (e *FenceRequiredError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
 	msg := "your organization's hardened agent policy requires a fenced session; " + e.Harness + " on " + e.GOOS + " cannot be fenced"
 	if e.Reason != "" {
 		msg += " (" + e.Reason + ")"

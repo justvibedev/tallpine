@@ -42,6 +42,9 @@ type readinessCoordinatorConfig struct {
 	RetryDelays         []time.Duration
 	Workers             int
 	AuthenticationCheck func(context.Context, string, domain.AgentReadinessPurpose) (domain.AgentAuthenticationObservation, bool)
+	// AuthenticationEnv returns the launch environment an agent's auth check
+	// should run under instead of the daemon's own, or nil.
+	AuthenticationEnv func(ctx context.Context, agentID string) map[string]string
 	// OnAuthenticationRecovered runs (asynchronously) when a check observes an
 	// agent that was signed out become signed in or configured, however the
 	// login happened: Tallpine's login terminal, the agent's own CLI, or a renewed
@@ -85,6 +88,7 @@ type readinessCoordinator struct {
 	retryDelays         []time.Duration
 	workers             int
 	authenticationCheck func(context.Context, string, domain.AgentReadinessPurpose) (domain.AgentAuthenticationObservation, bool)
+	authenticationEnv   func(context.Context, string) map[string]string
 	onAuthRecovered     func(agentID string)
 
 	mu      sync.Mutex
@@ -138,6 +142,7 @@ func newReadinessCoordinator(cfg readinessCoordinatorConfig) *readinessCoordinat
 		installTimeout: cfg.InstallTimeout, authTimeout: cfg.AuthTimeout,
 		retryDelays: cfg.RetryDelays, workers: cfg.Workers,
 		authenticationCheck: cfg.AuthenticationCheck,
+		authenticationEnv:   cfg.AuthenticationEnv,
 		onAuthRecovered:     cfg.OnAuthenticationRecovered,
 		entries:             make(map[string]*readinessEntry, len(cfg.Agents)), calls: make(map[readinessCallKey]*readinessCall),
 	}
@@ -395,29 +400,6 @@ func (c *readinessCoordinator) ensureOne(ctx context.Context, id string, purpose
 		return snapshot, nil
 	case <-ctx.Done():
 		return domain.AgentReadinessSnapshot{}, ctx.Err()
-	}
-}
-
-func readinessFailureCategory(snapshot domain.AgentReadinessSnapshot) string {
-	if isReadinessFailureCode(snapshot.Installation.ReasonCode) {
-		return snapshot.Installation.ReasonCode
-	}
-	if isReadinessFailureCode(snapshot.Authentication.ReasonCode) {
-		return snapshot.Authentication.ReasonCode
-	}
-	return ""
-}
-
-func isReadinessFailureCode(code string) bool {
-	switch code {
-	case domain.AgentReadinessReasonInstallCheckTimeout,
-		domain.AgentReadinessReasonInstallCheckFailed,
-		domain.AgentReadinessReasonAuthCheckInconclusive,
-		domain.AgentReadinessReasonAuthCheckTimeout,
-		domain.AgentReadinessReasonAuthCheckFailed:
-		return true
-	default:
-		return false
 	}
 }
 

@@ -14,16 +14,14 @@ const (
 	fileMode fs.FileMode = 0o600
 )
 
-// Directories Tallpine owns, at their real locations: under the data dir, and
-// release-builds under the state root.
-var (
-	dataSubdirs  = []string{"worktrees", "runtime", "skills"}
-	stateSubdirs = []string{"release-builds", "releases"}
-)
+// Directories Tallpine owns under the data dir. Every directory directly under
+// the state root is Tallpine's too, so those are tightened without a list.
+var dataSubdirs = []string{"worktrees", "runtime", "skills"}
 
 // Harden creates the state root and the data dir as 0700 and tightens the
-// known Tallpine subdirectories (only those that already exist; none are created)
-// in place. Inside dataDir it chmods
+// known Tallpine subdirectories and every directory directly under a state root
+// distinct from dataDir (only those that already exist; none are created) in
+// place. Inside dataDir it chmods
 // the top-level files (database, -wal, -shm, ...) to 0600 and walks the
 // artifacts tree. Group/other bits are cleared and owner bits kept. Failure to
 // create the roots is the only error; tightening problems come back as
@@ -48,8 +46,8 @@ func Harden(stateDir, dataDir string) (warnings []error, err error) {
 	for _, name := range dataSubdirs {
 		errs = append(errs, chmodIfLoose(filepath.Join(dataDir, name)))
 	}
-	for _, name := range stateSubdirs {
-		errs = append(errs, chmodIfLoose(filepath.Join(stateDir, name)))
+	if stateDir != dataDir {
+		errs = append(errs, tightenDirs(stateDir))
 	}
 	errs = append(errs, tightenFiles(dataDir), tightenTree(filepath.Join(dataDir, "artifacts")))
 	for _, e := range errs {
@@ -78,6 +76,25 @@ func chmodIfLoose(path string) error {
 		return nil
 	}
 	return os.Chmod(path, perm&^0o077)
+}
+
+// tightenDirs chmods the real directories directly inside dir, never their
+// contents; a symlink's IsDir is false.
+func tightenDirs(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	var errs []error
+	for _, e := range entries {
+		if e.IsDir() {
+			errs = append(errs, chmodIfLoose(filepath.Join(dir, e.Name())))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // tightenFiles chmods the regular files directly inside dir.

@@ -36,12 +36,15 @@ import {
 createBrowserViewHost,
 shouldHandleAppShortcutInBrowserContext
 } from "../browser-view-host";
+import { attachProcessRecovery } from "./process-recovery";
+import { createProcessRecoveryLog } from "./process-recovery-log";
 import { helperSignatureOptions } from "../bundled-runtime-staging";
 import {
 confirmUnsafeChatDraftLeave,
 shouldPreventUnsafeChatDraftClose,
 } from "../chat-draft-unload";
 import { isAllowedAppExternalURL } from "../external-open";
+import { openInSystemBrowser } from "../external-open-runtime";
 import { verifyHelperSignature } from "../helper-signature";
 import { remoteRegistry } from "../ipc/app-ipc";
 import { cancelDockBounce } from "../ipc/notifications-ipc";
@@ -169,7 +172,7 @@ export async function createWindowInternal(): Promise<void> {
 	// the OS browser. Keep this in place before exposing any daemon output to the renderer.
 	shellWebContents.setWindowOpenHandler(({ url }) => {
 		if (isAllowedAppExternalURL(url)) {
-			void shell.openExternal(url);
+			void openInSystemBrowser(url).catch(() => undefined);
 		}
 		return { action: "deny" };
 	});
@@ -401,8 +404,15 @@ export async function createWindowInternal(): Promise<void> {
 		trayLifecycle.clear();
 	});
 	shellWebContents.on("render-process-gone", () => trayLifecycle.clear());
+	const detachProcessRecovery = attachProcessRecovery({
+		app,
+		contents: shellWebContents,
+		log: createProcessRecoveryLog(browserProfileStateDir(), app.getVersion()),
+		hasUnsavedDrafts: () => ctx.chatDraftRisks.length > 0,
+	});
 
 	ctx.mainWindow.on("closed", () => {
+		detachProcessRecovery();
 		ctx.chatDraftRisks = [];
 		ctx.chatDraftDialog = undefined;
 		ctx.chatDraftQuitConfirmed = false;

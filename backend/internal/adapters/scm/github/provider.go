@@ -38,7 +38,7 @@ type ProviderOptions struct {
 	GraphQLURL         string
 	UserAgent          string
 	Logger             *slog.Logger
-	// EnterpriseHosts lists self-hosted GHES hosts (host[:port]); *.ghe.com is built in.
+	// EnterpriseHosts lists self-hosted GHES hosts (host[:port]); *.ghe.com is built in, but an env GH_TOKEN is sent to a tenant only if listed.
 	EnterpriseHosts []string
 	// HostTokens maps an enterprise host to its token; HostToken overrides it.
 	HostTokens map[string]string

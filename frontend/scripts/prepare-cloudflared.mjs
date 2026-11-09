@@ -6,7 +6,7 @@ import path from "node:path";
 // The packaged macOS app ships cloudflared, so turning on remote access never
 // waits for an install (or needs Homebrew). Windows and Linux keep the
 // winget/apt install offered in the app.
-const VERSION = "2026.10.2";
+const VERSION = "2026.10.7";
 const RELEASE_BASE = `https://github.com/cloudflare/cloudflared/releases/download/${VERSION}`;
 const OUTPUT_DIR = path.resolve("cloudflared");
 const DOWNLOAD_ATTEMPTS = 3;
@@ -16,13 +16,13 @@ const DOWNLOAD_ATTEMPTS = 3;
 const TARGETS = {
 	"darwin-arm64": {
 		asset: "cloudflared-darwin-arm64.tgz",
-		archive: "529a07089ac2d46762578389230fa148e5cb6ce2689200fc006956864042d17a",
-		binary: "823f993ef362fba5e0e288db6f3452d8de34291632971c7a40b79548420e9a18",
+		archive: "3586ccf397e98e5f437e60e7c307ca6ac463e110580503af8bb8e6f9ebf831bd",
+		binary: "2136431d5eb467bf447d2ee514b713e192719b143aec1d9e09bf7dc290d5bb12",
 	},
 	"darwin-x64": {
 		asset: "cloudflared-darwin-amd64.tgz",
-		archive: "b64efd5a2772fc124b855f60eb3d33ba1a4f2ba67b19ddc58d32b705d42b82c9",
-		binary: "4be2a4c0b76f6be4a84bea590743e85041949c294efcee4de86a140a9f11869a",
+		archive: "02f3edfd87684dd5b705607688e4eb4b323f6e777b81e7b3a85af556aa356848",
+		binary: "5c55e77da7012cebca19170357e196176c48c9647cc2ead404702fa125ddbd86",
 	},
 };
 

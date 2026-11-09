@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strconv"
 
+	"tallpine.eu/tallpine/backend/internal/adapters/agent/codex"
+	"tallpine.eu/tallpine/backend/internal/agentlaunch"
 	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/contextwindow"
 
@@ -53,6 +56,9 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 // default_tools_approval_mode "approve" removed both.
 func threadConfig(effort string, servers []ports.ChatMCPServerConfig, env map[string]string) map[string]any {
 	config := map[string]any{}
+	if env[agentlaunch.EnvGitGuardRoot] != "" {
+		maps.Copy(config, codex.GitGuardThreadConfig())
+	}
 	if tokens, err := strconv.Atoi(env[contextwindow.CodexAutoCompactLimitEnv]); err == nil && tokens > 0 {
 		config["model_auto_compact_token_limit"] = tokens
 	}

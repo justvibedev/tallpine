@@ -80,6 +80,7 @@ func (m *Manager) teardownRuntimeEnv(id domain.SessionID, project domain.Project
 func (m *Manager) runtimeEnvFor(id domain.SessionID, project domain.ProjectID, issue domain.IssueID, projectEnv map[string]string, accountID string, scratch bool, harness domain.AgentHarness) (map[string]string, error) {
 	env, err := m.runtimeEnvBase(id, project, issue, projectEnv, accountID, scratch, harness)
 	// The gh shim goes first on PATH once the hook PATH is final, on every exit.
+	m.applyGitGuard(project, env, envKeysCaseInsensitive)
 	prependGHShimToPATH(env, envKeysCaseInsensitive)
 	return env, err
 }

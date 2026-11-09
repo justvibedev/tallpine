@@ -8,7 +8,6 @@ app,
 clipboard,
 dialog,
 nativeImage,
-shell,
 type OpenDialogOptions
 } from "electron";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -40,7 +39,7 @@ import { registerChatImageIpc } from "../chat-image-ipc";
 import { registerCliLinkIpc } from "../cli-link-ipc";
 import { probeDaemonTcp } from "../daemon-tcp-probe";
 import { runFilePath } from "../daemon/daemon-lifecycle";
-import { openAllowedAppExternalURL } from "../external-open";
+import { openInSystemBrowser } from "../external-open-runtime";
 import { readManagedFirstRunAccepted } from "../first-run-policy";
 import { writeKeybindingOverrides } from "../keybinding-settings";
 import { startRemoteProxy } from "../remote-proxy/proxy";
@@ -102,7 +101,7 @@ export function registerAppIpc(): void {
 	ipcMain.handle("app:daemonTcpOpen", () => probeDaemonTcp(daemonAuth.port()));
 
 	ipcMain.handle("app:openExternal", async (_event, url: string) => {
-		await openAllowedAppExternalURL(url, shell);
+		await openInSystemBrowser(url);
 	});
 
 

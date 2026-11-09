@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"io"
+	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -48,11 +49,27 @@ func newLogger(dataDir string) (*slog.Logger, func()) {
 	opts := &slog.HandlerOptions{Level: logLevelFromEnv()}
 	file, err := logrotate.Open(daemonLogPath(dataDir), daemonLogMaxBytes, daemonLogBackups)
 	if err != nil {
-		log := slog.New(slog.NewTextHandler(os.Stderr, opts))
-		log.Warn("daemon log file unavailable; logging to stderr only", "path", daemonLogPath(dataDir), "err", err)
-		return log, func() {}
+		fallback := slog.New(slog.NewTextHandler(os.Stderr, opts))
+		fallback.Warn("daemon log file unavailable; logging to stderr only", "path", daemonLogPath(dataDir), "err", err)
+		return fallback, func() {}
 	}
 	return slog.New(slog.NewTextHandler(teeWriter{file: file, stderr: os.Stderr}, opts)), func() { _ = file.Close() }
+}
+
+// installDefaultLogger makes l the process-wide slog default so the ~70 call
+// sites that log through slog.Default() reach daemon.log too, not just stderr.
+// slog.SetDefault also reroutes the standard log package into l's handler; l
+// writes each record once to the file and once to stderr, so nothing doubles.
+// The returned func restores the previous slog default and log package output
+// (restoring the slog default alone leaves log pointing at l's closed file).
+func installDefaultLogger(l *slog.Logger) func() {
+	prev, prevOut, prevFlags := slog.Default(), log.Writer(), log.Flags()
+	slog.SetDefault(l)
+	return func() {
+		slog.SetDefault(prev)
+		log.SetOutput(prevOut)
+		log.SetFlags(prevFlags)
+	}
 }
 
 // teeWriter writes every record to the log file and then to stderr. A dead

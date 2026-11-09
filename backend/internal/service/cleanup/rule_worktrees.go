@@ -14,7 +14,6 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/pathx"
-	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 // refusalBackoff is how long a light pass leaves a worktree alone after its
@@ -65,7 +64,7 @@ var inProgressMarkers = []string{"rebase-merge", "rebase-apply", "MERGE_HEAD", "
 func runGitIn(ctx context.Context, path string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := ports.DefaultGit().Plain(ctx, path, args...)
+	cmd := gitCommand(ctx, path, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {

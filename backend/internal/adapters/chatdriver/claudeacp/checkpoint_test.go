@@ -211,16 +211,6 @@ func TestNativeCheckpointNotificationCycleBelongsToPreviousTurn(t *testing.T) {
 	if _, err := verify(orphan, reply); !errors.Is(err, ports.ErrChatHistoryUnsettled) {
 		t.Fatalf("orphan note error=%v", err)
 	}
-	for text, want := range map[string]bool{
-		"[Request interrupted by user]":              true,
-		"[Request interrupted by user for tool use]": true,
-		"[Request interrupted by user] keep going":   false,
-		"what does <task-notification> mean?":        false,
-	} {
-		if claudeTranscriptNotice(text) != want {
-			t.Errorf("claudeTranscriptNotice(%q) = %v", text, !want)
-		}
-	}
 }
 
 func TestNativeCheckpointRejectsUnprovenAncestry(t *testing.T) {

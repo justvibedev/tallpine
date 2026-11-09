@@ -117,26 +117,9 @@ notify_build() {
     done
   fi
   [[ -n "${cli}" ]] || { say "notify: no CLI found"; return 0; }
-  # `orchestrator notify` picks the target (notify-target if live, else the oldest live orchestrator) and
-  # acts as the machine; it exits non-zero when no orchestrator is live.
-  local target err sid
+  local target
   target="$(head -n 1 "$(dirname "${ci_tsv}")/../notify-target" 2>/dev/null | tr -d '[:space:]')"
-  if "${cli}" orchestrator --help 2>&1 | grep -qw notify; then # the parent prints its help (rc 0) even without the subcommand
-    err="$("${cli}" orchestrator notify --project agent-orchestrator --target "${target}" --message "${msg}" 2>&1 >/dev/null)" \
-      && say "notified the orchestrator" || say "notify failed: ${err:-no output}"
-    return 0
-  fi
-  # One-release fallback: the installed app's CLI predates `orchestrator notify` (the build that ships it
-  # is notified by the old CLI). Remove once an app with the command is installed everywhere.
-  sid="$("${cli}" orchestrator ls --json 2>/dev/null | python3 -I -c 'import json,sys
-t=sys.argv[1]
-d=json.load(sys.stdin); xs=d if isinstance(d,list) else next((v for v in d.values() if isinstance(v,list)),[])
-live=[x for x in xs if x.get("projectId")=="agent-orchestrator" and not x.get("isTerminated")]
-if not live: sys.exit()
-print(t if any(x["id"]==t for x in live) else min(live,key=lambda x:x.get("createdAt",""))["id"])
-' "${target}" 2>/dev/null || true)"
-  [[ -n "${sid}" ]] || { say "notify: no live orchestrator"; return 0; }
-  err="$("${cli}" send --session "${sid}" --message "${msg}" 2>&1 >/dev/null)" && say "notified ${sid}" || say "notify ${sid} failed: ${err:-no output}"
+  say "$(tp_notify_orchestrator "${cli}" agent-orchestrator "${target}" "${msg}")"
 }
 
 
@@ -150,9 +133,13 @@ build_detached() {
   local sha="$1" log self
   log="$(dirname "${ci_tsv}")/build-${sha:0:8}.log"
   self="${TALLPINE_RELEASE_BUILD_BIN:-${release_self}}"
+  # B441: the child opens its log after detaching, so an unwritable log dir (a sandboxed caller) would fail
+  # silently while this reports success. Open it here first, where the failure can be loud and non-zero.
+  { mkdir -p "$(dirname "${log}")" && : >"${log}"; } 2>/dev/null ||
+    die "cannot write the build log ${log} (is this shell sandboxed? use 'tallpine release request-build' so the daemon builds)"
   say "Building ${sha:0:12} now, detached (log ${log})"
   local defs child
-  defs="$(declare -f notify_build say)"
+  defs="$(declare -f notify_build say tp_notify_orchestrator)"
   child='"$3" --state-dir "$4" build "$2" --no-fetch </dev/null; rc=$?
 notify_build "$1" "$2" "$rc"'
   env -i HOME="${HOME}" PATH="${PATH}" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" TMPDIR="${TMPDIR:-/tmp}" \
@@ -183,8 +170,8 @@ cmd_request_build() {
       say "origin/main ${sha:0:12} is already being built"
       return 0
     else
+      build_detached "${sha}" # dies first when it cannot start, keeping an earlier request
       rm -f "${builds_dir}/request-build"
-      build_detached "${sha}"
       return 0
     fi
   fi

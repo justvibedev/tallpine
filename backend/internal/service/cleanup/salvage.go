@@ -286,8 +286,10 @@ func limit(s []string, n int) []string {
 	return append(s[:n:n], fmt.Sprintf("and %d more", len(s)-n))
 }
 
+// gitCommand is git in an agent's worktree, unfenced: Command, so what the agent
+// set in its config.worktree does not run here.
 func gitCommand(ctx context.Context, path string, args ...string) *exec.Cmd {
-	return ports.DefaultGit().Plain(ctx, path, args...)
+	return ports.DefaultGit().Command(ctx, path, args...)
 }
 
 func gitOutput(ctx context.Context, path string, args ...string) ([]byte, error) {

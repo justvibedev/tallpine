@@ -39,7 +39,7 @@ export function exploredFileCount(text: string): number | undefined {
 	if (commandCategory(text) !== "read") return undefined;
 
 	const files = new Set<string>();
-	for (const token of text.match(/"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\s]+/g) ?? []) {
+	for (const token of text.match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s]+/g) ?? []) {
 		const value = token
 			.replace(/^["']|["']$/g, "")
 			.replace(/[;&|]+$/, "");

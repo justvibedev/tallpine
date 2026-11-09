@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"tallpine.eu/tallpine/backend/internal/ghaccount"
 	tallpineprocess "tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -108,6 +109,10 @@ const defaultGHTokenCacheTTL = 5 * time.Minute
 type GHTokenSource struct {
 	// Host selects `gh auth token --hostname <Host>`; empty means github.com.
 	Host string
+	// StoredLoginOnly strips GH_TOKEN, GITHUB_TOKEN and GH_ENTERPRISE_TOKEN
+	// from gh's environment, so only a login the owner made with `gh auth
+	// login` can answer; an ambient daemon env token is never used.
+	StoredLoginOnly bool
 
 	// GH is the shell-out hook. Production leaves this nil and falls back
 	// to `exec.CommandContext("gh", "auth", "token")`; tests inject a
@@ -134,7 +139,7 @@ func (s *GHTokenSource) Token(ctx context.Context) (string, error) {
 	}
 	run := s.GH
 	if run == nil {
-		run = func(ctx context.Context) (string, error) { return ghAuthToken(ctx, s.Host) }
+		run = func(ctx context.Context) (string, error) { return ghAuthToken(ctx, s.Host, s.StoredLoginOnly) }
 	}
 	out, err := run(ctx)
 	if err != nil {
@@ -172,12 +177,16 @@ func (s *GHTokenSource) ttl() time.Duration {
 	return defaultGHTokenCacheTTL
 }
 
-func ghAuthToken(ctx context.Context, host string) (string, error) {
+func ghAuthToken(ctx context.Context, host string, storedLoginOnly bool) (string, error) {
 	args := []string{"auth", "token"}
 	if host != "" {
 		args = append(args, "--hostname", host)
 	}
-	out, err := tallpineprocess.CommandContext(ctx, "gh", args...).Output()
+	cmd := tallpineprocess.CommandContext(ctx, "gh", args...)
+	if storedLoginOnly {
+		cmd.Env = ghaccount.ScrubbedEnv(os.Environ())
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}

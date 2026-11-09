@@ -97,3 +97,14 @@ describe("BASE_PAGE_CSS", () => {
 		expect(BASE_PAGE_CSS).toBe(daemonCss);
 	});
 });
+
+describe("versionPageHtml on hostile input", () => {
+	// Comments could be split at any "-->", so many comments and no doctype
+	// took 2^n steps in the leading-doctype pattern.
+	it("stays fast on many comments with no doctype", () => {
+		const hostile = "<!---->".repeat(40) + "<p>x</p>";
+		const start = performance.now();
+		versionPageHtml(hostile, { appearance: "dark", variables: {} });
+		expect(performance.now() - start).toBeLessThan(250);
+	});
+});

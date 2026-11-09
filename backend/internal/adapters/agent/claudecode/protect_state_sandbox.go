@@ -1,7 +1,6 @@
 package claudecode
 
 import (
-	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -27,6 +26,17 @@ func protectStateApplies(decision agentpolicy.Decision, goos string) bool {
 // sends the same fence as the terminal launch.
 func ProtectStateApplies(decision agentpolicy.Decision, goos string) bool {
 	return protectStateApplies(decision, goos)
+}
+
+// RequireFence refuses a launch protectState must fence on goos when env cannot
+// locate the state to deny (statefence.ErrNoRunFile). The settings builders
+// below have no error path, so every Claude launch (terminal, restore, chat)
+// runs this first instead of starting with an empty fence.
+func RequireFence(decision agentpolicy.Decision, env map[string]string, goos string) error {
+	if !protectStateApplies(decision, goos) {
+		return nil
+	}
+	return statefence.RequireRunFile(env)
 }
 
 // FencesState reports whether a Claude Code session on goos can run inside
@@ -103,11 +113,11 @@ const coreDeviceService = "com.apple.CoreDevice.CoreDeviceService"
 // allowUnsandboxedCommands is off so the agent cannot retry a denied command
 // outside the sandbox, and failIfUnavailable makes a host without a working
 // sandbox refuse to run commands instead of running them unfenced. No run file
-// means the state cannot be located and nothing is added.
+// means the state cannot be located and nothing is added; RequireFence has
+// already refused such a launch.
 func protectStateSandbox(settings map[string]any, env map[string]string, decision agentpolicy.Decision) {
 	runFile := strings.TrimSpace(env[brand.Env("RUN_FILE")])
 	if runFile == "" {
-		slog.Warn("protectState is on but the launch has no run file; the session runs without the sandbox")
 		return
 	}
 	state := statefence.StatePaths(runFile, env[brand.Env("DATA_DIR")])
@@ -156,4 +166,36 @@ func protectedStateReadRules(runFile, dataDir string) []string {
 		rules = append(rules, claudeReadRule(filepath.Join(d, "**")))
 	}
 	return rules
+}
+
+// denyDaemonTokenRead adds Claude Code permission deny rules for Tallpine's
+// secrets and store: the install token (daemontoken.Path of the launch's run
+// file), the session key that scoped tokens are MACed under, the database, the
+// GitHub PAT, the browser runtime key and the Electron profile (cookies). The
+// agent holds a scoped session token and talks to the daemon over its socket, so
+// it never needs any of these, and all sit readable by the same OS user. This is
+// a guard for Claude's own tools, not a sandbox: a shell command can still cat
+// the files. No run file in the launch env means no rule.
+func denyDaemonTokenRead(settings map[string]any, env map[string]string) {
+	runFile := strings.TrimSpace(env[brand.Env("RUN_FILE")])
+	if runFile == "" {
+		return
+	}
+	perms, _ := settings["permissions"].(map[string]any)
+	if perms == nil {
+		perms = map[string]any{}
+		settings["permissions"] = perms
+	}
+	perms["deny"] = protectedStateReadRules(runFile, env[brand.Env("DATA_DIR")])
+}
+
+// claudeReadRule is a Read permission rule for an absolute path. Claude Code
+// treats "/x" as relative to the settings root; an absolute filesystem path
+// needs "//x", and a Windows drive path is written "//c/Users/...".
+func claudeReadRule(path string) string {
+	p := filepath.ToSlash(path)
+	if len(p) >= 2 && p[1] == ':' {
+		p = "/" + strings.ToLower(p[:1]) + p[2:]
+	}
+	return "Read(/" + p + ")"
 }

@@ -209,6 +209,44 @@ func TestAutoClose_OpenBacklogItemsHoldClose(t *testing.T) {
 	}
 }
 
+// B608: a merge that left a backlog item open must not hold the worker forever.
+func TestAutoClose_OpenBacklogItemsHoldExpires(t *testing.T) {
+	m, term, hooks := autoCloseSetup(idleWorker("ac-items-exp"))
+	now := time.Unix(1000, 0)
+	m.autoCloseRetry.clock = func() time.Time { return now }
+	var fire []func()
+	m.autoCloseRetry.after = func(_ time.Duration, f func()) { fire = append(fire, f) }
+	hooks.items = 1
+	observeMerged(t, m, "ac-items-exp")
+	now = now.Add(autoCloseMaxHold + time.Minute)
+	fire[0]()
+	if term.calls != 1 {
+		t.Fatalf("kills=%d past the bound, want the close to go ahead", term.calls)
+	}
+}
+
+// B608: a job running at the bound must not strand the worker; it closes once the job ends.
+func TestAutoClose_ItemsBoundHoldsAcrossJobHold(t *testing.T) {
+	m, term, hooks := autoCloseSetup(idleWorker("ac-items-job"))
+	now := time.Unix(1000, 0)
+	m.autoCloseRetry.clock = func() time.Time { return now }
+	var fire []func()
+	m.autoCloseRetry.after = func(_ time.Duration, f func()) { fire = append(fire, f) }
+	hooks.items = 1
+	observeMerged(t, m, "ac-items-job")
+	now = now.Add(autoCloseMaxHold + time.Minute)
+	hooks.jobs = 1
+	fire[0]()
+	if term.calls != 0 || len(fire) != 2 {
+		t.Fatalf("kills=%d timers=%d, want held on the job with a recheck armed", term.calls, len(fire))
+	}
+	hooks.jobs = 0
+	fire[1]()
+	if term.calls != 1 {
+		t.Fatalf("kills=%d after the job ended, want 1", term.calls)
+	}
+}
+
 // B498: a hold past the bound notifies the orchestrator once and stops polling.
 func TestAutoClose_HoldPastBoundNotifiesOnce(t *testing.T) {
 	m, term, hooks := autoCloseSetup(idleWorker("ac-bound"))

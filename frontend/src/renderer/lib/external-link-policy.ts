@@ -1,3 +1,6 @@
+import { DAEMON_TCP_OFF_ERROR } from "../../shared/daemon-url";
+import { appI18n } from "../i18n";
+import { useUiStore } from "../stores/ui-store";
 import { tallpineBridge } from "./bridge";
 
 export function isWebLink(url: string): boolean {
@@ -79,6 +82,10 @@ export async function openLinkInSystemBrowser(url: string): Promise<void> {
 	try {
 		await tallpineBridge.app.openExternal(url);
 	} catch (error) {
+		if (String(error).includes(DAEMON_TCP_OFF_ERROR)) {
+			useUiStore.getState().showGlobalToast(appI18n.t("browser.externalNeedsLoopbackTcp"), undefined, "error");
+			return;
+		}
 		console.warn("Unable to open link in system browser", error);
 	}
 }

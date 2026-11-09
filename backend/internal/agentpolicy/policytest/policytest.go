@@ -31,6 +31,11 @@ func (s *Store) SetAgentPolicy(_ context.Context, d []byte, _ time.Time) error {
 // (rule -> field -> value). The store is returned so tests can inspect writes.
 func Engine(t testing.TB, settings map[string]map[string]any) (*agentpolicy.Engine, *Store) {
 	t.Helper()
+	return engineWith(t, settings)
+}
+
+func engineWith(t testing.TB, settings map[string]map[string]any, opts ...agentpolicy.Option) (*agentpolicy.Engine, *Store) {
+	t.Helper()
 	store := &Store{}
 	if settings != nil {
 		doc, err := json.Marshal(map[string]any{"version": agentpolicy.UserDocVersion, "rules": settings})
@@ -39,9 +44,11 @@ func Engine(t testing.TB, settings map[string]map[string]any) (*agentpolicy.Engi
 		}
 		store.Data = doc
 	}
-	engine, err := agentpolicy.New(rules.All(), store,
+	base := []agentpolicy.Option{
 		agentpolicy.WithManagedFile("", nil),
-		agentpolicy.WithEnv(func(string) (string, bool) { return "", false }))
+		agentpolicy.WithEnv(func(string) (string, bool) { return "", false }),
+	}
+	engine, err := agentpolicy.New(rules.All(), store, append(base, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +59,14 @@ func Engine(t testing.TB, settings map[string]map[string]any) (*agentpolicy.Engi
 func Decision(t testing.TB, settings map[string]map[string]any) agentpolicy.Decision {
 	t.Helper()
 	engine, _ := Engine(t, settings)
+	return engine.DecideStatic(context.Background())
+}
+
+// DecisionForRepo is Decision with repo as the session's project repository, the
+// way the daemon resolves it for a real launch.
+func DecisionForRepo(t testing.TB, settings map[string]map[string]any, repo string) agentpolicy.Decision {
+	t.Helper()
+	engine, _ := engineWith(t, settings, agentpolicy.WithGitRepo(func(context.Context, agentpolicy.SessionRef) string { return repo }))
 	return engine.DecideStatic(context.Background())
 }
 

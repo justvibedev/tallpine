@@ -5,27 +5,32 @@
 # forever. Keep every heredoc under the limit, and never feed unbounded or
 # expanded text through a heredoc or <<<; use printf, a file, or < <(cmd).
 #
-#   scripts/heredoc-guard.test.sh [file...]    # default: every tracked shell script (git ls-files)
+#   scripts/heredoc-guard.test.sh [file...]    # default: every tracked shell script (git ls-files); listed files are filtered the same way (shell shebang only)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 limit=400
 files=()
+# is_shell <path>: a regular file with a shell shebang, other than this guard (its awk program quotes the markers).
+# Both modes use it, so a path list (lint-changed passes every changed file) is judged exactly like the full scan.
+is_shell() {
+	[[ -f "$1" && "$1" != */heredoc-guard.test.sh && "$1" != heredoc-guard.test.sh ]] || return 1
+	# No forks: the full scan visits every tracked file (thousands), so read the shebang in-process.
+	local first=""
+	{ IFS= read -r first <"$1"; } 2>/dev/null || true
+	[[ "${first}" == "#!"* && ("${first}" == *sh || "${first}" =~ env\ (ba)?sh) ]]
+}
 if (($# > 0)); then
-	files=("$@")
+	for f in "$@"; do is_shell "${f}" && files+=("${f}"); done
 else
 	while IFS= read -r f; do
 		f="${root}/${f}"
-		[[ -f "${f}" && "${f}" != */heredoc-guard.test.sh ]] || continue
-		# No forks: this loop visits every tracked file (thousands), so read the shebang in-process.
-		first=""
-		{ IFS= read -r first <"${f}"; } 2>/dev/null || true
-		[[ "${first}" == "#!"* && ("${first}" == *sh || "${first}" =~ env\ (ba)?sh) ]] && files+=("${f}")
+		is_shell "${f}" && files+=("${f}")
 	done < <(git -C "${root}" ls-files)
 fi
 
 fail=0
-for f in "${files[@]}"; do
+for f in "${files[@]+"${files[@]}"}"; do # empty list: bash < 4.4 trips set -u (merge-gate does the same)
 	[[ -f "${f}" ]] || continue
 	out="$(awk -v F="${f}" -v LIMIT="${limit}" '
 		function report(msg) { printf "%s:%d: %s\n", F, NR, msg; bad = 1 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -119,11 +120,11 @@ func (e *Engine) samePatch(ctx stdctx.Context, workspace string, pr domain.PullR
 // gitPatchID returns the stable patch-id of the change base...sha makes, empty
 // for an empty diff.
 func gitPatchID(ctx stdctx.Context, workspace, base, sha string) (string, error) {
-	diff, err := process.CommandContext(ctx, "git", "-C", workspace, "diff", base+"..."+sha).Output()
+	diff, err := process.CommandContext(ctx, "git", ports.GitInDir(workspace, "diff", "--no-ext-diff", "--no-textconv", base+"..."+sha)...).Output()
 	if err != nil {
 		return "", err
 	}
-	cmd := process.CommandContext(ctx, "git", "-C", workspace, "patch-id", "--stable")
+	cmd := process.CommandContext(ctx, "git", ports.GitInDir(workspace, "patch-id", "--stable")...)
 	cmd.Stdin = strings.NewReader(string(diff))
 	out, err := cmd.Output()
 	if err != nil {

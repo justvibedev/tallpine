@@ -173,7 +173,14 @@ func (c *readinessCoordinator) checkAuthentication(item ports.HarnessAgent, purp
 	var status ports.AgentAuthStatus
 	var account domain.AgentAccountIdentity
 	var err error
-	if authChecker, ok := item.Agent.(ports.AgentAuthDiagnosticsChecker); ok {
+	var launchEnv map[string]string
+	if c.authenticationEnv != nil {
+		launchEnv = c.authenticationEnv(ctx, string(item.Harness))
+	}
+	envChecker, hasEnvChecker := item.Agent.(ports.AgentAuthEnvChecker)
+	if hasEnvChecker && len(launchEnv) > 0 {
+		status, account, diagnostics, err = envChecker.AuthStatusWithDiagnosticsEnv(ctx, launchEnv)
+	} else if authChecker, ok := item.Agent.(ports.AgentAuthDiagnosticsChecker); ok {
 		status, account, diagnostics, err = authChecker.AuthStatusWithDiagnostics(ctx)
 	} else {
 		status, err = checker.AuthStatus(ctx)

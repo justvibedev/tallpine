@@ -56,3 +56,25 @@ func TestBackgroundTaskTempEnvKeepsTheProjectsTempDir(t *testing.T) {
 		t.Fatalf("case-insensitive project TMPDIR: env=%v err=%v", env, err)
 	}
 }
+
+// B439: a Claude signed in through a project-level CLAUDE_CONFIG_DIR must be
+// signed in for the task-naming call too, not only for the worker's session.
+func TestBackgroundTaskCarriesTheProjectsEnv(t *testing.T) {
+	launcher := &suggestionRecordingLauncher{recordingLauncher: &recordingLauncher{}}
+	m, st, _ := newChatManager(launcher)
+	m.dataDir = t.TempDir()
+	project := st.projects[string(chatTestProject)]
+	project.Config.Env = map[string]string{"CLAUDE_CONFIG_DIR": "/project/claude", "PROJECT_TOKEN": "secret"}
+	st.projects[string(chatTestProject)] = project
+	rec := domain.SessionRecord{ID: "mer-1", ProjectID: chatTestProject, Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode, Metadata: domain.SessionMetadata{WorkspacePath: "/foreground", Permissions: ports.PermissionModeAuto}}
+	st.sessions[rec.ID] = rec
+	if _, err := m.RunPromptSuggestionTask(t.Context(), rec.ID, "turn", "suggestion only", "Suggest"); err != nil {
+		t.Fatal(err)
+	}
+	if got := launcher.background[0].Env["CLAUDE_CONFIG_DIR"]; got != "/project/claude" {
+		t.Fatalf("CLAUDE_CONFIG_DIR = %q, want the project's folder", got)
+	}
+	if _, leaked := launcher.background[0].Env["PROJECT_TOKEN"]; leaked {
+		t.Fatal("background task inherited a project secret")
+	}
+}

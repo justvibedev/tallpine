@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"tallpine.eu/tallpine/backend/internal/adapters/workspace/gitworktree"
 	"tallpine.eu/tallpine/backend/internal/browserruntime"
@@ -157,9 +156,6 @@ func (b *boot) wireHTTP() error {
 	if b.usagePipeline != nil {
 		b.usageDone = b.usagePipeline.Start(b.ctx)
 	}
-	// ponytail: 5s tolerates a brief frontend restart; tune if dev hot-reload trips it.
-	const supervisorGrace = 5 * time.Second
-
 	if ln, addr, err := supervisor.Listen(b.cfg.RunFilePath); err != nil {
 		// Non-fatal: without the link the daemon still works (e.g. headless "tallpine start"),
 		// it just will not auto-stop when a frontend dies. Do not block startup on it.

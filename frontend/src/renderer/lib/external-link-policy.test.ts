@@ -1,5 +1,7 @@
 import { fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DAEMON_TCP_OFF_ERROR } from "../../shared/daemon-url";
+import { useUiStore } from "../stores/ui-store";
 import { tallpineBridge } from "./bridge";
 import {
 	handleModifierLinkClick,
@@ -100,5 +102,16 @@ describe("external link policy", () => {
 		expect(isPotentialWorkspaceFileLink("javascript:alert(1)")).toBe(false);
 		expect(isPotentialWorkspaceFileLink("file://[")).toBe(false);
 		expect(isPotentialWorkspaceFileLink("../outside/report.html")).toBe(false);
+	});
+});
+
+describe("openLinkInSystemBrowser with loopback TCP off", () => {
+	it("toasts instead of failing silently when main refuses a daemon URL", async () => {
+		vi.spyOn(tallpineBridge.app, "openExternal").mockRejectedValue(new Error(DAEMON_TCP_OFF_ERROR));
+		const showGlobalToast = vi.spyOn(useUiStore.getState(), "showGlobalToast");
+
+		await openLinkInSystemBrowser("http://127.0.0.1:3101/x");
+
+		expect(showGlobalToast).toHaveBeenCalledWith(expect.any(String), undefined, "error");
 	});
 });

@@ -167,10 +167,11 @@ var BuildCacheDirs = []string{
 // top of the workspace itself, with or without a permission cap: the network
 // (workspace-write has none by default, which breaks git push, gh, package
 // installs and the tallpine CLI) and the writable roots a normal build needs,
-// the build caches under home plus the linked worktree's git dirs. The caller
+// the build caches under home plus the linked worktree's git dirs, taken from
+// repo, the recorded project repository (empty grants none). The caller
 // decides it is in workspace-write; the cap plays no part. Roots are empty
 // without a home. Terminal launch, chat thread start and per-turn settings share it.
-func CodexWorkspaceWriteExtras(home, workspace string) (networkAccess bool, roots []string) {
+func CodexWorkspaceWriteExtras(home, repo, workspace string) (networkAccess bool, roots []string) {
 	if home == "" {
 		return true, nil
 	}
@@ -184,5 +185,20 @@ func CodexWorkspaceWriteExtras(home, workspace string) (networkAccess bool, root
 		dataDir = home + "/.tallpine/data"
 	}
 	roots = append(roots, dataDir+"/verify-slots")
-	return true, append(roots, GitWritableRoots(workspace)...)
+	return true, dropSymlinks(append(roots, GitWritableRoots(repo, workspace)...))
+}
+
+// dropSymlinks removes roots that are symlinks. A writable root covers its own
+// directory entry, so the agent can replace one with a link, and a sandbox that
+// resolves its roots would then open the link's target. A missing root is kept:
+// the sandbox tolerates it and the tool creates it later.
+func dropSymlinks(roots []string) []string {
+	kept := roots[:0]
+	for _, root := range roots {
+		if st, err := os.Lstat(root); err == nil && st.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		kept = append(kept, root)
+	}
+	return kept
 }

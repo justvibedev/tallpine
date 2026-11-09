@@ -33,6 +33,12 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 		!l.queuedBeforeFirstController && !l.preserveUndispatchedQueue {
 		s.settleOrphanedWork(ctx, l.cfg.SessionID, l.conversation.ID)
 	}
+	// A provider that is not the live one a persistent host kept is a new process
+	// and cannot hold the background jobs the daemon re-seeded at boot for the old
+	// host; no controller closed to clear them, so drop them here.
+	if !l.liveReconnect && l.owner.Kind != domain.ConversationOwnerReview && s.onAsyncTasksGone != nil {
+		s.onAsyncTasksGone(l.cfg.SessionID)
+	}
 	// A fresh generation per launch, so events from the controller this one
 	// replaced can be told apart from the current one's.
 	l.controller = newController(

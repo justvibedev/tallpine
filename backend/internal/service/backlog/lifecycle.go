@@ -115,7 +115,77 @@ func (s *Service) ReconcileLinked(ctx context.Context, kind domain.BacklogLinkKi
 			errs = append(errs, err)
 		}
 	}
+	if kind == domain.BacklogLinkPR {
+		if err := s.closeClaimedItems(ctx, ref); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return errors.Join(errs...)
+}
+
+// closeClaimedItems closes the live items a merged PR claims with "closes B<n>"
+// in its title although the PR is not linked to them (a worker spawned for one
+// item that also finishes another). Items the PR is linked to go through
+// Reconcile; an item whose scope is local stays open. The close records a pr
+// link on the item so a manual reopen acknowledges this PR and later events for
+// it do not close the item again.
+func (s *Service) closeClaimedItems(ctx context.Context, prURL string) error {
+	pr, ok, err := s.store.GetPR(ctx, prURL)
+	if err != nil || !ok || !pr.Merged {
+		return err
+	}
+	refs := ClaimedRefs(pr.Title)
+	if len(refs) == 0 || pr.SessionID == "" {
+		return nil
+	}
+	sess, ok, err := s.store.GetSession(ctx, pr.SessionID)
+	if err != nil || !ok {
+		return err
+	}
+	var errs []error
+	for _, ref := range refs {
+		seq, _ := domain.ParseBacklogRef(ref)
+		item, ok, err := s.store.GetBacklogItemByRef(ctx, sess.ProjectID, seq)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !ok || item.State.Closed() {
+			continue
+		}
+		facts, err := s.store.BacklogFactsFor(ctx, item.ID)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if factsHavePR(facts, prURL) {
+			continue // linked: Reconcile decides (earlier PRs of a reused worker do not count there, so they fall through)
+		}
+		reason := domain.BacklogReasonMerged([]int64{int64(pr.Number)})
+		_, changed, err := s.store.CloseMergedBacklogItem(ctx, item.ID, reason, s.now().UTC())
+		if err != nil {
+			errs = append(errs, err)
+		} else if changed {
+			link := domain.BacklogLink{Kind: domain.BacklogLinkPR, Ref: prURL, CreatedBy: "auto-close", CreatedAt: s.now().UTC()}
+			if _, err := s.store.AddBacklogLink(ctx, item.ID, link, s.now().UTC()); err != nil {
+				errs = append(errs, err)
+			}
+			s.plans.ItemClosed(ctx, item.ID)
+			s.log.Info("backlog auto-close", "item", item.Ref(), "prs", []int{pr.Number}, "decision", "closed", "reason", reason+" (claimed by an unlinked PR)")
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func factsHavePR(f store.BacklogFacts, url string) bool {
+	for _, group := range [][]store.BacklogPRFact{f.PRs, f.AckedPRs} {
+		for _, pr := range group {
+			if pr.URL == url {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Sweep reconciles every live item that has a session or PR link. It repairs

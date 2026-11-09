@@ -13,7 +13,7 @@ type Badges struct {
 	Active bool
 	// InReview: a linked PR is open or draft.
 	InReview bool
-	// Landed: every linked PR merged but the item is not closed yet (transient).
+	// Landed: every linked PR merged but the item is not closed yet (stays until it is closed by hand when a merge left it open without a claim).
 	Landed bool
 }
 

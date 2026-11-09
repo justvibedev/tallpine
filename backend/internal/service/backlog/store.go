@@ -33,6 +33,7 @@ type Store interface {
 	ListLiveBacklogItemsWithRuntimeLinks(ctx context.Context) ([]domain.BacklogItem, error)
 	BacklogFactsFor(ctx context.Context, itemID string) (store.BacklogFacts, error)
 	BacklogBadgeFactsFor(ctx context.Context, projectID domain.ProjectID, itemID string) (map[string]store.BacklogBadgeFacts, error)
+	GetPR(ctx context.Context, url string) (domain.PullRequest, bool, error)
 	GetSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool, error)
 	FileDeferredBacklog(ctx context.Context, in store.BacklogDeferInput) ([]store.BacklogDeferOutcome, error)
 }

@@ -4,6 +4,36 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.10]
+
+### Changed
+- Security mode: a cache directory that is a symlink loses write access, because write grants now resolve only the parent path (#1106).
+- Security mode with the hardened policy: an auth home that is itself a symlink loses its re-allow, so that harness's sign-in breaks until the path is a real directory (#1106).
+- Codex workspace-write: a project registered from a bare repo, a `--separate-git-dir` repo, or a path that is itself a linked worktree loses git access, because the git writable roots are derived only from a normal layout (#1106).
+- An ambient-only token for an unlisted ghe.com tenant is no longer sent. The command now fails with a no-token error (#1109).
+- Security mode: `git worktree add` under a name shaped like a Tallpine session (`<prefix>-<n>` or `<prefix>-orchestrator`) is denied (#1113).
+- Every session's git refuses remote changes and default or `--local` config writes in its registered project, so a linked worktree cannot change the owner's checkout. Codex and Kiro shells can still reach the real git through their rc files, so this guard is not complete there (#1101, #1115).
+- A Security mode launch with no run file fails with `POLICY_REQUIRES_FENCE` on Claude terminal, restore, and chat instead of starting unfenced (#1101).
+
+### Security
+- Fenced agents can no longer change a preview server's launch config, reach other panes through the tmux socket, or read launch env files (#1096).
+- External opens of daemon URLs are gated on loopback TCP (#1098).
+- Cloudflared is bumped, debug switches are refused in packaged builds, and exponential regexes are fixed (#1105).
+- Fenced agents can no longer plant a `commondir` in the main git dir or reach unfenced git through their own git pointer routes (#1112, #1113).
+- Write and re-allow grants no longer follow a planted symlink (#1106).
+
+### Fixed
+- Backlog qualifiers placed before a claim cancel it, and auto-close holds expire (#1092). Auto-close also covers items a merged PR claims without linking them (#1111).
+- Restart and resume recover or report workers cut off by a real Force Quit (#1108, #1114), and ping agents whose background job survived or was killed by a restart (#1094, #1102).
+- A Claude sign-in made through a project-level `CLAUDE_CONFIG_DIR` shows in `agent ls`, the catalog, and task naming (#1097).
+- The desktop shell reloads after a renderer or GPU process loss, and logs it (#1104).
+- Daemon logs from `slog.Default` go to `daemon.log` (#1110).
+- A failed `release-local` build fails loudly (#1095).
+- The workspace watcher polls while FSEvents lags (#1099).
+
+### Internal
+- Test, CI, and internal-doc changes only (#1093, #1100, #1103, #1107).
+
 ## [0.13.9]
 
 ### Fixed

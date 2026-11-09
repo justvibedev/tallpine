@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/brand"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -282,7 +283,7 @@ func gitOut(ctx context.Context, workspace string, env []string, args ...string)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := process.CommandContext(ctx, "git", append([]string{"-C", workspace}, args...)...) //nolint:gosec // fixed git subcommands on the user's own checkout
+	cmd := process.CommandContext(ctx, "git", ports.GitInDir(workspace, args...)...) //nolint:gosec // fixed git subcommands on the user's own checkout
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}

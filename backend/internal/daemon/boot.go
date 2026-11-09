@@ -73,6 +73,7 @@ type boot struct {
 	browserStreamBroker       *browserstream.Broker
 	sessionTokens             *sessiontoken.Authority
 	store                     *sqlite.Store
+	hostLosses                *hostLossLedger
 	managedLocks              *managedcfg.Locks
 	ghAccounts                *githubAccounts
 	ctx                       context.Context

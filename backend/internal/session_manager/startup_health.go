@@ -138,6 +138,9 @@ func (m *Manager) resumeStartupChat(ctx context.Context, id domain.SessionID) {
 		if done {
 			if err != nil {
 				m.logger.Warn("reconcile: chat not resumed after restart", "sessionID", id, "error", err)
+				if errors.Is(err, ErrResumeModelDenied) {
+					m.reportStartupResumeFailed(ctx, id, err)
+				}
 			} else {
 				m.logger.Info("reconcile: chat resumed after restart", "sessionID", id, "attempt", attempt+1)
 			}
@@ -145,6 +148,7 @@ func (m *Manager) resumeStartupChat(ctx context.Context, id domain.SessionID) {
 		}
 		if attempt >= len(m.startupChatResumeDelays) || ctx.Err() != nil {
 			m.logger.Warn("reconcile: chat resume after restart gave up", "sessionID", id, "attempts", attempt+1, "error", err)
+			m.reportStartupResumeFailed(ctx, id, err)
 			return
 		}
 		m.logger.Warn("reconcile: chat resume after restart failed, retrying", "sessionID", id, "attempt", attempt+1, "error", err)
@@ -156,6 +160,29 @@ func (m *Manager) resumeStartupChat(ctx context.Context, id domain.SessionID) {
 		case <-timer.C:
 		}
 	}
+}
+
+// reportStartupResumeFailed tells the worker's orchestrator that its agent did
+// not come back. Only workers cut off mid-turn are in the restart tracker, so
+// without this an idle worker stays stopped with nothing but a log line (B627).
+// A resume cut short by daemon shutdown is retried at the next boot: not news.
+func (m *Manager) reportStartupResumeFailed(ctx context.Context, id domain.SessionID, cause error) {
+	if m.startFailed != nil && ctx.Err() == nil {
+		m.startFailed(id, fmt.Sprintf("could not resume after the app restarted: %v", cause))
+	}
+}
+
+// reportStartupReattachFailed reports a Chat whose startup check ended without
+// a controller: the worker is not running and only Resume brings it back. Silent
+// on purpose: a session already stopped by choice or asleep has nothing to report,
+// and callers do not report a store read failure (nothing is known about the
+// session) or a user operation owning it (that operation settles it).
+func (m *Manager) reportStartupReattachFailed(ctx context.Context, rec domain.SessionRecord, cause error) {
+	if domain.NormalizeSessionMode(rec.Mode) != domain.SessionModeChat || rec.HibernatedAt != nil ||
+		rec.Activity.State == domain.ActivityExited && m.agentExitReason(ctx, rec.ID) != domain.AgentExitHostLost {
+		return
+	}
+	m.reportStartupResumeFailed(ctx, rec.ID, cause)
 }
 
 // resumeStartupChatOnce reports done when no further attempt is needed: the
@@ -302,6 +329,7 @@ func (m *Manager) retryStartupChatCheck(ctx context.Context, id domain.SessionID
 	retry := retryableStartupChatCheck(err) && !final && ctx.Err() == nil
 	if !retry {
 		m.finishStatusRecovery(ctx, rec, err)
+		m.reportStartupReattachFailed(ctx, rec, err)
 	}
 	m.logger.Warn("reconcile: chat reattach retry failed", "sessionID", id, "retrying", retry, "error", err)
 	return retry

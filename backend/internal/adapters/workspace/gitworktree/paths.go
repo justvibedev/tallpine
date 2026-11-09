@@ -70,11 +70,11 @@ func (w *Workspace) repoPathForConfig(cfg ports.WorkspaceConfig) (string, error)
 
 // enableWorktreeConfig opts linked worktrees into Git's per-worktree config
 // file. Without this extension, every worktree uses the shared .git/config,
-// so a worker's `git config` write can alter the human checkout as well. The
-// worker prompt separately prohibits remote mutations and directs agents to
-// use `git config --worktree`: Git's remote commands (and explicit
-// `git config --local`) remain repository-scoped even when this extension is
-// enabled.
+// so a worker's `git config` write can alter the human checkout as well. Git's
+// remote commands, plain `git config` and `git config --local` remain
+// repository-scoped even with this extension, so each session's git shim
+// (agentlaunch.EnsureGitShim) refuses them and points agents at
+// `git config --worktree`.
 //
 // Repositories registered with Tallpine are standalone checkouts. The .git check
 // avoids turning unit-test fakes and non-git paths into a new error before the

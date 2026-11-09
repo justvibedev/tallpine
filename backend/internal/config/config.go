@@ -272,7 +272,7 @@ func (c Config) Addr() string {
 //	TALLPINE_ALLOWED_ORIGINS   CORS origins, comma-separated (default DefaultAllowedOrigins)
 //	TALLPINE_GITLAB_ALLOWED_HOSTS    comma-separated self-managed GitLab hosts (each may include :port)
 //	TALLPINE_GITLAB_HOST_TOKENS      host=token,host=token per-host token overrides
-//	TALLPINE_GITHUB_ENTERPRISE_HOSTS comma-separated self-hosted GHES hosts (each may include :port); *.ghe.com is built in
+//	TALLPINE_GITHUB_ENTERPRISE_HOSTS comma-separated self-hosted GHES hosts (each may include :port); *.ghe.com is built in, but an env GH_TOKEN/GITHUB_TOKEN reaches a tenant only if listed
 //	TALLPINE_GITHUB_HOST_TOKENS      host=token,host=token enterprise tokens (else gh auth token --hostname)
 //	TALLPINE_CLIENT                  client identity reported to clients (trimmed, default empty)
 //	TALLPINE_LOCAL_OFFERING          local offering off|on (default on)

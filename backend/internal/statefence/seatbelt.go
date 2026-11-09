@@ -1,7 +1,6 @@
 package statefence
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,8 +18,18 @@ var SandboxExec = "/usr/bin/sandbox-exec"
 
 // ErrNoRunFile means the launch env does not name the Tallpine run file, so the
 // state to deny cannot be located. Callers fail the launch rather than start
-// an agent behind an empty fence.
-var ErrNoRunFile = errors.New("statefence: launch env has no run file; cannot fence Tallpine state")
+// an agent behind an empty fence; the API reports it as POLICY_REQUIRES_FENCE.
+var ErrNoRunFile error = agentpolicy.ErrFenceNoRunFile
+
+// RequireRunFile returns ErrNoRunFile when env cannot locate the state a fence
+// must deny. Every harness's fence depends on it, including Claude Code's, whose
+// settings builders cannot return an error and so check it before launching.
+func RequireRunFile(env map[string]string) error {
+	if strings.TrimSpace(env[brand.Env("RUN_FILE")]) == "" {
+		return ErrNoRunFile
+	}
+	return nil
+}
 
 // HarnessPaths are a harness's own state the fence must keep working: Write
 // dirs it creates and updates (sessions, logs, its token store), and AuthRead
@@ -57,15 +66,16 @@ func Wrap(argv []string, profile string) []string {
 // Profile builds the seatbelt profile for a launch: everything is allowed
 // (network, Mach, Keychain) except reading or writing Tallpine state, writing
 // outside workspace and the session's writable set, and, under the hardened
-// profile, reading credential homes. workspace is the agent's checkout (its
-// linked git dir is writable, the shared config and hooks are not); empty
-// grants no checkout. Seatbelt applies the last matching rule, so the order of
-// the sections below is the precedence.
+// profile, reading credential homes. workspace is the agent's checkout (the
+// common git dir of the project repo on record in decision is writable, the
+// files the owner's git trusts are not; see gitFence); empty grants no checkout.
+// Seatbelt applies the last matching rule, so the order of the sections below
+// is the precedence.
 func Profile(env map[string]string, decision agentpolicy.Decision, workspace string, extra HarnessPaths) (string, error) {
-	runFile := strings.TrimSpace(env[brand.Env("RUN_FILE")])
-	if runFile == "" {
-		return "", ErrNoRunFile
+	if err := RequireRunFile(env); err != nil {
+		return "", err
 	}
+	runFile := strings.TrimSpace(env[brand.Env("RUN_FILE")])
 	out := protectstate.Of(decision)
 	home := strings.TrimSpace(env["HOME"])
 	if home == "" {
@@ -81,15 +91,9 @@ func Profile(env map[string]string, decision agentpolicy.Decision, workspace str
 	writes := WritePaths(env, out.DevTooling())
 	// Terminals, /dev/null and /dev/fd.
 	writes = append(writes, "/dev")
-	gitDir, commonDir := gitDirs(workspace)
+	git := gitWriteSet(decision.GitRepo(), workspace)
 	if workspace != "" {
 		writes = append(writes, workspace)
-	}
-	if gitDir != "" {
-		writes = append(writes, gitDir)
-	}
-	if commonDir != "" {
-		writes = append(writes, commonDir)
 	}
 	if securitymode.Of(decision).AllowDocker() {
 		writes = append(writes, DockerSocketPaths(env)...)
@@ -97,11 +101,9 @@ func Profile(env map[string]string, decision agentpolicy.Decision, workspace str
 	for _, p := range extra.Write {
 		writes = append(writes, resolve(p))
 	}
-	rule(&b, "allow file-write*", writes)
-	if commonDir != "" {
-		// The shared config and hooks run unfenced in the owner's git.
-		rule(&b, "deny file-write*", []string{filepath.Join(commonDir, "config"), filepath.Join(commonDir, "hooks")})
-	}
+	allowWrites(&b, writes)
+	git.writeRules(&b)
+	denyCheckoutEntries(&b, workspace)
 
 	// Credential homes (hardened only), then the harness's own auth files.
 	if creds := CredentialsFor(decision, env); creds != nil {
@@ -110,19 +112,65 @@ func Profile(env map[string]string, decision agentpolicy.Decision, workspace str
 		for _, p := range extra.AuthRead {
 			reAllow = append(reAllow, resolve(p))
 		}
-		rule(&b, "allow file-read*", reAllow)
+		allowReads(&b, reAllow)
 	}
 
 	// Tallpine state last, so no opening above can reach it.
 	state := StatePaths(runFile, DataDir(env))
 	rule(&b, "deny file-read* file-write*", append(state.Files, state.Dirs...))
+	denySockets(&b, TmuxSocketPaths())
 	return b.String(), nil
+}
+
+// denySockets refuses connecting to each unix socket. File rules do not govern
+// connect(2), and a symlink to the socket still matches its resolved path.
+func denySockets(b *strings.Builder, paths []string) {
+	seen := map[string]bool{}
+	for _, p := range paths {
+		if p == "" || !filepath.IsAbs(p) {
+			continue
+		}
+		for _, v := range pathForms(filepath.Clean(p)) {
+			if !seen[v] {
+				seen[v] = true
+				b.WriteString("(deny network-outbound (remote unix-socket (path-literal " + quote(v) + ")))\n")
+			}
+		}
+	}
 }
 
 // rule writes one seatbelt rule over paths as subpaths (a file matches its own
 // subpath), each listed raw and resolved, since seatbelt matches resolved
 // paths. Entries with * become anchored regexes over a single path segment.
 func rule(b *strings.Builder, action string, paths []string) {
+	emitRule(b, action, paths, pathForms, filter)
+}
+
+// allowWrites opens paths for writing. Unlike rule it never follows a path's
+// last component: a write grant covers that directory entry itself, so a fenced
+// process can replace it with a symlink, and resolving it at the next launch
+// would grant the link's target.
+func allowWrites(b *strings.Builder, paths []string) {
+	emitRule(b, "allow file-write*", paths, grantForms, filter)
+}
+
+// allowReads re-allows reading paths after the credential deny. As in
+// allowWrites it never follows a path's last component: harness auth homes are
+// write grants too, so a link planted there would otherwise re-open its target.
+func allowReads(b *strings.Builder, paths []string) {
+	emitRule(b, "allow file-read*", paths, grantForms, filter)
+}
+
+// allowBelow opens everything under dir for writing but not dir itself, so a
+// fenced process cannot rename dir away or swap it, which would also get past
+// any deny on a path inside it.
+func allowBelow(b *strings.Builder, dir string) {
+	emitRule(b, "allow file-write*", []string{dir}, grantForms, func(p string) string {
+		return "(regex " + quote("^"+regexp.QuoteMeta(p)+"/") + ")"
+	})
+}
+
+func emitRule(b *strings.Builder, action string, paths []string, forms func(string) []string, toFilter func(string) string) {
 	var filters []string
 	seen := map[string]bool{}
 	for _, p := range paths {
@@ -130,8 +178,8 @@ func rule(b *strings.Builder, action string, paths []string) {
 		if p == "" || !filepath.IsAbs(p) {
 			continue
 		}
-		for _, v := range pathForms(filepath.Clean(p)) {
-			f := filter(v)
+		for _, v := range forms(filepath.Clean(p)) {
+			f := toFilter(v)
 			if !seen[f] {
 				seen[f] = true
 				filters = append(filters, f)
@@ -164,6 +212,17 @@ func quote(s string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
+// grantForms is p and p with only its parent resolved: the /tmp -> /private/tmp
+// form seatbelt matches, without trusting a last component that may be a link.
+func grantForms(p string) []string {
+	dirs := pathForms(filepath.Dir(p))
+	forms := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		forms = append(forms, filepath.Join(dir, filepath.Base(p)))
+	}
+	return forms
+}
+
 // pathForms is p and its symlink-resolved form. A path that does not exist yet
 // resolves through its longest existing parent (/tmp/x -> /private/tmp/x).
 func pathForms(p string) []string {
@@ -183,43 +242,4 @@ func pathForms(p string) []string {
 		rest = filepath.Join(filepath.Base(dir), rest)
 		dir = parent
 	}
-}
-
-// gitDirs is workspace's git dir and the common dir it shares objects and refs
-// with. A linked worktree's .git file names its private git dir, whose
-// commondir file names the shared one; a plain checkout has one .git dir.
-func gitDirs(workspace string) (gitDir, commonDir string) {
-	if workspace == "" {
-		return "", ""
-	}
-	dotGit := filepath.Join(workspace, ".git")
-	st, err := os.Stat(dotGit)
-	if err != nil {
-		return "", ""
-	}
-	if st.IsDir() {
-		return "", dotGit
-	}
-	data, err := os.ReadFile(dotGit)
-	if err != nil {
-		return "", ""
-	}
-	line := strings.TrimSpace(string(data))
-	if !strings.HasPrefix(line, "gitdir:") {
-		return "", ""
-	}
-	gitDir = strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(workspace, gitDir)
-	}
-	gitDir = filepath.Clean(gitDir)
-	commonDir = gitDir
-	if c, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
-		commonDir = strings.TrimSpace(string(c))
-		if !filepath.IsAbs(commonDir) {
-			commonDir = filepath.Join(gitDir, commonDir)
-		}
-		commonDir = filepath.Clean(commonDir)
-	}
-	return gitDir, commonDir
 }

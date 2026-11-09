@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -141,6 +140,7 @@ func NewWithDeps(deps Deps) *Service {
 	svc.readiness = newReadinessCoordinator(readinessCoordinatorConfig{
 		Agents: agents, Factory: registry, Context: deps.Context, Logger: deps.Logger,
 		AuthenticationCheck: svc.codexAccounts.AuthenticationWithAccount,
+		AuthenticationEnv:   deps.ReadinessAuthEnv,
 		// A catalog built while the agent was signed out carries that failure
 		// (a rejected-credential warning or bare fallback aliases). A detected
 		// login must rediscover it without anyone pressing refresh.
@@ -518,39 +518,6 @@ func (s *Service) modelCatalogInputsChanged(ctx context.Context, agentID, projec
 		return false
 	}
 	return s.discoverer.CatalogFingerprint(ctx, request) != cachedFingerprint
-}
-
-// credentialScopePrefix marks a model-catalog scope that is not a project but a
-// cloud credential kind. A cloud session has no local project, yet its picker
-// must show the models the pushed credential can run; encoding the credential
-// type into the scope caches each provider's catalog separately with no schema
-// change. '@' and ':' cannot appear in a real project ID (projectIDPattern), so
-// the project and credential namespaces never collide.
-const credentialScopePrefix = "@cred:"
-
-// credentialTypeFromScope returns the credential type a scope carries, if any.
-func credentialTypeFromScope(scope string) (string, bool) {
-	rest, ok := strings.CutPrefix(scope, credentialScopePrefix)
-	if !ok || strings.TrimSpace(rest) == "" {
-		return "", false
-	}
-	return rest, true
-}
-
-// modelCatalogScope maps a caller's scope to the cache scope. A credential scope
-// has no backing project and caches under its own key; anything else, including
-// a project ID, is the single device scope.
-func modelCatalogScope(scope string) string {
-	if _, ok := credentialTypeFromScope(scope); ok {
-		return scope
-	}
-	return ""
-}
-
-// activeModelCatalogScope reports whether a persisted scope is still read: the
-// device scope or a credential scope. Older builds also wrote per-project rows.
-func activeModelCatalogScope(scope string) bool {
-	return modelCatalogScope(scope) == scope
 }
 
 func (s *Service) modelDiscoveryRequest(ctx context.Context, agentID, projectID, binary string) (ports.AgentModelDiscoveryRequest, error) {

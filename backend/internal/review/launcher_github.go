@@ -4,7 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"runtime"
+	"strings"
 
+	"tallpine.eu/tallpine/backend/internal/agentlaunch"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules/envfilter"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules/githubcreds"
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -47,4 +49,32 @@ func (l *agentLauncher) applyGitHubAccountEnv(ctx context.Context, spec LaunchSp
 	if err := sessionmanager.ApplyProjectGitHubToken(l.github.accounts, load, env, spec.ProjectEnv, windows, daemonPasses); err != nil {
 		slog.Warn("github account token unavailable; reviewer keeps the default login", "project", spec.ProjectID, "review", spec.ReviewSessionID, "error", err)
 	}
+}
+
+// applyGitGuard gives a reviewer the same git shim as every other session: see
+// sessionmanager's applyGitGuard. It runs last so nothing moves the shim off the
+// head of PATH.
+func (l *agentLauncher) applyGitGuard(ctx context.Context, spec LaunchSpec, env map[string]string) {
+	if l.github.projects == nil || spec.ProjectID == "" || l.executable == nil {
+		return
+	}
+	row, _, err := l.github.projects.GetProject(ctx, string(spec.ProjectID))
+	if err != nil || strings.TrimSpace(row.Path) == "" {
+		return
+	}
+	exe, err := l.executable()
+	if err != nil {
+		slog.Warn("git shim unavailable for reviewer", "project", spec.ProjectID, "error", err)
+		return
+	}
+	dir, err := agentlaunch.EnsureGitShim(exe, l.dataDir)
+	if err != nil {
+		slog.Warn("git shim unavailable for reviewer", "project", spec.ProjectID, "error", err)
+		return
+	}
+	if dir == "" {
+		return
+	}
+	env[agentlaunch.EnvGitGuardRoot] = row.Path
+	env["PATH"] = prependPathDir(dir, env["PATH"])
 }

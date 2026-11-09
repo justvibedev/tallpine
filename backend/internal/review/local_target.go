@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -64,7 +65,7 @@ func LocalTarget(ctx stdctx.Context, worker domain.SessionRecord) (domain.PullRe
 	if err != nil {
 		return domain.PullRequest{}, false, fmt.Errorf("resolve base %q: %w", baseRef, err)
 	}
-	out, err := process.CommandContext(ctx, "git", "-C", ws, "rev-list", "--count", base+".."+head).Output()
+	out, err := process.CommandContext(ctx, "git", ports.GitInDir(ws, "rev-list", "--count", base+".."+head)...).Output()
 	if err != nil {
 		return domain.PullRequest{}, false, fmt.Errorf("count commits on %s: %w", branch, err)
 	}
@@ -108,7 +109,7 @@ func WithLocalTarget(ctx stdctx.Context, worker domain.SessionRecord, prs []doma
 }
 
 func gitRevParse(ctx stdctx.Context, ws, ref string) (string, error) {
-	out, err := process.CommandContext(ctx, "git", "-C", ws, "rev-parse", "--verify", "--quiet", ref+"^{commit}").Output()
+	out, err := process.CommandContext(ctx, "git", ports.GitInDir(ws, "rev-parse", "--verify", "--quiet", ref+"^{commit}")...).Output()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		return "", fmt.Errorf("%w: %s", errRefMissing, ref)
@@ -120,7 +121,7 @@ func gitRevParse(ctx stdctx.Context, ws, ref string) (string, error) {
 }
 
 func hasRemoteTracking(ctx stdctx.Context, ws, branch string) (bool, error) {
-	out, err := process.CommandContext(ctx, "git", "-C", ws, "for-each-ref", "--format=%(refname)", "refs/remotes").Output()
+	out, err := process.CommandContext(ctx, "git", ports.GitInDir(ws, "for-each-ref", "--format=%(refname)", "refs/remotes")...).Output()
 	if err != nil {
 		return false, err
 	}

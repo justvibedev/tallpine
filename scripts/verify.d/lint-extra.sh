@@ -7,6 +7,12 @@ lint_extra_steps() {
 		return
 	fi
 	step size-ratchet bash scripts/size-ratchet --changed --base "$base"
+	# Changed shell files must pass heredoc-guard before merge (B613). Pass every changed file: the guard
+	# applies its own shebang filter, as in its full scan, so no path regex can drift from it.
+	local existing
+	existing="$(printf '%s\n' "$changes" | while read -r f; do [ -f "$f" ] && echo "$f"; done)"
+	# shellcheck disable=SC2086
+	[ -z "$existing" ] || step heredoc-guard bash scripts/heredoc-guard.test.sh $existing
 	touched "$fe_re" || return 0
 	if [ -x frontend/node_modules/.bin/tsgo ] && grep -q '"typecheck:fast"' frontend/package.json; then
 		step fe-tsgo fe_typecheck npm run -s typecheck:fast -- --incremental false

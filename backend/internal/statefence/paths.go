@@ -7,9 +7,11 @@ package statefence
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/adapters/chatdriver/persistenthost"
+	"tallpine.eu/tallpine/backend/internal/agentlaunch"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules/permissioncap"
 	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/daemontoken"
@@ -34,7 +36,9 @@ type State struct {
 // whole chat-hosts directory is denied, the session's own included: only the
 // daemon and the unsandboxed host process read it for recovery and attach, so
 // no shell command needs it, and another session's copy would let it drive
-// that session's provider. dataDir is
+// that session's provider. The tmux launch env directory is denied too: its
+// files briefly hold another session's scoped token, and only the unfenced pane
+// shell reads them. dataDir is
 // the launch's TALLPINE_DATA_DIR; empty means the default "data" directory
 // under the root.
 func StatePaths(runFile, dataDir string) State {
@@ -53,8 +57,27 @@ func StatePaths(runFile, dataDir string) State {
 			filepath.Join(dataDir, "github-pat.json"),
 			filepath.Join(dataDir, "browser-runtime.key"),
 		},
-		Dirs: []string{filepath.Join(root, "electron"), filepath.Join(dataDir, "mobile"), persistenthost.HostsRoot(dataDir)},
+		Dirs: []string{filepath.Join(root, "electron"), filepath.Join(dataDir, "mobile"), persistenthost.HostsRoot(dataDir), agentlaunch.EnvFileDir()},
 	}
+}
+
+// TmuxSocketPaths are the sockets of the tmux server hosting Tallpine's terminal
+// sessions: the daemon's configured socket (the adapter reads the same
+// variable, from the daemon's environment rather than a launch env a project
+// could set) and tmux's default socket, where sessions predating the private
+// socket stay and where an install with none configured runs every session.
+// Connecting to one lets a process type into or read any other session's pane.
+func TmuxSocketPaths() []string {
+	dir := strings.TrimSpace(os.Getenv("TMUX_TMPDIR"))
+	if dir == "" {
+		dir = "/tmp"
+	}
+	dir = filepath.Join(dir, "tmux-"+strconv.Itoa(os.Getuid()))
+	paths := []string{filepath.Join(dir, "default")}
+	if name := strings.TrimSpace(os.Getenv(brand.Env("TMUX_SOCKET_NAME"))); name != "" && name != "default" {
+		paths = append(paths, filepath.Join(dir, name))
+	}
+	return paths
 }
 
 // DockerSocketPaths are the Docker daemon sockets a project that opted in to

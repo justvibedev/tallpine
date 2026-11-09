@@ -70,6 +70,13 @@ func serveUntilFirstRequestThenExit(t *testing.T) {
 
 func servePreviewHelper(t *testing.T) {
 	t.Helper()
+	if probe := os.Getenv("TALLPINE_PREVIEW_FENCE_PROBE"); probe != "" {
+		if _, err := os.ReadFile(probe); err != nil {
+			fmt.Println("fence-probe denied")
+		} else {
+			fmt.Println("fence-probe readable")
+		}
+	}
 	port, err := strconv.Atoi(os.Getenv("PORT"))
 	if err != nil || port <= 0 {
 		t.Fatalf("invalid helper PORT %q", os.Getenv("PORT"))
@@ -93,7 +100,7 @@ func TestManagerStartsIsolatedConfiguredServerAndStopsIt(t *testing.T) {
 	manager := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Close)
 
-	status, err := manager.Start(context.Background(), "tp-1", workspace, "", nil)
+	status, err := manager.Start(context.Background(), "tp-1", workspace, "", nil, Fence{})
 	if err != nil {
 		t.Fatalf("Start: %v\nstatus=%+v", err, status)
 	}
@@ -126,11 +133,11 @@ func TestManagerKeepsConcurrentSessionServersIsolated(t *testing.T) {
 	manager := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Close)
 
-	first, err := manager.Start(context.Background(), domain.SessionID("tp-1"), workspace, "", nil)
+	first, err := manager.Start(context.Background(), domain.SessionID("tp-1"), workspace, "", nil, Fence{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := manager.Start(context.Background(), domain.SessionID("tp-2"), workspace, "", nil)
+	second, err := manager.Start(context.Background(), domain.SessionID("tp-2"), workspace, "", nil, Fence{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +162,7 @@ func TestManagerFiresOnExitWhenServerCrashesAfterLaunch(t *testing.T) {
 		gotStatus <- s
 	})
 
-	status, err := manager.Start(context.Background(), domain.SessionID("tp-1"), workspace, "", nil)
+	status, err := manager.Start(context.Background(), domain.SessionID("tp-1"), workspace, "", nil, Fence{})
 	if err != nil {
 		t.Fatalf("Start: %v\nstatus=%+v", err, status)
 	}
@@ -197,7 +204,7 @@ func TestManagerDoesNotFireOnExitWhenStoppedByUser(t *testing.T) {
 	manager := New(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Close)
 
-	status, err := manager.Start(context.Background(), domain.SessionID("tp-1"), workspace, "", nil)
+	status, err := manager.Start(context.Background(), domain.SessionID("tp-1"), workspace, "", nil, Fence{})
 	if err != nil {
 		t.Fatalf("Start: %v\nstatus=%+v", err, status)
 	}
@@ -226,13 +233,13 @@ func TestManagerRequiresNameWhenConfigurationsAreAmbiguous(t *testing.T) {
 	manager := New(nil)
 	t.Cleanup(manager.Close)
 
-	_, err := manager.Start(context.Background(), "tp-1", workspace, "", nil)
+	_, err := manager.Start(context.Background(), "tp-1", workspace, "", nil, Fence{})
 	var serviceErr Error
 	if !errors.As(err, &serviceErr) || serviceErr.Code != "PREVIEW_CONFIGURATION_REQUIRED" {
 		t.Fatalf("error = %#v, want PREVIEW_CONFIGURATION_REQUIRED", err)
 	}
 
-	status, err := manager.Start(context.Background(), "tp-1", workspace, "api", nil)
+	status, err := manager.Start(context.Background(), "tp-1", workspace, "api", nil, Fence{})
 	if err != nil {
 		t.Fatalf("named Start: %v", err)
 	}
@@ -245,13 +252,13 @@ func TestManagerRequiresNameWhenConfigurationsAreAmbiguous(t *testing.T) {
 func TestManagerRejectsMissingConfigAndNonLoopbackURL(t *testing.T) {
 	manager := New(nil)
 	t.Cleanup(manager.Close)
-	_, err := manager.Start(context.Background(), "tp-1", t.TempDir(), "", nil)
+	_, err := manager.Start(context.Background(), "tp-1", t.TempDir(), "", nil, Fence{})
 	assertPreviewErrorCode(t, err, "PREVIEW_CONFIG_NOT_FOUND")
 
 	cfg := helperConfiguration("web", TargetApp)
 	cfg.URL = "https://example.com:${PORT}/"
 	workspace := writeLaunchFile(t, []Configuration{cfg})
-	_, err = manager.Start(context.Background(), "tp-1", workspace, "", nil)
+	_, err = manager.Start(context.Background(), "tp-1", workspace, "", nil, Fence{})
 	assertPreviewErrorCode(t, err, "PREVIEW_CONFIG_INVALID")
 }
 
@@ -415,5 +422,12 @@ func TestLoadConfigurationFallsBackToLegacyLaunchFile(t *testing.T) {
 	cfg, err = loadConfiguration(workspace, "")
 	if err != nil || cfg.Name != "current" {
 		t.Fatalf("both present: cfg=%+v err=%v, want the .tallpine file to win", cfg, err)
+	}
+}
+
+func TestFenceZeroValueRunsUnfenced(t *testing.T) {
+	profile, env, err := Fence{}.resolve(t.TempDir())
+	if err != nil || profile != "" || env != nil {
+		t.Fatalf("zero Fence = %q, %v, %v; want no fence", profile, env, err)
 	}
 }

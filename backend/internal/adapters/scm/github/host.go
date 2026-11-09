@@ -25,7 +25,9 @@ type hostClients struct {
 	mu      sync.Mutex
 	clients map[string]*Client
 	// ghToken builds the `gh auth token --hostname` source; tests replace it.
-	ghToken func(hostname string) TokenSource
+	// storedLoginOnly is set for a *.ghe.com tenant the owner did not list:
+	// the ambient GH_TOKEN/GITHUB_TOKEN must not travel to it, only a gh login.
+	ghToken func(hostname string, storedLoginOnly bool) TokenSource
 }
 
 func newHostClients(opts ProviderOptions, logger *slog.Logger) *hostClients {
@@ -36,7 +38,9 @@ func newHostClients(opts ProviderOptions, logger *slog.Logger) *hostClients {
 		}
 	}
 	return &hostClients{opts: opts, listed: listed, logger: logger, clients: map[string]*Client{},
-		ghToken: func(hostname string) TokenSource { return &GHTokenSource{Host: hostname} }}
+		ghToken: func(hostname string, storedLoginOnly bool) TokenSource {
+			return &GHTokenSource{Host: hostname, StoredLoginOnly: storedLoginOnly}
+		}}
 }
 
 // canonicalHost returns "" for github.com (default client) or the lowercase
@@ -77,12 +81,12 @@ func (h *hostClients) build(host string) *Client {
 		hostname = host[:i]
 	}
 	switch {
-	case h.listed[host]:
-		opts.RESTBase = "https://" + host + "/api/v3"
-		opts.GraphQLURL = "https://" + host + "/api/graphql"
 	case domain.IsGHEComHost(host) && !strings.HasPrefix(hostname, "api.") && hostname == host:
 		opts.RESTBase = "https://api." + host
 		opts.GraphQLURL = "https://api." + host + "/graphql"
+	case h.listed[host]:
+		opts.RESTBase = "https://" + host + "/api/v3"
+		opts.GraphQLURL = "https://" + host + "/api/graphql"
 	default:
 		opts.HTTPClient = &http.Client{Transport: deniedTransport{fmt.Errorf("%w: %q", ErrHostNotAllowed, host)}}
 		return NewClient(opts)
@@ -93,7 +97,7 @@ func (h *hostClients) build(host string) *Client {
 	} else if t := strings.TrimSpace(h.opts.HostTokens[host]); t != "" {
 		src = StaticTokenSource(t)
 	} else {
-		src = h.ghToken(hostname)
+		src = h.ghToken(hostname, domain.IsGHEComHost(host) && !h.listed[host])
 	}
 	opts.Token = &logOnceTokenSource{inner: src, host: host, logger: h.logger}
 	return NewClient(opts)

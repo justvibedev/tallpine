@@ -5,10 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
+	"tallpine.eu/tallpine/backend/internal/agentlaunch"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/policytest"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules/protectstate"
@@ -22,6 +25,13 @@ func protectOn(t *testing.T, fields map[string]any) agentpolicy.Decision {
 		ps[k] = v
 	}
 	return policytest.Decision(t, map[string]map[string]any{protectstate.Name: ps})
+}
+
+// protectOnRepo is protectOn for a session whose project repository the daemon
+// has on record as repo.
+func protectOnRepo(t *testing.T, repo string) agentpolicy.Decision {
+	t.Helper()
+	return policytest.DecisionForRepo(t, map[string]map[string]any{protectstate.Name: {protectstate.FieldMode: protectstate.On}}, repo)
 }
 
 type fenceEnv struct {
@@ -66,6 +76,10 @@ func section(profile, header string) []string {
 }
 
 func sub(p string) string { return `(subpath "` + p + `")` }
+
+func below(p string) string {
+	return `(regex "^` + strings.ReplaceAll(regexp.QuoteMeta(p), `\`, `\\`) + `/")`
+}
 
 func mustProfile(t *testing.T, env map[string]string, d agentpolicy.Decision, ws string, extra HarnessPaths) string {
 	t.Helper()
@@ -118,8 +132,9 @@ func TestProfileLinkedWorktreeGitDirs(t *testing.T) {
 	}
 	_ = os.WriteFile(filepath.Join(ws, ".git"), []byte("gitdir: "+private+"\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(private, "commondir"), []byte("../..\n"), 0o644)
-	p := mustProfile(t, f.env, protectOn(t, nil), ws, HarnessPaths{})
-	if !slices.Contains(section(p, "allow file-write*"), sub(common)) {
+	_ = os.WriteFile(filepath.Join(private, "gitdir"), []byte(filepath.Join(ws, ".git")+"\n"), 0o644)
+	p := mustProfile(t, f.env, protectOnRepo(t, filepath.Join(f.root, "repo")), ws, HarnessPaths{})
+	if !slices.Contains(section(p, "allow file-write*"), below(common)) {
 		t.Errorf("common git dir not writable (commits need objects/refs):\n%s", p)
 	}
 	denied := section(p, "deny file-write*")
@@ -219,5 +234,34 @@ func TestWrapAndAvailable(t *testing.T) {
 	}
 	if Applies(policytest.Decision(t, nil), "darwin") {
 		t.Error("policy off must not fence")
+	}
+}
+
+func TestStatePathsCoverLaunchEnvDir(t *testing.T) {
+	if !slices.Contains(StatePaths("/s/running.json", "").Dirs, agentlaunch.EnvFileDir()) {
+		t.Fatal("the tmux launch env directory must be denied state")
+	}
+}
+
+func TestTmuxSocketPathsFollowTheDaemonEnv(t *testing.T) {
+	t.Setenv("TMUX_TMPDIR", "/x")
+	t.Setenv(brand.Env("TMUX_SOCKET_NAME"), "tallpine")
+	uid := strconv.Itoa(os.Getuid())
+	want := []string{"/x/tmux-" + uid + "/default", "/x/tmux-" + uid + "/tallpine"}
+	if got := TmuxSocketPaths(); !slices.Equal(got, want) {
+		t.Fatalf("TmuxSocketPaths = %v, want %v", got, want)
+	}
+	t.Setenv(brand.Env("TMUX_SOCKET_NAME"), "")
+	t.Setenv("TMUX_TMPDIR", "")
+	if got := TmuxSocketPaths(); !slices.Equal(got, []string{"/tmp/tmux-" + uid + "/default"}) {
+		t.Fatalf("unconfigured socket: %v", got)
+	}
+}
+
+// B401: the seatbelt harnesses' refusal is the typed one the API maps to 409.
+func TestProfileNoRunFileIsTheTypedRefusal(t *testing.T) {
+	_, err := Profile(map[string]string{brand.Env("RUN_FILE"): " "}, protectOn(t, nil), "", HarnessPaths{})
+	if !errors.Is(err, agentpolicy.ErrFenceNoRunFile) || !agentpolicy.IsFenceRequired(err) {
+		t.Fatalf("err = %v, want the typed refusal", err)
 	}
 }

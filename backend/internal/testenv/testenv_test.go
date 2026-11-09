@@ -208,6 +208,26 @@ func TestTestMainsUseTestenv(t *testing.T) {
 	}
 }
 
+// sharedGoroot asks scripts/go for the machine's shared toolchain. The sandbox
+// points XDG_CACHE_HOME at itself and scripts/go installs wherever that points,
+// so inheriting it would download and unpack a whole Go toolchain (some 15,000
+// files) on every test run; that was B602's largest single source of FSEvents
+// traffic from tests.
+func sharedGoroot(t *testing.T, script string) string {
+	t.Helper()
+	cmd := exec.Command(script, "--goroot")
+	cmd.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, "XDG_CACHE_HOME=") })
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		t.Skip("pinned toolchain is not available")
+	}
+	goroot := strings.TrimSpace(string(out))
+	if home := os.Getenv("HOME"); strings.HasPrefix(goroot, home+string(filepath.Separator)) {
+		t.Fatalf("scripts/go resolved the toolchain inside the test sandbox: %s", goroot)
+	}
+	return goroot
+}
+
 // TestScriptsGoSharesCachesUnderScratchHome runs scripts/go the way workers do
 // (`env -i HOME=$(mktemp -d) scripts/go ...`): its GOCACHE, GOMODCACHE and npm
 // cache must resolve to the shared home, never the scratch HOME. The shared
@@ -225,11 +245,7 @@ func TestScriptsGoSharesCachesUnderScratchHome(t *testing.T) {
 	if _, err := os.Stat(script); err != nil {
 		t.Skip("scripts/go not present")
 	}
-	out, err := exec.Command(script, "--goroot").Output()
-	if err != nil || len(out) == 0 {
-		t.Skip("pinned toolchain is not installed; scripts/go would download it")
-	}
-	toolchains := filepath.Dir(strings.TrimSpace(string(out)))
+	toolchains := filepath.Dir(sharedGoroot(t, script))
 	shared := t.TempDir()
 	cacheRel := filepath.Join(".cache")
 	if runtime.GOOS == "darwin" {
@@ -289,9 +305,7 @@ func TestScriptsGoHonorsGoenvWithRealHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command(script, "--goroot").Output(); err != nil || len(out) == 0 {
-		t.Skip("pinned toolchain is not installed; scripts/go would download it")
-	}
+	sharedGoroot(t, script)
 	want := filepath.Join(t.TempDir(), "modcache")
 	goenv := filepath.Join(t.TempDir(), "env")
 	if err := os.WriteFile(goenv, []byte("GOMODCACHE="+want+"\n"), 0o600); err != nil {

@@ -3,6 +3,7 @@ package ports
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -117,6 +118,22 @@ func GitEnv(environ []string) []string {
 		}
 	}
 	return append(out, "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
+}
+
+// GitHardenedArgs are the global options for git the daemon runs on a checkout
+// an agent can write. A fenced agent can set core.fsmonitor and core.hooksPath
+// in its own config.worktree, and whatever they name would run outside the fence.
+// They go before the subcommand. A filter driver has no such off switch: its
+// name is the agent's choice, so git status and diff there can still run one.
+func GitHardenedArgs() []string {
+	return []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=false"}
+}
+
+// GitInDir is the argv for hardened git in dir, for callers that start git
+// directly rather than through Git.Command.
+func GitInDir(dir string, args ...string) []string {
+	out := append(GitHardenedArgs(), "-C", dir)
+	return append(out, args...)
 }
 
 var defaultGit atomic.Pointer[Git]

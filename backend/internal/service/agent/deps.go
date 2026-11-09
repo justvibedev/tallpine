@@ -22,17 +22,20 @@ type Deps struct {
 	// ModelDiscoveryFingerprintEnv is ModelDiscoveryEnv for fingerprint checks,
 	// which must not write to the account folder. Falls back to ModelDiscoveryEnv.
 	ModelDiscoveryFingerprintEnv func(context.Context, string) (map[string]string, error)
-	Sessions                     SessionUsageLookup
-	Context                      context.Context
-	Logger                       *slog.Logger
-	CodexAccountRoot             string
-	CodexPendingRoot             string
-	CodexSwitchStagingRoot       string
-	CodexGlobalHome              string
-	CodexAccounts                ports.CodexAccountClientFactory
-	CodexAccountSwitches         ports.CodexAccountSwitchStore
-	CodexAccountStore            ports.CodexAccountRegistryStore
-	CodexOperationGate           ports.CodexOperationGate
+	// ReadinessAuthEnv returns the launch environment the agent's sign-in check
+	// runs under instead of the daemon's own, or nil. Optional.
+	ReadinessAuthEnv       func(context.Context, string) map[string]string
+	Sessions               SessionUsageLookup
+	Context                context.Context
+	Logger                 *slog.Logger
+	CodexAccountRoot       string
+	CodexPendingRoot       string
+	CodexSwitchStagingRoot string
+	CodexGlobalHome        string
+	CodexAccounts          ports.CodexAccountClientFactory
+	CodexAccountSwitches   ports.CodexAccountSwitchStore
+	CodexAccountStore      ports.CodexAccountRegistryStore
+	CodexOperationGate     ports.CodexOperationGate
 	// Clock overrides time.Now for deterministic account-bootstrap retry tests.
 	Clock func() time.Time
 	// ModelGate is applied to every catalog Models and ModelCatalog return. Optional.

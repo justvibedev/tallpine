@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Check, ExternalLink, Loader2 } from "lucide-react";
+import { DAEMON_TCP_OFF_ERROR } from "../../../shared/daemon-url";
+import { appI18n } from "../../i18n";
 import { tallpineBridge } from "../../lib/bridge";
 import type { ConversationActivity } from "../../types/conversation";
 import { ACCENT_ACTION_PILL, QUIET_ACTION_PILL } from "./action-pill";
@@ -168,8 +170,12 @@ function URLRequest({
 			// accepted it, so an OS-level refusal is never reported as success.
 			await tallpineBridge.app.openExternal(parsed.href);
 			await onResolve("accept");
-		} catch {
-			setOpenError("The link could not be opened. Nothing was approved.");
+		} catch (error) {
+			setOpenError(
+				String(error).includes(DAEMON_TCP_OFF_ERROR)
+					? appI18n.t("browser.externalNeedsLoopbackTcp")
+					: "The link could not be opened. Nothing was approved.",
+			);
 		} finally {
 			setOpening(false);
 		}

@@ -11,6 +11,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
+	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 // PRFiles is the exact base...head read model for one associated pull request.
@@ -371,12 +372,18 @@ func (s *Service) prWorkspaceRoot(ctx context.Context, rec domain.SessionRecord,
 		if strings.TrimSpace(row.WorktreePath) == "" {
 			continue
 		}
-		remotes, remoteErr := gitWorkspaceOutput(ctx, row.WorktreePath, "remote")
+		// Read remotes from the common dir: a worktree's config.worktree is the
+		// agent's, and a name there can be shaped like a git option.
+		common, commonErr := ports.DefaultGit().CommonDir(ctx, row.WorktreePath)
+		if commonErr != nil {
+			continue
+		}
+		remotes, remoteErr := gitWorkspaceOutput(ctx, common, "remote")
 		if remoteErr != nil {
 			continue
 		}
 		for _, remote := range strings.Fields(remotes) {
-			rawURL, urlErr := gitWorkspaceOutput(ctx, row.WorktreePath, "config", "--get", "remote."+remote+".url")
+			rawURL, urlErr := gitWorkspaceOutput(ctx, common, "config", "--get", "remote."+remote+".url")
 			if urlErr != nil {
 				continue
 			}
@@ -416,7 +423,12 @@ func ensurePRRevisionObjects(ctx context.Context, root, remote string, pr domain
 	}
 	if strings.TrimSpace(remote) != "" && len(refspecs) > 0 {
 		fetchCtx, cancel := context.WithTimeout(ctx, workspaceReviewTimeout)
-		_, _ = gitWorkspaceOutput(fetchCtx, root, append([]string{"fetch", "--no-tags", remote}, refspecs...)...)
+		// Run where objects and refs are shared but not in the worktree, whose
+		// config.worktree is the agent's and could name a core.sshCommand or
+		// uploadpack for this unfenced network command to run.
+		if common, err := ports.DefaultGit().CommonDir(fetchCtx, root); err == nil {
+			_, _ = gitWorkspaceOutput(fetchCtx, common, append([]string{"fetch", "--no-tags", "--", remote}, refspecs...)...)
+		}
 		cancel()
 	}
 	if !gitCommitExists(ctx, root, pr.BaseSHA) || !gitCommitExists(ctx, root, pr.HeadSHA) {

@@ -157,3 +157,66 @@ func TestHardenTightenFailureIsWarningNotError(t *testing.T) {
 		t.Errorf("ao.db = %o, want 600 despite the failure", m)
 	}
 }
+
+func TestHardenTightensEveryStateRootChildDir(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "root")
+	data := filepath.Join(state, "data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(state, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Chmod(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(state, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	children := []string{"backups", "merge-gate", "release-builds", "local-ci", "exports", "scratch", "eval", "experiments", "updater"}
+	for _, name := range children {
+		if err := os.Mkdir(filepath.Join(state, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report := filepath.Join(state, "backups", "snap.json")
+	if err := os.WriteFile(report, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Harden(state, data); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range append([]string{"."}, children...) {
+		st, err := os.Stat(filepath.Join(state, dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Mode().Perm() != 0o700 {
+			t.Errorf("%s mode = %o, want 700", dir, st.Mode().Perm())
+		}
+	}
+	if st, _ := os.Stat(report); st.Mode().Perm() != 0o644 {
+		t.Errorf("file contents must not be chmodded, got %o", st.Mode().Perm())
+	}
+	if st, _ := os.Stat(outside); st.Mode().Perm() != 0o755 {
+		t.Errorf("a symlink's target must not be chmodded, got %o", st.Mode().Perm())
+	}
+}
+
+func TestHardenLeavesCustomDataDirChildrenAlone(t *testing.T) {
+	data := t.TempDir()
+	child := filepath.Join(data, "user-owned")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Harden(data, data); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(child); st.Mode().Perm() != 0o755 {
+		t.Errorf("custom data dir child mode = %o, want untouched 755", st.Mode().Perm())
+	}
+}

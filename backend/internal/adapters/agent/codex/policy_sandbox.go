@@ -26,14 +26,14 @@ func capCodexPermission(decision agentpolicy.Decision, permissions ports.Permiss
 	}
 	switch agentruntime.NormalizePermissionPolicy(agentruntime.PermissionPolicy(permissions)) {
 	case agentruntime.PermissionAcceptEdits, agentruntime.PermissionAuto:
-		appendWorkspaceWriteExtras(providerArgs, workspace)
+		appendWorkspaceWriteExtras(providerArgs, decision.GitRepo(), workspace)
 	}
 	return permissions
 }
 
-func appendWorkspaceWriteExtras(providerArgs *[]string, workspace string) {
+func appendWorkspaceWriteExtras(providerArgs *[]string, repo, workspace string) {
 	home, _ := os.UserHomeDir()
-	network, roots := permissioncap.CodexWorkspaceWriteExtras(home, workspace)
+	network, roots := permissioncap.CodexWorkspaceWriteExtras(home, repo, workspace)
 	if network {
 		*providerArgs = append(*providerArgs, "-c", "sandbox_workspace_write.network_access=true")
 	}

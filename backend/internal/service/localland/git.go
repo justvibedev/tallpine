@@ -20,7 +20,7 @@ func git(ctx context.Context, dir, stdin string, args ...string) (string, error)
 
 // gitEnv is git with extra environment entries for this process only.
 func gitEnv(ctx context.Context, dir, stdin string, extraEnv []string, args ...string) (string, error) {
-	full := append([]string{"-c", "core.hooksPath=" + os.DevNull}, args...)
+	full := append(ports.GitHardenedArgs(), args...)
 	cmd := ports.DefaultGit().Plain(ctx, dir, full...)
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()

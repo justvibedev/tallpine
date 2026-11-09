@@ -3,6 +3,8 @@ package gitworktree
 import (
 	"context"
 	"strings"
+
+	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 // gitAddLockReason is the lock git itself writes while `git worktree add`
@@ -34,14 +36,29 @@ func (w *Workspace) liftStaleAddLock(ctx context.Context, repo, path string) boo
 // and the "initializing" lock reason add writes) and `git status`. Every other
 // command, and any hook it runs, keeps the user's locale.
 func readsGitMessages(args []string) bool {
+	sub := gitSubcommand(args)
+	return sub == "worktree" || sub == "status"
+}
+
+func gitSubcommand(args []string) string {
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-C" || args[i] == "-c" {
 			i++
 			continue
 		}
-		return args[i] == "worktree" || args[i] == "status"
+		return args[i]
 	}
-	return false
+	return ""
+}
+
+// hardenedGitArgs is args with an agent's config.worktree kept from running
+// programs in the unfenced daemon. git worktree runs from the repository, whose
+// config the fence denies, and keeps the owner's post-checkout hook.
+func hardenedGitArgs(args []string) []string {
+	if gitSubcommand(args) == "worktree" {
+		return append([]string{"-c", "core.fsmonitor=false"}, args...)
+	}
+	return append(ports.GitHardenedArgs(), args...)
 }
 
 // untranslatedGitEnv switches only the message language to English, so

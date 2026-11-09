@@ -35,7 +35,6 @@ import (
 	"tallpine.eu/tallpine/backend/internal/adapters/agent/agentbase"
 	"tallpine.eu/tallpine/backend/internal/adapters/agent/binaryutil"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy"
-	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/statefence"
@@ -175,6 +174,9 @@ func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (
 	if err := cfg.Config.Validate(); err != nil {
 		return nil, fmt.Errorf("claude-code: %w", err)
 	}
+	if err := RequireFence(cfg.Policy, cfg.Env, runtime.GOOS); err != nil {
+		return nil, err
+	}
 
 	binary, err := p.claudeBinary(ctx)
 	if err != nil {
@@ -226,38 +228,6 @@ func claudeLaunchSettingsArgs(options domain.AgentLaunchOptions, policy agentrun
 	addLaunchOptionSettings(settings, options)
 	encoded, _ := json.Marshal(settings)
 	return []string{"--settings", string(encoded)}
-}
-
-// denyDaemonTokenRead adds Claude Code permission deny rules for Tallpine's
-// secrets and store: the install token (daemontoken.Path of the launch's run
-// file), the session key that scoped tokens are MACed under, the database, the
-// GitHub PAT, the browser runtime key and the Electron profile (cookies). The
-// agent holds a scoped session token and talks to the daemon over its socket, so
-// it never needs any of these, and all sit readable by the same OS user. This is
-// a guard for Claude's own tools, not a sandbox: a shell command can still cat
-// the files. No run file in the launch env means no rule.
-func denyDaemonTokenRead(settings map[string]any, env map[string]string) {
-	runFile := strings.TrimSpace(env[brand.Env("RUN_FILE")])
-	if runFile == "" {
-		return
-	}
-	perms, _ := settings["permissions"].(map[string]any)
-	if perms == nil {
-		perms = map[string]any{}
-		settings["permissions"] = perms
-	}
-	perms["deny"] = protectedStateReadRules(runFile, env[brand.Env("DATA_DIR")])
-}
-
-// claudeReadRule is a Read permission rule for an absolute path. Claude Code
-// treats "/x" as relative to the settings root; an absolute filesystem path
-// needs "//x", and a Windows drive path is written "//c/Users/...".
-func claudeReadRule(path string) string {
-	p := filepath.ToSlash(path)
-	if len(p) >= 2 && p[1] == ':' {
-		p = "/" + strings.ToLower(p[:1]) + p[2:]
-	}
-	return "Read(/" + p + ")"
 }
 
 // claudeProviderArgs is every Claude flag Tallpine derives from the session's launch
@@ -421,6 +391,10 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 	); !ok {
 		return nil, false, nil
 	}
+	fenceEnv := statefence.RestoreEnv(cfg.RunFilePath, cfg.DataDir, cfg.Session)
+	if err := RequireFence(cfg.Policy, fenceEnv, runtime.GOOS); err != nil {
+		return nil, false, err
+	}
 
 	binary, err := p.claudeBinary(ctx)
 	if err != nil {
@@ -431,7 +405,7 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 		Binary:    binary,
 		SessionID: cfg.Session.ID,
 		Metadata:  cfg.Session.Metadata,
-		ProviderArgs: claudeProviderArgs(cfg.Config.Launch, agentruntime.PermissionPolicy(cfg.Permissions), statefence.RestoreEnv(cfg.RunFilePath, cfg.DataDir, cfg.Session),
+		ProviderArgs: claudeProviderArgs(cfg.Config.Launch, agentruntime.PermissionPolicy(cfg.Permissions), fenceEnv,
 			cfg.Policy, cfg.SkipRepoAgentConfig),
 		Model:            cfg.Config.Model,
 		Effort:           cfg.Config.Effort,

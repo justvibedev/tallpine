@@ -29,8 +29,12 @@ and the token file. The comparison is constant time.
   `TALLPINE_DATA_DIR=~/.tallpine/data`, from a plain-shell CLI. The daemon creates the file
   with mode `0600` (set explicitly, not left to the umask) via an atomic
   temp-file publish, regenerates it when it is missing, malformed, or readable
-  by others, and restores it if it is deleted while the daemon runs. It
-  persists across restarts so long-lived agent shells stay valid. It is never
+  by others, and restores it if it is deleted while the daemon runs. It is
+  rotated on every daemon start (`daemontoken.RotateOnStart`); the CLI re-reads
+  the file on each call and the desktop app re-reads it when the daemon reports
+  ready. Long-lived agent shells do not hold it: they hold scoped session
+  tokens under a separate `session.key`
+  ([ADR 0008](0008-scoped-agent-session-tokens.md)). It is never
   written to `running.json`, and it is never accepted from a query string,
   which access logs record.
 - **CLI.** The `tallpine` client reads the file on every daemon call. Hook commands
@@ -46,12 +50,14 @@ and the token file. The comparison is constant time.
   accept the token there.
 - **Exemptions** (the full list, in `daemonAuthExempt`): `GET`/`HEAD`
   `/healthz` and `/readyz`; CORS preflights, which `corsMiddleware` answers
-  without reaching a handler; requests on preview and artifact hosts, which
-  `previewOriginMiddleware` serves only as file bytes; `GET`/`HEAD` preview file
-  and render document paths, which browser panels, iframes, and the render check
-  load as sandboxed documents. (A Codewhale lifecycle webhook exemption was
-  removed: no handler was mounted there.) Any new exemption needs an update
-  to this ADR.
+  without reaching a handler; requests on a preview or artifact host that
+  carries the session's 128-bit capability label
+  (`<label>.<id>.k-<hex>.localhost`), which `previewOriginMiddleware` serves
+  only as file bytes (a host with the session id alone is not exempt); and
+  `GET`/`HEAD` render document paths, addressed by an unguessable render id,
+  which iframes and the render check load as sandboxed documents. The legacy
+  `/api/v1/sessions/{id}/preview/files|artifacts/*` paths are keyed by the
+  guessable session id, so they are not exempt and need the token. Any new exemption needs an update to this ADR.
 - **LAN listener.** Unchanged. It keeps its bearer-password `authMiddleware`
   and ignores `X-VO-Token`.
 - **Rollout.** Enforced by default, because this is a single-user fork with a
@@ -69,12 +75,13 @@ and the token file. The comparison is constant time.
 - Processes running as the same user, agents included, can still read the
   file and act with full daemon authority. The token stops cross-user and
   cross-container access, not a same-user agent escalating its own
-  permissions.
+  permissions. Security mode keeps fenced agents away from the file, but not other
+  processes of the same user ([Security mode](https://docs.tallpine.eu/configuration/security-mode)).
 - Third-party scripts and the frozen npm `0.10.0` CLI that call the API
   without the header get a 401 that tells them what to send.
-- Preview and artifact file reads remain unauthenticated for anyone who knows
-  a session id. They are scoped, read-only, and were already outside the
-  token's reach for browser tabs. Without the token they never serve a credential-bearing file
+- Preview and artifact file reads without the token need the session's
+  unguessable capability host, not just its session id. They are scoped,
+  read-only, and browser tabs load them without the token. Without the token they never serve a credential-bearing file
   (`previewutil.IsSecretPath`): anything under `.git`, `.ssh`, `.aws`,
   `.gnupg`, `.kube`, `.azure` or `.tallpine`, or under `.tallpine` other than
   `.tallpine/attachments`; `.env` and `.env.*` other than shared
@@ -95,4 +102,4 @@ and the token file. The comparison is constant time.
   [ADR 0008](0008-scoped-agent-session-tokens.md): agents get
   `TALLPINE_SESSION_TOKEN`, a session-bound credential authorized against a
   deny-by-default capability policy.
-- `tallpine daemon rotate-token`, and preview capability tokens for browser tabs.
+- `tallpine daemon rotate-token`. Preview capability hosts for browser tabs are done (`preview.SetCapabilityKey`).

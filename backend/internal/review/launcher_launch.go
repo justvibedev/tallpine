@@ -308,6 +308,7 @@ func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []
 	agentlaunch.AugmentRuntimePATHForLaunchBinary(ctx, env, argv, exec.LookPath, pinnedDir)
 	l.applyGitHubAccountEnv(ctx, spec, env)
 	l.applyEnvFilter(ctx, spec, env)
+	l.applyGitGuard(ctx, spec, env)
 	return env
 }
 

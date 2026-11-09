@@ -431,6 +431,9 @@ func (m *Manager) reconcileLivePass(ctx context.Context, recs []domain.SessionRe
 				if !retry {
 					// A scheduled reattach keeps the session checking; its last attempt settles it.
 					m.finishStatusRecovery(ctx, rec, err)
+					if err != nil {
+						m.reportStartupReattachFailed(ctx, rec, err)
+					}
 				}
 				if err != nil {
 					m.logger.Error("reconcile: live pass failed, skipping", "sessionID", rec.ID, "retrying", retry, "error", err)

@@ -12,6 +12,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/bgtasks"
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 const (
@@ -29,13 +30,28 @@ type JobLister func(domain.SessionID) []bgtasks.Info
 
 // lostJobs is one session's jobs as they stood at the last shutdown.
 type lostJobs struct {
-	At   time.Time `json:"at"`
-	Jobs []lostJob `json:"jobs"`
+	At time.Time `json:"at"`
+	// Fresh marks an entry written at the shutdown just before this boot: only
+	// then are its jobs known to belong to the host that may have survived. An
+	// older undelivered entry may name jobs of a host that is long gone.
+	Fresh bool      `json:"fresh,omitempty"`
+	Jobs  []lostJob `json:"jobs"`
 }
 
 type lostJob struct {
+	ID   string `json:"id,omitempty"`
 	Name string `json:"name"`
 	Kind string `json:"kind,omitempty"`
+}
+
+// JobRestorer puts jobs back into the live tracker, so its end and gone
+// handling keeps them honest.
+type JobRestorer func(domain.SessionID, []bgtasks.Info)
+
+// WithRestore sets where jobs of a host that outlived a restart are re-seeded.
+func (t *Tracker) WithRestore(restore JobRestorer) *Tracker {
+	t.restore = restore
+	return t
 }
 
 // WithJobs sets where shutdown reads each session's running jobs from.
@@ -61,6 +77,10 @@ func (t *Tracker) recordJobs(ctx context.Context) error {
 	defer t.mu.Unlock()
 	all := t.loadLostJobs()
 	now := t.clock().UTC()
+	for id, entry := range all {
+		entry.Fresh = false
+		all[id] = entry
+	}
 	for _, rec := range recs {
 		if !resumable(rec.Kind) || rec.IsTerminated || domain.NormalizeSessionMode(rec.Mode) != domain.SessionModeChat {
 			continue
@@ -71,9 +91,9 @@ func (t *Tracker) recordJobs(ctx context.Context) error {
 		}
 		jobs := make([]lostJob, 0, len(running))
 		for _, info := range running {
-			jobs = append(jobs, lostJob{Name: info.Name, Kind: info.Kind})
+			jobs = append(jobs, lostJob{ID: info.ID, Name: info.Name, Kind: info.Kind})
 		}
-		all[rec.ID] = lostJobs{At: now, Jobs: jobs}
+		all[rec.ID] = lostJobs{At: now, Jobs: jobs, Fresh: true}
 	}
 	slog.Default().InfoContext(ctx, "restart resume: shutdown saved running background jobs", "sessions", len(all))
 	t.saveLostJobs(all)
@@ -81,7 +101,9 @@ func (t *Tracker) recordJobs(ctx context.Context) error {
 }
 
 // dropSurvivedJobs forgets the jobs of sessions whose host outlived the
-// restart: those jobs are still running and must not be reported as killed.
+// restart: those jobs are still running and must not be reported as killed. They
+// are re-seeded into the live tracker (the new daemon's memory lacks them), so a
+// later quit names them, and their end or the host's loss removes them.
 // Caller holds t.mu.
 func (t *Tracker) dropSurvivedJobs(survived func(domain.SessionID) bool) {
 	if survived == nil {
@@ -89,11 +111,29 @@ func (t *Tracker) dropSurvivedJobs(survived func(domain.SessionID) bool) {
 	}
 	all := t.loadLostJobs()
 	changed := false
-	for id := range all {
-		if survived(id) {
-			delete(all, id)
-			changed = true
+	for id, entry := range all {
+		if !survived(id) {
+			// A later boot must not mistake this leftover for a fresh entry.
+			if entry.Fresh {
+				entry.Fresh = false
+				all[id] = entry
+				changed = true
+			}
+			continue
 		}
+		if t.restore != nil && entry.Fresh {
+			infos := make([]bgtasks.Info, 0, len(entry.Jobs))
+			for _, job := range entry.Jobs {
+				// The driver cannot report a subagent's end after a reconnect, so a
+				// restored one would never leave the tracker.
+				if job.ID != "" && job.Kind != ports.ChatAsyncTaskSubagent {
+					infos = append(infos, bgtasks.Info{ID: job.ID, Name: job.Name, Kind: job.Kind})
+				}
+			}
+			t.restore(id, infos)
+		}
+		delete(all, id)
+		changed = true
 	}
 	if changed {
 		t.saveLostJobs(all)
@@ -176,7 +216,7 @@ func jobDisplayName(name string) string {
 
 // resumeJobsNotice is what a resumed agent is told about its jobs. A chat agent
 // whose jobs are unknown still gets the generic warning, since the tracker
-// cannot see jobs that a host adopted from an earlier daemon. A TUI agent's
+// cannot see subagents of a host adopted from an earlier daemon. A TUI agent's
 // terminal host outlives the quit, so nothing is claimed for it.
 func resumeJobsNotice(rec domain.SessionRecord, jobs []lostJob) string {
 	if len(jobs) > 0 {

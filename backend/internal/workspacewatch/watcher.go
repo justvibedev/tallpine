@@ -20,6 +20,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"tallpine.eu/tallpine/backend/internal/pathx"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	tallpineprocess "tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -222,7 +223,7 @@ func discoverGitWorkspace(ctx context.Context, root string) gitWorkspace {
 	// registered and the non-recursive fsnotify backends never see changes in
 	// subdirectories. Only use the git-derived watch set when the repository
 	// actually has this workspace as its toplevel.
-	topRaw, err := tallpineprocess.CommandContext(ctx, "git", "-C", root, "rev-parse", "--show-toplevel").Output()
+	topRaw, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(root, "rev-parse", "--show-toplevel")...).Output()
 	if err != nil {
 		return gitWorkspace{}
 	}
@@ -240,27 +241,20 @@ func discoverGitWorkspace(ctx context.Context, root string) gitWorkspace {
 			return gitWorkspace{}
 		}
 	}
-	gitDirRaw, err := tallpineprocess.CommandContext(ctx, "git", "-C", root, "rev-parse", "--absolute-git-dir").Output()
+	gitDirRaw, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(root, "rev-parse", "--absolute-git-dir")...).Output()
 	if err != nil {
 		return gitWorkspace{}
 	}
-	filesRaw, err := tallpineprocess.CommandContext(ctx, "git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
+	files, err := listGitFiles(ctx, root)
 	if err != nil {
 		return gitWorkspace{}
-	}
-	files := make([]string, 0)
-	for _, raw := range bytes.Split(filesRaw, []byte{0}) {
-		if len(raw) == 0 {
-			continue
-		}
-		files = append(files, filepath.FromSlash(string(raw)))
 	}
 	gitDir := strings.TrimSpace(string(gitDirRaw))
 	metadataFiles := map[string]struct{}{
 		filepath.Join(gitDir, "HEAD"): {},
 	}
 	commonDir := gitDir
-	if raw, commonErr := tallpineprocess.CommandContext(ctx, "git", "-C", root, "rev-parse", "--git-common-dir").Output(); commonErr == nil {
+	if raw, commonErr := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(root, "rev-parse", "--git-common-dir")...).Output(); commonErr == nil {
 		commonDir = strings.TrimSpace(string(raw))
 		if !filepath.IsAbs(commonDir) {
 			commonDir = filepath.Join(root, commonDir)
@@ -270,7 +264,7 @@ func discoverGitWorkspace(ctx context.Context, root string) gitWorkspace {
 	// config changes when a first push sets the upstream; the origin
 	// remote-tracking ref changes on every later push.
 	metadataFiles[filepath.Join(commonDir, "config")] = struct{}{}
-	if raw, refErr := tallpineprocess.CommandContext(ctx, "git", "-C", root, "symbolic-ref", "-q", "HEAD").Output(); refErr == nil {
+	if raw, refErr := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(root, "symbolic-ref", "-q", "HEAD")...).Output(); refErr == nil {
 		ref := strings.TrimSpace(string(raw))
 		if ref != "" {
 			metadataFiles[filepath.Join(commonDir, filepath.FromSlash(ref))] = struct{}{}
@@ -280,6 +274,21 @@ func discoverGitWorkspace(ctx context.Context, root string) gitWorkspace {
 		}
 	}
 	return gitWorkspace{available: true, files: files, metadataFiles: metadataFiles}
+}
+
+// listGitFiles returns the tracked and unignored untracked files below root.
+func listGitFiles(ctx context.Context, root string) ([]string, error) {
+	raw, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")...).Output()
+	if err != nil {
+		return nil, err
+	}
+	files := make([]string, 0)
+	for _, name := range bytes.Split(raw, []byte{0}) {
+		if len(name) > 0 {
+			files = append(files, filepath.FromSlash(string(name)))
+		}
+	}
+	return files, nil
 }
 
 func addInitialDirectories(ctx context.Context, limiter *dirWatchLimiter, root string, git gitWorkspace) error {
@@ -442,7 +451,7 @@ func gitIgnored(ctx context.Context, root, target string) bool {
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return false
 	}
-	return tallpineprocess.CommandContext(ctx, "git", "-C", root, "check-ignore", "-q", "--", filepath.ToSlash(rel)).Run() == nil
+	return tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(root, "check-ignore", "-q", "--", filepath.ToSlash(rel))...).Run() == nil
 }
 
 func hasGitMetadataComponent(root, target string) bool {

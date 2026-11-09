@@ -60,7 +60,7 @@ func (b *boot) wireMobile() error {
 	// A closure: the background task tracker is wired after this.
 	b.resumeTracker = restartresume.New(b.cfg.DataDir, b.store).WithJobs(func(id domain.SessionID) []bgtasks.Info {
 		return b.bgTasks.Running(id)
-	})
+	}).WithRestore(func(id domain.SessionID, infos []bgtasks.Info) { b.bgTasks.Restore(id, infos) })
 	if reconcileErr := b.sessMgr.ReconcileStartupSafety(b.ctx); reconcileErr != nil {
 		b.stop()
 		b.managedPreview.Close()

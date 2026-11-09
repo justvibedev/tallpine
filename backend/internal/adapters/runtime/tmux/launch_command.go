@@ -3,13 +3,10 @@ package tmux
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/agentlaunch"
-	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
@@ -171,7 +168,7 @@ func launchEnvFileContent(cfg ports.RuntimeConfig) string {
 // writeLaunchEnvFile stores the launch env in a 0600 file inside a 0700
 // directory under the temp dir, for the launch command to source and delete.
 func writeLaunchEnvFile(cfg ports.RuntimeConfig) (string, error) {
-	dir := filepath.Join(os.TempDir(), brand.CLIName+"-launch-"+strconv.Itoa(os.Getuid()))
+	dir := agentlaunch.EnvFileDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}

@@ -258,6 +258,10 @@ func TestPersistentTransportFailureRetainsWorkForReconnect(t *testing.T) {
 	if h.ctrl.State() != ports.ChatControllerStopped || provider.terminated.Load() {
 		t.Fatal("lost controller remained live or terminated its persistent provider")
 	}
+	// The daemon's shutdown filter matches this exact event (B622).
+	if !hasActivitySignal(h.activity.snapshot(), domain.ActivityExited, "chat.controller.disconnected") {
+		t.Fatalf("activity signals = %+v, want the disconnected exit", h.activity.snapshot())
+	}
 }
 
 func TestAwakeReconnectCandidatesRequireObservedTransportLoss(t *testing.T) {

@@ -31,7 +31,7 @@ go_packages() {
 }
 
 # lint_config_changed: the lint config or tool version changed, so changed-only linting would miss
-# findings in untouched packages (new-from-rev also hides them): lint everything.
+# findings in untouched packages: lint everything.
 lint_config_changed() {
 	printf '%s\n' "$changes" | grep -Eq '^backend/\.golangci\.ya?ml$|^backend/go\.(mod|sum)$|^scripts/go$|^scripts/verify(\.d/go-lint\.sh)?$'
 }
@@ -43,7 +43,8 @@ go_lint() {
 		local pkgs
 		pkgs="$(go_packages)"
 		[ -z "$pkgs" ] && return 0
-		args+=(--new-from-rev="$base")
+		# No --new-from-rev: unparam/unused report at the declaration, which a PR that only adds callers
+		# never touches (B556), so lint the touched packages whole; main is kept clean by the full lint.
 		# shellcheck disable=SC2206
 		args+=($pkgs)
 	fi

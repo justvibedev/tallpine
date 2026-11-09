@@ -15,6 +15,7 @@ import (
 	"github.com/fsnotify/fsevents"
 
 	"tallpine.eu/tallpine/backend/internal/pathx"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	tallpineprocess "tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -84,6 +85,15 @@ func watchRootFSEvents(ctx context.Context, root string) (<-chan struct{}, error
 		watchedDirs[realDir] = struct{}{}
 		paths = append(paths, realDir)
 	}
+	canary, canaryErr := newFSEventsCanary()
+	if canaryErr != nil {
+		// Live updates still work; they just cannot detect a late stream.
+		slog.WarnContext(ctx, "workspace watch: no FSEvents lag detection", "root", root, "err", canaryErr)
+		canary = nil
+	}
+	if canary != nil && !pathx.Within(realRoot, canary.dir) {
+		paths = append(paths, canary.dir)
+	}
 	stream := &fsevents.EventStream{
 		Paths:   paths,
 		Latency: fseventsLatency,
@@ -91,10 +101,18 @@ func watchRootFSEvents(ctx context.Context, root string) (<-chan struct{}, error
 		Events:  make(chan []fsevents.Event, 16),
 	}
 	if err := stream.Start(); err != nil {
+		if canary != nil {
+			canary.close()
+		}
 		return nil, fmt.Errorf("start FSEvents stream: %w", err)
 	}
-	f := &fseventsFilter{root: root, realRoot: realRoot, git: git, metadataFiles: metadataFiles, ignoredDirs: map[string]struct{}{}}
+	f := &fseventsFilter{root: root, realRoot: realRoot, git: git, metadataFiles: metadataFiles, ignoredDirs: map[string]struct{}{}, canary: canary}
 	changes := make(chan struct{}, 1)
+	if canary != nil {
+		f.watchdog = newLagWatchdog(root, fseventsLagSettings, canary.touch, func(ctx context.Context) (uint64, error) {
+			return workspaceFingerprint(ctx, root, git)
+		}, func() { notifyChange(changes) })
+	}
 	go f.run(ctx, stream, changes)
 	return changes, nil
 }
@@ -106,11 +124,36 @@ type fseventsFilter struct {
 	// ignoredDirs remembers git-ignored directories so a burst inside one
 	// (an install filling node_modules) costs one ignore check, not one per file.
 	ignoredDirs map[string]struct{}
+	// canary and watchdog are nil when lag detection could not be set up.
+	canary   *fseventsCanary
+	watchdog *lagWatchdog
+}
+
+// fseventsLagSettings is a variable so a test can shorten the real timings.
+var fseventsLagSettings = defaultLagSettings
+
+func notifyChange(changes chan struct{}) {
+	select {
+	case changes <- struct{}{}:
+	default:
+	}
 }
 
 func (f *fseventsFilter) run(ctx context.Context, stream *fsevents.EventStream, changes chan struct{}) {
 	defer close(changes)
 	defer stopFSEventStream(stream)
+	if f.watchdog != nil {
+		// The watchdog sends on changes, so it must be gone before the deferred close.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			f.watchdog.run(ctx)
+		}()
+		defer func() {
+			<-done
+			f.canary.close()
+		}()
+	}
 	f.consume(ctx, stream.Events, changes)
 }
 
@@ -125,11 +168,21 @@ func (f *fseventsFilter) consume(ctx context.Context, events <-chan []fsevents.E
 			return
 		case batch := <-batches:
 			if f.relevant(ctx, batch) {
-				select {
-				case changes <- struct{}{}:
-				default:
-				}
+				notifyChange(changes)
 			}
+			// After the filter on purpose: a filter stuck on git is lag too.
+			f.noteCanaries(batch)
+		}
+	}
+}
+
+func (f *fseventsFilter) noteCanaries(batch []fsevents.Event) {
+	if f.watchdog == nil {
+		return
+	}
+	for _, event := range batch {
+		if seq, ok := f.canary.parse(filepath.Clean(event.Path)); ok {
+			f.watchdog.canarySeen(seq)
 		}
 	}
 }
@@ -196,6 +249,9 @@ func (f *fseventsFilter) relevant(ctx context.Context, batch []fsevents.Event) b
 			continue
 		}
 		name := filepath.Clean(event.Path)
+		if f.canary != nil && f.canary.owns(name) {
+			continue // lives under the root only if the root contains the data dir
+		}
 		if _, ok := f.metadataFiles[name]; ok {
 			return true
 		}
@@ -256,7 +312,7 @@ func (f *fseventsFilter) checkIgnored(ctx context.Context, names []string) map[s
 		stdin.WriteString(filepath.ToSlash(rel))
 		stdin.WriteByte(0)
 	}
-	cmd := tallpineprocess.CommandContext(ctx, "git", "-C", f.root, "check-ignore", "-z", "--stdin")
+	cmd := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(f.root, "check-ignore", "-z", "--stdin")...)
 	cmd.Stdin = &stdin
 	out, _ := cmd.Output() // exit 1 means nothing is ignored
 	ignored := map[string]struct{}{}

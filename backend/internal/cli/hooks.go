@@ -111,6 +111,9 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 		c.reportHookFailure(agent, event, sessionID, fmt.Errorf("read stdin: %w", err))
 	}
 
+	if err := c.enforceGitGuard(ctx, agent, event, payload); err != nil {
+		return err
+	}
 	facts := activitydispatch.Facts(agent, event, payload)
 	if !facts.Reportable {
 		// Unknown agent, or an event carrying neither activity nor resumable
@@ -203,6 +206,9 @@ func (c *commandContext) runReviewHook(ctx context.Context, agent, event, review
 	payload, err := io.ReadAll(c.deps.In)
 	if err != nil {
 		c.reportHookFailure(agent, event, reviewSessionID, fmt.Errorf("read stdin: %w", err))
+	}
+	if err := c.enforceGitGuard(ctx, agent, event, payload); err != nil {
+		return err
 	}
 	if domain.AgentHarness(agent) == domain.HarnessClaudeCode && event == "permission-request" {
 		// Answered here, so the reviewer never parks in blocked (#4810).

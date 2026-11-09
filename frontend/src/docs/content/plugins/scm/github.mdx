@@ -38,7 +38,7 @@ Reviewer agents are configured separately from worker agents. See the [capabilit
 
 ## GitHub Enterprise
 
-`<tenant>.ghe.com` (data residency) works without configuration; Tallpine uses `https://api.<tenant>.ghe.com`. For a self-hosted GitHub Enterprise Server, list its host in the daemon's `TALLPINE_GITHUB_ENTERPRISE_HOSTS` (comma-separated, include the port if it has one, omit `https://`); Tallpine then uses `https://<host>/api/v3` and `/api/graphql`.
+`<tenant>.ghe.com` (data residency) uses `https://api.<tenant>.ghe.com`. It needs a `gh auth login --hostname <tenant>.ghe.com` or a `TALLPINE_GITHUB_HOST_TOKENS` entry; an ambient `GH_TOKEN`/`GITHUB_TOKEN` in the daemon environment is used for a tenant only if you also list it in `TALLPINE_GITHUB_ENTERPRISE_HOSTS`. For a self-hosted GitHub Enterprise Server, list its host in the daemon's `TALLPINE_GITHUB_ENTERPRISE_HOSTS` (comma-separated, include the port if it has one, omit `https://`); Tallpine then uses `https://<host>/api/v3` and `/api/graphql`.
 
 Each host uses its own token: a `host=token` entry in `TALLPINE_GITHUB_HOST_TOKENS`, otherwise `gh auth token --hostname <host>`. Your github.com token is never sent to another host. A host without a token only fails its own PRs. Restart Tallpine after changing these settings.
 

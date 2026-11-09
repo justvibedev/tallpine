@@ -10,17 +10,46 @@ import (
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules/plannerpolicy"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	sessionmanager "tallpine.eu/tallpine/backend/internal/session_manager"
+	"tallpine.eu/tallpine/backend/internal/storage/sqlite"
 )
 
 // newAgentPolicyEngine builds the agent policy engine over every registered
 // rule. With no managed file, no TALLPINE_AGENT_* variable and untouched settings
 // every rule is at its no-restriction default.
-func newAgentPolicyEngine(user agentpolicy.UserStore) (*agentpolicy.Engine, error) {
-	engine, err := agentpolicy.New(rules.All(), user)
+func newAgentPolicyEngine(user agentpolicy.UserStore, opts ...agentpolicy.Option) (*agentpolicy.Engine, error) {
+	engine, err := agentpolicy.New(rules.All(), user, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("agent policy: %w", err)
 	}
 	return engine, nil
+}
+
+// newDaemonAgentPolicyEngine is the engine a running daemon uses: the policy
+// settings live in store, and so do the repo paths its fences trust.
+func newDaemonAgentPolicyEngine(store *sqlite.Store) (*agentpolicy.Engine, error) {
+	return newAgentPolicyEngine(store, agentpolicy.WithGitRepo(fenceGitRepo(store)))
+}
+
+// fenceGitRepo resolves the repository a session's checkout belongs to from the
+// database, which sits in the Tallpine state every fence denies: the session's
+// recorded repo when it has one, otherwise its project's. When neither can be
+// read it resolves to nothing, which grants no git dirs rather than guessing.
+func fenceGitRepo(store *sqlite.Store) func(context.Context, agentpolicy.SessionRef) string {
+	return func(ctx context.Context, session agentpolicy.SessionRef) string {
+		if session.ID != "" {
+			if rec, ok, err := store.GetSession(ctx, session.ID); err == nil && ok && rec.Metadata.WorkspaceRepoPath != "" {
+				return rec.Metadata.WorkspaceRepoPath
+			}
+		}
+		if session.Project == "" {
+			return ""
+		}
+		repo, err := projectRepoResolver{store: store}.RepoPath(session.Project)
+		if err != nil {
+			return ""
+		}
+		return repo
+	}
 }
 
 // wireAgentPolicy hands the engine to the session manager, which computes one

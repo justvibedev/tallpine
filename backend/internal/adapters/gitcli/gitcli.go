@@ -47,7 +47,8 @@ func (r *Runner) bound(ctx context.Context) (context.Context, context.CancelFunc
 // the caller drives itself.
 func (r *Runner) Command(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	global := make([]string, 0, 10+len(args))
-	global = append(global, "--no-pager", "--no-optional-locks", "-c", "core.hooksPath="+os.DevNull, "-c", "core.fsmonitor=false")
+	global = append(global, "--no-pager", "--no-optional-locks")
+	global = append(global, ports.GitHardenedArgs()...)
 	if dir != "" {
 		global = append(global, "-C", dir)
 	}
@@ -57,11 +58,11 @@ func (r *Runner) Command(ctx context.Context, dir string, args ...string) *exec.
 }
 
 // diffCommands render patches and so would run a repository's configured
-// diff.external program. `-c diff.external=` cannot disable it (an empty value
-// makes plain `git diff` fail), so the flag goes on the command itself.
+// diff.external or textconv program. `-c diff.external=` cannot disable it (an
+// empty value makes plain `git diff` fail), so the flags go on the command itself.
 var diffCommands = map[string]bool{"diff": true, "log": true, "show": true, "format-patch": true, "whatchanged": true}
 
-// noExternalDiff returns args with --no-ext-diff after a patch-producing
+// noExternalDiff returns args with --no-ext-diff --no-textconv after a patch-producing
 // subcommand. It leaves other commands alone.
 func noExternalDiff(args []string) []string {
 	for i := 0; i < len(args); i++ {
@@ -73,9 +74,9 @@ func noExternalDiff(args []string) []string {
 			if !diffCommands[args[i]] {
 				return args
 			}
-			out := make([]string, 0, len(args)+1)
+			out := make([]string, 0, len(args)+2)
 			out = append(out, args[:i+1]...)
-			out = append(out, "--no-ext-diff")
+			out = append(out, "--no-ext-diff", "--no-textconv")
 			return append(out, args[i+1:]...)
 		}
 	}

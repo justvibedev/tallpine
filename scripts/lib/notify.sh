@@ -22,3 +22,26 @@ tp_retry_until() {
     sleep "$interval"
   done
 }
+
+# tp_notify_orchestrator <cli> <project> <target> <message>: sends ONE line to the project's
+# orchestrator and prints one status line (callers add their own prefix); never fails. `orchestrator
+# notify` picks the live target (<target> if live, else the oldest live orchestrator) and acts as the
+# machine. Shared by loop.sh (send_to_orchestrator) and release-local's detached build (notify_build).
+tp_notify_orchestrator() {
+  local cli="$1" project="$2" target="$3" msg="$4" err sid
+  if "${cli}" orchestrator --help 2>&1 | grep -qw notify; then # the parent prints its help (rc 0) even without the subcommand
+    err="$("${cli}" orchestrator notify --project "${project}" --target "${target}" --message "${msg}" 2>&1 >/dev/null)" \
+      && echo "notified the orchestrator" || echo "notify failed: ${err:-no output}"
+    return 0
+  fi
+  # One-release fallback: an installed app older than `orchestrator notify`. Remove once it is installed.
+  sid="$("${cli}" orchestrator ls --json 2>/dev/null | python3 -I -c 'import json,sys
+p,t=sys.argv[1],sys.argv[2]
+d=json.load(sys.stdin); xs=d if isinstance(d,list) else next((v for v in d.values() if isinstance(v,list)),[])
+live=[x for x in xs if x.get("projectId")==p and not x.get("isTerminated")]
+if not live: sys.exit()
+print(t if any(x["id"]==t for x in live) else min(live,key=lambda x:x.get("createdAt",""))["id"])
+' "${project}" "${target}" 2>/dev/null || true)"
+  [[ -n "${sid}" ]] || { echo "notify: no live orchestrator, skipping"; return 0; }
+  err="$("${cli}" send --session "${sid}" --message "${msg}" 2>&1 >/dev/null)" && echo "notified ${sid}" || echo "notify ${sid} failed: ${err:-no output}"
+}

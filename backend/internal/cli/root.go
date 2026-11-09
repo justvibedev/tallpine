@@ -237,7 +237,7 @@ func NewRootCommand(deps Deps) *cobra.Command {
 	root.AddCommand(newSettingsCommand(ctx))
 	root.AddCommand(newGitHubCommand(ctx))
 	root.AddCommand(newRetentionCommand(ctx))
-	root.AddCommand(newGitCredentialCommand(ctx), newGHExecCommand(ctx), newCommitCommand(ctx))
+	root.AddCommand(newGitCredentialCommand(ctx), newGHExecCommand(ctx), newGitExecCommand(ctx), newCommitCommand(ctx))
 	root.AddCommand(newUpdateCommand(ctx))
 	root.AddCommand(newOrchestratorCommand(ctx))
 	root.AddCommand(newMergesCommand(ctx))

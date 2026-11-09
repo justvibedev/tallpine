@@ -3,6 +3,7 @@ declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 declare const __TALLPINE_TEAM_ID__: string | undefined;
 declare const __TALLPINE_BUILD_INFO__: { version: string; commit: string; date: string; dirty: string } | undefined;
+import "./debug-switch-guard-startup"; // first: a packaged build refuses debugging switches before anything else runs
 import {
 app
 } from "electron";

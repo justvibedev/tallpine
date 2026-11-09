@@ -125,10 +125,10 @@ func readWorkspaceBranches(ctx context.Context, path string) workspaceBranchInfo
 	ctx, cancel := context.WithTimeout(ctx, gitOriginTimeout)
 	defer cancel()
 	info := workspaceBranchInfo{visited: map[string]struct{}{}}
-	if out, err := tallpineprocess.CommandContext(ctx, "git", "-C", path, "symbolic-ref", "--short", "-q", "HEAD").Output(); err == nil {
+	if out, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(path, "symbolic-ref", "--short", "-q", "HEAD")...).Output(); err == nil {
 		info.current = strings.TrimSpace(string(out))
 	}
-	out, err := tallpineprocess.CommandContext(ctx, "git", "-C", path, "reflog", "show", "--format=%gs", "-n", workspaceReflogLimit, "HEAD", "--").Output()
+	out, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(path, "reflog", "show", "--format=%gs", "-n", workspaceReflogLimit, "HEAD", "--")...).Output()
 	if err != nil {
 		return info
 	}
@@ -167,7 +167,7 @@ func WorkspaceVisitedBranches(ctx context.Context, path string) (visited map[str
 func branchCreatedLocally(ctx context.Context, path, branch string) bool {
 	ctx, cancel := context.WithTimeout(ctx, gitOriginTimeout)
 	defer cancel()
-	out, err := tallpineprocess.CommandContext(ctx, "git", "-C", path, "reflog", "show", "--format=%gs", "refs/heads/"+branch, "--").Output()
+	out, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(path, "reflog", "show", "--format=%gs", "refs/heads/"+branch, "--")...).Output()
 	if err != nil {
 		return false
 	}
@@ -296,7 +296,7 @@ const gitOriginTimeout = 5 * time.Second
 func resolveGitOriginURL(path string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), gitOriginTimeout)
 	defer cancel()
-	out, err := tallpineprocess.CommandContext(ctx, "git", "-C", path, "remote", "get-url", "origin").Output()
+	out, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(path, "remote", "get-url", "origin")...).Output()
 	if err != nil {
 		return ""
 	}
@@ -304,7 +304,7 @@ func resolveGitOriginURL(path string) string {
 }
 
 func gitRemoteURLs(ctx context.Context, path string) []string {
-	out, err := tallpineprocess.CommandContext(ctx, "git", "-C", path, "remote").Output()
+	out, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(path, "remote")...).Output()
 	if err != nil {
 		return nil
 	}
@@ -312,9 +312,9 @@ func gitRemoteURLs(ctx context.Context, path string) []string {
 	seen := make(map[string]bool)
 	for _, name := range strings.Fields(string(out)) {
 		for _, options := range [][]string{{"--all"}, {"--push", "--all"}} {
-			args := append([]string{"-C", path, "remote", "get-url"}, options...)
+			args := append([]string{"remote", "get-url"}, options...)
 			args = append(args, name)
-			output, err := tallpineprocess.CommandContext(ctx, "git", args...).Output()
+			output, err := tallpineprocess.CommandContext(ctx, "git", ports.GitInDir(path, args...)...).Output()
 			if err != nil {
 				continue
 			}

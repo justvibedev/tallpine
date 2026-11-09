@@ -6,7 +6,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-release="${script_dir}/release-local"
+src_release="${script_dir}/release-local"
 product="$(sed -n 's/^[[:space:]]*ProductName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${script_dir}/../backend/internal/brand/brand.go")"
 
 T="$(mktemp -d "${TMPDIR:-/tmp}/tp-publish-test.XXXXXX")"
@@ -15,6 +15,17 @@ trap 'rm -rf "${T}"' EXIT
 fail=0
 ok() { printf 'ok   %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=1; }
+
+# B388: the stale-checkout guard fetches origin, so run the script from a clone of a fixture origin that holds
+# exactly this tree's release scripts: the result never depends on where the live origin/main is.
+mkdir -p "${T}/up/scripts" "${T}/up/backend/internal/brand"
+cp "${script_dir}/../backend/internal/brand/brand.go" "${T}/up/backend/internal/brand/"
+cp "${src_release}" "${script_dir}/release-local-publish.sh" "${T}/up/scripts/"
+cp -R "${script_dir}/release-local.d" "${script_dir}/lib" "${T}/up/scripts/"
+git -C "${T}/up" init -q -b main && git -C "${T}/up" add -A
+git -C "${T}/up" -c user.name=t -c user.email=t@t commit -qm fixture
+git clone -q "${T}/up" "${T}/clone"
+release="${T}/clone/scripts/release-local"
 
 export TALLPINE_RELEASE_BUNDLE_ID=ee.justdev.tp-publish-test
 export HOME="${T}/home"
@@ -176,6 +187,6 @@ if REAL_CODESIGN="${T}/codesign" TALLPINE_RELEASE_CODESIGN="${T}/codesign2" PATH
 no_create "ad hoc daemon"
 
 # `build` and `install` never make a pkg.
-if grep -n 'build_pkg\|pkgbuild\|productsign' "$(dirname "${release}")"/release-local.d/{build,install}.sh >/dev/null; then bad "build never makes a pkg"; else ok "build never makes a pkg"; fi
+if grep -n 'build_pkg\|pkgbuild\|productsign' "${script_dir}"/release-local.d/{build,install}.sh >/dev/null; then bad "build never makes a pkg"; else ok "build never makes a pkg"; fi
 
 exit "${fail}"

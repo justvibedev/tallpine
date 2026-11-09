@@ -29,7 +29,7 @@ func TestSandboxAllowsNetworkUsesTheConversationsDecision(t *testing.T) {
 func TestWorkspaceWriteChatSandboxCarriesNetworkAndWritableRoots(t *testing.T) {
 	capped := policytest.Cap(t, permissioncap.Auto)
 	for name, decision := range map[string]agentpolicy.Decision{"capped": capped, "uncapped": {}} {
-		turn := turnSandboxPolicy("workspace-write", "")
+		turn := turnSandboxPolicy("workspace-write", "", "")
 		if turn["type"] != "workspaceWrite" || turn["networkAccess"] != true || turn["writableRoots"] == nil {
 			t.Errorf("%s turn policy = %v", name, turn)
 		}

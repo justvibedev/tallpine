@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -320,7 +321,7 @@ func gitChangedPaths(ctx stdctx.Context, workspace string, pr domain.PullRequest
 	if base == "" || pr.HeadSHA == "" {
 		return nil, errors.New("pull request has no base or head commit")
 	}
-	cmd := process.CommandContext(ctx, "git", "-C", workspace, "diff", "--name-only", "-z", base+"..."+pr.HeadSHA)
+	cmd := process.CommandContext(ctx, "git", ports.GitInDir(workspace, "diff", "--name-only", "-z", base+"..."+pr.HeadSHA)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err

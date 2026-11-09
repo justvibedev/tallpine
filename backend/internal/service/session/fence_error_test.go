@@ -23,3 +23,17 @@ func TestFenceRefusalMapsToPolicyRequiresFence(t *testing.T) {
 		}
 	}
 }
+
+// B401: an empty fence maps like every other fence refusal, on spawn and restore.
+func TestEmptyFenceRefusalMapsToPolicyRequiresFence(t *testing.T) {
+	wrapped := fmt.Errorf("launch command: %w", agentpolicy.ErrFenceNoRunFile)
+	for name, mapped := range map[string]error{"restore": toAPIError(wrapped), "spawn": toSpawnAPIError(wrapped)} {
+		var e *apierr.Error
+		if !errors.As(mapped, &e) || e.Kind != apierr.KindConflict || e.Code != agentpolicy.CodeRequiresFence {
+			t.Fatalf("%s: mapped = %#v", name, mapped)
+		}
+		if e.Message != agentpolicy.ErrFenceNoRunFile.Error() {
+			t.Fatalf("%s: message = %q", name, e.Message)
+		}
+	}
+}

@@ -52,6 +52,30 @@ go_packages() { echo ./...; }
 (export GT="$gt" PATH="$gt/bin:$PATH"; cd "$gt"; with_slot() { "$@"; }; CORES=2 count_flag="-count=1" NICE=0 race="" GO_TEST_TIMEOUT=1m retry=1 log_dir="$gt" flaky=(); go_test >"$gt/out" 2>&1; echo "rc=$?" >>"$gt/out"; printf '%s\n' "${flaky[@]}" >>"$gt/out")
 grep -q 'rc=0' "$gt/out" && grep -q 'killed by signal 15 at ' "$gt/out" || { echo "FAIL: signal-killed go test not retried: $(cat "$gt/out")"; rc=1; }
 rm -rf "$gt"
+# B625: a vitest file that fails once and passes on the one retry is reported flaky and the step passes;
+# a file that fails both attempts still fails it. Fake npx: the first run fails a.test.ts, the retry's result is $RETRY.
+eval "$(sed -n '/^vitest_failed_files()/,/^}/p;/^vitest_failure_details()/,/^}/p;/^vitest_retry()/,/^}/p' "$here/verify")"
+vr="$(mktemp -d)"; mkdir -p "$vr/bin" "$vr/pkg"
+printf '%s\n' '#!/bin/bash' \
+	'for a in "$@"; do case "$a" in --outputFile.json=*) out="${a#*=}" ;; esac; done' \
+	'n=$(cat "$VR/n" 2>/dev/null || echo 0); echo $((n+1)) >"$VR/n"' \
+	'st=failed; code=1; [ "$n" != 0 ] && [ "$RETRY" = pass ] && st=passed && code=0' \
+	'printf "{\"testResults\":[{\"name\":\"%s/pkg/a.test.ts\",\"status\":\"%s\",\"assertionResults\":[{\"status\":\"%s\",\"fullName\":\"A\",\"failureMessages\":[\"Test timed out in 5000ms\"]}]}]}" "$VR" "$st" "$st" >"$out"' \
+	'exit $code' >"$vr/bin/npx"
+chmod +x "$vr/bin/npx"
+vr_run() { # vr_run <pass|fail>: prints "rc=<n>" then the flaky lines
+	rm -f "$vr/n" "$vr/flaky-detail.txt"
+	(export VR="$vr" RETRY="$1" PATH="$vr/bin:$PATH"; cd "$vr"; with_slot() { "$@"; }
+		repo="$vr" log_dir="$vr" NICE=0 VITEST_CAP=1 retry=1 flaky=()
+		vitest_retry mobile pkg vitest.config.ts >/dev/null 2>&1; echo "rc=$?"; printf '%s\n' ${flaky[@]+"${flaky[@]}"})
+}
+vr_pass="$(vr_run pass)"
+case "$vr_pass" in "rc=0"*"mobile: a.test.ts (failed, then passed on retry)"*) ;; *) echo "FAIL: vitest_retry did not report a retried pass as flaky: $vr_pass"; rc=1 ;; esac
+grep -q 'Test timed out in 5000ms' "$vr/flaky-detail.txt" || { echo "FAIL: vitest_retry dropped the first-run failure detail"; rc=1; }
+vr_fail="$(vr_run fail)"
+case "$vr_fail" in "rc=1"*) ;; *) echo "FAIL: vitest_retry must fail a file that fails both attempts: $vr_fail"; rc=1 ;; esac
+case "$vr_fail" in *flaky*|*"retry)"*) echo "FAIL: vitest_retry reported a twice-failing file as flaky: $vr_fail"; rc=1 ;; esac
+rm -rf "$vr"
 # --since planning (B350): which jobs `--all --tsv --since <sha>` plans for a change set. Runs in a scratch git repo
 # with copies of the scripts so the commits are synthetic.
 sp="$(mktemp -d)"
@@ -124,10 +148,28 @@ printf 'package x\n' >"$sp/backend/x.go"; printf 'module x\n\ngo 1.22\n' >"$sp/b
 (cd "$sp" && git add -A && git -c user.name=t -c user.email=t@t commit -qm cfgbase)
 printf '// d\n' >>"$sp/backend/x.go"
 la="$(cd "$sp" && VERIFY_PRINT_LINT_ARGS=1 TMPDIR="$sp" scripts/verify --lint-changed --base HEAD 2>&1 | grep -E '^run ')"
-case "$la" in *new-from-rev*) ;; *) echo "FAIL: --lint-changed on a Go-only change should use new-from-rev: $la"; rc=1 ;; esac
+# B556: unparam reports at the declaration line, which a callers-only PR never touches, so no --new-from-rev.
+case "$la" in *new-from-rev*) echo "FAIL: --lint-changed must lint touched packages whole (no new-from-rev): $la"; rc=1 ;; *"./."*) ;; *) echo "FAIL: --lint-changed should lint the changed package: $la"; rc=1 ;; esac
 printf 'linters: x\n' >"$sp/backend/.golangci.yml"
 la="$(cd "$sp" && VERIFY_PRINT_LINT_ARGS=1 TMPDIR="$sp" scripts/verify --lint-changed --base HEAD 2>&1 | grep -E '^run ')"
 case "$la" in *new-from-rev*) echo "FAIL: lint config change must not use new-from-rev: $la"; rc=1 ;; *"./..."*) ;; *) echo "FAIL: lint config change must lint ./...: $la"; rc=1 ;; esac
+# B613: --lint-changed runs heredoc-guard on every changed shell file (any path), named in the failure.
+# The guard is committed in the fixture base, so editing it counts as a change too (it must not flag itself).
+hd='<''<'; body="$(head -c 600 /dev/zero | tr '\0' x)" # built apart so this file carries no heredoc marker itself
+cp "$here/heredoc-guard.test.sh" "$sp/scripts/"; mkdir -p "$sp/test"
+(cd "$sp" && git add -A && git -c user.name=t -c user.email=t@t commit -qm guardbase)
+hg_run() { (cd "$sp" && TMPDIR="$sp" scripts/verify --lint-changed --base HEAD >"$sp/hg.out" 2>&1); }
+printf '\n# edit\n' >>"$sp/scripts/heredoc-guard.test.sh"
+printf '#!/usr/bin/env bash\ncat %sEOF\nsmall\nEOF\n' "$hd" >"$sp/test/small.sh"
+printf 'cat %sEOF\n%s\nEOF\n' "$hd" "$body" >"$sp/test/noshebang.sh"
+hg_run; grep -q '^--- heredoc-guard ok' "$sp/hg.out" || # other fixture steps (go-version) fail; only this step matters
+	{ echo "FAIL: small heredocs, a shebang-less file and an edited guard must pass heredoc-guard: $(grep -B3 heredoc-guard "$sp/hg.out" | tail -8)"; rc=1; }
+printf '#!/usr/bin/env bash\ncat %sEOF\n%s\nEOF\n' "$hd" "$body" >"$sp/test/big.test.sh" # outside scripts/
+hg_run
+if ! grep -q 'test/big.test.sh:2: heredoc EOF body is 601 bytes' "$sp/hg.out"; then echo "FAIL: heredoc-guard did not name big.test.sh: $(tail -8 "$sp/hg.out")"; rc=1; fi
+# A change with no shell file leaves the guard an empty list; stock macOS bash 3.2 must not trip set -u on it.
+printf 'plain text\n' >"$sp/plain.txt"
+/bin/bash "$sp/scripts/heredoc-guard.test.sh" "$sp/plain.txt" >"$sp/hg3.out" 2>&1 || { echo "FAIL: heredoc-guard on a list with no shell file must pass under /bin/bash: $(cat "$sp/hg3.out")"; rc=1; }
 
 [ "$rc" = 0 ] && echo "verify job list: ok ($(printf '%s\n' "$got" | grep -c .) jobs)"
 exit "$rc"

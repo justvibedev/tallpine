@@ -141,7 +141,7 @@ type ActivityRecorder interface {
 // ManagedPreviewServer is the deterministic server lifecycle attached to a
 // worker. It is separate from static file rendering and browser automation.
 type ManagedPreviewServer interface {
-	Start(ctx context.Context, sessionID domain.SessionID, workspacePath, configurationName string, projectEnv map[string]string) (previewserver.Status, error)
+	Start(ctx context.Context, sessionID domain.SessionID, workspacePath, configurationName string, projectEnv map[string]string, fence previewserver.Fence) (previewserver.Status, error)
 	Stop(ctx context.Context, sessionID domain.SessionID) (previewserver.Status, error)
 	Status(sessionID domain.SessionID) previewserver.Status
 }
@@ -189,6 +189,7 @@ type SessionsController struct {
 	Routes                   RouteNoticer
 	Activity                 ActivityRecorder
 	DataDir                  string
+	RunFilePath              string // locates the Tallpine state a fenced preview is denied
 	Usage                    UsageHookRecorder
 	Attachments              *attachmentstore.Store
 	PreviewServer            ManagedPreviewServer

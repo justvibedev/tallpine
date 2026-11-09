@@ -130,7 +130,7 @@ func (b *boot) loadConfigAndLogging() error {
 	if cwd, err := os.Getwd(); err == nil {
 		b.cfg.StartupWorkingDirectory = cwd
 	}
-	permWarnings, err := fsperm.Harden(b.cfg.StateDir, b.cfg.DataDir)
+	permWarnings, err := fsperm.Harden(b.cfg.HardenRoot(), b.cfg.DataDir)
 	if err != nil {
 		return fmt.Errorf("lock down data root: %w", err)
 	}
@@ -143,6 +143,7 @@ func (b *boot) loadConfigAndLogging() error {
 	var closeLog func()
 	b.log, closeLog = newLogger(b.cfg.DataDir)
 	b.cleanup(closeLog)
+	b.cleanup(installDefaultLogger(b.log))
 	for _, w := range permWarnings {
 		b.log.Warn("data root permissions: could not tighten", "error", w)
 	}

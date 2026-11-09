@@ -28,8 +28,11 @@ const (
 	fileName = "restart-resume.json"
 	// maxAge drops an entry nobody could deliver in this long: the work it
 	// would resume is stale by then.
-	maxAge          = 6 * time.Hour
-	defaultAttempts = 6
+	maxAge = 6 * time.Hour
+	// defaultAttempts at defaultInterval covers the startup chat resume's retry
+	// backoff (about 110s). A slower resume can still be reported as not
+	// resumed, which errs toward telling the orchestrator.
+	defaultAttempts = 12
 	defaultInterval = 15 * time.Second
 )
 
@@ -63,15 +66,18 @@ type Reports interface {
 
 // Tracker persists the in-flight set and resumes it.
 type Tracker struct {
-	path     string
-	store    Store
-	jobs     JobLister
-	clock    func() time.Time
-	mu       sync.Mutex
-	resumed  map[domain.SessionID]bool // messaged by Resume this run
-	notice   map[domain.ProjectID]*projectNotice
-	attempts int
-	interval time.Duration
+	path    string
+	store   Store
+	jobs    JobLister
+	clock   func() time.Time
+	mu      sync.Mutex
+	restore JobRestorer
+	resumed map[domain.SessionID]bool // messaged by Resume this run
+	notice  map[domain.ProjectID]*projectNotice
+	// notResumed holds workers Resume gave up on, reported apart from notice.
+	notResumed map[domain.ProjectID][]Entry
+	attempts   int
+	interval   time.Duration
 }
 
 // New builds a tracker keeping its file under dataDir.
@@ -125,7 +131,7 @@ func (t *Tracker) RecordUnclean(ctx context.Context, survived func(domain.Sessio
 	changed := false
 	var recorded []domain.SessionID
 	for _, rec := range recs {
-		if !resumable(rec.Kind) || rec.IsTerminated || rec.Activity.State != domain.ActivityActive && maybe[rec.ID].IsZero() || known[rec.ID] ||
+		if !resumable(rec.Kind) || rec.IsTerminated || rec.Activity.State != domain.ActivityActive && maybe[rec.ID].IsZero() ||
 			domain.NormalizeSessionMode(rec.Mode) != domain.SessionModeChat || survived != nil && survived(rec.ID) {
 			continue
 		}
@@ -137,6 +143,13 @@ func (t *Tracker) RecordUnclean(ctx context.Context, survived func(domain.Sessio
 		}
 		if at.IsZero() {
 			at = now
+		}
+		if known[rec.ID] {
+			if refreshEntry(entries, rec.ID, at, at) {
+				recorded = append(recorded, rec.ID)
+				changed = true
+			}
+			continue
 		}
 		entries = append(entries, Entry{SessionID: rec.ID, InterruptedAt: at})
 		recorded = append(recorded, rec.ID)
@@ -166,7 +179,13 @@ func (t *Tracker) Record(ctx context.Context) error {
 	now := t.clock().UTC()
 	var recorded []domain.SessionID
 	for _, rec := range recs {
-		if !resumable(rec.Kind) || rec.IsTerminated || rec.Activity.State != domain.ActivityActive || known[rec.ID] {
+		if !resumable(rec.Kind) || rec.IsTerminated || rec.Activity.State != domain.ActivityActive {
+			continue
+		}
+		if known[rec.ID] {
+			if refreshEntry(entries, rec.ID, rec.Activity.LastActivityAt.UTC(), now) {
+				recorded = append(recorded, rec.ID)
+			}
 			continue
 		}
 		entries = append(entries, Entry{SessionID: rec.ID, InterruptedAt: now})
@@ -174,6 +193,20 @@ func (t *Tracker) Record(ctx context.Context) error {
 	}
 	slog.Default().InfoContext(ctx, "restart resume: quit recorded in-flight turns", "recorded", recorded, "pending_total", len(entries))
 	return t.save(entries)
+}
+
+// refreshEntry moves id's entry to at when evidence shows the agent was working
+// after that entry's cut-off. An entry left on file is a worker cut off again
+// once it has been restored, and the new cut-off needs its own time and notice
+// (B622). Older evidence is a stale state, which leaves the entry alone.
+func refreshEntry(entries []Entry, id domain.SessionID, evidence, at time.Time) bool {
+	for i := range entries {
+		if entries[i].SessionID == id && evidence.After(entries[i].InterruptedAt) {
+			entries[i].InterruptedAt = at
+			return true
+		}
+	}
+	return false
 }
 
 // Resume delivers one resume message to every recorded worker that is still
@@ -192,6 +225,9 @@ func (t *Tracker) Resume(ctx context.Context, sender Sender) {
 		if t.pass(ctx, sender) == 0 {
 			return
 		}
+	}
+	if ctx.Err() == nil {
+		t.noteNotResumed(ctx)
 	}
 }
 
@@ -378,6 +414,17 @@ func (t *Tracker) recordMaybe(ctx context.Context) error {
 	defer t.mu.Unlock()
 	t.saveMaybe(set)
 	return nil
+}
+
+// NoteCutOff adds a session whose host was lost mid-turn just before this
+// shutdown. It was stored as exited by then, so recordMaybe could not see it;
+// the next boot treats it like any other noted turn (B627).
+func (t *Tracker) NoteCutOff(id domain.SessionID, at time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	maybe := t.loadMaybe()
+	maybe[id] = at.UTC()
+	t.saveMaybe(maybe)
 }
 
 func (t *Tracker) loadMaybe() map[domain.SessionID]time.Time {

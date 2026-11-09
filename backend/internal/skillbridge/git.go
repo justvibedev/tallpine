@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/process"
 )
 
@@ -14,7 +15,7 @@ func GitCommitted(workspace string) func(rel string) bool {
 	run := func(args ...string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return process.CommandContext(ctx, "git", append([]string{"-C", workspace}, args...)...).Run() //nolint:gosec // fixed git subcommands on the user's own checkout
+		return process.CommandContext(ctx, "git", ports.GitInDir(workspace, args...)...).Run() //nolint:gosec // fixed git subcommands on the user's own checkout
 	}
 	if run("rev-parse", "--verify", "-q", "HEAD") != nil {
 		return func(string) bool { return true }

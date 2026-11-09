@@ -161,7 +161,10 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 		if err != nil {
 			return false, fmt.Errorf("check backlog items for %s: %w", id, err)
 		}
-		if items > 0 {
+		// A merge that left an item open (no "closes" claim) must not keep the
+		// worker forever: past the bound the close goes ahead and the
+		// orchestrator is told by the normal close notice.
+		if items > 0 && !m.autoCloseRetry.itemsHoldExpired(id) {
 			m.holdAutoClose(ctx, rec, hooks, "open linked backlog items", items)
 			return true, nil
 		}
@@ -250,9 +253,11 @@ func (m *Manager) RearmAutoCloses(ctx context.Context) {
 }
 
 type heldClose struct {
-	first    time.Time
-	reason   string
-	notified bool
+	first time.Time
+	// itemsFirst is when the open-backlog-items hold began (B608).
+	itemsFirst time.Time
+	reason     string
+	notified   bool
 }
 
 // autoCloseRetry keeps at most one pending recheck per session and the state
@@ -290,8 +295,32 @@ func (r *autoCloseRetry) note(id domain.SessionID, reason string) (time.Time, bo
 		r.held[id] = h
 	}
 	changed := h.reason != reason
+	if changed && h.reason != "" {
+		// A new reason is a new hold: it gets its own bound and notice.
+		h.first, h.notified = r.now(), false
+	}
 	h.reason = reason
 	return h.first, changed
+}
+
+// itemsHoldExpired starts the open-backlog-items clock on first call and
+// reports whether it ran past autoCloseMaxHold. It is separate from the hold
+// clock so the bound survives a switch to another hold reason.
+func (r *autoCloseRetry) itemsHoldExpired(id domain.SessionID) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.held == nil {
+		r.held = map[domain.SessionID]*heldClose{}
+	}
+	h := r.held[id]
+	if h == nil {
+		h = &heldClose{first: r.now()}
+		r.held[id] = h
+	}
+	if h.itemsFirst.IsZero() {
+		h.itemsFirst = r.now()
+	}
+	return r.now().Sub(h.itemsFirst) >= autoCloseMaxHold
 }
 
 func (r *autoCloseRetry) markNotified(id domain.SessionID) bool {

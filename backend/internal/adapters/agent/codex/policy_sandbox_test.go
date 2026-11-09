@@ -104,12 +104,24 @@ func TestTerminalWorkspaceWriteLaunchEnablesNetworkAndCaches(t *testing.T) {
 }
 
 func TestCappedLaunchMakesLinkedWorktreeGitDirWritable(t *testing.T) {
-	ws, gitdir := t.TempDir(), t.TempDir()
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	gitdir := filepath.Join(repo, ".git", "worktrees", "w")
+	ws := filepath.Join(root, "ws")
+	for _, d := range []string{gitdir, ws} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.WriteFile(filepath.Join(ws, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gitdir, "gitdir"), []byte(filepath.Join(ws, ".git")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decision := policytest.DecisionForRepo(t, map[string]map[string]any{permissioncap.Name: {permissioncap.FieldMax: string(permissioncap.Auto)}}, repo)
 	var args []string
-	capCodexPermission(policytest.Cap(t, permissioncap.Auto), ports.PermissionModeAuto, ws, &args)
+	capCodexPermission(decision, ports.PermissionModeAuto, ws, &args)
 	if !strings.Contains(strings.Join(args, " "), gitdir) {
 		t.Errorf("git fetch needs the worktree git dir writable: %v", args)
 	}
@@ -119,6 +131,6 @@ func TestCappedLaunchMakesLinkedWorktreeGitDirWritable(t *testing.T) {
 // network and writable roots, for tests that pin a whole argv.
 func workspaceWriteExtrasArgs(workspace string) []string {
 	var args []string
-	appendWorkspaceWriteExtras(&args, workspace)
+	appendWorkspaceWriteExtras(&args, "", workspace)
 	return args
 }

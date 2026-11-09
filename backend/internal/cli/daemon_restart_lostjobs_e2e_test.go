@@ -153,11 +153,15 @@ func TestE2E_QuitNamesKilledBackgroundJobs(t *testing.T) {
 	if n := messagesTo(idle, "busyjob"); n != 0 {
 		t.Errorf("idle worker told about another worker's job %d times", n)
 	}
-	// The survivor's job predates this daemon, so the tracker cannot name it; the
-	// worker still gets the generic warning rather than silence.
-	waitUntil(t, 30*time.Second, "survivor's generic notice", func() bool {
-		return messagesTo(survivor, "background jobs and monitors you started were stopped") == 1
+	// B617: the survivor's job outlived one restart and the parking stop killed
+	// it, so its idle agent is told, naming the job.
+	waitUntil(t, 60*time.Second, "the survivor to be told its job died", func() bool {
+		return messagesTo(survivor, `"job survivor" (local_bash)`) >= 1
 	})
+	time.Sleep(2 * time.Second)
+	if n := messagesTo(survivor, `"job survivor" (local_bash)`); n != 1 {
+		t.Errorf("survivor told about its job %d times, want once", n)
+	}
 }
 
 func waitUntil(t *testing.T, limit time.Duration, what string, cond func() bool) {

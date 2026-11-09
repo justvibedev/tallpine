@@ -163,3 +163,17 @@ func TestWriteErrorMapsFenceRefusal(t *testing.T) {
 }
 
 func containsCode(body, code string) bool { return strings.Contains(body, `"`+code+`"`) }
+
+// B401: an empty fence reaches the API as the same 409, with the message that
+// tells the user what to do and none of the launch wrapping.
+func TestWriteErrorMapsEmptyFenceRefusal(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/x", nil)
+	WriteError(rec, req, fmt.Errorf("launch command: %w", agentpolicy.ErrFenceNoRunFile))
+	if rec.Code != http.StatusConflict || !containsCode(rec.Body.String(), agentpolicy.CodeRequiresFence) {
+		t.Fatalf("got %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), agentpolicy.ErrFenceNoRunFile.Error()) || strings.Contains(rec.Body.String(), "launch command:") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}

@@ -159,6 +159,7 @@ func AugmentRuntimePATHForLaunchBinary(ctx context.Context, env map[string]strin
 		}
 	}
 	parts = restorePinnedDir(parts, pinnedDir)
+	parts = restoreGitShim(parts, pinnedDir)
 	env["PATH"] = strings.Join(parts, string(os.PathListSeparator))
 }
 

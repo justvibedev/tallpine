@@ -125,6 +125,9 @@ func New(plugin claudePlugin, log *slog.Logger, onAuthRejected func()) ports.Cha
 			return nil
 		},
 		Launch: func(ctx context.Context, cfg acpdriver.LaunchConfig) (acpdriver.Launch, error) {
+			if err := claudecode.RequireFence(cfg.Policy, cfg.Env, sessionGOOS); err != nil {
+				return acpdriver.Launch{}, err
+			}
 			runtimeLaunch, err := resolveRuntime(ctx)
 			if err != nil {
 				return acpdriver.Launch{}, fmt.Errorf("%w: %w", ports.ErrChatDriverUnavailable, err)

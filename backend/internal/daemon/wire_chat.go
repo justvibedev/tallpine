@@ -21,6 +21,7 @@ import (
 
 // wireChat: settings, storage janitor, turn notifier, background tasks and the chat service.
 func (b *boot) wireChat() error {
+	b.hostLosses = newHostLossLedger(b.store, supervisorGrace+b.cfg.ShutdownTimeout+hostLossMargin)
 	b.wireChatSettings()
 	b.wireChatNotifiers()
 	// The session's own account (a saved one, or this computer's login) is read
@@ -90,7 +91,7 @@ func (b *boot) wireChat() error {
 		Drivers: b.chatDrivers,
 		// A chat turn is a pure lifecycle reduction, same as a hook signal from a
 		// terminal session; the turn observer forwards every signal to the LCM.
-		Activity:         b.turnNotifier,
+		Activity:         shutdownActivityFilter{ActivityRecorder: b.turnNotifier, stopping: func() bool { return b.ctx.Err() != nil }, losses: b.hostLosses},
 		OnAsyncTask:      func(id domain.SessionID, task ports.ChatAsyncTask) { b.bgTasks.Apply(id, task) },
 		OnAsyncTasksGone: b.bgTasks.Clear,
 		Log:              b.log,

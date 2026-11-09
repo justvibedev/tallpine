@@ -167,6 +167,10 @@ func (b *boot) shutdownAfterRun(runErr error, startupReconcileDone, usageLimitRe
 		signal.Notify(held, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	}
 	b.stop()
+	if !b.srv.StopAgentsOnExit() {
+		// After b.stop the filter drops further host losses, so this sees them all.
+		b.hostLosses.settle(context.Background(), b.resumeTracker.NoteCutOff)
+	}
 	if usageLimitResumeDone != nil {
 		<-usageLimitResumeDone
 	}

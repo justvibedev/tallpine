@@ -1,19 +1,12 @@
 import { useEffect, useState } from "react";
 import { getApiBaseUrl } from "./api-client";
+import { isLocalDaemonUrlOnPort } from "../../shared/daemon-url";
 import { tallpineBridge } from "./bridge";
 
-/**
- * Whether a URL is served by the local daemon (its API host or a preview
- * host, on its port). With loopback TCP off (B176) such a URL works inside
- * the app but is a dead link in the system browser (B180).
- */
+/** Whether a URL is served by the local daemon (see shared/daemon-url). */
 export function isLocalDaemonUrl(rawUrl: string, apiBase: string = getApiBaseUrl()): boolean {
 	try {
-		const base = new URL(apiBase);
-		const url = new URL(rawUrl);
-		if (url.protocol !== "http:" || url.port !== base.port) return false;
-		const host = url.hostname.toLowerCase();
-		return host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host.endsWith(".localhost");
+		return isLocalDaemonUrlOnPort(rawUrl, new URL(apiBase).port);
 	} catch {
 		return false;
 	}

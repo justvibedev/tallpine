@@ -6,6 +6,7 @@
 		"lifecycle-automation",
 		"remote-access",
 		"agent-policy",
+		"security-mode",
 		"jamf",
 		"planning"
 	]

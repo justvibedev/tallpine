@@ -94,6 +94,11 @@ touch -t 202001010000 "${T}/rbs/release-builds/.building-${RBSHA}"
 rbq request-build >"${T}/out" 2>&1
 for i in $(seq 1 50); do [[ -f "${T}/fakebuild.args" ]] && break; sleep 0.2; done
 check "a stale build lock does not block request-build" '[[ -f "${T}/fakebuild.args" ]]'
+# B441: an unwritable log dir fails loudly (non-zero, message, no build started) instead of "Building ... detached".
+rm -rf "${T}/fakebuild.args" "${T}/rbs/release-builds/.building-${RBSHA}"; rm -rf "${T}/rbs/release-builds/${RBSHA}"; mkdir -p "${T}/ro-ci"; printf 'main\t%s\tpass\tok\n' "${RBSHA}" >"${T}/ro-ci/local-ci.tsv"; chmod 500 "${T}/ro-ci"
+TALLPINE_RELEASE_CI_TSV="${T}/ro-ci/local-ci.tsv" "${RB}/scripts/release-local" --state-dir "${T}/rbs" request-build >"${T}/out" 2>&1 && ro_rc=0 || ro_rc=$?
+chmod 700 "${T}/ro-ci"
+check "request-build fails loudly when the build log is unwritable" '[[ "${ro_rc}" -ne 0 ]] && grep -q "cannot write the build log" "${T}/out" && ! grep -q "Building" "${T}/out"'
 unset TALLPINE_RELEASE_BUILD_BIN TALLPINE_RELEASE_NOTIFY_CLI
 # Stale-lock takeover (bug 2): a takeover already claimed blocks, concurrent takeovers pick exactly one winner, and an EXIT trap set earlier still runs.
 BLS="${T}/bl"; BLB="${BLS}/release-builds"; BLSHA="abcdef1234567890"; mkdir -p "${BLB}"

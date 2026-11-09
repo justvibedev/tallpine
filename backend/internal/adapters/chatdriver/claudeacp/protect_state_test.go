@@ -2,6 +2,7 @@ package claudeacp
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules/protectstate"
 	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/ports"
+	"tallpine.eu/tallpine/backend/internal/statefence"
 )
 
 func withGOOS(t *testing.T, goos string) {
@@ -79,5 +81,18 @@ func TestClaudeChatDriverFencesStateOnMacOSOnly(t *testing.T) {
 	var _ ports.StateFencer = claudecode.New()
 	if !d.FencesState("darwin") || d.FencesState("linux") || d.FencesState("windows") {
 		t.Fatal("Claude chat must fence on darwin only")
+	}
+}
+
+// B401: a Claude chat with protectState on and no run file used to start with
+// no fence settings. The refusal comes through the driver's real Start and Launch.
+func TestChatStartRefusesAnEmptyFence(t *testing.T) {
+	withGOOS(t, "darwin")
+	on := policytest.Decision(t, map[string]map[string]any{protectstate.Name: {protectstate.FieldMode: protectstate.On}})
+	_, err := New(reconnectPlugin{}, nil, nil).Start(t.Context(), ports.ChatStartConfig{
+		Policy: on, SessionID: "s-1", DataDir: t.TempDir(), WorkspacePath: t.TempDir(), Env: map[string]string{},
+	})
+	if !errors.Is(err, statefence.ErrNoRunFile) || !agentpolicy.IsFenceRequired(err) {
+		t.Fatalf("err = %v, want the typed no-run-file refusal", err)
 	}
 }

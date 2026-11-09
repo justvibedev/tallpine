@@ -52,7 +52,7 @@ func threadStartParams(s threadSettings) map[string]any {
 	config := threadConfig(s.Effort, s.MCPServers, s.Env)
 	if sandbox == "workspace-write" {
 		home, _ := os.UserHomeDir()
-		network, roots := permissioncap.CodexWorkspaceWriteExtras(home, s.WorkspacePath)
+		network, roots := permissioncap.CodexWorkspaceWriteExtras(home, s.Policy.GitRepo(), s.WorkspacePath)
 		ws := map[string]any{"network_access": network}
 		if len(roots) > 0 {
 			ws["writable_roots"] = roots

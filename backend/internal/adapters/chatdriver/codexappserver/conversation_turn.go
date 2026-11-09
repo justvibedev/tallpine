@@ -100,7 +100,7 @@ func applyTurnSettings(params map[string]any, settings ports.ChatTurnSettings, r
 		policy, sandbox := approvalSettings(decision, settings.Approval)
 		params["approvalPolicy"] = policy
 		params["approvalsReviewer"] = approvalReviewer(decision, settings.Approval)
-		params["sandboxPolicy"] = turnSandboxPolicy(sandbox, workspace)
+		params["sandboxPolicy"] = turnSandboxPolicy(sandbox, decision.GitRepo(), workspace)
 	}
 	if readOnly {
 		// Reviewers need gh and tallpine review submit; text-only background calls
@@ -113,11 +113,11 @@ func applyTurnSettings(params map[string]any, settings ports.ChatTurnSettings, r
 
 // turnSandboxPolicy converts a thread-level sandbox name into the tagged object
 // turn/start expects.
-func turnSandboxPolicy(sandbox, workspace string) map[string]any {
+func turnSandboxPolicy(sandbox, repo, workspace string) map[string]any {
 	switch sandbox {
 	case "workspace-write":
 		home, _ := os.UserHomeDir()
-		network, roots := permissioncap.CodexWorkspaceWriteExtras(home, workspace)
+		network, roots := permissioncap.CodexWorkspaceWriteExtras(home, repo, workspace)
 		policy := map[string]any{"type": "workspaceWrite", "networkAccess": network}
 		if len(roots) > 0 {
 			policy["writableRoots"] = roots

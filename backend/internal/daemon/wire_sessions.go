@@ -29,7 +29,7 @@ func (b *boot) wireSessions() error {
 	var err error
 	// The agent policy engine exists before anything that launches an agent, so
 	// every launch path decides under the same rules.
-	b.agentPolicySvc, err = newAgentPolicyEngine(b.store)
+	b.agentPolicySvc, err = newDaemonAgentPolicyEngine(b.store)
 	if err != nil {
 		return err
 	}

@@ -25,6 +25,7 @@ type Engine struct {
 	path    string
 	convert func(string) ([]byte, error)
 	now     func() time.Time
+	gitRepo func(context.Context, SessionRef) string
 
 	mu       sync.Mutex
 	cached   managedResult
@@ -42,6 +43,13 @@ func WithManagedFile(path string, convert func(string) ([]byte, error)) Option {
 // WithEnv overrides the environment lookup (tests).
 func WithEnv(lookup func(string) (string, bool)) Option {
 	return func(e *Engine) { e.lookup = lookup }
+}
+
+// WithGitRepo sets how a decision finds the project repository a session's
+// checkout belongs to (see Decision.GitRepo). It must read only daemon state an
+// agent cannot write.
+func WithGitRepo(repo func(context.Context, SessionRef) string) Option {
+	return func(e *Engine) { e.gitRepo = repo }
 }
 
 // WithClock overrides the clock used for the managed file cache (tests).
@@ -130,6 +138,7 @@ func (e *Engine) Decide(ctx context.Context, session SessionRef) Decision {
 	res := e.resolve(ctx, string(session.Project))
 	data := &decisionData{
 		session:  session,
+		gitRepo:  e.gitRepo,
 		profile:  res.profile,
 		outcomes: map[string]Outcome{},
 		fields:   map[string]map[string]FieldState{},

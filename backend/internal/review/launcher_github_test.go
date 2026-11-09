@@ -3,8 +3,12 @@ package review
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"tallpine.eu/tallpine/backend/internal/agentlaunch"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/policytest"
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
@@ -103,5 +107,24 @@ func TestReviewerLaunchesWhenGitHubAccountLookupFails(t *testing.T) {
 	env := spawnReviewerEnv(t, launchSpec(), WithGitHubAccounts(accounts, projectOnPrivateRepo("")))
 	if _, ok := env["GH_TOKEN"]; ok {
 		t.Fatal("no token was available, GH_TOKEN must stay unset")
+	}
+}
+
+// B600: a reviewer is an agent session too, and its git shim must outrank
+// anything the launch adds to PATH.
+func TestReviewerGetsTheGitShimFirstOnPath(t *testing.T) {
+	projects := fakeGitHubProjects{record: domain.ProjectRecord{Path: "/owner/checkout"}}
+	spec := launchSpec()
+	spec.ProjectEnv = map[string]string{agentlaunch.EnvAllowSharedGitConfig: "1"}
+	env := spawnReviewerEnv(t, spec, WithGitHubAccounts(nil, projects), WithExecutable(func() (string, error) { return "/opt/tallpine", nil }))
+	if env[agentlaunch.EnvGitGuardRoot] != "/owner/checkout" {
+		t.Fatalf("guard root = %q", env[agentlaunch.EnvGitGuardRoot])
+	}
+	if _, ok := env[agentlaunch.EnvAllowSharedGitConfig]; ok {
+		t.Fatal("the override must not come from project env")
+	}
+	first, _, _ := strings.Cut(env["PATH"], string(os.PathListSeparator))
+	if !strings.Contains(first, filepath.Join("runtime", "git-shim")) {
+		t.Fatalf("PATH head = %q", first)
 	}
 }

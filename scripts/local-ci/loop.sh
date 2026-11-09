@@ -123,7 +123,11 @@ snapshot_tree() {
 run_verify_supervised() {
   local sha="$1" vlog="$2" rcf="$3" pid n=0; shift 3
   rm -f "$rcf" "${rcf%.rc}.ps" # a stale snapshot from the previous run must never be reported
-  python3 -I -c 'import os,sys
+  # B602: the job's TMPDIR is /tmp; a run killed mid-test would strand its go-build and t.TempDir
+  # trees there. Keep them under a directory this run owns and wipes (a kill is swept next run).
+  local scratch="$H/tmp/verify-scratch"
+  rm -rf "$scratch"; mkdir -p "$scratch"
+  TMPDIR="$scratch" python3 -I -c 'import os,sys
 os.setsid()
 os.execv("/bin/bash",["bash","-c",sys.argv[1],"bash"]+sys.argv[2:])' \
     'vlog="$1"; rcf="$2"; shift 2; scripts/verify "$@" 2>&1 | tee "$vlog"; echo "${PIPESTATUS[0]}" >"$rcf"' "$vlog" "$rcf" "$@" &
@@ -133,10 +137,10 @@ os.execv("/bin/bash",["bash","-c",sys.argv[1],"bash"]+sys.argv[2:])' \
     if [ $((n % ${SNAPSHOT_EVERY:-60})) -eq 0 ]; then snapshot_tree "$pid" "${rcf%.rc}.ps"; fi
     if [ $((n % ${SUPERSEDE_CHECK:-30})) -eq 0 ] && superseded_by_request "$sha"; then
       echo "[$(date)] superseded: build requested for a newer main; stopping run on ${sha:0:8}"
-      kill_supervised; wait "$pid" 2>/dev/null; return 3
+      kill_supervised; wait "$pid" 2>/dev/null; rm -rf "$scratch"; return 3
     fi
   done
-  wait "$pid" 2>/dev/null; SUP_PGID=""; return 0
+  wait "$pid" 2>/dev/null; SUP_PGID=""; rm -rf "$scratch"; return 0
 }
 # describe_verify_rc <rcfile>: "exit N", "killed by SIG<name> (exit N)" for N>128, or "no exit status
 # recorded (the supervising shell died before verify reported)". Goes into the log of a verify-crashed run.
@@ -208,7 +212,8 @@ build_on_green() {
   # The detached child builds, then sends ONE line to the orchestrator (B215). It runs bash -c with
   # the send_to_orchestrator/tallpine_cli definitions copied in via declare -f.
   local defs child
-  defs="$(declare -f tallpine_cli send_to_orchestrator); H='$H'; PROJECT_ID='$PROJECT_ID'"
+  load_notify_lib
+  defs="$(declare -f tallpine_cli send_to_orchestrator load_notify_lib tp_notify_orchestrator); H='$H'; PROJECT_ID='$PROJECT_ID'"
   child='"$3" build "$2" --no-fetch </dev/null; rc=$?
 if [ "$rc" -eq 0 ]; then
   app="$(grep "^Built: " "$1" | tail -1 | cut -c8-)"; msg="[local-ci] build ${2:0:10} OK: ${app:-unknown}. Log: $1"
@@ -274,25 +279,26 @@ notify_orchestrators() {
   send_to_orchestrator "$msg"
 }
 # Shared by notify_orchestrators and the detached build child (B215).
+# tp_notify_orchestrator lives in scripts/lib/notify.sh, shared with release-local. This file runs from an
+# installed copy: the lib sits next to it, else in this repo tree or the main checkout.
+load_notify_lib() {
+  type tp_notify_orchestrator >/dev/null 2>&1 && return 0
+  local f here; here="$(dirname "${BASH_SOURCE[0]}")"
+  # scripts/local-ci/install copies the lib next to the installed loop.sh, so the alert for an unreachable
+  # origin does not depend on the checkout. A file without the function (an older checkout) does not count.
+  for f in "$here/notify.sh" "$here/../lib/notify.sh" "$WORK/scripts/lib/notify.sh"; do
+    # shellcheck disable=SC1090
+    [ -f "$f" ] && . "$f" 2>/dev/null
+    type tp_notify_orchestrator >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
 send_to_orchestrator() {
-  local msg="$1" cli target err sid
+  local msg="$1" cli target
+  load_notify_lib || { echo "[$(date)] notify: scripts/lib/notify.sh not found, skipping"; return 0; }
   cli="$(tallpine_cli)"; [ -n "$cli" ] || { echo "[$(date)] notify: no CLI found"; return 0; }
   target="$(head -1 "$H/notify-target" 2>/dev/null | tr -d '[:space:]')"
-  if "$cli" orchestrator --help 2>&1 | grep -qw notify; then # the parent prints its help (rc 0) even without the subcommand
-    err="$("$cli" orchestrator notify --project "$PROJECT_ID" --target "$target" --message "$msg" 2>&1 >/dev/null)" \
-      && echo "[$(date)] notified" || echo "[$(date)] notify failed: ${err:-no output}"
-    return 0
-  fi
-  # One-release fallback: an installed app older than `orchestrator notify`. Remove once it is installed.
-  sid="$("$cli" orchestrator ls --json 2>/dev/null | python3 -I -c 'import json,sys
-t=sys.argv[1]
-d=json.load(sys.stdin); xs=d if isinstance(d,list) else next((v for v in d.values() if isinstance(v,list)),[])
-live=[x for x in xs if x.get("projectId")=="agent-orchestrator" and not x.get("isTerminated")]
-if not live: sys.exit()
-print(t if any(x["id"]==t for x in live) else min(live,key=lambda x:x.get("createdAt",""))["id"])
-' "$target" 2>/dev/null)"
-  [ -n "$sid" ] || { echo "[$(date)] notify: no live orchestrator, skipping"; return 0; }
-  err="$("$cli" send --session "$sid" --message "$msg" 2>&1 >/dev/null)" && echo "[$(date)] notified $sid" || echo "[$(date)] notify $sid failed: ${err:-no output}"
+  echo "[$(date)] $(tp_notify_orchestrator "$cli" "$PROJECT_ID" "$target" "$msg")"
 }
 
 # B590: the repo is private and the machine-wide gh login can be any account, so which account reaches it

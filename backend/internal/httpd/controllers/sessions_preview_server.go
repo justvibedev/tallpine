@@ -52,7 +52,7 @@ func (c *SessionsController) startPreviewServer(w http.ResponseWriter, r *http.R
 			projectEnv = project.Project.Config.Env
 		}
 	}
-	if c.refuseCappedAgentPreviewStart(w, r) {
+	if c.refuseAgentPreviewStart(w, r) {
 		return
 	}
 	previous := c.PreviewServer.Status(sessionID(r))
@@ -62,6 +62,7 @@ func (c *SessionsController) startPreviewServer(w http.ResponseWriter, r *http.R
 		sess.Metadata.WorkspacePath,
 		strings.TrimSpace(in.Configuration),
 		projectEnv,
+		c.previewFence(r.Context(), sessionID(r), sess.ProjectID),
 	)
 	if err != nil {
 		currentStatus := c.PreviewServer.Status(sessionID(r))

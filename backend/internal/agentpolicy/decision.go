@@ -1,6 +1,7 @@
 package agentpolicy
 
 import (
+	"context"
 	"encoding/json"
 	"slices"
 	"sort"
@@ -23,6 +24,7 @@ type decisionData struct {
 	fields   map[string]map[string]FieldState
 	warnings []string
 	live     func(rule, field string) (json.RawMessage, bool)
+	gitRepo  func(context.Context, SessionRef) string
 }
 
 // Outcome returns the named rule's outcome; ok is false for the zero Decision.
@@ -49,6 +51,17 @@ func (d Decision) Session() SessionRef {
 		return SessionRef{}
 	}
 	return d.d.session
+}
+
+// GitRepo is the project repository the session's checkout belongs to, from
+// daemon state an agent cannot write, or "" when none is known. Resolved on use,
+// so a decision that never builds a fence pays nothing and one bound by
+// WithSession sees its session.
+func (d Decision) GitRepo() string {
+	if d.d == nil || d.d.gitRepo == nil {
+		return ""
+	}
+	return d.d.gitRepo(context.Background(), d.d.session)
 }
 
 // WithSession returns a copy bound to a session id, for flows that decide before

@@ -7,7 +7,7 @@ import (
 )
 
 // GitHubEnterpriseConfig carries self-hosted GHES hosts and per-host tokens.
-// *.ghe.com tenants need no listing. Loaded once from the environment.
+// *.ghe.com tenants resolve via gh login or a host token; an env GH_TOKEN reaches one only if listed here. Loaded once from the environment.
 type GitHubEnterpriseConfig struct {
 	// Hosts are GHES hosts (lowercase, each may include :port).
 	Hosts []string

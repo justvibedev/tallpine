@@ -87,3 +87,10 @@ func (e *AuthEvidence) Diagnostics() []domain.AgentAuthDiagnostic {
 type AgentAuthDiagnosticsChecker interface {
 	AuthStatusWithDiagnostics(context.Context) (AgentAuthStatus, domain.AgentAccountIdentity, []domain.AgentAuthDiagnostic, error)
 }
+
+// AgentAuthEnvChecker is AgentAuthDiagnosticsChecker for the environment a
+// session would launch with (for example a project's CLAUDE_CONFIG_DIR), not the
+// daemon's own.
+type AgentAuthEnvChecker interface {
+	AuthStatusWithDiagnosticsEnv(context.Context, map[string]string) (AgentAuthStatus, domain.AgentAccountIdentity, []domain.AgentAuthDiagnostic, error)
+}
