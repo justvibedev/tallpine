@@ -35,7 +35,7 @@ func TestAutoCloseNotice_CarriesAnswerFromTheClosingStop(t *testing.T) {
 	observer := turnnotify.New(turnnotify.Deps{
 		Sessions: recordSessions{rec.ID: rec},
 		Next: closingApplier(func(ctx context.Context, _ domain.SessionID) {
-			hooks.NotifyClosed(ctx, rec, "orch-1", hooks.UndeliveredTurnResult(ctx, rec))
+			hooks.NotifyClosed(ctx, rec, "orch-1", "orch-1", hooks.UndeliveredTurnResult(ctx, rec))
 		}),
 	})
 	hooks = autoCloseHooks{
@@ -68,5 +68,39 @@ func TestFinishedClosedNotice_CarriesUndeliveredResult(t *testing.T) {
 	h.NotifyFinishedClosed(context.Background(), domain.SessionRecord{ID: "w-1", ProjectID: "p1"}, "[auto] turn_ended: x")
 	if len(sent) != 1 || !strings.Contains(sent[0], "[auto] turn_ended: x") {
 		t.Fatalf("notices = %q", sent)
+	}
+}
+
+// B609: the orchestrator whose merge led to the close (pr land --kill-worker)
+// is not told the worker "ended on its own"; any other orchestrator still is.
+func TestAutoCloseNotice_CauseDependsOnRequester(t *testing.T) {
+	// A deferred close has no ctx requester but a remembered merger: the wording
+	// follows the merge, and the notice is still sent (only a ctx requester
+	// suppresses it).
+	for _, tc := range []struct {
+		requester, mergedBy domain.SessionID
+		undelivered         string
+		wantSent, wantOwn   bool
+	}{
+		{"orch-1", "orch-1", "last result", true, false},
+		{"", "orch-1", "", true, false},
+		{"", "other", "", true, true},
+		{"", "", "", true, true},
+		{"orch-1", "orch-1", "", false, false},
+	} {
+		var sent []string
+		h := autoCloseHooks{
+			store:        sqlitetest.MustOpen(t),
+			orchestrator: func(context.Context, domain.ProjectID, string) (domain.SessionID, bool) { return "orch-1", true },
+			send:         func(_ context.Context, _ domain.SessionID, msg string) error { sent = append(sent, msg); return nil },
+		}
+		h.NotifyClosed(context.Background(), domain.SessionRecord{ID: "w-1", ProjectID: "p1"}, tc.requester, tc.mergedBy, tc.undelivered)
+		if (len(sent) == 1) != tc.wantSent {
+			t.Errorf("%+v: notices = %q", tc, sent)
+			continue
+		}
+		if tc.wantSent && strings.Contains(sent[0], "ended on its own") != tc.wantOwn {
+			t.Errorf("%+v: notice %q, want on-its-own=%v", tc, sent[0], tc.wantOwn)
+		}
 	}
 }

@@ -18,6 +18,7 @@ type fakeAutoClose struct {
 	closed   []domain.SessionID
 	// requesters is the requester NotifyClosed was given, per notice.
 	requesters []domain.SessionID
+	mergedBy   []domain.SessionID
 	// finishedKeep and finishedErr answer the finished-worker check (B588).
 	finishedKeep   string
 	finishedErr    error
@@ -58,10 +59,11 @@ func (f *fakeAutoClose) NotifyFinishedClosed(_ context.Context, rec domain.Sessi
 	f.finishedClosed = append(f.finishedClosed, rec.ID)
 	f.notices = append(f.notices, undelivered)
 }
-func (f *fakeAutoClose) NotifyClosed(_ context.Context, rec domain.SessionRecord, requester domain.SessionID, undelivered string) {
+func (f *fakeAutoClose) NotifyClosed(_ context.Context, rec domain.SessionRecord, requester, mergedBy domain.SessionID, undelivered string) {
 	f.notices = append(f.notices, undelivered)
 	f.closed = append(f.closed, rec.ID)
 	f.requesters = append(f.requesters, requester)
+	f.mergedBy = append(f.mergedBy, mergedBy)
 }
 
 func autoCloseSetup(rec domain.SessionRecord) (*Manager, *fakeCompletionTerminator, *fakeAutoClose) {
@@ -412,4 +414,42 @@ func TestAutoClose_CarriesUndeliveredTurnResult(t *testing.T) {
 			t.Fatalf("read before kill = %v", hooks.readBeforeKill)
 		}
 	})
+}
+
+// B609: a close that a later idle signal triggers (no requester on its ctx) is
+// still attributed to the orchestrator whose merge led to it.
+func TestAutoClose_DeferredCloseKeepsMergeRequester(t *testing.T) {
+	rec := idleWorker("ac-m")
+	rec.Activity.State = domain.ActivityActive
+	m, term, hooks := autoCloseSetup(rec)
+	c := ports.WithMergeRequester(ctx, "orch-1")
+	if err := m.ApplySCMObservation(c, "ac-m", ports.SCMObservation{Fetched: true}); err != nil {
+		t.Fatal(err)
+	}
+	if term.calls != 0 {
+		t.Fatalf("kills=%d while the worker is active", term.calls)
+	}
+	st := m.store.(*fakeStore)
+	cur := st.sessions["ac-m"]
+	cur.Activity.State = domain.ActivityIdle
+	st.sessions["ac-m"] = cur
+	m.autoCloseAfterSignal(ctx, "ac-m") // the idle signal: no requester on ctx
+	if term.calls != 1 || len(hooks.mergedBy) != 1 || hooks.mergedBy[0] != "orch-1" || hooks.requesters[0] != "" {
+		t.Fatalf("kills=%d mergedBy=%v requesters=%v, want a kill attributed to orch-1 without suppressing the notice", term.calls, hooks.mergedBy, hooks.requesters)
+	}
+}
+
+// B609: a remembered merge requester stops explaining a close after its TTL.
+func TestAutoClose_ExpiredMergeRequesterIsIgnored(t *testing.T) {
+	m, _, _ := autoCloseSetup(idleWorker("ac-x"))
+	now := time.Unix(5000, 0)
+	m.clock = func() time.Time { return now }
+	m.NoteMergeRequester("ac-x", "orch-1")
+	if got := m.mergeRequesterFor(ctx, "ac-x"); got != "orch-1" {
+		t.Fatalf("fresh requester = %q", got)
+	}
+	now = now.Add(mergeRequesterTTL + time.Second)
+	if got := m.mergeRequesterFor(ctx, "ac-x"); got != "" {
+		t.Fatalf("expired requester = %q, want none", got)
+	}
 }

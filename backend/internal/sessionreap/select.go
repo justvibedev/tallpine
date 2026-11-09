@@ -24,6 +24,7 @@ const UserShellEnv = "TALLPINE_SHELL_TERMINAL"
 type Proc struct {
 	PID   int
 	PPID  int
+	PGID  int       // process group, 0 when unknown
 	Start time.Time // zero when unknown
 	Exe   string    // executable path, "" when unknown
 	// Marker is the process's TALLPINE_SESSION_ID, "" when it has none or its
@@ -53,22 +54,56 @@ func Select(procs []Proc, m Match, self int) []int {
 	if m.SessionID == "" {
 		return nil
 	}
-	byPID := make(map[int]Proc, len(procs))
-	children := make(map[int][]int, len(procs))
-	for _, p := range procs {
-		byPID[p.PID] = p
-		children[p.PPID] = append(children[p.PPID], p.PID)
+	ix := newProcIndex(procs, self)
+	guarded := ix.guard(m.SessionID)
+	eligible := func(p Proc) bool {
+		if !guarded(p) {
+			return false
+		}
+		return m.StartedBefore.IsZero() || p.Start.IsZero() || p.Start.Before(m.StartedBefore)
 	}
-	protected := map[int]bool{0: true, 1: true}
+	var seeds []int
+	for _, p := range procs {
+		if (p.Marker == m.SessionID || under(p.Exe, m.Dirs)) && eligible(p) {
+			seeds = append(seeds, p.PID)
+		}
+	}
+	return ix.expand(procs, seeds, eligible)
+}
+
+// procIndex is a process table indexed for selection.
+type procIndex struct {
+	byPID     map[int]Proc
+	children  map[int][]int
+	protected map[int]bool
+}
+
+func newProcIndex(procs []Proc, self int) *procIndex {
+	ix := &procIndex{
+		byPID:     make(map[int]Proc, len(procs)),
+		children:  make(map[int][]int, len(procs)),
+		protected: map[int]bool{0: true, 1: true},
+	}
+	for _, p := range procs {
+		ix.byPID[p.PID] = p
+		ix.children[p.PPID] = append(ix.children[p.PPID], p.PID)
+	}
 	for pid, seen := self, 0; pid > 1 && seen < len(procs)+1; seen++ {
-		protected[pid] = true
-		p, ok := byPID[pid]
+		ix.protected[pid] = true
+		p, ok := ix.byPID[pid]
 		if !ok {
 			break
 		}
 		pid = p.PPID
 	}
-	foreign := func(p Proc) bool { return p.Marker != "" && p.Marker != m.SessionID }
+	return ix
+}
+
+// guard returns the check every selected process must pass for sessionID:
+// never the caller or its ancestors, a user shell, a process tagged to another
+// session, or a process with such a process below it.
+func (ix *procIndex) guard(sessionID string) func(Proc) bool {
+	foreign := func(p Proc) bool { return p.Marker != "" && p.Marker != sessionID }
 	// hostsForeign: p or a descendant is tagged to another session.
 	hosts := map[int]bool{}
 	var hostsForeign func(pid int, depth int) bool
@@ -77,9 +112,9 @@ func Select(procs []Proc, m Match, self int) []int {
 			return v
 		}
 		hosts[pid] = false // cycle guard
-		v := foreign(byPID[pid])
+		v := foreign(ix.byPID[pid])
 		if depth < 64 {
-			for _, c := range children[pid] {
+			for _, c := range ix.children[pid] {
 				if hostsForeign(c, depth+1) {
 					v = true
 				}
@@ -88,25 +123,26 @@ func Select(procs []Proc, m Match, self int) []int {
 		hosts[pid] = v
 		return v
 	}
-	eligible := func(p Proc) bool {
-		if protected[p.PID] || p.UserShell || foreign(p) || hostsForeign(p.PID, 0) {
-			return false
-		}
-		return m.StartedBefore.IsZero() || p.Start.IsZero() || p.Start.Before(m.StartedBefore)
+	return func(p Proc) bool {
+		return !ix.protected[p.PID] && !p.UserShell && !foreign(p) && !hostsForeign(p.PID, 0)
 	}
-	selected := map[int]bool{}
-	var queue []int
-	for _, p := range procs {
-		if (p.Marker == m.SessionID || under(p.Exe, m.Dirs)) && eligible(p) {
-			selected[p.PID] = true
-			queue = append(queue, p.PID)
+}
+
+// expand returns seeds and their eligible descendants, in procs order.
+func (ix *procIndex) expand(procs []Proc, seeds []int, eligible func(Proc) bool) []int {
+	selected := make(map[int]bool, len(seeds))
+	queue := make([]int, 0, len(seeds))
+	for _, pid := range seeds {
+		if !selected[pid] {
+			selected[pid] = true
+			queue = append(queue, pid)
 		}
 	}
 	for len(queue) > 0 {
 		pid := queue[0]
 		queue = queue[1:]
-		for _, c := range children[pid] {
-			if !selected[c] && eligible(byPID[c]) {
+		for _, c := range ix.children[pid] {
+			if !selected[c] && eligible(ix.byPID[c]) {
 				selected[c] = true
 				queue = append(queue, c)
 			}

@@ -155,6 +155,29 @@ db_holders() {
   lsof -t -- "${files[@]}" 2>/dev/null | sort -u | tr '\n' ' ' || true
 }
 
+# describe_holders: for each pid, the pid and every ancestor up to launchd, one line each (ppid, start time, command), so
+# a relaunched app (B611) is traceable: the process holding ao.db is the daemon, and the app that started it is its parent.
+# The launchd note prints only for the app itself (a ppid of 1 on a keep-alive daemon means its app is gone, not launched).
+describe_holders() {
+  local pid ppid started cmd depth apps
+  apps=" $(app_pids | tr '\n' ' ')"
+  for pid in $1; do
+    depth=0
+    while [[ "${pid}" =~ ^[0-9]+$ && "${pid}" -gt 1 && "${depth}" -lt 6 ]]; do
+      ppid="$(ps -o ppid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+      [[ -n "${ppid}" ]] || break
+      started="$(ps -o lstart= -p "${pid}" 2>/dev/null)"
+      cmd="$(ps -o command= -p "${pid}" 2>/dev/null)"
+      printf '  pid %s: ppid %s, started %s, command: %s\n' "${pid}" "${ppid}" "${started}" "${cmd}"
+      if [[ "${ppid}" == 1 && "${apps}" == *" ${pid} "* ]]; then
+        printf '    launchd started this app (not this script): a Dock/Finder/open launch, a login item, macOS window restoration or the updater\n'
+      fi
+      pid="${ppid}"
+      depth=$((depth + 1))
+    done
+  done
+}
+
 # The daemon serves its user-only socket and, by default, no loopback TCP
 # (B176): curl goes through the socket running.json names when there is one.
 daemon_curl() {
@@ -228,7 +251,9 @@ _stop_app_and_daemon() {
   # Before db_holders: a stray daemon on this data dir holds the database open and would abort the install there.
   sweep_stray_daemons
   holders="$(db_holders)"
-  [[ -z "${holders// /}" ]] || die "the database in ${data_dir} is still open by pid ${holders% }; quit it and retry"
+  [[ -z "${holders// /}" ]] || die "the database in ${data_dir} is still open by pid ${holders% }; quit it and retry
+$(describe_holders "${holders}")
+If ${product_name} came back after the install quit it, do not reopen it until the install finishes."
 }
 
 # drop_agent_session_env unsets the per-session variables of the agent session

@@ -54,8 +54,14 @@ func TestEnforceManagedMobileStopsRunningBridgeLive(t *testing.T) {
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go enforceManagedMobile(ctx, time.Millisecond, bs, slog.Default())
+	loopDone := make(chan struct{})
+	// The loop keeps rewriting the state file on every tick, so the test must
+	// wait for it to return before t.TempDir is removed.
+	defer func() { cancel(); <-loopDone }()
+	go func() {
+		defer close(loopDone)
+		enforceManagedMobile(ctx, time.Millisecond, bs, slog.Default())
+	}()
 
 	// Wait for the loop to enforce a few times under an allowing policy; no
 	// wall-clock sleep, so a slow machine cannot skip the "allowed" check.

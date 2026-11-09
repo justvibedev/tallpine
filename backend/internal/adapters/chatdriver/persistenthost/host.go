@@ -89,6 +89,12 @@ type Descriptor struct {
 	Token                string    `json:"token"`
 	PID                  int       `json:"pid"`
 	StartedAt            time.Time `json:"startedAt"`
+	// HostStart is the host process's OS start time, which tells it from an
+	// unrelated process that reused PID. Zero when it could not be read.
+	HostStart time.Time `json:"hostStart,omitzero"`
+	// Provider identifies the process the host owns, so a daemon can stop it
+	// if the host is killed before it can do so itself.
+	Provider *ProviderRecord `json:"provider,omitempty"`
 }
 
 // Config identifies one provider process and its Tallpine session ownership.

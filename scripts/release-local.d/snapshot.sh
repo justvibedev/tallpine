@@ -47,6 +47,8 @@ snapshot_data() {
     if [[ "${before}" != "${after}" || -n "${holders// /}" ]]; then
       printf 'the database in %s changed while it was being snapshotted%s; something (a relaunched %s or a stray process) is using it. Do not open %s during an install\n' \
         "${data_dir}" "${holders:+ (open by pid ${holders% })}" "${product_name}" "${product_name}" >&2
+      describe_holders "${holders:-$(app_pids | tr '\n' ' ')}" >&2
+      printf 'If %s was started again after the install quit it, quit it, do not reopen it until the install finishes, and retry; if it keeps coming back, check System Settings > General > Login Items and "Close windows when quitting an application".\n' "${product_name}" >&2
       return 1
     fi
   fi

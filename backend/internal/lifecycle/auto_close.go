@@ -24,8 +24,10 @@ type autoCloseHooks interface {
 	UndeliveredTurnResult(ctx context.Context, rec domain.SessionRecord) string
 	// NotifyClosed tells the orchestrator; requester is the session whose merge
 	// request caused the close ("" if none), which needs no notice unless
-	// undelivered carries a result it would otherwise never see.
-	NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID, undelivered string)
+	// undelivered carries a result it would otherwise never see. mergedBy is
+	// the orchestrator whose recent merge led to the close, even when the close
+	// ran later without it on ctx; it only picks the wording (B609).
+	NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester, mergedBy domain.SessionID, undelivered string)
 	// EndOnMergeSessions lists live sessions marked end-on-merge (B498 rearm).
 	EndOnMergeSessions(ctx context.Context) ([]domain.SessionID, error)
 	// NotifyHeld tells the orchestrator a close has been held past the bound (B498).
@@ -65,10 +67,52 @@ func (m *Manager) maybeAutoClose(ctx context.Context, id domain.SessionID) error
 	return err
 }
 
+// mergeRequesterTTL bounds how long a remembered merge requester explains a
+// close: the kill that follows `pr land --kill-worker` comes within seconds.
+const mergeRequesterTTL = 5 * time.Minute
+
+type notedMerge struct {
+	requester domain.SessionID
+	at        time.Time
+}
+
+// NoteMergeRequester remembers which session accepted a merge for id, so a
+// close that a later idle signal or poll triggers (no requester on its ctx) is
+// still worded as following that merge (B609). In memory; entries expire after
+// mergeRequesterTTL and are dropped when the session is seen terminated.
+func (m *Manager) NoteMergeRequester(id, requester domain.SessionID) {
+	if requester == "" {
+		return
+	}
+	now := m.clock()
+	m.mergeRequesters.Range(func(k, v any) bool {
+		if n, ok := v.(notedMerge); ok && now.Sub(n.at) > mergeRequesterTTL {
+			m.mergeRequesters.Delete(k)
+		}
+		return true
+	})
+	m.mergeRequesters.Store(id, notedMerge{requester: requester, at: now})
+}
+
+func (m *Manager) mergeRequesterFor(ctx context.Context, id domain.SessionID) domain.SessionID {
+	if r := ports.MergeRequester(ctx); r != "" {
+		return r
+	}
+	if v, ok := m.mergeRequesters.Load(id); ok {
+		if n, ok := v.(notedMerge); ok && m.clock().Sub(n.at) <= mergeRequesterTTL {
+			return n.requester
+		}
+	}
+	return ""
+}
+
 func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held bool, err error) {
 	rec, ok, err := m.store.GetSession(ctx, id)
 	if err != nil || !ok {
 		return false, err
+	}
+	if rec.IsTerminated {
+		m.mergeRequesters.Delete(id)
 	}
 	if rec.IsTerminated || !rec.TerminateOnPRMerge {
 		m.autoCloseRetry.forgetKept(id)
@@ -148,7 +192,8 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 		slog.Warn("clear end-on-merge after auto-close failed", "session", id, "err", err)
 	}
 	if hooks := m.autoCloseHooksOrNil(); hooks != nil {
-		hooks.NotifyClosed(ctx, rec, ports.MergeRequester(ctx), undelivered)
+		hooks.NotifyClosed(ctx, rec, ports.MergeRequester(ctx), m.mergeRequesterFor(ctx, id), undelivered)
+		m.mergeRequesters.Delete(id)
 	}
 	return false, nil
 }

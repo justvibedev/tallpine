@@ -23,7 +23,7 @@ is no separate poller:
   signal after the queue has drained retries it.
 
 The owning orchestrator (the worker's lane orchestrator, else the project's)
-gets `[auto] session_closed: <session id> ended on its own ...`.
+gets `[auto] session_closed: <session id> ended on its own ...` (or, when that orchestrator's own merge led to the close, `was closed right after the PR you merged ...`).
 
 A session that auto-close ended has its end-on-merge flag cleared, so restoring
 it by hand does not end it again. Sessions saved and restored across an app

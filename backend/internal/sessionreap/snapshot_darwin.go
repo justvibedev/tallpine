@@ -2,11 +2,16 @@ package sessionreap
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	tallpineprocess "tallpine.eu/tallpine/backend/internal/process"
 )
 
 // szomb is the kinfo p_stat of a zombie, which no signal can stop.
@@ -30,6 +35,7 @@ func Snapshot() ([]Proc, error) {
 		p := Proc{
 			PID:   int(kp.Proc.P_pid),
 			PPID:  int(kp.Eproc.Ppid),
+			PGID:  int(kp.Eproc.Pgid),
 			Start: time.Unix(kp.Proc.P_starttime.Sec, int64(kp.Proc.P_starttime.Usec)*1000),
 		}
 		if raw, err := unix.SysctlRaw("kern.procargs2", p.PID); err == nil {
@@ -63,4 +69,19 @@ func parseProcArgs(raw []byte) (exe, marker string, userShell bool) {
 	}
 	marker, userShell = envFacts(fields[argc:])
 	return exe, marker, userShell
+}
+
+// procCwd returns pid's working directory. macOS has no procfs and x/sys does
+// not wrap proc_pidinfo, so ask lsof, which is part of the base system.
+func procCwd(ctx context.Context, pid int) (string, bool) {
+	out, err := tallpineprocess.CommandContext(ctx, "lsof", "-w", "-a", "-d", "cwd", "-Fn", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if dir, ok := strings.CutPrefix(line, "n"); ok && dir != "" {
+			return dir, true
+		}
+	}
+	return "", false
 }

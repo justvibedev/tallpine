@@ -43,6 +43,8 @@ type actionReader interface {
 
 type actionLifecycle interface {
 	ApplySCMObservation(ctx context.Context, sessionID domain.SessionID, obs ports.SCMObservation) error
+	// NoteMergeRequester records who accepted a merge before it is persisted (B609).
+	NoteMergeRequester(id, requester domain.SessionID)
 }
 
 // MergePolicyReader resolves the project a PR's session belongs to and the Tallpine
@@ -209,6 +211,11 @@ func (s *ActionService) Merge(ctx context.Context, request MergeRequest) (MergeR
 		}
 	}
 	mergedAt := s.clock().UTC()
+	// Before the merge is persisted: a worker idle signal between the two must
+	// still attribute the close to this requester (B609).
+	if s.lifecycle != nil {
+		s.lifecycle.NoteMergeRequester(tracked.SessionID, request.Requester)
+	}
 	persisted := false
 	if s.mergeWriter != nil {
 		if err := s.mergeWriter.MarkPRMerged(ctx, tracked.URL, out.MergeCommitSHA, mergedAt); err != nil {

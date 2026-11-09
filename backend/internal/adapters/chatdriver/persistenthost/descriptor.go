@@ -45,6 +45,12 @@ func lockPath(dataDir, sessionID string) (string, error) {
 }
 
 func acquireHostLock(dataDir, sessionID string) (func(), error) {
+	return claimHostLock(dataDir, sessionID, 0)
+}
+
+// claimHostLock is acquireHostLock for a caller that has proven deadOwner is
+// no longer the host, even though a process with that pid is alive (pid reuse).
+func claimHostLock(dataDir, sessionID string, deadOwner int) (func(), error) {
 	dir, err := hostDir(dataDir, sessionID)
 	if err != nil {
 		return nil, err
@@ -60,7 +66,7 @@ func acquireHostLock(dataDir, sessionID string) (func(), error) {
 	if errors.Is(err, os.ErrExist) {
 		owner, readErr := os.ReadFile(path) //nolint:gosec // Tallpine-owned path derived from validated session id.
 		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(owner)))
-		if readErr != nil || parseErr != nil || pid <= 0 || processalive.Alive(pid) {
+		if readErr != nil || parseErr != nil || pid <= 0 || (pid != deadOwner && processalive.Alive(pid)) {
 			return nil, ErrHostExists
 		}
 		// A host can die after atomically creating its launch lock but before it

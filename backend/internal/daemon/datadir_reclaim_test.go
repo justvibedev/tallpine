@@ -118,7 +118,9 @@ func TestLockDataDirWaitsOutStoppingHolderDeadline(t *testing.T) {
 		return
 	}
 	dir := t.TempDir()
-	stopBy := time.Now().Add(time.Second)
+	// The lock file records stop-by in whole milliseconds, so compare against
+	// the same truncated instant; the sub-millisecond remainder is not on disk.
+	stopBy := time.Now().Add(time.Second).Truncate(time.Millisecond)
 	holder := startLockHolder(t, "TestLockDataDirWaitsOutStoppingHolderDeadline", dir, stopBy)
 	logs, log := reclaimLog()
 	var killedAt time.Time

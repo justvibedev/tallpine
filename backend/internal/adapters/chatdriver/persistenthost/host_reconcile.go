@@ -8,12 +8,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"tallpine.eu/tallpine/backend/internal/processalive"
+	"tallpine.eu/tallpine/backend/internal/sessionreap"
 )
 
 // Reconcile terminates compatible authenticated hosts whose durable session no
 // longer exists. Live-session hosts, incompatible hosts, and inconclusive probes
-// are preserved.
+// are preserved. Any host proven dead has its provider stopped first, kept
+// session or not: a host killed by SIGKILL leaves an agent nothing else stops.
 func Reconcile(ctx context.Context, dataDir string, keep map[string]struct{}) error {
 	root := HostsRoot(dataDir)
 	entries, err := os.ReadDir(root)
@@ -24,6 +25,8 @@ func Reconcile(ctx context.Context, dataDir string, keep map[string]struct{}) er
 		return err
 	}
 	var errs []error
+	var dead []Descriptor
+	procs, snapshotErr := sessionreap.Snapshot()
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -32,32 +35,23 @@ func Reconcile(ctx context.Context, dataDir string, keep map[string]struct{}) er
 		if removeIfEmpty(filepath.Join(root, sessionID)) {
 			continue
 		}
-		if _, ok := keep[sessionID]; ok {
-			continue
-		}
 		d, readErr := readDescriptor(dataDir, sessionID)
-		if readErr != nil {
+		if readErr != nil || d.Version != ProtocolVersion {
 			continue
 		}
-		if d.Version != ProtocolVersion {
+		if hostGone(ctx, d, procs, snapshotErr == nil) {
+			dead = append(dead, d)
 			continue
 		}
-		if !processalive.Alive(d.PID) {
-			// Claim the launch lock before cleaning a dead descriptor. If a new host
-			// already owns it, preserve its descriptor instead of deleting ownership
-			// state observed by a stale reconciler.
-			release, lockErr := acquireHostLock(dataDir, sessionID)
-			if lockErr != nil {
-				continue
-			}
-			path, _ := descriptorPath(dataDir, sessionID)
-			_ = os.Remove(path)
-			release()
+		if _, ok := keep[sessionID]; ok {
 			continue
 		}
 		if shutdownErr := Shutdown(ctx, dataDir, sessionID); shutdownErr != nil {
 			errs = append(errs, fmt.Errorf("reap chat host %s: %w", sessionID, shutdownErr))
 		}
+	}
+	if reapErr := reapDeadHosts(ctx, dataDir, dead); reapErr != nil {
+		errs = append(errs, reapErr)
 	}
 	return errors.Join(errs...)
 }

@@ -5,6 +5,15 @@ description: Read current Tallpine product updates and release notes.
 
 Release notes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and are sourced from Tallpine's merged pull requests. Tallpine is a fork of Agent Orchestrator; notes from before the fork are upstream's.
 
+## [0.13.9]
+
+### Fixed
+- The closed Sessions panel no longer paints under the rail (#1083).
+- Install output no longer shows harmless pkgbuild write noise (#1085).
+- Auto-close reports the right cause after `pr land --kill-worker` (#1086).
+- A failed install names the process that relaunched and changed `ao.db` during the snapshot (#1087).
+- Agents left behind when the chat host is killed with SIGKILL are reaped (#1088).
+
 ## [0.13.8]
 
 ### Changed

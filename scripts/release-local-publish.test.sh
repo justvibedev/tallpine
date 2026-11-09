@@ -34,13 +34,8 @@ fi
 echo "designated => identifier \"${TALLPINE_RELEASE_BUNDLE_ID}\" and certificate leaf[subject.OU] = ${team}" >&2
 SH
 # Fake pkg tools: pkgbuild/productsign write files and log; xcrun handles notarytool/stapler.
-cat >"${T}/pkgbuild" <<SH
-#!/bin/bash
-echo "pkgbuild \$*" >>"${T}/pkg.log"
-if [[ "\$1" == --analyze ]]; then printf '<?xml version="1.0"?><plist version="1.0"><array><dict><key>BundleIsRelocatable</key><true/></dict></array></plist>' >"\${@: -1}"; exit 0; fi
-for a in "\$@"; do [[ "\$prev" == --component-plist ]] && plutil -extract 0.BundleIsRelocatable raw "\$a" >>"${T}/reloc"; prev="\$a"; done
-: >"\${@: -1}"
-SH
+# Fake pkgbuild lives in a fixture (heredoc size limit); it reads $T from the exported env.
+cp "$(dirname "${BASH_SOURCE[0]}")/release-local.test.d/fake-pkgbuild.sh" "${T}/pkgbuild"
 cat >"${T}/productsign" <<SH
 #!/bin/bash
 echo "productsign \$*" >>"${T}/pkg.log"; cp "\$3" "\$4"
@@ -158,6 +153,13 @@ if [[ "$(cat "${T}/reloc")" == false ]]; then ok "pkg component plist is non-rel
 if [[ "${pk}" == *"--install-location /Applications"* && "${pk}" != *"--scripts"* ]]; then ok "pkg installs to /Applications without scripts"; else bad "pkg build args: ${pk}"; fi
 order="$(grep -o '^[a-z]*' "${T}/pkg.log" | uniq | tr '\n' ' ')"
 if [[ "${order}" == "pkgbuild productsign notarytool stapler pkgutil " ]]; then ok "pkg: build, sign, notarize, staple, verify"; else bad "pkg step order: ${order}"; fi
+if grep -q 'write: Permission denied' "${T}/out"; then bad "pkgbuild's known write noise is filtered"; else ok "pkgbuild's known write noise is filtered"; fi
+# A real pkgbuild failure still dies and its own error is shown.
+rm -f "${T}/gh.log"; touch "${T}/pkgbuild-fail"
+if PATH="${T}/bin:${PATH}" publish --publish-github; then bad "failing pkgbuild refuses"; else ok "failing pkgbuild refuses"; fi
+if grep -q 'pkgbuild: error: real failure' "${T}/out" && grep -q 'write: Permission denied' "${T}/out"; then ok "pkgbuild real error is reported"; else bad "pkgbuild real error is reported: $(cat "${T}/out")"; fi
+no_create "pkgbuild failure"
+rm -f "${T}/pkgbuild-fail"
 # Notarization failure stops before gh release create.
 rm -f "${T}/gh.log"; touch "${T}/notary-fail"
 if PATH="${T}/bin:${PATH}" publish --publish-github; then bad "failed pkg notarization refuses"; else ok "failed pkg notarization refuses"; fi

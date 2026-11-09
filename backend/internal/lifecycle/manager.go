@@ -233,6 +233,8 @@ type Manager struct {
 	autoClose autoCloseHooks
 	// autoCloseRetry re-arms a close held by a running job (B494).
 	autoCloseRetry autoCloseRetry
+	// mergeRequesters maps a session to the orchestrator whose merge may close it (B609).
+	mergeRequesters sync.Map
 	// usageFinalizer is late-bound because the usage pipeline is optional. It
 	// receives terminal intent before is_terminated makes the session ineligible
 	// for normal source discovery.

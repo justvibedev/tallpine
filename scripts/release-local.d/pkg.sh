@@ -18,6 +18,20 @@ require_pkg_identity() {
     die "refusing to publish: installer identity '${identity}' not found in the keychain (security find-identity -v -p basic)"
 }
 
+# run_pkgbuild <pkgbuild> <args...>: run pkgbuild with stdout discarded. Recent macOS pkgbuild prints the
+# bare line "write: Permission denied" to stderr several times per build even when it succeeds (it
+# reproduces on a trivial one-file root, so it is not our payload or paths). Drop only those exact
+# lines, and only when pkgbuild succeeded; on failure stderr is shown unchanged and the exit status
+# is kept, so a real failure still dies with every diagnostic.
+run_pkgbuild() {
+  local errf rc=0
+  errf="$(mktemp "${TMPDIR:-/tmp}/tallpine-pkgbuild-err.XXXXXX")" || return 1
+  "$@" >/dev/null 2>"${errf}" || rc=$?
+  if [[ "${rc}" -eq 0 ]]; then grep -vx 'write: Permission denied' "${errf}" >&2 || true; else cat "${errf}" >&2; fi
+  rm -f "${errf}"
+  return "${rc}"
+}
+
 # build_pkg <app> <version> <out.pkg>: pkgbuild, productsign, notarize+staple, verify.
 build_pkg() {
   local app="$1" version="$2" out="$3" identity raw root plist pkgb="${TALLPINE_RELEASE_PKGBUILD:-pkgbuild}"
@@ -29,10 +43,10 @@ build_pkg() {
   root="$(mktemp -d "${TMPDIR:-/tmp}/tallpine-pkgroot.XXXXXX")"
   plist="${root}.plist"
   ditto "${app}" "${root}/$(basename "${app}")" || die "could not stage ${app}"
-  "${pkgb}" --analyze --root "${root}" "${plist}" >/dev/null || die "pkgbuild --analyze failed for ${app}"
+  run_pkgbuild "${pkgb}" --analyze --root "${root}" "${plist}" || die "pkgbuild --analyze failed for ${app}"
   plutil -replace 0.BundleIsRelocatable -bool NO "${plist}" || die "could not mark the bundle non-relocatable"
-  "${pkgb}" --root "${root}" --component-plist "${plist}" --install-location /Applications \
-    --identifier "${bundle_id}" --version "${version}" "${raw}" >/dev/null || die "pkgbuild failed for ${app}"
+  run_pkgbuild "${pkgb}" --root "${root}" --component-plist "${plist}" --install-location /Applications \
+    --identifier "${bundle_id}" --version "${version}" "${raw}" || die "pkgbuild failed for ${app}"
   rm -rf "${root}" "${plist}"
   "${TALLPINE_RELEASE_PRODUCTSIGN:-productsign}" --sign "${identity}" "${raw}" "${out}" >/dev/null ||
     die "productsign failed: is the certificate '${identity}' in the keychain?"

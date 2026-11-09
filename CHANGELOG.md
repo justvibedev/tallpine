@@ -4,6 +4,15 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.9]
+
+### Fixed
+- The closed Sessions panel no longer paints under the rail (#1083).
+- Install output no longer shows harmless pkgbuild write noise (#1085).
+- Auto-close reports the right cause after `pr land --kill-worker` (#1086).
+- A failed install names the process that relaunched and changed `ao.db` during the snapshot (#1087).
+- Agents left behind when the chat host is killed with SIGKILL are reaped (#1088).
+
 ## [0.13.8]
 
 ### Changed

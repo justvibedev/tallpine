@@ -18,13 +18,14 @@ var ErrUnsupported = errors.New("sessionreap: process listing unsupported on thi
 type Reaper struct {
 	list   func() ([]Proc, error)
 	signal func(pid int, sig syscall.Signal) error
+	cwd    func(ctx context.Context, pid int) (string, bool)
 	self   int
 	grace  time.Duration
 }
 
 // New returns a Reaper over the system's process table.
 func New() *Reaper {
-	return &Reaper{list: Snapshot, signal: signalPID, self: os.Getpid(), grace: DefaultGrace}
+	return &Reaper{list: Snapshot, signal: signalPID, cwd: procCwd, self: os.Getpid(), grace: DefaultGrace}
 }
 
 // Snapshot lists the processes the caller may signal.
@@ -48,7 +49,14 @@ func (r *Reaper) ReapFrom(ctx context.Context, procs []Proc, m Match) (int, erro
 }
 
 func (r *Reaper) reapFrom(ctx context.Context, procs []Proc, m Match) (int, error) {
-	pids := Select(procs, m, r.self)
+	return r.stop(ctx, procs, func(p []Proc) []int { return Select(p, m, r.self) })
+}
+
+// stop signals what pick selects from procs, then re-picks from fresh
+// snapshots until nothing is left or the grace ends. Re-picking is what keeps
+// a pid reused during the grace safe: only a process still proven is killed.
+func (r *Reaper) stop(ctx context.Context, procs []Proc, pick func([]Proc) []int) (int, error) {
+	pids := pick(procs)
 	if len(pids) == 0 {
 		return 0, nil
 	}
@@ -61,7 +69,7 @@ func (r *Reaper) reapFrom(ctx context.Context, procs []Proc, m Match) (int, erro
 		if err != nil {
 			return len(pids), err
 		}
-		remaining := Select(left, m, r.self)
+		remaining := pick(left)
 		if len(remaining) == 0 {
 			return len(pids), nil
 		}

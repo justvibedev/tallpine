@@ -2,6 +2,7 @@
 # Entries only shrink. Files over 800 lines are split or carry a reason (decision q2 of the
 # 2026-11 code-health plan); files of 501-800 lines are split when next touched.
 # k1: frontend/src/annotate-preload.ts stays one sandboxed preload bundle.
+# raise-approved: backend/internal/session_manager/prompt.go restores main to green: PR 1015 regenerated this allow from a base that predates 1013 (517 -> 502), while prompt.go is 503 lines on main
 550 backend/e2e/chat_conversation_test.go
 825 backend/e2e/harness_test.go
 587 backend/internal/adapters/agent/binaryutil/binaryutil.go
@@ -213,7 +214,6 @@
 1015 backend/internal/session_manager/manager_send_test.go
 1102 backend/internal/session_manager/manager_spawn_failure_test.go
 1350 backend/internal/session_manager/manager_spawn_test.go
-# raise-approved: backend/internal/session_manager/prompt.go restores main to green: PR 1015 regenerated this allow from a base that predates 1013 (517 -> 502), while prompt.go is 503 lines on main
 503 backend/internal/session_manager/prompt.go
 1128 backend/internal/session_manager/provision_test.go
 601 backend/internal/session_manager/send_composer_guard_test.go
@@ -335,7 +335,7 @@
 512 frontend/src/renderer/components/settings/ConnectMobileContent.tsx
 1012 frontend/src/renderer/components/settings/HarnessSettingsSectionLogin.test.tsx
 911 frontend/src/renderer/components/settings/HarnessSettingsSectionModels.test.tsx
-751 frontend/src/renderer/components/ui/sidebar.tsx
+736 frontend/src/renderer/components/ui/sidebar.tsx
 799 frontend/src/renderer/hooks/useBrowserViewLayout.test.tsx
 933 frontend/src/renderer/hooks/useBrowserViewTabs.test.tsx
 1393 frontend/src/renderer/hooks/useConversation.test.tsx

@@ -1,6 +1,7 @@
 "use client";
 
 import { useSidebarChromeGeometry } from "../../hooks/useSidebarChromeGeometry";
+import { sidebarGapWidth } from "./sidebar-geometry";
 
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -216,25 +217,7 @@ function Sidebar({
 	const containerX = isOffcanvasCollapsed ? (side === "left" ? "-100%" : "100%") : "0%";
 	const activeTransition: typeof SHELL_PANEL_SPRING | { duration: number } =
 		!isReady || prefersReducedMotion ? { duration: 0 } : SHELL_PANEL_SPRING;
-
-	// Target width for the gap placeholder. Animating the actual width lets the
-	// flex sibling <main> follow in real time instead of snapping separately.
-	const panelGapWidth =
-		isIconCollapsed
-			? variant === "floating" || variant === "inset"
-				? "calc(var(--sidebar-width-icon) + 1rem)"
-				: "var(--sidebar-width-icon)"
-			: "var(--tallpine-sidebar-w, var(--sidebar-width))";
-	// The shell's icon rail (`--tallpine-rail-w`, 0px without one) always keeps its
-	// width; the panel adds its own unless it is closed or floating as an overlay.
-	const gapTargetWidth =
-		side === "left"
-			? isOffcanvasCollapsed || overlay
-				? "var(--tallpine-rail-w, 0px)"
-				: `calc(var(--tallpine-rail-w, 0px) + ${panelGapWidth})`
-			: isOffcanvasCollapsed
-				? 0
-				: panelGapWidth;
+	const gapTargetWidth = sidebarGapWidth({ side, offcanvasCollapsed: isOffcanvasCollapsed, iconCollapsed: isIconCollapsed, inset: variant === "floating" || variant === "inset", overlay: Boolean(overlay) });
 
 	// Several React HTML event types conflict with Motion's overloaded versions.
 	// Cast once so callers can keep passing through plain div props.
@@ -280,6 +263,8 @@ function Sidebar({
 					"fixed top-0 bottom-0 z-chrome hidden w-(--tallpine-sidebar-w,var(--sidebar-width)) md:flex",
 					side === "left" ? "left-(--tallpine-rail-w,0px)" : "right-0",
 					overlay && !isOffcanvasCollapsed && "shadow-lg",
+					// The closed panel starts at left: rail-w, so rail-w of it stays under the rail after sliding -100%. Hide it once the slide lands (visibility flips at the end of the transition when closing, at once when opening); the reopen strip opts back in with visible.
+					"transition-[visibility] duration-500 group-data-[collapsible=offcanvas]:invisible",
 					// Adjust the padding for floating and inset variants.
 					variant === "floating" || variant === "inset"
 						? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -344,7 +329,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
 				"absolute inset-y-0 z-titlebar hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 hover:after:bg-sidebar-border sm:flex",
 				"in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
 				"[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
-				"group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
+				"group-data-[collapsible=offcanvas]:visible group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
 				"[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
 				"[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
 				className,

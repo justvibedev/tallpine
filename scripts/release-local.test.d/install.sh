@@ -80,6 +80,15 @@ check_relaunch "ao.db write abort keeps B installed and relaunched" '[[ "$(insta
 check "ao.db write abort leaves no new rollback point" '[[ "$(ls -1d "${state}/releases"/2* | wc -l | tr -d " ")" == "${points_before}" ]]'
 wait_alive
 
+# B611: a process holding ao.db at the snapshot is named with its pid, ppid, start time and command, with what to do.
+if TALLPINE_RELEASE_TEST_DURING_SNAPSHOT='bash -c "sleep 31.611 <${data_dir}/ao.db; :" >/dev/null 2>&1 & sleep 1' rl install "${T}/build-d/${product}.app" >"${T}/out" 2>&1; then bad "install aborts when a process holds ao.db during the snapshot"; else ok "install aborts when a process holds ao.db during the snapshot"; fi
+check "the abort names the holder's pid, ppid, start and command" 'grep -Eq "pid [0-9]+: ppid [0-9]+, started .+, command: sleep 31" "${T}/out"'
+check "the holder's parent gets its own line with ppid and start" 'p="$(sed -nE "s/.*pid [0-9]+: ppid ([0-9]+), started .+, command: sleep 31.*/\1/p" "${T}/out" | head -1)"; [[ -n "${p}" ]] && grep -Eq "pid ${p}: ppid [0-9]+, started .+, command: " "${T}/out"'
+check "the abort says what to do" 'grep -q "do not reopen it until the install finishes" "${T}/out"'
+pkill -f "sleep 31.611" 2>/dev/null || true
+wait_up || true
+wait_alive
+
 # A failure to move the current app aside leaves no data-only point behind.
 chmod 555 "${apps}"
 if rl install "${T}/build-d/${product}.app" >"${T}/out" 2>&1; then bad "install aborts when the app can not move"; else ok "install aborts when the app can not move"; fi

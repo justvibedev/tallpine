@@ -29,6 +29,9 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	defer releaseLock()
+	// Holding the lock proves any previous host is gone. Its descriptor is about
+	// to be replaced, and with it the only record of the agent it left behind.
+	reapPredecessor(ctx, cfg.DataDir, cfg.SessionID)
 	token, err := randomToken()
 	if err != nil {
 		return err
@@ -65,6 +68,7 @@ func Run(ctx context.Context, cfg Config) error {
 		OwnershipFingerprint: cfg.OwnershipFingerprint,
 		Address:              address, Token: token, PID: os.Getpid(), StartedAt: time.Now().UTC(),
 	}
+	d.HostStart, d.Provider = launchRecord(child.Process.Pid, cfg.Env)
 	if err := writeDescriptor(cfg.DataDir, d); err != nil {
 		_ = killProviderProcess(context.WithoutCancel(ctx), child)
 		return err

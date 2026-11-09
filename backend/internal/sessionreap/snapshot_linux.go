@@ -2,6 +2,7 @@ package sessionreap
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -45,6 +46,7 @@ func Snapshot() ([]Proc, error) {
 		}
 		p := Proc{PID: pid}
 		p.PPID, _ = strconv.Atoi(f[1])
+		p.PGID, _ = strconv.Atoi(f[2])
 		if ticks, err := strconv.ParseInt(f[19], 10, 64); err == nil && !boot.IsZero() {
 			p.Start = boot.Add(time.Duration(ticks) * time.Second / clockTicks)
 		}
@@ -70,4 +72,10 @@ func bootTime() time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// procCwd returns pid's working directory.
+func procCwd(_ context.Context, pid int) (string, bool) {
+	dir, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
+	return dir, err == nil
 }

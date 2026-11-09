@@ -115,7 +115,7 @@ func (h autoCloseHooks) orchestratorFor(ctx context.Context, rec domain.SessionR
 	return h.orchestrator(ctx, rec.ProjectID, lane)
 }
 
-func (h autoCloseHooks) NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester domain.SessionID, undelivered string) {
+func (h autoCloseHooks) NotifyClosed(ctx context.Context, rec domain.SessionRecord, requester, mergedBy domain.SessionID, undelivered string) {
 	to, ok := h.orchestratorFor(ctx, rec)
 	// The orchestrator that landed the PR already knows it ended (B560), but
 	// not what the worker last said (B557).
@@ -124,6 +124,12 @@ func (h autoCloseHooks) NotifyClosed(ctx context.Context, rec domain.SessionReco
 	}
 	// Only the session id: the display name is worker-controlled text.
 	msg := fmt.Sprintf("[auto] session_closed: %s ended on its own because all its PRs are merged or closed and it was idle with nothing queued. Restore it if you still need it.", rec.ID)
+	if to == requester || to == mergedBy {
+		// The merge this orchestrator ran (possibly `pr land --kill-worker`,
+		// whose kill then finds the row already ended) left the worker idle
+		// with every PR merged, so the close followed its own action (B609).
+		msg = fmt.Sprintf("[auto] session_closed: %s was closed right after the PR you merged: all its PRs are merged or closed and it was idle with nothing queued, so your kill, if any, found it already ended. Restore it if you still need it.", rec.ID)
+	}
 	msg = withUndeliveredResult(msg, undelivered)
 	if err := h.send(ctx, to, msg); err != nil && h.log != nil {
 		h.log.Warn("auto-close notice failed", "session", rec.ID, "orchestrator", to, "err", err)
