@@ -58,6 +58,18 @@ func (m *Manager) resolveTUIAgentConfig(ctx context.Context, decision agentpolic
 }
 
 func (m *Manager) resolveAgentConfig(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig) (ports.AgentConfig, error) {
+	return m.resolveAgentConfigFor(ctx, decision, cfg, project, false)
+}
+
+// resolveChatAgentConfig is resolveAgentConfig for a Chat launch. Chat treats a
+// full model ID its session does not offer as optional and silently keeps
+// Claude Code's own model, so an ID absent from the catalog is refused here
+// rather than accepted on the provider's word.
+func (m *Manager) resolveChatAgentConfig(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig) (ports.AgentConfig, error) {
+	return m.resolveAgentConfigFor(ctx, decision, cfg, project, true)
+}
+
+func (m *Manager) resolveAgentConfigFor(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig, chat bool) (ports.AgentConfig, error) {
 	base := effectiveAgentConfigFor(cfg.Harness, cfg.Kind, cfg.Role, project)
 	requested := cfg.AgentConfig
 	resolved := applySpawnAgentConfigUnder(decision, cfg.Harness, base, requested)
@@ -154,6 +166,20 @@ func (m *Manager) resolveAgentConfig(ctx context.Context, decision agentpolicy.D
 	if unlistedToCLI && validateClaudeModel && selected == nil {
 		// The CLI owns per-model capabilities, but a level no Claude model
 		// accepts is still refused here rather than after the session starts.
+		if resolved.Effort != "" && !containsString(claudeEffortLevels, resolved.Effort) {
+			return ports.AgentConfig{}, fmt.Errorf("%w %q for model %q", ports.ErrUnsupportedEffort, resolved.Effort, modelID)
+		}
+		return resolved, nil
+	}
+	if validateClaudeModel && selected == nil && !chat && domain.AcceptsUnlistedClaudeModelID(modelID, catalogModelIDs(catalog.Models)) {
+		// The account's list can lag a release that Claude Code already serves
+		// (its chat offers it first). A well-formed ID the list lacks is left to
+		// the CLI, which owns per-model capabilities; a malformed one is a typo
+		// and falls through to the refusals below.
+		if modelChangedWithoutExplicitEffort {
+			// An inherited effort was chosen for another model.
+			resolved.Effort = ""
+		}
 		if resolved.Effort != "" && !containsString(claudeEffortLevels, resolved.Effort) {
 			return ports.AgentConfig{}, fmt.Errorf("%w %q for model %q", ports.ErrUnsupportedEffort, resolved.Effort, modelID)
 		}
@@ -325,4 +351,12 @@ func (m *Manager) loadProject(ctx context.Context, projectID domain.ProjectID) (
 		return domain.ProjectRecord{}, nil
 	}
 	return row, nil
+}
+
+func catalogModelIDs(models []ports.AgentModelInfo) []string {
+	ids := make([]string, 0, len(models))
+	for _, m := range models {
+		ids = append(ids, m.ID)
+	}
+	return ids
 }

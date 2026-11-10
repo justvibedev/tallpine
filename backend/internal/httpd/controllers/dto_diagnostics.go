@@ -27,6 +27,8 @@ type SilentFailuresResponse struct {
 	ChatNotAttached []SilentFailuresChatIssue     `json:"chatNotAttached"`
 	ReportBatches   []SilentFailuresReportIssue   `json:"reportBatches"`
 	TurnFallbacks   []SilentFailuresFallbackIssue `json:"turnFallbacks"`
+	// PeerCheck is absent for scoped callers and from daemons without the check.
+	PeerCheck *SilentFailuresPeerCheck `json:"peerCheck,omitempty"`
 }
 
 // PreviewFileURLResponse is the body of GET /api/v1/sessions/{sessionId}/preview/file-url.
@@ -77,4 +79,26 @@ type ContextBreakdownResponse struct {
 // excludes the cache counters; the four counters never overlap.
 type ModelUsageResponse struct {
 	Models []ModelUsagePayload `json:"models"`
+}
+
+// SilentFailuresPeerRefusal is one aggregated request the peer check would refuse.
+type SilentFailuresPeerRefusal struct {
+	Executable string `json:"executable"`
+	TokenClass string `json:"tokenClass"`
+	Route      string `json:"route"`
+	Reason     string `json:"reason"`
+	Count      int64  `json:"count"`
+	LastPID    int    `json:"lastPid"`
+	LastSeen   string `json:"lastSeen,omitempty"`
+}
+
+// SilentFailuresPeerCheck is the daemon peer check's mode and records.
+type SilentFailuresPeerCheck struct {
+	Mode        string                      `json:"mode"`
+	ModeReason  string                      `json:"modeReason"`
+	TeamID      string                      `json:"teamId,omitempty"`
+	Admitted    map[string]int64            `json:"admitted"`
+	WouldRefuse []SilentFailuresPeerRefusal `json:"wouldRefuse"`
+	Overflow    int64                       `json:"overflow"`
+	Dropped     int64                       `json:"dropped"`
 }

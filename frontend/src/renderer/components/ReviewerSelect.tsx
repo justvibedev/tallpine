@@ -53,6 +53,7 @@ export function ReviewerSelect({
 	disabled = false,
 	agents,
 	excludedHarness,
+	emptyLabel,
 }: {
 	value: string;
 	onChange: (value: string) => void;
@@ -69,6 +70,8 @@ export function ReviewerSelect({
 	disabled?: boolean;
 	agents?: components["schemas"]["AgentReadinessSnapshot"][];
 	excludedHarness?: string;
+	/** Names the empty row, which then picks no reviewer; every real harness, defaultHarness included, stays a pinnable row. */
+	emptyLabel?: string;
 }) {
 	const { t } = useTranslation();
 	const reviewerAriaLabel = ariaLabel ?? t("settings.project.defaultReviewer");
@@ -91,7 +94,7 @@ export function ReviewerSelect({
 	const selectableOptions = options.filter((agent) => {
 		if (agents !== undefined && !isSelectable(agent)) return false;
 		if (agent.id === excludedHarness) return false;
-		if (agent.id === defaultHarness) return false;
+		if (agent.id === defaultHarness && emptyLabel === undefined) return false;
 		return true;
 	});
 	const catalogDefaultLabel = options.find((agent) => agent.id === defaultHarness)?.label;
@@ -100,7 +103,7 @@ export function ReviewerSelect({
 	const needsSetup = agents !== undefined && Boolean(effectiveHarness && !options.some((agent) => agent.id === effectiveHarness && isSelectable(agent)));
 	const management = useAgentManagementMenu(needsSetup ? effectiveHarness : undefined, hostId);
 	const menuProjectID = projectId ?? "";
-	const triggerCatalog = useQuery(agentModelsQueryOptions(effectiveHarness, menuProjectID, hostId));
+	const triggerCatalog = useQuery({ ...agentModelsQueryOptions(effectiveHarness, menuProjectID, hostId), enabled: effectiveHarness !== "" });
 
 	useEffect(() => {
 		if (!menuOpen) return;
@@ -116,7 +119,7 @@ export function ReviewerSelect({
 	}, [defaultHarness, hostId, menuOpen, menuProjectID, queryClient, selectableOptions]);
 	// An unidentified model is left off the trigger rather than labelled.
 	const selectedModelLabel = modelOrModeLabel(triggerCatalog.data, model, mode, "");
-	const triggerLabel = [value ? agentLabel(value) : defaultHarnessLabel, harnessOnly ? null : selectedModelLabel]
+	const triggerLabel = [value ? agentLabel(value) : emptyLabel ?? defaultHarnessLabel, harnessOnly ? null : selectedModelLabel]
 		.filter(Boolean)
 		.join(" · ");
 
@@ -140,7 +143,7 @@ export function ReviewerSelect({
 			</OptionMenuTrigger>
 			<OptionMenuContent onCloseAutoFocus={management.onCloseAutoFocus} align={contentAlign === "end" ? "end" : "start"} className="reviews-agent-menu-surface w-[18rem]">
 				<ReviewerHarnessOption
-					agent={{ id: "__default__", label: defaultHarnessLabel, disabled: false, status: "", statusTone: "success" }}
+					agent={{ id: "__default__", label: emptyLabel ?? defaultHarnessLabel, disabled: false, status: "", statusTone: "success" }}
 					currentHarness={value}
 					currentModel={model}
 					currentMode={mode}
@@ -154,6 +157,7 @@ export function ReviewerSelect({
 					harnessOnly={harnessOnly}
 					resolvedHarness={defaultHarness}
 					persistHarness=""
+					emptyRow={emptyLabel !== undefined}
 					closeMenu={() => setMenuOpen(false)}
 				/>
 				{selectableOptions.map((agent) => (
@@ -193,6 +197,7 @@ function ReviewerHarnessOption({
 	harnessOnly,
 	resolvedHarness,
 	persistHarness,
+	emptyRow = false,
 	closeMenu,
 }: {
 	agent: Pick<RankedAgentOption, "id" | "label" | "status" | "statusTone" | "disabled">;
@@ -205,6 +210,8 @@ function ReviewerHarnessOption({
 	harnessOnly: boolean;
 	resolvedHarness: string;
 	persistHarness: string;
+	/** The row that picks no harness: current only when none is pinned. */
+	emptyRow?: boolean;
 	closeMenu: () => void;
 }) {
 	const { t } = useTranslation();
@@ -216,7 +223,7 @@ function ReviewerHarnessOption({
 	const catalog = catalogQuery.data;
 	const effectiveCurrentHarness = currentHarness || (persistHarness === "" ? resolvedHarness : "");
 	const effectivePersistHarness = persistHarness || resolvedHarness;
-	const isCurrentHarness = effectiveCurrentHarness !== "" && effectiveCurrentHarness === effectivePersistHarness;
+	const isCurrentHarness = emptyRow ? currentHarness === "" : effectiveCurrentHarness !== "" && effectiveCurrentHarness === effectivePersistHarness;
 	const isCurrentDefaultSelection = isCurrentHarness && currentModel === "" && currentMode === "";
 	const { models: offeredModels } = useOfferedModels(resolvedHarness, catalog?.models, {
 		hostId,

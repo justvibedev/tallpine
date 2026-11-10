@@ -55,6 +55,7 @@ func newSessionsController(cfg config.Config, deps APIDeps) *controllers.Session
 		ArtifactVersions:         deps.ArtifactVersions,
 		LastMessages:             deps.LastMessages,
 		Models:                   deps.Models,
+		ServedModel:              deps.ServedModel,
 		Instructions:             deps.Instructions,
 		BackgroundTasks:          deps.BackgroundTasks,
 		UsageLimits:              deps.UsageLimits,

@@ -83,7 +83,7 @@ func newAgentScopeHarness(t *testing.T, store AgentScopeStore, tokens *sessionto
 		agent, _ := requestscope.AgentFrom(r.Context())
 		_ = json.NewEncoder(w).Encode(agent)
 	})
-	h := daemonAuthMiddleware(testDaemonToken, "", nil, newAgentScopes(tokens, store, log))(inner)
+	h := daemonAuthMiddleware(testDaemonToken, "", nil, newAgentScopes(tokens, store, log), nil)(inner)
 	return agentScopeHarness{t: t, handler: h, logs: logs}
 }
 

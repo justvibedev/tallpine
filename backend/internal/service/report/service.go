@@ -67,6 +67,7 @@ type Service struct {
 	now         func() time.Time
 	newID       func() string
 	quietDelay  time.Duration
+	batchWindow time.Duration
 	onCreated   func(domain.ReportRecord)
 	artifacts   ArtifactRecorder
 	refresh     func(context.Context, domain.SessionID) error
@@ -82,8 +83,11 @@ type Deps struct {
 	NewID func() string
 	// QuietDelay bounds how long a Quiet report waits alone (default DefaultQuietDelay).
 	QuietDelay time.Duration
-	OnCreated  func(domain.ReportRecord)
-	Artifacts  ArtifactRecorder
+	// BatchWindow delays a non-urgent done or checkpoint report so close-together
+	// reports share one wake-up. Zero delivers immediately.
+	BatchWindow time.Duration
+	OnCreated   func(domain.ReportRecord)
+	Artifacts   ArtifactRecorder
 	// RefreshBranchState re-reads a session's branch facts from its worktree
 	// (local git only) so done verification does not depend on the SCM tick.
 	RefreshBranchState func(context.Context, domain.SessionID) error
@@ -112,7 +116,7 @@ func New(d Deps) *Service {
 	if d.QuietDelay <= 0 {
 		d.QuietDelay = DefaultQuietDelay
 	}
-	return &Service{quietDelay: d.QuietDelay, store: d.Store, now: d.Now, newID: d.NewID, onCreated: d.OnCreated, artifacts: d.Artifacts, refresh: d.RefreshBranchState, claimPR: d.ClaimReportedPR, digestCount: d.DigestCount, fileDefer: d.FileDeferred}
+	return &Service{quietDelay: d.QuietDelay, batchWindow: d.BatchWindow, store: d.Store, now: d.Now, newID: d.NewID, onCreated: d.OnCreated, artifacts: d.Artifacts, refresh: d.RefreshBranchState, claimPR: d.ClaimReportedPR, digestCount: d.DigestCount, fileDefer: d.FileDeferred}
 }
 
 // ListProject returns persisted report facts ordered by created_at then id,
@@ -187,6 +191,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (domain.ReportR
 		State: input.State, Note: input.Note, Message: input.Message, Outputs: input.Outputs,
 		CreatedAt: now, DeliveryState: domain.ReportPending, AvailableAt: now,
 		SettlementDeadline: settlementDeadline, RepeatCount: 1, Synthesized: input.Synthesized,
+	}
+	if !input.Synthesized && (input.State == domain.ReportDone || input.State == domain.ReportCheckpoint) {
+		rec.AvailableAt = now.Add(s.batchWindow)
 	}
 	if input.Quiet || quietCheckpoint(input) {
 		wait := s.quietDelay
@@ -472,25 +479,4 @@ func (s *Service) unverifiedDoneReason(ctx context.Context, session domain.Sessi
 // (artifact or PR) stays immediate, since outputs are reviewable deliverables.
 func quietCheckpoint(input CreateInput) bool {
 	return input.State == domain.ReportCheckpoint && len(input.Outputs) == 0
-}
-
-// QuietFlusher is an optional Store capability behind the digest threshold.
-type QuietFlusher interface {
-	FlushQuietReports(ctx context.Context, projectID domain.ProjectID, minCount int, at time.Time) (int, error)
-}
-
-// flushDigest releases the project's waiting quiet reports once the configured
-// count is queued. Best effort: on failure they keep their time-based delay.
-func (s *Service) flushDigest(ctx context.Context, projectID domain.ProjectID) {
-	f, ok := s.store.(QuietFlusher)
-	if !ok || s.digestCount == nil {
-		return
-	}
-	n := s.digestCount(ctx, projectID)
-	if n <= 0 {
-		return
-	}
-	if _, err := f.FlushQuietReports(ctx, projectID, n, s.now().UTC()); err != nil {
-		slog.Default().Warn("report: digest flush failed", "project", projectID, "err", err)
-	}
 }

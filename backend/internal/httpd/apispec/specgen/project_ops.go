@@ -121,6 +121,19 @@ func projectOperations() []operation {
 			},
 		},
 		{
+			method: http.MethodPatch, path: "/api/v1/projects/{id}/role-settings", id: "setProjectRoleSettings", tag: "projects",
+			summary:    "Set only the agent, model and effort of a project's orchestrator, worker and reviewer roles",
+			pathParams: []any{controllers.ProjectIDParam{}},
+			reqBody:    projectsvc.SetRoleSettingsInput{},
+			resps: []respUnit{
+				{http.StatusOK, controllers.ProjectResponse{}},
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusForbidden, envelope.APIError{}},
+				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+			},
+		},
+		{
 			method: http.MethodPut, path: "/api/v1/projects/{id}/rules", id: "setProjectRules", tag: "projects",
 			summary:    "Set only a project's agentRules and orchestratorRules",
 			pathParams: []any{controllers.ProjectIDParam{}},

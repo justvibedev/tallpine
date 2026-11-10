@@ -100,3 +100,16 @@ func TestFreshLaunchOptionsGivesOrchestratorsTheirDefault(t *testing.T) {
 		t.Fatalf("settings default = %+v, want the built-in window", got)
 	}
 }
+
+func TestFreshLaunchOptionsFillsShellOutputLimit(t *testing.T) {
+	t.Setenv(domain.EnvShellOutputLimit, "")
+	m, _, _, _ := newManager()
+	got := m.freshLaunchOptions(context.Background(), domain.HarnessClaudeCode, domain.KindWorker, "mer", domain.ProjectConfig{}, "", domain.AgentLaunchOptions{})
+	if got.ShellOutputChars != domain.DefaultShellOutputLimit {
+		t.Fatalf("default = %d", got.ShellOutputChars)
+	}
+	got = m.freshLaunchOptions(context.Background(), domain.HarnessCodex, domain.KindWorker, "mer", domain.ProjectConfig{Env: map[string]string{domain.EnvShellOutputLimit: "off"}}, "", domain.AgentLaunchOptions{})
+	if got.ShellOutputChars != 0 {
+		t.Fatalf("off = %d", got.ShellOutputChars)
+	}
+}

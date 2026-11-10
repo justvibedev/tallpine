@@ -21,6 +21,11 @@ func addLaunchOptionSettings(settings map[string]any, options domain.AgentLaunch
 	if options.EnabledPlugins != "" {
 		settings["enabledPlugins"] = json.RawMessage(options.EnabledPlugins)
 	}
+	if options.ShellOutputChars > 0 {
+		// Output past the cap is saved to a file; Claude gets a preview and the
+		// path. Failed commands are not cut by this setting.
+		settings["bashOutputMaxChars"] = options.ShellOutputChars
+	}
 	if options.AutoMemoryOff {
 		settings["autoMemoryEnabled"] = false
 	}

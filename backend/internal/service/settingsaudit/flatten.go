@@ -67,6 +67,8 @@ func AppSettings(s settingssvc.Snapshot) Values {
 		"app.workflowDefaults.autoReview":             raw(s.WorkflowDefaults.AutoReview),
 		"app.workflowDefaults.planningMode":           raw(s.WorkflowDefaults.PlanningMode),
 		"app.workflowDefaults.planAutoApprove":        raw(s.WorkflowDefaults.PlanAutoApprove),
+		"app.workflowDefaults.reviewerHarness":        raw(s.WorkflowDefaults.ReviewerHarness),
+		"app.workflowDefaults.reviewerModel":          raw(s.WorkflowDefaults.ReviewerModel),
 		"app.storageCompaction":                       raw(s.StorageCompaction),
 		"app.providerEventRetentionDays":              raw(s.ProviderEventRetentionDays),
 		// Mobile state lives in its own file; only the managed switch is visible

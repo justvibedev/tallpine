@@ -8,6 +8,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/daemontoken"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
 	"tallpine.eu/tallpine/backend/internal/httpd/requestscope"
+	"tallpine.eu/tallpine/backend/internal/peeradmit"
 	previewutil "tallpine.eu/tallpine/backend/internal/preview"
 	"tallpine.eu/tallpine/backend/internal/sessiontoken"
 )
@@ -29,7 +30,7 @@ import (
 //
 // tokenPath is only used to tell an unauthenticated caller where the token
 // lives; repair rewrites the file if it went missing while the daemon runs.
-func daemonAuthMiddleware(token, tokenPath string, repair func(), agents *agentScopes) func(http.Handler) http.Handler {
+func daemonAuthMiddleware(token, tokenPath string, repair func(), agents *agentScopes, peers *peeradmit.Checker) func(http.Handler) http.Handler {
 	message := "This daemon requires its install token in the " + daemontoken.Header + " header"
 	if tokenPath != "" {
 		message += " (the contents of " + tokenPath + ")"
@@ -37,7 +38,14 @@ func daemonAuthMiddleware(token, tokenPath string, repair func(), agents *agentS
 	message += ". The " + brand.CLIName + " CLI and the " + brand.ProductName + " desktop app send it automatically; upgrade them if they fail with this error."
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if requestscope.IsLAN(r.Context()) || presentedTokenValid(r, token) {
+			if requestscope.IsLAN(r.Context()) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if presentedTokenValid(r, token) {
+				if !daemonAuthExempt(r) {
+					observePeer(peers, r, peeradmit.Credential{Kind: peeradmit.CredentialInstall})
+				}
 				next.ServeHTTP(w, r)
 				return
 			}

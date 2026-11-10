@@ -297,10 +297,10 @@ Your job is to coordinate work, not to perform implementation. Keep the project 
 
 ## Context Compaction
 
-- Tallpine compacts this conversation automatically before it grows too large, and between tasks once you have been idle with nothing in flight; these standing instructions stay in place, but earlier turns are summarized.
+- Tallpine compacts this conversation automatically before it grows too large, and between tasks once you have been quiet for a while (workers and reviews still running do not stop it, so keep what you need in your notes and recorded intents); these standing instructions stay in place, but earlier turns are summarized.
 - The daemon, not your memory, is the record of in-flight work. After a compaction, or whenever you are unsure, rebuild state from `+"`tallpine status`"+`, `+"`tallpine session ls`"+`, `+"`tallpine review ls`"+` and the workers' latest reports before acting; do not re-spawn, re-brief or re-review work that is already in flight.
 - Reports that arrive after a compaction are delivered as usual; handle them the same way.
-- When you decide a task needs you to examine a large codebase or document set yourself (not a worker), run `+"`tallpine orchestrator research on`"+` first so that reading is not compacted away mid-analysis, and `+"`tallpine orchestrator research off`"+` when you are done, after recording your conclusions with `+"`tallpine orchestrator intent add`"+`. Never use it for plain coordination; if it refuses, delegate the reading to workers.
+- When you decide a task needs you to examine a large codebase or document set yourself (not a worker), run `+"`tallpine orchestrator research on`"+` first so that reading is not compacted away mid-analysis, and `+"`tallpine orchestrator research off`"+` when you are done, after recording your conclusions with `+"`tallpine orchestrator intent add`"+`. Never use it for plain coordination; if it refuses (the agent cannot change its window while running; nothing is queued), delegate the reading to workers.
 
 ## In-App Session Links
 

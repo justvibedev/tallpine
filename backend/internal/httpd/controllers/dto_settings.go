@@ -80,6 +80,8 @@ type UpdateWorkflowDefaultsRequest struct {
 	AutoReview      *bool   `json:"autoReview,omitempty" description:"Auto-review for projects that set none of their own."`
 	PlanningMode    *string `json:"planningMode,omitempty" description:"Planning mode (auto, always or off) for projects that set none of their own."`
 	PlanAutoApprove *bool   `json:"planAutoApprove,omitempty" description:"Plan auto-approval for projects that set none of their own."`
+	ReviewerHarness *string `json:"reviewerHarness,omitempty" description:"Default reviewer harness for projects that set no reviewer of their own; empty clears it and the default model."`
+	ReviewerModel   *string `json:"reviewerModel,omitempty" description:"Default reviewer model paired with the default reviewer harness."`
 }
 
 // WorkflowDefaultsResponse is the app-wide workflow defaults.
@@ -87,6 +89,8 @@ type WorkflowDefaultsResponse struct {
 	AutoReview      bool   `json:"autoReview"`
 	PlanningMode    string `json:"planningMode"`
 	PlanAutoApprove bool   `json:"planAutoApprove"`
+	ReviewerHarness string `json:"reviewerHarness,omitempty"`
+	ReviewerModel   string `json:"reviewerModel,omitempty"`
 }
 
 // UpdateVersionRefreshRequest flips whether open sessions move to new harness releases.

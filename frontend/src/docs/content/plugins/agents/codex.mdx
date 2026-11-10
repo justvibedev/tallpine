@@ -28,3 +28,8 @@ Exactly one account is active for Tallpine Codex launches on this device. Switch
 Running Tallpine Codex sessions and reviewers are not switched. Existing turns continue best-effort, while newly launched controllers use the selected account. Resume or restart a session to relaunch its controller under that account.
 
 Tallpine does not control how other Codex clients on this device use authentication, or how switching an account affects them. Tallpine never parses or exposes `auth.json`, and it does not scrape billing information. Sign out an account; you can delete it once it is inactive. Per-session account selection, rename, reorder, and in-place replacement are not available.
+
+## Limits
+
+- Codex has no notification hook. A failed terminal turn is detected by reading Codex's rollout log shortly after, not by an immediate event.
+- Chat does not show a context breakdown by category (the fill percentage works).

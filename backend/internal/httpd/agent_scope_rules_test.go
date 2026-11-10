@@ -16,12 +16,14 @@ func TestAgentScopeProjectRules(t *testing.T) {
 		{"PUT", "/api/v1/projects/app/rules", 200},
 		{"PUT", "/api/v1/projects/web/rules", 403},
 		{"PUT", "/api/v1/projects/app/config", 403},
+		{"PATCH", "/api/v1/projects/app/role-settings", 403},
 		{"PUT", "/api/v1/projects/app", 403},
 		{"PATCH", "/api/v1/projects/app/permissions", 403},
 	})
 	h.check(store.tokenFor(tokens, "app-1"), []scopeCase{
 		{"PUT", "/api/v1/projects/app/rules", 403},
 		{"PUT", "/api/v1/projects/app/config", 403},
+		{"PATCH", "/api/v1/projects/app/role-settings", 403},
 	})
 	h.check(tokens.IssueReviewer("rev-app-1", "app-1"), []scopeCase{
 		{"PUT", "/api/v1/projects/app/rules", 403},

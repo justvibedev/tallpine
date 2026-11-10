@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/testgit"
 )
 
 func TestWorkspacePathsRefreshAfterInvalidationOrExpiry(t *testing.T) {
@@ -167,7 +167,7 @@ func TestWorkspacePathsCancellationDoesNotCancelSharedInventory(t *testing.T) {
 		t.Skip("Git gate uses a POSIX shell")
 	}
 	root := newWorkspaceRepo(t)
-	git, err := exec.LookPath("git")
+	git, err := testgit.Real()
 	if err != nil {
 		t.Fatal(err)
 	}

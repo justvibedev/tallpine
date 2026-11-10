@@ -204,7 +204,11 @@ func (b *boot) wireChatNotifiers() {
 		Next: b.lcStack.LCM, Sessions: b.store, Fallbacks: b.store, Log: b.log,
 		NudgeDelay: b.cfg.WorkerIdleNudge, Nudger: b.lcStack.LCM,
 		Jobs: b.workerJobs,
+		OrchestratorLive: func(ctx context.Context, project domain.ProjectID, worker domain.SessionID) bool {
+			return b.reportSvc != nil && b.reportSvc.HasRecipient(ctx, project, worker)
+		},
 	})
+	b.lcStack.ActivitySink.Bind(b.turnNotifier)
 	b.bgTasks = bgtasks.New(
 		bgtasks.SendFunc(func(c context.Context, id domain.SessionID, msg string) error {
 			if b.sessMgr == nil {
@@ -226,18 +230,28 @@ func (b *boot) wireChatNotifiers() {
 
 // workerJobRoots names where a session's process tree starts, for background-job counting.
 func (b *boot) workerJobRoots(ctx context.Context, rec domain.SessionRecord) []int {
-	if domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat {
-		if pid, ok := persistenthost.HostPID(b.cfg.DataDir, string(rec.ID)); ok {
-			return []int{pid}
-		}
-		return nil
-	}
-	if rec.Metadata.RuntimeHandleID == "" {
-		return nil
-	}
-	roots, err := b.runtimeAdapter.ProcessRootPIDs(ctx, ports.RuntimeHandle{ID: rec.Metadata.RuntimeHandleID})
+	roots, err := sessionRootPIDs(ctx, b.runtimeAdapter, b.chatHostPID, rec)
 	if err != nil {
 		return nil
 	}
 	return roots
+}
+
+// chatHostPID is the live persistent chat host running under hostID.
+func (b *boot) chatHostPID(hostID string) (int, bool) {
+	return persistenthost.HostPID(b.cfg.DataDir, hostID)
+}
+
+// sessionRootPIDs reads where a session's process tree starts.
+func sessionRootPIDs(ctx context.Context, runtime ports.RuntimeProcessRootInspector, hostPID func(string) (int, bool), rec domain.SessionRecord) ([]int, error) {
+	if domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat {
+		if pid, ok := hostPID(string(rec.ID)); ok {
+			return []int{pid}, nil
+		}
+		return nil, nil
+	}
+	if rec.Metadata.RuntimeHandleID == "" {
+		return nil, nil
+	}
+	return runtime.ProcessRootPIDs(ctx, ports.RuntimeHandle{ID: rec.Metadata.RuntimeHandleID})
 }

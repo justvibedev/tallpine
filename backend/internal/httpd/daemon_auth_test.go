@@ -186,7 +186,7 @@ func TestDaemonAuthExemptions(t *testing.T) {
 
 func TestDaemonAuthLANRequestsUseBearerInstead(t *testing.T) {
 	reached := false
-	h := daemonAuthMiddleware(testDaemonToken, "", nil, nil)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+	h := daemonAuthMiddleware(testDaemonToken, "", nil, nil, nil)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
 	req := httptest.NewRequest(http.MethodGet, "http://192.168.1.5:4100/api/v1/projects", nil)
 	h.ServeHTTP(httptest.NewRecorder(), req.WithContext(requestscope.WithLAN(req.Context())))
 	if !reached {

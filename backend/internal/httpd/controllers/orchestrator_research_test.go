@@ -77,12 +77,16 @@ func TestOrchestratorResearchRefusalsAreConflictsWithAClearMessage(t *testing.T)
 	}{
 		"unsupported": {chatsvc.ErrResearchUnsupported, "not supported for this agent"},
 		"disabled":    {chatsvc.ErrResearchDisabled, "Dynamic orchestrator context"},
-		"not applied": {chatsvc.ErrResearchNotApplied, "did not accept the research window"},
+		"not applied": {chatsvc.ErrResearchNotApplied, "research mode was not enabled"},
 	} {
 		code, body := postResearch(t, researchHandler(&researchFake{fakeConversationService: &fakeConversationService{}, err: tc.err}), `{"enabled":true}`)
 		if code != http.StatusConflict || !strings.Contains(body, tc.want) {
 			t.Errorf("%s: status %d body %s, want 409 mentioning %q", name, code, body, tc.want)
 		}
+	}
+	code, body := postResearch(t, researchHandler(&researchFake{fakeConversationService: &fakeConversationService{}, err: chatsvc.ErrResearchRequestFailed}), `{"enabled":true}`)
+	if code != http.StatusBadGateway || !strings.Contains(body, "RESEARCH_MODE_REQUEST_FAILED") || strings.Contains(body, "keeps its compaction window") {
+		t.Errorf("request failed: status %d body %s, want 502 with its own code", code, body)
 	}
 }
 

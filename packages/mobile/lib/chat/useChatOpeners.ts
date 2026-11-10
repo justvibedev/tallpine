@@ -113,6 +113,10 @@ export function useChatOpeners({
 		}
 		void openGitHub(mobileReachablePreviewURL(url, config?.host ?? "")?.href ?? url);
 	}, [config?.host, currentHostId, router]);
+	// An artifact path the agent cited opens in the artifact viewer on this conversation's machine.
+	const openArtifact = useCallback((entry: string) => {
+		router.push({ pathname: "/artifact/[sessionId]", params: { sessionId: session.id, path: entry, hostId: currentHostId } });
+	}, [currentHostId, router, session.id]);
 	// A session the board leaves out (archived, say) is read once for its name.
 	const [readSessionNames, setReadSessionNames] = useState<Readonly<Record<string, string>>>({});
 	const nameOfSession = useCallback((sessionId: string) => sessions.find((candidate) => candidate.id === sessionId)?.displayName || readSessionNames[sessionId] || undefined, [readSessionNames, sessions]);
@@ -124,5 +128,5 @@ export function useChatOpeners({
 		});
 	}, [config]);
 
-	return { loadWorkspaceFiles, openTurnSettings, openShell, openLink, nameOfSession, wantSessionName };
+	return { loadWorkspaceFiles, openTurnSettings, openShell, openLink, openArtifact, nameOfSession, wantSessionName };
 }

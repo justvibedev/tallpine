@@ -6,18 +6,18 @@ import (
 	"context"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	projectsvc "tallpine.eu/tallpine/backend/internal/service/project"
+	"tallpine.eu/tallpine/backend/internal/testgit"
 )
 
 func cloneTestGit(t *testing.T, cloneScript string) string {
 	t.Helper()
-	realGit, err := exec.LookPath("git")
+	realGit, err := testgit.Real()
 	if err != nil {
 		t.Fatal(err)
 	}

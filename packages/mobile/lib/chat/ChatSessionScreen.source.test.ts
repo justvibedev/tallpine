@@ -112,6 +112,6 @@ describe("ao://sessions links in the conversation", () => {
 	it("opens a session link as that session's chat on this conversation's computer, and names it", () => {
 		const openLink = source.slice(source.indexOf("const openLink = useCallback"), source.indexOf("const nameOfSession"));
 		expect(openLink).toMatch(/const target = sessionLink\(url\);\s*if \(target\) \{\s*router\.push\(\{ pathname: "\/session\/\[id\]", params: \{ id: target\.sessionId, projectId: target\.projectId, hostId: currentHostId \} \}\);\s*return;/);
-		expect(source).toContain("<ChatLinkProvider onLinkOpen={openLink} sessionName={nameOfSession}");
+		expect(source).toContain("<ChatLinkProvider onLinkOpen={openLink} onArtifactOpen={openArtifact} artifactSessionId={session.id} sessionName={nameOfSession}");
 	});
 });

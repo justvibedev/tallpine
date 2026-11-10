@@ -40,7 +40,7 @@ func TestGitHubCredentialRouteEndToEndWithScopedTokens(t *testing.T) {
 		svc := githubcred.New(engine, store, chainProjects{}, chainAccounts{token: "account-secret"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		router := chi.NewRouter()
 		router.Route("/api/v1", func(r chi.Router) { (&controllers.GitHubCredentialController{Svc: svc}).Register(r) })
-		return daemonAuthMiddleware(testDaemonToken, "", nil, newAgentScopes(tokens, store, slog.New(slog.NewTextHandler(io.Discard, nil))))(router)
+		return daemonAuthMiddleware(testDaemonToken, "", nil, newAgentScopes(tokens, store, slog.New(slog.NewTextHandler(io.Discard, nil))), nil)(router)
 	}
 	post := func(h http.Handler, token, session string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/"+session+"/github-credential", strings.NewReader(`{"host":"github.com"}`))

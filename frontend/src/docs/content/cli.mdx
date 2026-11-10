@@ -119,7 +119,7 @@ Agent adapters are compiled into Tallpine. There is no plugin marketplace or `ta
 | `tallpine project set-config <id>` | Update typed per-project configuration. |
 | `tallpine project rm <id>` | Remove a project registration. |
 
-Focused `set-config` flags merge into the existing project config: only the flags you pass change. `--config-json` replaces the entire config (its JSON decoder ignores unknown keys, and it drops existing `effort` values), and `--clear` removes it. See [Projects: update from the CLI](/configuration/projects#update-from-the-cli) for safe alternatives and details. This command does not edit the old `agent-orchestrator.yaml` file.
+Focused `set-config` flags merge into the existing project config: only the flags you pass change. `--config-json` replaces the entire config (its JSON decoder ignores unknown keys, and a replacement drops any saved `effort` it omits; set effort with `--worker-effort`, `--orchestrator-effort` and `--reviewer-effort`), and `--clear` removes it. See [Projects: update from the CLI](/configuration/projects#update-from-the-cli) for safe alternatives and details. This command does not edit the old `agent-orchestrator.yaml` file.
 
 Use `tallpine automation create`, `list`, `get`, `update`, `delete`, and `runs` to manage recurring work. To create one, provide a project, name, prompt, and exactly one schedule: `--cron` or `--rrule`. Set `--timezone` to an IANA time-zone name such as `America/New_York`. Pause a definition with `tallpine automation update <id> --enabled=false`. See [schedule behavior](/configuration/lifecycle-automation#what-tallpine-handles).
 

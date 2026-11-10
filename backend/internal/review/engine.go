@@ -164,6 +164,8 @@ type Engine struct {
 	// launch grace counts from it, not from the pass's creation: a slow boot
 	// under load must not eat the time the CLI needs to report its first hook.
 	launchedAt map[string]time.Time
+	// remindedAt is when an idle reviewer was reminded to submit, by run id.
+	remindedAt map[string]time.Time
 
 	triggerMu    sync.Mutex
 	triggerLocks map[domain.SessionID]*sync.Mutex
@@ -212,6 +214,7 @@ func New(d Deps) *Engine {
 		newID:        newID,
 		triggerLocks: make(map[domain.SessionID]*sync.Mutex),
 		launchedAt:   make(map[string]time.Time),
+		remindedAt:   make(map[string]time.Time),
 
 		chatRecoveryDone: d.ChatRecoveryDone,
 		passDeadline:     d.PassDeadline,

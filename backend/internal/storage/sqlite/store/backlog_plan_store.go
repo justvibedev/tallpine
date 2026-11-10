@@ -75,6 +75,23 @@ func (s *Store) OpenBacklogPlansForProject(ctx context.Context, projectID domain
 	return out, nil
 }
 
+// SupersededBacklogPlansForItem lists the item's superseded plans, newest first.
+func (s *Store) SupersededBacklogPlansForItem(ctx context.Context, itemID string) ([]domain.BacklogPlan, error) {
+	rows, err := s.qr.SelectSupersededBacklogPlansForItem(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]domain.BacklogPlan, 0, len(rows))
+	for _, r := range rows {
+		p, err := planFromRow(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // BacklogPlanByPlanner returns the newest plan a planner session is recorded on.
 func (s *Store) BacklogPlanByPlanner(ctx context.Context, sessionID domain.SessionID) (domain.BacklogPlan, bool, error) {
 	return planResult(s.qr.SelectBacklogPlanByPlanner(ctx, string(sessionID)))

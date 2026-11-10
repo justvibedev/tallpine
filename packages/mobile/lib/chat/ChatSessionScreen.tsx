@@ -257,7 +257,7 @@ export function ChatSessionScreen({ session: boardSession }: { session: MobileCh
 		setQuoteRequest({ id: `${Date.now()}-${++quoteSequence.current}`, text, source, composerKey });
 	}, [composerKey, request?.sequence]);
 	const quoteHandled = useCallback((id: string) => setQuoteRequest((current) => current?.id === id ? undefined : current), []);
-	const { loadWorkspaceFiles, openTurnSettings, openShell, openLink, nameOfSession, wantSessionName } = useChatOpeners({ config, conversation, filePaths, filePathsTruncated, filePathsRequest, session, setFilePaths, setFilePathsTruncated, keyboardVisible, router, openingShell, setOpeningShell, setMenuOpen, currentHostId, sessions });
+	const { loadWorkspaceFiles, openTurnSettings, openShell, openLink, openArtifact, nameOfSession, wantSessionName } = useChatOpeners({ config, conversation, filePaths, filePathsTruncated, filePathsRequest, session, setFilePaths, setFilePathsTruncated, keyboardVisible, router, openingShell, setOpeningShell, setMenuOpen, currentHostId, sessions });
 	const { resume, startupView, startupShown, timelineStartup } = useChatStartup({ resuming, setResuming, setResumeError, config, terminated, session, refreshBoard, conversation, refreshConversation });
 	const { requestInterfaceSwitch } = useInterfaceSwitchRequest({ setMenuOpen, interfaceSwitch, turnActive, turnWaiting });
 	useConversationActionsMenu({ conversation, menuOpen, setMenuOpen, session, actionsListeners, actionsEntryRef, sessionName, interfaceSwitch, interfaceTransitionActive, filesNavigation, router, setJumpToSequence, openShell, currentHostId, openPage, openTurnSettings, requestInterfaceSwitch, renameWorker, setWorkerPinned, kill, keyboardVisible, openingShell, title });
@@ -349,7 +349,7 @@ export function ChatSessionScreen({ session: boardSession }: { session: MobileCh
 			{conversation.actionError && conversation.actionError !== conversation.error ? <DismissibleBanner copy={errorBanner("action", conversation.actionError)} dismissed={dismissedBanners} onDismiss={dismissBanner} tone="danger" icon="alert-circle" /> : null}
 			{rolledBack ? <DismissibleBanner copy={rolledBackBanner(rolledBack)} dismissed={dismissedBanners} onDismiss={dismissBanner} tone="muted" icon="rotate-ccw" /> : null}
 			{conversation.pendingSends.map((pendingSend) => pendingSend.state === "failed" ? <InlineBanner key={pendingSend.id} tone="danger" icon="send" title="Message delivery uncertain" body={pendingSend.error || "Delivery failed"} action="Retry" secondary="Discard" onPress={() => void conversation.retrySend(pendingSend.id).catch(() => {})} onSecondary={() => void conversation.discardSend(pendingSend.id).catch(() => {})} /> : null)}
-			<ChatLinkProvider onLinkOpen={openLink} sessionName={nameOfSession} onSessionNameNeeded={wantSessionName} onAddToChat={conversation.snapshot?.supportsExcerpts ? addResponseToChat : undefined}>
+			<ChatLinkProvider onLinkOpen={openLink} onArtifactOpen={openArtifact} artifactSessionId={session.id} sessionName={nameOfSession} onSessionNameNeeded={wantSessionName} onAddToChat={conversation.snapshot?.supportsExcerpts ? addResponseToChat : undefined}>
 				<FilesNavigationContext.Provider value={filesNavigation}>
 				<ChatTimeline
 					snapshot={snapshot}

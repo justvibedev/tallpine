@@ -35,7 +35,7 @@ func TestSilentFailuresEndToEndFiltersToOrchestratorProject(t *testing.T) {
 	store, tokens := newAgentScopeFixture()
 	svc := &healthsvc.Service{Source: fakeHealthSource{}, Sessions: store}
 	r := chi.NewRouter()
-	r.Use(daemonAuthMiddleware(testDaemonToken, "", nil, newAgentScopes(tokens, store, slog.Default())))
+	r.Use(daemonAuthMiddleware(testDaemonToken, "", nil, newAgentScopes(tokens, store, slog.Default()), nil))
 	r.Route("/api/v1", func(api chi.Router) { (&controllers.HealthController{Svc: svc}).Register(api) })
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/silent-failures", http.NoBody)

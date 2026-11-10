@@ -4,6 +4,37 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.11]
+
+### Added
+- Cancel a plan from its card, the daemon route, or the CLI (#1126).
+- Projects inherit the app-wide default reviewer (#1129).
+- `project set-config` sets reasoning effort per role (#1121).
+- On mobile, change a project's agent, model, and effort from the phone (#1127), and tap artifact paths in agent replies (#1123).
+- Claude sessions cap oversized shell output (#1132).
+- Worker reports that arrive close together are batched and delivered in the order they were written (#1134).
+- `claude-fable-5-2` is accepted as a spawn, review, and agent model, with pricing (#1118).
+
+### Security
+- Security mode: a report-only check records which daemon callers Tallpine did not start. It is off by default and only reports; it blocks nothing (#1120).
+
+### Changed
+- Usage discovery no longer rescans Claude project folders for each binding (#1138).
+- An idle reviewer is reminded to submit before its pass is failed (#1137).
+- The orchestrator is told when a terminal worker blocks on a permission prompt (#1125).
+
+### Fixed
+- A replan's planner reads the plan it supersedes (#1130).
+- `session get` reports the model actually served after a `/model` switch (#1128).
+- Idle chat compaction no longer waits for workers or reviews (#1133).
+- The git shim no longer loops through a wrapper git (#1131).
+- Open-items holds expire on finished workers (#1122).
+- A research agent that keeps its window reports an accurate outcome (#1119).
+- A retried chat wake no longer starts inside its backoff window (#1135).
+
+### Internal
+- Harness parity matrix and limits documented (#1124); test-only changes (#1136).
+
 ## [0.13.10]
 
 ### Changed

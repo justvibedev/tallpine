@@ -35,7 +35,7 @@ func TestCrossProjectAllowedRequestsAreAudited(t *testing.T) {
 	scopes.crossProject = func(_ context.Context, p domain.ProjectID) bool { return p == "app" }
 	scopes.creators = fixedCreators{"lab": "app"}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner), logs: logs}
+	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner), logs: logs}
 	token := store.tokenFor(tokens, "app-orch")
 
 	if rec := h.do(token, "GET", "/api/v1/sessions/app-orch"); rec.Code != 200 {
@@ -82,7 +82,7 @@ func TestCrossProjectCreatorLosesRightsWhenProjectIsRemovedAndReregistered(t *te
 	scopes.crossProject = func(context.Context, domain.ProjectID) bool { return true }
 	scopes.creators = db
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner), logs: &bytes.Buffer{}}
+	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner), logs: &bytes.Buffer{}}
 	token := store.tokenFor(tokens, "app-orch")
 	put := func() int {
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/lab/config", strings.NewReader(`{"config":{}}`))
@@ -113,7 +113,7 @@ func TestDevModeAuditScope(t *testing.T) {
 	scopes := newAgentScopes(tokens, store, slog.New(slog.NewJSONHandler(logs, nil)))
 	scopes.devMode = func(context.Context, domain.ProjectID) bool { return true }
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner), logs: logs}
+	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner), logs: logs}
 	token := store.tokenFor(tokens, "app-orch")
 	for _, c := range []struct{ path, scope, outcome string }{
 		{"/api/v1/sessions/app-2/reviews/trigger", "own_project", "dev_mode_allowed"},

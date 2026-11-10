@@ -14,6 +14,7 @@ describe("plan paths", () => {
 			"/api/v1/projects/{projectId}/backlog/{ref}/plan/answers",
 			"/api/v1/projects/{projectId}/backlog/{ref}/plan/approve",
 			"/api/v1/projects/{projectId}/backlog/{ref}/plan/build-anyway",
+			"/api/v1/projects/{projectId}/backlog/{ref}/plan/cancel",
 			"/api/v1/projects/{projectId}/backlog/{ref}/plan/defaults",
 			"/api/v1/projects/{projectId}/backlog/{ref}/plan/replan",
 			"/api/v1/projects/{projectId}/plans",

@@ -151,3 +151,8 @@ var (
 // for its own plan (B205): the planner has not started, or the owner has not
 // approved the plan. The run does not start the item until then.
 const BacklogRunReasonPlanPending = "plan_pending"
+
+// BacklogRunReasonPlanCancelled marks a run item whose plan the owner cancelled:
+// it waits for the owner to plan it again (or skip it), is not planned
+// automatically even in always mode, and does not hold the run open.
+const BacklogRunReasonPlanCancelled = "plan_cancelled"

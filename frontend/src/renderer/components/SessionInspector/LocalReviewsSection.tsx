@@ -6,6 +6,7 @@ import { apiErrorMessage } from "../../lib/api-client";
 import { clientForSessionHost } from "../../lib/host-clients";
 import { sessionUiKey } from "../../lib/hosts";
 import { workspaceQueryKeyForHost } from "../../hooks/useWorkspaceQuery";
+import { useSettings } from "../../hooks/useSettings";
 import { useSessionScmSummary } from "../../hooks/useSessionScmSummary";
 import { sessionPRDisplaySummaries } from "../../lib/pr-display";
 import type { WorkspaceSession } from "../../types/workspace";
@@ -66,7 +67,8 @@ export function LocalReviewsSection({
 	// The reviewer preference belongs to the worker session, not this component
 	// or the whole project. Keep local state responsive while the daemon persists
 	// it, and resync when the inspector moves to another session.
-	const currentDefaultReviewerHarness = resolveDefaultReviewerHarness(projectConfigQuery.data, session.provider);
+	const appReviewerHarness = useSettings(hostId).settings?.workflowDefaults?.reviewerHarness;
+	const currentDefaultReviewerHarness = resolveDefaultReviewerHarness(projectConfigQuery.data, session.provider, appReviewerHarness);
 	const [reviewerOverride, setReviewerOverride] = useState<ReviewerHarness | "">(
 		session.reviewerHarness ?? "",
 	);

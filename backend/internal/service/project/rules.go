@@ -39,6 +39,8 @@ func (m *Service) SetRules(ctx context.Context, id domain.ProjectID, in SetRules
 	if in.AgentRules == nil && in.OrchestratorRules == nil && in.OrchestratorAutoCompactWindow == nil && in.OrchestratorIdleCompactAt == nil && in.OrchestratorResearchCompactWindow == nil {
 		return Project{}, apierr.Invalid("INVALID_PROJECT_RULES", "Set agentRules, orchestratorRules, orchestratorAutoCompactWindow, orchestratorIdleCompactAt, orchestratorResearchCompactWindow or a combination", nil)
 	}
+	m.configMu.Lock()
+	defer m.configMu.Unlock()
 	row, ok, err := m.store.GetProject(ctx, string(id))
 	if err != nil {
 		return Project{}, projectStoreError(err, "PROJECT_LOAD_FAILED", "Failed to load project")

@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-// Idle compaction (B204): Tallpine compacts an orchestrator between tasks, when
-// nothing is in flight, so the next task starts with a small context. It keeps
-// the session and its chat; the provider's own window (B193) still caps it
-// mid-task.
+// Idle compaction (B204): Tallpine compacts an orchestrator between tasks,
+// once it has been quiet (workers and reviews in flight do not hold it back),
+// so the next task starts with a small context. It keeps the session and its
+// chat; the provider's own window (B193) still caps it mid-task.
 const (
 	// OrchestratorIdleCompactDefault is the context size, as a percent of the
 	// orchestrator's effective compaction window (the busy window below, not the
@@ -18,10 +18,11 @@ const (
 	// IdleCompactWait is how long an orchestrator must have been quiet.
 	IdleCompactWait = 10 * time.Minute
 	// IdleCompactStalledWorker is how long a worker with an open task may go
-	// without activity before it no longer holds idle compaction back. It is
+	// without activity before it no longer holds an idle handoff back (it never
+	// held a compaction back). It is
 	// measured from Activity.LastActivityAt, which is turn-level (it does not
 	// advance during a turn), so a single turn longer than this reads as
-	// stalled; that only releases the compaction hold and is never a status.
+	// stalled; that only releases the handoff hold and is never a status.
 	IdleCompactStalledWorker = 2 * time.Hour
 )
 
@@ -82,17 +83,22 @@ type IdleCompactFacts struct {
 	// PendingReports counts undelivered reports for it (pending or claimed).
 	PendingReports int
 	// InFlightWorkers lists routed live workers with an open task (latest
-	// report not done) and activity within IdleCompactStalledWorker.
+	// report not done) and activity within IdleCompactStalledWorker. They hold
+	// back a handoff only: a compaction keeps the session and its chat, and the
+	// summary keeps the in-flight table (IdleCompactInstructions), so a quiet
+	// orchestrator compacts during a merge wave (B649).
 	InFlightWorkers []SessionID
-	// RunningReviews counts native reviews running on its workers' PRs.
+	// RunningReviews counts native reviews running on its workers' PRs. Like
+	// InFlightWorkers it holds back a handoff, never a compaction.
 	RunningReviews int
 	// Handoff reports the project chose IdleActionHandoff, so the sweep hands
 	// the orchestrator off instead of compacting it.
 	Handoff bool
 }
 
-// IdleCompactSkipReason is why an orchestrator does not compact now, or "" when
-// it should.
+// IdleCompactSkipReason is why an orchestrator does not compact (or, with
+// Handoff, hand off) now, or "" when it should. Workers and reviews in flight
+// count only for a handoff.
 func (f IdleCompactFacts) IdleCompactSkipReason() string {
 	switch {
 	case f.Threshold <= 0:
@@ -109,9 +115,9 @@ func (f IdleCompactFacts) IdleCompactSkipReason() string {
 		return "background tasks running"
 	case f.PendingReports > 0:
 		return "reports pending"
-	case len(f.InFlightWorkers) > 0:
+	case f.Handoff && len(f.InFlightWorkers) > 0:
 		return "workers in flight"
-	case f.RunningReviews > 0:
+	case f.Handoff && f.RunningReviews > 0:
 		return "reviews running"
 	}
 	return ""

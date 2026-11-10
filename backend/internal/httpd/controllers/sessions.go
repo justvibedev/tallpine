@@ -204,6 +204,10 @@ type SessionsController struct {
 	// LastMessages reads the latest turn's final assistant message for the
 	// session detail read; nil leaves it out.
 	LastMessages LastAssistantMessageReader
+	// ServedModel reports the model a live session is actually answering with
+	// (it differs from the launch model after an in-session /model switch); ""
+	// keeps the launch model. Read only by `session get`: it scans a transcript.
+	ServedModel func(ctx context.Context, sess domain.Session) string
 	// Models fills the model of a session spawned without one; nil leaves it empty.
 	Models ModelResolver
 	// Instructions reads the effective worker project rules for the session

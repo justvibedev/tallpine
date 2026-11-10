@@ -1,8 +1,11 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -117,6 +120,44 @@ func TestFailedResearchApplyRollsBack(t *testing.T) {
 	}
 	if f.c.researchActive() || len(f.lines) != 0 {
 		t.Fatalf("research %v lines %v, want rolled back and silent", f.c.researchActive(), f.lines)
+	}
+	// The agent said it keeps its window, so status must not offer research
+	// mode, and a later start-up reconcile has no research window pending.
+	if st, _ := f.s.ResearchStatus(context.Background(), "s1"); st.Available {
+		t.Fatalf("status %+v offers research after the agent kept its window", st)
+	}
+	if f.s.desiredCompactTokens(context.Background(), f.c) != 120_000 {
+		t.Fatal("a refused research request left a research window desired")
+	}
+}
+
+func TestResearchRequestErrorIsNotReportedAsAKeptWindow(t *testing.T) {
+	f := newResearchFixture("")
+	var buf bytes.Buffer
+	f.s.log = slog.New(slog.NewTextHandler(&buf, nil))
+	f.conv.err = errors.New("ACP timeout")
+	_, err := f.s.SetResearchMode(context.Background(), "s1", true)
+	if !errors.Is(err, ErrResearchRequestFailed) || errors.Is(err, ErrResearchNotApplied) {
+		t.Fatalf("err %v, want ErrResearchRequestFailed", err)
+	}
+	if f.c.researchActive() || f.c.research.windowFixed {
+		t.Fatal("a failed request must clear the flag and not mark the window fixed")
+	}
+	if st, _ := f.s.ResearchStatus(context.Background(), "s1"); !st.Available {
+		t.Fatalf("status %+v: a retry could work, research must stay available", st)
+	}
+}
+
+func TestRefusedResearchLogsNoRestartWording(t *testing.T) {
+	f := newResearchFixture("")
+	var buf bytes.Buffer
+	f.s.log = slog.New(slog.NewTextHandler(&buf, nil))
+	f.conv.applied = false
+	if _, err := f.s.SetResearchMode(context.Background(), "s1", true); !errors.Is(err, ErrResearchNotApplied) {
+		t.Fatal(err)
+	}
+	if got := buf.String(); strings.Contains(got, "waits for a restart") || strings.Contains(got, "applies after a restart") || !strings.Contains(got, "research mode not enabled") {
+		t.Fatalf("log contradicts the refusal:\n%s", got)
 	}
 }
 

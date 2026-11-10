@@ -87,6 +87,9 @@ func NewWithDeps(cfg config.Config, log *slog.Logger, termMgr *terminal.Manager,
 	}
 	srv.http = &http.Server{
 		ConnState: srv.newConns.track,
+		// Every request carries who connected (B631). The socket's kernel
+		// peer facts are read here; TCP has none.
+		ConnContext: daemonsock.ContextWithConn,
 		Handler: NewRouterWithControl(cfg, log, termMgr, deps, ControlDeps{
 			RequestShutdown:      srv.requestShutdown,
 			StopAgentsOnShutdown: func() { srv.stopAgents.Store(true) },

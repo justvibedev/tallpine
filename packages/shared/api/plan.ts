@@ -11,6 +11,7 @@ export const PLAN_PATHS = {
 	defaults: `${API}/backlog/{ref}/plan/defaults`,
 	approve: `${API}/backlog/{ref}/plan/approve`,
 	replan: `${API}/backlog/{ref}/plan/replan`,
+	cancel: `${API}/backlog/{ref}/plan/cancel`,
 	buildAnyway: `${API}/backlog/{ref}/plan/build-anyway`,
 } as const;
 

@@ -180,6 +180,7 @@ func (m *Manager) freshLaunchOptions(ctx context.Context, harness domain.AgentHa
 		options.AutoCompactWindow = domain.DefaultAutoCompactChoice(kind, project, harnessDefault, envWindow)
 	}
 	options.EnabledPlugins, options.AutoMemoryOff = project.ClaudeLaunchFor(domain.SessionRoleFor(kind))
+	options.ShellOutputChars = domain.ShellOutputLimit(project.Env)
 	return m.withModelWindow(ctx, harness, projectID, model, options)
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"tallpine.eu/tallpine/backend/internal/adapters/agent/nativeconfig"
 	"tallpine.eu/tallpine/backend/internal/ports"
@@ -24,6 +25,14 @@ const transcriptTailBytes = 256 << 10
 // "opus" resolved to in the installed CLI. It returns "" with no error when
 // the transcript does not exist yet or holds no assistant message.
 func LastAssistantModel(ctx context.Context, env map[string]string, sessionID string) (string, error) {
+	return LastAssistantModelSince(ctx, env, sessionID, time.Time{})
+}
+
+// LastAssistantModelSince is LastAssistantModel for the current run only: it
+// returns "" when the latest assistant message predates since (or carries no
+// timestamp), because a relaunch can start the agent on a different model than
+// that message shows. A zero since accepts any message.
+func LastAssistantModelSince(ctx context.Context, env map[string]string, sessionID string, since time.Time) (string, error) {
 	configDir, err := nativeconfig.Resolve(env, claudeConfigDirEnv, ".claude")
 	if err != nil {
 		return "", fmt.Errorf("claude-code: resolve config dir: %w", err)
@@ -54,10 +63,10 @@ func LastAssistantModel(ctx context.Context, env map[string]string, sessionID st
 	if err != nil {
 		return "", fmt.Errorf("claude-code: read transcript: %w", err)
 	}
-	return lastAssistantModelFromJSONL(tail), nil
+	return lastAssistantModelFromJSONL(tail, since), nil
 }
 
-func lastAssistantModelFromJSONL(data []byte) string {
+func lastAssistantModelFromJSONL(data []byte, since time.Time) string {
 	lines := bytes.Split(data, []byte{'\n'})
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := bytes.TrimSpace(lines[i])
@@ -66,8 +75,9 @@ func lastAssistantModelFromJSONL(data []byte) string {
 			continue
 		}
 		var entry struct {
-			Type    string `json:"type"`
-			Message struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Message   struct {
 				Model string `json:"model"`
 			} `json:"message"`
 		}
@@ -79,6 +89,12 @@ func lastAssistantModelFromJSONL(data []byte) string {
 		// API error notices; those were not answered by any model.
 		if model == "" || strings.HasPrefix(model, "<") {
 			continue
+		}
+		if !since.IsZero() {
+			at, err := time.Parse(time.RFC3339Nano, entry.Timestamp)
+			if err != nil || at.Before(since) {
+				return ""
+			}
 		}
 		return model
 	}

@@ -17,8 +17,10 @@ type BacklogPlanService interface {
 	Enabled() bool
 	Stale(ctx context.Context, plan domain.BacklogPlan) bool
 	Get(ctx context.Context, projectID domain.ProjectID, ref string) (domain.BacklogPlan, error)
+	GetByID(ctx context.Context, projectID domain.ProjectID, ref, planID string) (domain.BacklogPlan, error)
 	ListOpen(ctx context.Context, projectID domain.ProjectID) ([]backlogsvc.ProjectPlan, error)
 	Start(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string) (domain.BacklogPlan, bool, error)
+	Cancel(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string) (domain.BacklogPlan, error)
 	Replan(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string) (domain.BacklogPlan, error)
 	SubmitQuestions(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string, in backlogsvc.PlanQuestionsInput) (domain.BacklogPlan, error)
 	Submit(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string, in backlogsvc.PlanSubmitInput) (domain.BacklogPlan, error)
@@ -59,6 +61,7 @@ func (c *BacklogPlanController) Register(r chi.Router) {
 	r.Get("/projects/{projectId}/backlog/{ref}/plan", c.get)
 	r.Post("/projects/{projectId}/backlog/{ref}/plan", c.start)
 	r.Post("/projects/{projectId}/backlog/{ref}/plan/replan", c.replan)
+	r.Post("/projects/{projectId}/backlog/{ref}/plan/cancel", c.cancel)
 	r.Post("/projects/{projectId}/backlog/{ref}/plan/questions", c.questions)
 	r.Post("/projects/{projectId}/backlog/{ref}/plan/submit", c.submit)
 	r.Post("/projects/{projectId}/backlog/{ref}/plan/answers", c.answers)
@@ -111,7 +114,13 @@ func (c *BacklogPlanController) get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, err := c.Svc.Get(r.Context(), project, ref)
+	var p domain.BacklogPlan
+	var err error
+	if id := r.URL.Query().Get("planId"); id != "" {
+		p, err = c.Svc.GetByID(r.Context(), project, ref, id)
+	} else {
+		p, err = c.Svc.Get(r.Context(), project, ref)
+	}
 	if err != nil {
 		envelope.WriteError(w, r, err)
 		return
@@ -141,6 +150,15 @@ func (c *BacklogPlanController) replan(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := c.Svc.Replan(r.Context(), project, backlogActor(r), ref)
 	c.writePlan(w, r, http.StatusCreated, p, err)
+}
+
+func (c *BacklogPlanController) cancel(w http.ResponseWriter, r *http.Request) {
+	project, ref, ok := c.guard(w, r, "POST", planBase+"/cancel")
+	if !ok {
+		return
+	}
+	p, err := c.Svc.Cancel(r.Context(), project, backlogActor(r), ref)
+	c.writePlan(w, r, http.StatusOK, p, err)
 }
 
 func (c *BacklogPlanController) questions(w http.ResponseWriter, r *http.Request) {

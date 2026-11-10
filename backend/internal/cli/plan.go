@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -30,6 +31,7 @@ func newPlanCommand(ctx *commandContext) *cobra.Command {
 	cmd.AddCommand(
 		newPlanShowCommand(ctx), newPlanActionCommand(ctx, "start", "Start a planner for an item (Plan now)", ""),
 		newPlanActionCommand(ctx, "replan", "Supersede the plan and plan again", "replan"),
+		newPlanActionCommand(ctx, "cancel", "Drop the plan that waits on the owner and stop its planner; the item stays open", "cancel"),
 		newPlanQuestionsCommand(ctx), newPlanSubmitCommand(ctx), newPlanAnswerCommand(ctx),
 		newPlanDefaultsCommand(ctx), newPlanApproveCommand(ctx, "approve", "Approve the submitted plan"),
 		newPlanApproveCommand(ctx, "build-anyway", "Build from the approved plan although the base moved"),
@@ -79,7 +81,7 @@ func newPlanActionCommand(ctx *commandContext, use, short, suffix string) *cobra
 }
 
 func newPlanShowCommand(ctx *commandContext) *cobra.Command {
-	var project string
+	var project, planID string
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use: "show <ref>", Short: "Print an item's plan: status, questions, answers, decisions and the plan", Args: usageArgs(cobra.ExactArgs(1)),
@@ -87,6 +89,9 @@ func newPlanShowCommand(ctx *commandContext) *cobra.Command {
 			path, err := ctx.planPath(cmd.Context(), project, args[0], "")
 			if err != nil {
 				return err
+			}
+			if planID != "" {
+				path += "?planId=" + url.QueryEscape(planID)
 			}
 			var out planEnvelopeDTO
 			if err := ctx.getJSON(cmd.Context(), path, &out); err != nil {
@@ -98,6 +103,7 @@ func newPlanShowCommand(ctx *commandContext) *cobra.Command {
 			return writePlanText(cmd.OutOrStdout(), out.Plan)
 		},
 	}
+	cmd.Flags().StringVar(&planID, "plan-id", "", "Show this plan of the item (a superseded one too) instead of the current plan")
 	addBacklogProjectFlag(cmd, &project, &asJSON)
 	return cmd
 }

@@ -58,6 +58,8 @@ export function releaseSourceLdflags(env = process.env) {
 	if (repo) flags.push(`-X ${CLI_PACKAGE}.releaseRepo=${repo}`);
 	const teamId = teamIdFromIdentity((env.TALLPINE_SIGN_IDENTITY || env.APPLE_SIGNING_IDENTITY || "").trim());
 	if (teamId) flags.push(`-X ${SIGNER_PACKAGE}.ExpectedTeamID=${teamId}`);
+	// The daemon's peer check is active only on builds carrying this (B631).
+	if (teamId) flags.push(`-X ${BUILDINFO_PACKAGE}.TeamID=${teamId}`);
 	return flags;
 }
 

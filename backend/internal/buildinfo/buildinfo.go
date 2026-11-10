@@ -17,6 +17,10 @@ var (
 	Date = ""
 	// Dirty is "true" when the work tree had uncommitted changes at build time.
 	Dirty = ""
+	// TeamID is the Apple Team ID a signed release build is signed by. Empty
+	// on unsigned, ad-hoc and development builds. It is fixed at build time:
+	// nothing at runtime can set it.
+	TeamID = ""
 )
 
 // IsDirty reports whether the binary was built from a dirty work tree.

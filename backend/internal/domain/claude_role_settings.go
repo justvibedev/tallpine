@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/brand"
@@ -64,6 +65,11 @@ func (c ProjectConfig) ClaudeRoleSettingsJSON(role string) string {
 	}
 	if off {
 		settings["autoMemoryEnabled"] = json.RawMessage("false")
+	}
+	if limit := ShellOutputLimit(c.Env); limit > 0 {
+		// Chat sessions take the shell output cap here; terminal launches take
+		// it from AgentLaunchOptions.ShellOutputChars.
+		settings["bashOutputMaxChars"] = json.RawMessage(strconv.Itoa(limit))
 	}
 	if len(settings) == 0 {
 		return ""

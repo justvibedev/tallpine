@@ -141,7 +141,7 @@ func (c *Coordinator) evaluate(ctx context.Context, id domain.SessionID, ready b
 		}
 		return Result{Reason: "report_trigger_disabled"}, nil
 	}
-	harness := effectiveReviewerHarness(session, project.Config)
+	harness := c.effectiveReviewerHarness(ctx, session, project.Config)
 	if harness == "" {
 		return Result{Reason: "missing_reviewer_harness"}, nil
 	}
@@ -275,10 +275,20 @@ func existingHeadReason(runs []domain.ReviewRun, prURL, targetSHA string) string
 	return ""
 }
 
-func effectiveReviewerHarness(session domain.SessionRecord, config domain.ProjectConfig) domain.ReviewerHarness {
+func (c *Coordinator) effectiveReviewerHarness(ctx context.Context, session domain.SessionRecord, config domain.ProjectConfig) domain.ReviewerHarness {
 	harness := session.ReviewerHarness
 	if harness == "" {
-		harness = config.ResolveReviewerHarness(session.Harness)
+		var app domain.WorkflowDefaults
+		if s, ok := c.store.(interface {
+			WorkflowDefaults(context.Context) (domain.WorkflowDefaults, error)
+		}); ok {
+			d, err := s.WorkflowDefaults(ctx)
+			if err != nil {
+				c.logger.Warn("auto-review could not read app default reviewer", "session", session.ID, "error", err)
+			}
+			app = d
+		}
+		harness, _ = config.EffectiveReviewer(app, session.Harness)
 	}
 	// Mirror review.Engine: a saved reviewer that was removed resolves to the fallback.
 	resolved, _ := harness.OrFallback()
@@ -406,7 +416,7 @@ func (c *Coordinator) watchStall(ctx context.Context, session domain.SessionReco
 		return
 	}
 	live := map[string]bool{}
-	harness := effectiveReviewerHarness(session, project.Config)
+	harness := c.effectiveReviewerHarness(ctx, session, project.Config)
 	harnessRuns := make([]domain.ReviewRun, 0, len(runs))
 	for _, run := range runs {
 		if run.Harness == harness || run.Harness == "" {

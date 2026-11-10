@@ -106,6 +106,7 @@ func (b *boot) wireHTTP() error {
 		SessionMemory:        b.memoryReader,
 		LastMessages:         b.store,
 		Models:               b.chatSvc,
+		ServedModel:          servedModelReader{accounts: b.agentAccountSvc, projects: b.store}.ServedModel,
 		Instructions:         b.sessMgr,
 		BackgroundTasks:      b.bgTasks,
 		UsageLimits:          b.chatSvc,
@@ -113,6 +114,7 @@ func (b *boot) wireHTTP() error {
 		OwnerMessages:        b.store,
 		SessionSteps:         b.lcStack.LCM,
 		Mobile:               b.mc,
+		PeerCheck:            b.startPeerCheck(),
 		MobileFeatureEnabled: func() bool {
 			st, err := mobilebridge.Load(b.bs.ConfigPath)
 			return err == nil && st.FeatureEnabled && !b.bs.ManagedOffNow()

@@ -112,6 +112,16 @@ require_hardened_runtime() {
 }
 
 
+# require_team_id_baked <app>: die unless the bundled daemon carries the release
+# Team ID and cgo signature checking. Without them the daemon's peer check is off.
+require_team_id_baked() {
+  local app="$1" daemon output
+  daemon="${app}/Contents/Resources/daemon/${cli_name}"
+  output="$("${daemon}" version --team-id 2>/dev/null || true)"
+  [[ "${output}" == "$(release_team_id)" ]] ||
+    die "the bundled daemon was not built with the release Team ID and signature checking (got '${output:-none}', expected $(release_team_id)): ${daemon}"
+}
+
 # require_helper_identities <app>: die unless every bundled helper is signed by
 # the release Team ID with the hardened runtime. The app-level check above does
 # not prove this: nested binaries can be ad hoc or signed by another team. A SHA

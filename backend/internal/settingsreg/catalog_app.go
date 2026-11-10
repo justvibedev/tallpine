@@ -44,12 +44,25 @@ func appSettings() []Setting {
 			Description: "When a project plans before it builds, in every project that does not set its own mode. A managed policy.planner.mode wins.", Writers: user},
 		{Key: "app.workflowDefaults.planAutoApprove", Scope: ScopeApp, Kind: KindBool, Default: jsonOf(false),
 			Description: "Approve submitted plans without the owner in every project that does not set its own value. On means plans go ahead without you; a managed policy.planner.autoApprove of off locks it off.", Writers: user},
+		{Key: "app.workflowDefaults.reviewerHarness", Scope: ScopeApp, Kind: KindString, Default: jsonOf(""), Validate: validateReviewerHarness,
+			Description: "Reviewer harness for every project that sets no reviewer of its own. Empty keeps each project's worker-derived reviewer.", Writers: user},
+		{Key: "app.workflowDefaults.reviewerModel", Scope: ScopeApp, Kind: KindString, Default: jsonOf(""),
+			Description: "Reviewer model paired with the default reviewer harness; empty uses the harness's default model.", Writers: user},
 		{Key: "app.storageCompaction", Scope: ScopeApp, Kind: KindBool, Default: jsonOf(true),
 			Description: "Compact activity writes and expire the provider-event archive.", Writers: user},
 		{Key: "app.providerEventRetentionDays", Scope: ScopeApp, Kind: KindInt, Default: jsonOf(settingssvc.DefaultProviderEventRetentionDays),
 			Min: bound(settingssvc.MinProviderEventRetentionDays), Max: bound(settingssvc.MaxProviderEventRetentionDays),
 			Description: "Days provider events of a terminated session are kept while compaction is on.", Writers: user, MDMLockable: true},
 	}
+}
+
+// validateReviewerHarness accepts empty or a supported reviewer harness.
+func validateReviewerHarness(raw json.RawMessage) error {
+	var h domain.ReviewerHarness
+	if err := json.Unmarshal(raw, &h); err != nil || (h != "" && !h.IsKnown()) {
+		return errors.New("must be empty or a supported reviewer harness")
+	}
+	return nil
 }
 
 // validateHarnessDefaults checks every harness entry with the settings

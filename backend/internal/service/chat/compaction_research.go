@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -23,10 +24,27 @@ var (
 	// ErrResearchDisabled means the global Settings toggle or the project's
 	// orchestrator.researchCompactWindow turned research mode off.
 	ErrResearchDisabled = errors.New("orchestrator research mode is turned off")
-	// ErrResearchNotApplied means the agent did not accept the research window;
-	// the session stays in coordination mode.
-	ErrResearchNotApplied = errors.New("the agent did not accept the research window")
+	// ErrResearchNotApplied means the running agent kept its compaction window
+	// (Claude Code applies a changed window only at launch), so research mode
+	// was not switched on and nothing is left pending: the session stays in
+	// coordination mode.
+	ErrResearchNotApplied = errors.New("the agent cannot change its compaction window while running")
+	// ErrResearchRequestFailed means the request to the agent failed (timeout,
+	// closed session, bad reply), so what it would do is unknown; a retry may work.
+	ErrResearchRequestFailed = errors.New("could not ask the agent to change its compaction window")
 )
+
+// researchState is a controller's research mode. on and since (when it was
+// switched on) are in memory only and guarded by Controller.mu; mu serializes
+// switches so a flag change and its live window change stay together.
+// windowFixed is set once the running agent answered that it keeps its
+// window: it then cannot offer research mode, which needs a live change.
+type researchState struct {
+	on          bool
+	since       time.Time
+	windowFixed bool
+	mu          sync.Mutex
+}
 
 // ResearchStatus is one orchestrator's research mode.
 type ResearchStatus struct {
@@ -73,7 +91,7 @@ func (s *Service) researchInEffect(ctx context.Context, c *Controller) (string, 
 // stays.
 func (s *Service) researchTarget(ctx context.Context, c *Controller) (tokens int, choice string, ok bool) {
 	c.mu.Lock()
-	on := c.researchOn
+	on := c.research.on
 	c.mu.Unlock()
 	if !on || c.Settings().AutoCompactWindow != "" {
 		return 0, "", false
@@ -127,13 +145,13 @@ func (s *Service) researchStatus(ctx context.Context, c *Controller) ResearchSta
 	choice, allowed := s.researchChoice(ctx, c)
 	_, setter := c.conv.(ports.ChatCompactionWindowSetter)
 	st := ResearchStatus{
-		Available:      allowed && setter && c.harness == domain.HarnessClaudeCode,
 		ResearchWindow: choice,
 	}
 	c.mu.Lock()
+	st.Available = allowed && setter && c.harness == domain.HarnessClaudeCode && !c.research.windowFixed
 	st.Window = c.compactLive
-	if c.researchOn {
-		st.Since = c.researchSince
+	if c.research.on {
+		st.Since = c.research.since
 	}
 	c.mu.Unlock()
 	_, st.Active = s.researchInEffect(ctx, c)
@@ -153,10 +171,10 @@ func (s *Service) SetResearchMode(ctx context.Context, id domain.SessionID, on b
 	if _, ok := c.conv.(ports.ChatCompactionWindowSetter); !ok {
 		return ResearchStatus{}, ErrResearchUnsupported
 	}
-	c.researchMu.Lock()
-	defer c.researchMu.Unlock()
+	c.research.mu.Lock()
+	defer c.research.mu.Unlock()
 	c.mu.Lock()
-	was := c.researchOn
+	was := c.research.on
 	c.mu.Unlock()
 	if on {
 		if _, allowed := s.researchChoice(ctx, c); !allowed {
@@ -168,9 +186,20 @@ func (s *Service) SetResearchMode(ctx context.Context, id domain.SessionID, on b
 	}
 	_, effectiveBefore := s.researchInEffect(ctx, c)
 	s.setResearchFlag(c, on)
-	if s.reconcileCompaction(ctx, c) && on {
+	if !on {
+		s.reconcileCompaction(ctx, c)
+	} else if out, live, desired, err := s.tryLiveCompaction(ctx, c); out == compactKept || out == compactNoSetter || out == compactAskFailed {
+		// Nothing was asked for in the end: the flag goes back, so no window
+		// waits for a restart and the log says only what happened.
 		s.setResearchFlag(c, false)
+		if out == compactAskFailed {
+			s.log.Warn("research mode not enabled: the request to change the live compaction window failed", "session", c.sessionID, "live", live, "desired", desired, "error", err)
+			return ResearchStatus{}, ErrResearchRequestFailed
+		}
+		s.log.Info("research mode not enabled: the running agent keeps its compaction window", "session", c.sessionID, "live", live, "desired", desired)
 		return ResearchStatus{}, ErrResearchNotApplied
+	} else if out == compactApplied {
+		s.log.Info("compaction window applied live", "session", c.sessionID, "previous", live, "tokens", desired)
 	}
 	// A chat with a window of its own is unchanged by the switch: no line.
 	if _, effectiveAfter := s.researchInEffect(ctx, c); effectiveBefore != effectiveAfter {
@@ -181,10 +210,10 @@ func (s *Service) SetResearchMode(ctx context.Context, id domain.SessionID, on b
 
 func (s *Service) setResearchFlag(c *Controller, on bool) {
 	c.mu.Lock()
-	c.researchOn = on
-	c.researchSince = time.Time{}
+	c.research.on = on
+	c.research.since = time.Time{}
 	if on {
-		c.researchSince = time.Now()
+		c.research.since = time.Now()
 	}
 	c.mu.Unlock()
 }
@@ -200,10 +229,10 @@ func (s *Service) ClearResearch(ctx context.Context, id domain.SessionID) bool {
 }
 
 func (s *Service) clearResearch(ctx context.Context, c *Controller) bool {
-	c.researchMu.Lock()
-	defer c.researchMu.Unlock()
+	c.research.mu.Lock()
+	defer c.research.mu.Unlock()
 	c.mu.Lock()
-	was := c.researchOn
+	was := c.research.on
 	c.mu.Unlock()
 	if !was {
 		return false
@@ -266,5 +295,5 @@ func (s *Service) researchWindowLabel(ctx context.Context, c *Controller) string
 func (c *Controller) researchActive() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.researchOn
+	return c.research.on
 }

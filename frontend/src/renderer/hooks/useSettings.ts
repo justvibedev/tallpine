@@ -34,7 +34,7 @@ export interface Settings {
 	/** Idle open sessions move to a harness release installed while they ran. */
 	versionRefresh?: boolean;
 	/** App-wide workflow defaults projects inherit when they set none of their own. */
-	workflowDefaults?: { autoReview: boolean; planningMode: "auto" | "always" | "off"; planAutoApprove: boolean };
+	workflowDefaults?: { autoReview: boolean; planningMode: "auto" | "always" | "off"; planAutoApprove: boolean; reviewerHarness?: string; reviewerModel?: string };
 	/** Orchestrators may raise their compaction window while they research. */
 	dynamicOrchestratorContext?: boolean;
 	/** Coalesce repeated activity writes and compact the provider-event archive. */
@@ -80,6 +80,8 @@ export function useSettings(hostId?: string, enabled = true) {
 					autoReview: data?.workflowDefaults?.autoReview ?? false,
 					planningMode: data?.workflowDefaults?.planningMode === "always" || data?.workflowDefaults?.planningMode === "off" ? data.workflowDefaults.planningMode : "auto",
 					planAutoApprove: data?.workflowDefaults?.planAutoApprove ?? false,
+					reviewerHarness: data?.workflowDefaults?.reviewerHarness ?? "",
+					reviewerModel: data?.workflowDefaults?.reviewerModel ?? "",
 				},
 				// A daemon that predates the setting has no research mode.
 				dynamicOrchestratorContext: data?.dynamicOrchestratorContext ?? false,

@@ -348,8 +348,8 @@ func (w *Writer) applyApp(ctx context.Context, plan []planned) error {
 			if err := w.setDynamicContext(ctx, raw); err != nil {
 				return err
 			}
-		case "app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove":
-			if err := w.setWorkflowDefault(ctx, p.def.Key, raw); err != nil {
+		case "app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel":
+			if err := w.setWorkflowDefault(ctx, p.def.Key, raw, plan); err != nil {
 				return err
 			}
 		case "app.versionRefresh":

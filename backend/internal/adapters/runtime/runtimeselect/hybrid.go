@@ -202,8 +202,13 @@ func (r *hybridRuntime) ProcessRootPIDs(ctx context.Context, handle ports.Runtim
 	return backend.ProcessRootPIDs(ctx, raw)
 }
 
+// IsDirectHandle reports whether handleID names a direct PTY host session.
+func IsDirectHandle(handleID string) bool {
+	return strings.HasPrefix(handleID, directHandlePrefix)
+}
+
 func (r *hybridRuntime) route(handle ports.RuntimeHandle) (routedBackend, ports.RuntimeHandle) {
-	if strings.HasPrefix(handle.ID, directHandlePrefix) {
+	if IsDirectHandle(handle.ID) {
 		handle.ID = strings.TrimPrefix(handle.ID, directHandlePrefix)
 		return r.direct, handle
 	}

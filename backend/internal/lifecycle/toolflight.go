@@ -132,7 +132,7 @@ func isTurnBoundaryEvent(event string) bool {
 // Event pass through untouched — the compatibility contract for old CLIs and
 // for adapters that don't tag their signals (their last-writer-wins semantics
 // are pinned by tests). Caller must hold m.mu.
-func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.ActivityState, s ports.ActivitySignal) ports.ActivitySignal {
+func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.ActivityState, harness domain.AgentHarness, s ports.ActivitySignal) ports.ActivitySignal {
 	if s.Event == "" {
 		return s
 	}
@@ -257,6 +257,14 @@ func (m *Manager) applyToolPrecedenceLocked(id domain.SessionID, cur domain.Acti
 			// closed.
 			return suppressed
 		}
+
+	case cur == domain.ActivityWaitingInput && harness == domain.HarnessKiro && isPostToolUseEvent(s.Event):
+		// Kiro approval dialogs fire no hook and only the screen poller sees
+		// them, so a waiting_input that a poll sampled stays until a turn
+		// boundary. Kiro runs a tool only once its dialog is answered, so a
+		// post-tool-use proves it: leaving waiting_input makes the next dialog
+		// of the same turn a new transition the poller reports.
+		return s
 
 	case cur.IsSticky() && isToolUseEvent(s.Event):
 		// waiting_input: background tool traffic must not clear the "waiting

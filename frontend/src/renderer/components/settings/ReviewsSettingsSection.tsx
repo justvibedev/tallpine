@@ -3,6 +3,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { useUpdateWorkflowDefaults } from "../../hooks/useUpdateWorkflowDefaults";
 import { Switch } from "../ui/switch";
 import { AgentPolicySection } from "./AgentPolicySection";
+import { DefaultReviewerRows } from "./DefaultReviewerRows";
 import { PlanningDefaultsRows } from "./PlanningDefaultsRows";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
@@ -27,6 +28,7 @@ export function ReviewsSettingsSection() {
 						onCheckedChange={(autoReview) => update({ autoReview })}
 					/>
 				</SettingsRow>
+				<DefaultReviewerRows />
 				{error ? (
 					<p role="alert" className="px-3 pb-2 text-caption leading-4 text-error">
 						{error}

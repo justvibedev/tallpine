@@ -23,6 +23,7 @@ import {
 } from "../../lib/session-reviews";
 import { ProjectConfig, ReviewerSurface } from "./types";
 import { InspectorPolicyRow } from "./InspectorPolicyRow";
+import { useSettings } from "../../hooks/useSettings";
 import { ReviewerHarness, AgentCatalog, resolveDefaultReviewerHarness } from "./ReviewsSection";
 import { Spinner } from "../ui/spinner";
 
@@ -86,6 +87,7 @@ export function ReviewPanel({
 	/** The trigger declined to run and says why. */
 	notice?: string | null;
 }) {
+	const appReviewerHarness = useSettings(hostId).settings?.workflowDefaults?.reviewerHarness;
 	const { t } = useTranslation();
 	// A failed run stores its reason in body. Show it for manual triggers too:
 	// the trigger request itself only returns a generic "Review operation failed".
@@ -124,7 +126,7 @@ export function ReviewPanel({
 		.filter((run): run is NonNullable<typeof run> => Boolean(run))
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 	const latest = runningRun ?? newestRun;
-	const resolvedDefaultHarness = resolveDefaultReviewerHarness(config, session.provider);
+	const resolvedDefaultHarness = resolveDefaultReviewerHarness(config, session.provider, appReviewerHarness);
 	const effectiveReviewerHarness = reviewerOverride || resolvedDefaultHarness;
 	const activeReviewerHarness = latest?.harness || effectiveReviewerHarness;
 	const reviewFailure = latestFailure && latestFailure.id !== dismissedFailureId ? latestFailure : null;

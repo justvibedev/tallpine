@@ -51,6 +51,10 @@ type Manager interface {
 	// other config field, and logs each change.
 	SetRules(ctx context.Context, id domain.ProjectID, in SetRulesInput) (Project, error)
 
+	// SetRoleSettings changes only the agent, model and effort of the
+	// orchestrator, worker and reviewer roles, keeping every other config field.
+	SetRoleSettings(ctx context.Context, id domain.ProjectID, in SetRoleSettingsInput) (Project, error)
+
 	// Remove unregisters a project, stopping its sessions and reclaiming
 	// managed workspaces.
 	Remove(ctx context.Context, id domain.ProjectID) (RemoveResult, error)
@@ -81,6 +85,9 @@ type Service struct {
 	// covered by the store's own writeMu, so path/id conflict checks plus the
 	// subsequent mutation must be atomic from the perspective of concurrent callers.
 	addMu sync.Mutex
+	// configMu serialises the read-merge-write of the narrow config writers
+	// (SetRules, SetRoleSettings) so neither loses the other's change.
+	configMu sync.Mutex
 	// onConfigChanged, when set, runs after a project config write so running
 	// sessions can follow it (B398: an orchestrator's compaction window).
 	onConfigChanged []func(ctx context.Context, id domain.ProjectID)

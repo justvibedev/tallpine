@@ -18,6 +18,9 @@ WHERE item_id = ? AND status <> 'superseded'
 -- re-plan; else the newest.
 ORDER BY (status NOT IN ('approved', 'failed')) DESC, (status = 'approved') DESC, started_at DESC, id DESC LIMIT 1;
 
+-- name: SelectSupersededBacklogPlansForItem :many
+SELECT * FROM backlog_plans WHERE item_id = ? AND status = 'superseded' ORDER BY started_at DESC, id DESC;
+
 -- name: SelectBacklogPlanByPlanner :one
 SELECT * FROM backlog_plans WHERE planner_session_id = ? ORDER BY started_at DESC LIMIT 1;
 

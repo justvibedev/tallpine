@@ -520,8 +520,8 @@ func TestIdleSignalOnlyExpeditesBusyRetries(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	worker := seedReportWorker(t, h)
-	for _, reason := range []string{domain.ReportDeliveryBusyReason, "provider unavailable", "repeated stuck report coalesced inside interrupt window"} {
-		r, err := h.st.CreateReport(ctx, domain.ReportRecord{ID: reason, SessionID: worker.ID, ProjectID: testProject, Message: reason, CreatedAt: h.now(), AvailableAt: h.now(), DeliveryState: domain.ReportPending, RepeatCount: 1})
+	for i, reason := range []string{"repeated stuck report coalesced inside interrupt window", "provider unavailable", domain.ReportDeliveryBusyReason} {
+		r, err := h.st.CreateReport(ctx, domain.ReportRecord{ID: reason, SessionID: worker.ID, ProjectID: testProject, Message: reason, CreatedAt: h.now().Add(-time.Duration(i) * time.Second), AvailableAt: h.now(), DeliveryState: domain.ReportPending, RepeatCount: 1})
 		if err != nil {
 			t.Fatal(err)
 		}

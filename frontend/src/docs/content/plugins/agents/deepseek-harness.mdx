@@ -25,4 +25,9 @@ Every shipped `dsh` profile mounts a session-log plugin that uploads the session
 
 ## Limits
 
-DeepSeek is a worker and orchestrator harness only. It is not offered as a code reviewer; reviewers are Claude Code, Codex and Kiro.
+DeepSeek can review pull requests (read-only), and also runs as a worker or orchestrator.
+
+- The terminal task reports activity, idle, turn end and subagents through hooks, but dsh has no permission-request event, so a terminal approval cannot be answered from Tallpine. Chat approvals work.
+- No terminal usage or context readout.
+- Chat has no model picker, compaction or mid-turn steering.
+- No account switching or failover.

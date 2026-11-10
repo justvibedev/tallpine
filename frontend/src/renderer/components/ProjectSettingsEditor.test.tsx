@@ -133,3 +133,22 @@ describe("managed (MDM) locks", () => {
 		expect(screen.getByTestId("agent-worker")).toBeEnabled();
 	});
 });
+
+describe("reviewer pickers", () => {
+	it("marks only the stronger-reviewer picker so it never inherits the app default reviewer", () => {
+		const seen: { role: string; stronger?: boolean }[] = [];
+		const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		render(<QueryClientProvider client={client}><TooltipProvider>
+			<ProjectSettingsEditor initialValues={initialValues} section="agents"
+				capabilities={{ workflow: true, sessionPrefix: true, intake: true, reviewer: true, requiredAgents: true }}
+				details={[]} modelScope={() => ""}
+				renderAgent={({ role, stronger }) => { seen.push({ role, stronger }); return null; }}
+				save={vi.fn().mockResolvedValue({})} />
+		</TooltipProvider></QueryClientProvider>);
+		const reviewers = seen.filter((p) => p.role === "reviewer");
+		expect(reviewers.some((p) => p.stronger !== true)).toBe(true);
+		expect(reviewers.some((p) => p.stronger === true)).toBe(true);
+		expect(seen.filter((p) => p.role !== "reviewer").every((p) => !p.stronger)).toBe(true);
+	});
+});
+

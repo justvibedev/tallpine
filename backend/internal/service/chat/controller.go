@@ -271,13 +271,7 @@ type Controller struct {
 	// compactBaseline is the window the project's own environment sets, which
 	// Auto means: 0 when it sets none. Fixed for the controller's life.
 	compactBaseline int
-	// researchOn is the orchestrator research mode (B413); researchSince is
-	// when it was switched on. In memory only, guarded by mu. researchMu
-	// serializes switches so a flag change and its live window change stay
-	// together.
-	researchOn    bool
-	researchSince time.Time
-	researchMu    sync.Mutex
+	research        researchState // orchestrator research mode (B413); see researchState
 	// kind is the session kind; an orchestrator has its own compaction default.
 	kind domain.SessionKind
 

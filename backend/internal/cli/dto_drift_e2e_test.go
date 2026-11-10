@@ -180,6 +180,10 @@ func (f *fakeProjectManager) SetRules(_ context.Context, id domain.ProjectID, _ 
 	return projectsvc.Project{ID: id}, nil
 }
 
+func (f *fakeProjectManager) SetRoleSettings(_ context.Context, id domain.ProjectID, _ projectsvc.SetRoleSettingsInput) (projectsvc.Project, error) {
+	return projectsvc.Project{ID: id}, nil
+}
+
 func (f *fakeProjectManager) Remove(context.Context, domain.ProjectID) (projectsvc.RemoveResult, error) {
 	return projectsvc.RemoveResult{}, nil
 }

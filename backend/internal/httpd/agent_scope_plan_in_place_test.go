@@ -22,7 +22,7 @@ func TestPlanInPlaceConfigOnlyOnCreatedProjects(t *testing.T) {
 	scopes.crossProject = func(_ context.Context, p domain.ProjectID) bool { return p == "app" }
 	scopes.creators = fixedCreators{"lab": "app"} // "web" has no recorded creator: the owner made it
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner), logs: &bytes.Buffer{}}
+	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner), logs: &bytes.Buffer{}}
 	token := store.tokenFor(tokens, "app-orch")
 	put := func(project string) int {
 		req := httptest.NewRequest(http.MethodPut, "/api/v1/projects/"+project+"/config", strings.NewReader(`{"config":{"planInPlace":true}}`))

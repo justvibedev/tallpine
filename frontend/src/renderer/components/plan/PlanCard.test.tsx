@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
 	acceptPlanDefaults: vi.fn(),
 	approvePlan: vi.fn(),
 	replanItem: vi.fn(),
+	cancelPlan: vi.fn(),
 	startPlan: vi.fn(),
 }));
 vi.mock("../../lib/plan-api", async (importActual) => ({ ...(await importActual<typeof import("../../lib/plan-api")>()), ...api }));
@@ -131,7 +132,28 @@ describe("PlanCard", () => {
 	});
 });
 
+describe("PlanCard cancel", () => {
+	it.each(["awaiting_answers", "awaiting_approval", "failed"] as const)("offers Cancel plan while %s and calls the cancel route", async (status) => {
+		card(planFixture({ status }));
+		await userEvent.click(screen.getByRole("button", { name: "Cancel plan" }));
+		await waitFor(() => expect(api.cancelPlan).toHaveBeenCalledWith("p1", "B7"));
+	});
+
+	it("shows no Cancel plan while the planner is still writing", async () => {
+		card(planFixture({ status: "writing" }));
+		await userEvent.click(screen.getByTestId("plan-card").querySelector("button")!);
+		expect(screen.queryByRole("button", { name: "Cancel plan" })).not.toBeInTheDocument();
+	});
+});
+
 describe("PlanCards", () => {
+	it("drops a cancelled card from the stack once the list refetches", async () => {
+		api.listProjectPlans.mockResolvedValueOnce([{ itemRef: "B7", itemTitle: "t", plan: planFixture() }]).mockResolvedValue([]);
+		renderWithClient(<PlanCards projectId="p1" />);
+		await userEvent.click(await screen.findByRole("button", { name: "Cancel plan" }));
+		await waitFor(() => expect(screen.queryByTestId("plan-card")).not.toBeInTheDocument());
+	});
+
 	it("renders an answered (writing) card collapsed and lets the owner expand it", async () => {
 		api.listProjectPlans.mockResolvedValue([{ itemRef: "B7", itemTitle: "t", plan: planFixture({ status: "writing" }) }]);
 		renderWithClient(<PlanCards projectId="p1" />);

@@ -74,3 +74,13 @@ func TestBundledCatalogMatchesRepoCatalog(t *testing.T) {
 		t.Errorf("bundled catalog has %d files, pricing/catalog/v1 has %d; re-copy the catalog", seen, repoFiles)
 	}
 }
+
+func TestBundledCatalogPricesFable52(t *testing.T) {
+	fetched, err := NewBundledFetcher().Fetch(t.Context(), "", false)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if got := fetched.Catalog.Snapshot().ProviderForModel("claude-fable-5-2"); got != "anthropic" {
+		t.Fatalf("ProviderForModel(claude-fable-5-2) = %q, want anthropic", got)
+	}
+}

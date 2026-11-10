@@ -91,6 +91,7 @@ Administrators can pin planning for every project with the `planner` agent-polic
 | `defaults <ref> [--relayed]` | owner | Take every recommended answer and assumption. |
 | `approve <ref> [--owner-message <id>\|last]` | owner | Approve. An agent must cite your chat message. |
 | `replan <ref>` | owner, orchestrator | Supersede the plan and plan again. |
+| `cancel <ref>` | owner, orchestrator | Drop the plan that waits on the owner and stop its planner; the item stays open to plan again. |
 | `build-anyway <ref> [--owner-message <id>\|last]` | owner | Build from a stale plan. |
 
 ## Plan in place (`planInPlace`)

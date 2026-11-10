@@ -49,3 +49,17 @@ func TestEffectivePlanAutoApprove(t *testing.T) {
 		}
 	}
 }
+
+func TestEffectiveReviewerInheritsAppDefault(t *testing.T) {
+	app := WorkflowDefaults{ReviewerHarness: ReviewerCodex, ReviewerModel: "m"}
+	if h, c := (ProjectConfig{}).EffectiveReviewer(app, HarnessClaudeCode); h != ReviewerCodex || c.Model != "m" {
+		t.Fatalf("inherit: %s %q", h, c.Model)
+	}
+	own := ProjectConfig{Reviewers: []ReviewerConfig{{Harness: ReviewerClaudeCode}}}
+	if h, _ := own.EffectiveReviewer(app, HarnessCodex); h != ReviewerClaudeCode {
+		t.Fatalf("override: %s", h)
+	}
+	if h, _ := (ProjectConfig{}).EffectiveReviewer(WorkflowDefaults{}, HarnessCodex); h != ReviewerCodex {
+		t.Fatalf("no app default keeps worker-derived: %s", h)
+	}
+}

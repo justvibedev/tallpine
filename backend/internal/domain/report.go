@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -117,6 +118,30 @@ const ReportDroppedClaimToken = "dropped:project-archived"
 // no longer mattered: its PR was already merged or closed. LastError holds the
 // reason; the row stays in history.
 const ReportStaleClaimToken = "dropped:stale-report"
+
+// ReportBatchWindow is how long a non-urgent worker report waits so reports
+// arriving close together reach the orchestrator as one wake-up. Reports that
+// need the owner or an approval (needs_input, stuck, daemon notices) skip it.
+const ReportBatchWindow = 15 * time.Second
+
+// ReportHeadOfLineHold bounds how long newer reports wait behind an older
+// retry batch that is backing off, so delivery keeps authored order. A batch
+// backed off further than this (an exhausted one) no longer holds anything.
+const ReportHeadOfLineHold = 2 * time.Minute
+
+type reportPiggybackKey struct{}
+
+// WithReportPiggyback marks a claim made by the orchestrator's own next turn,
+// which consumes every pending report at once and so never holds any back.
+func WithReportPiggyback(ctx context.Context) context.Context {
+	return context.WithValue(ctx, reportPiggybackKey{}, true)
+}
+
+// IsReportPiggyback reports whether ctx came from WithReportPiggyback.
+func IsReportPiggyback(ctx context.Context) bool {
+	v, _ := ctx.Value(reportPiggybackKey{}).(bool)
+	return v
+}
 
 // ReportDeliveryBusyReason identifies an availability retry, not a delivery failure.
 const ReportDeliveryBusyReason = "orchestrator cannot take reports right now"

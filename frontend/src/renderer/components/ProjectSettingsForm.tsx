@@ -14,6 +14,7 @@ import { isLaunchableAgent } from "../lib/agent-select-options";
 import { LOCAL_HOST, refKey } from "../lib/hosts";
 import { projectQueryKey, putProject, type Project, type ProjectConfig } from "../lib/project-settings-api";
 import { openRemoteOrchestrator } from "../lib/remote-orchestrator";
+import { agentLabel } from "../lib/agent-options";
 import { WORKER_DEFAULT_REVIEWERS } from "../lib/reviewer-harnesses";
 import { OrchestratorSpawnError, spawnOrchestrator } from "../lib/spawn-orchestrator";
 import { useUiStore, type OrchestratorReplacementFailure } from "../stores/ui-store";
@@ -341,13 +342,15 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		renderAgent={(props) => <LocalAgentPicker {...props} projectId={projectId} hostId={hostId} agentsQuery={agentsQuery} />} />;
 }
 
-function LocalAgentPicker({ role, draft, value, invalid, onChange, label, projectId, hostId, agentsQuery }: ProjectAgentPickerProps & { projectId: string; hostId?: string; agentsQuery: ReturnType<typeof useAgentReadinessQuery> }) {
+function LocalAgentPicker({ role, draft, value, invalid, onChange, label, stronger, projectId, hostId, agentsQuery }: ProjectAgentPickerProps & { projectId: string; hostId?: string; agentsQuery: ReturnType<typeof useAgentReadinessQuery> }) {
 	const { t } = useTranslation();
 	useEnsureAgentReadiness({ agentIds: [draft.workerAgent, draft.orchestratorAgent, draft.reviewerHarness], enabled: role === "worker" && Boolean(draft.workerAgent || draft.orchestratorAgent || draft.reviewerHarness), hostId, purpose: hostId ? "launch" : "display" });
+	const appDefaultReviewer = useSettings(hostId).settings?.workflowDefaults?.reviewerHarness ?? "";
+	const appReviewer = stronger ? "" : appDefaultReviewer;
 	const disabled = agentsQuery.isFetching && agentsQuery.data === undefined;
 	const agents = hostId ? agentsQuery.data?.agents.filter(isLaunchableAgent) : agentsQuery.data?.agents;
 	return role === "reviewer"
-		? <ReviewerSelect value={value} model={draft.reviewerModel} mode={draft.reviewerMode} projectId={projectId} hostId={hostId} harnessOnly defaultHarness={WORKER_DEFAULT_REVIEWERS[draft.workerAgent] ?? "claude-code"} triggerClassName="w-full" onChange={onChange} ariaLabel={label ?? t("settings.project.defaultReviewer")} agents={agents} disabled={disabled} />
+		? <ReviewerSelect value={value} model={draft.reviewerModel} mode={draft.reviewerMode} projectId={projectId} hostId={hostId} harnessOnly defaultHarness={appReviewer || (WORKER_DEFAULT_REVIEWERS[draft.workerAgent] ?? "claude-code")} emptyLabel={appReviewer ? t("settings.project.reviewer.inheritApp", { agent: agentLabel(appReviewer) }) : undefined} triggerClassName="w-full" onChange={onChange} ariaLabel={label ?? t("settings.project.defaultReviewer")} agents={agents} disabled={disabled} />
 		: <RequiredAgentField id={`${role}Agent`} variant="settings-control" value={value} placeholder={t(role === "worker" ? "settings.project.selectWorker" : "settings.project.selectOrchestrator")} label={t(role === "worker" ? "settings.project.defaultWorker" : "settings.project.defaultOrchestrator")} agents={agents} hostId={hostId} disabled={disabled} invalid={invalid} onChange={onChange} />;
 }
 

@@ -125,7 +125,7 @@ func (s *RunService) requestPlansOnce(ctx context.Context, run domain.BacklogRun
 			s.markPlanPending(ctx, run, it.ItemID, domain.BacklogRunItemNeedsYou, planQuestion(full.Ref(), cur.Status))
 		case has && cur.Status == domain.PlanFailed:
 			s.markPlanPending(ctx, run, it.ItemID, domain.BacklogRunItemNeedsYou, failedQuestion(full.Ref(), cur))
-		case mode == domain.PlanningAlways:
+		case mode == domain.PlanningAlways && it.Reason != domain.BacklogRunReasonPlanCancelled: // a cancelled plan is not restarted by itself
 			todo = append(todo, waiting{it, full})
 		}
 	}
@@ -148,7 +148,7 @@ func (s *RunService) requestPlansOnce(ctx context.Context, run domain.BacklogRun
 // by something other than its plan.
 func waitsForPlan(it domain.BacklogRunItem) bool {
 	return it.Status == domain.BacklogRunItemQueued ||
-		(it.Status == domain.BacklogRunItemNeedsYou && it.Reason == domain.BacklogRunReasonPlanPending)
+		(it.Status == domain.BacklogRunItemNeedsYou && (it.Reason == domain.BacklogRunReasonPlanPending || it.Reason == domain.BacklogRunReasonPlanCancelled))
 }
 
 func failedQuestion(ref string, pl domain.BacklogPlan) string {
@@ -217,6 +217,46 @@ func (s *RunService) onPlanChange(ctx context.Context, plan domain.BacklogPlan) 
 		default:
 			s.markPlanPending(ctx, run, it.ItemID, domain.BacklogRunItemNeedsYou, planQuestion(it.ItemRef(), plan.Status))
 		}
+		return
+	}
+}
+
+// onPlanCancelled parks the run item of a plan the owner cancelled, with an
+// accurate question, and frees the planner slot for the next waiting item.
+func (s *RunService) onPlanCancelled(ctx context.Context, plan domain.BacklogPlan) {
+	if !s.enabled || s.plans == nil {
+		return
+	}
+	runs, err := s.store.ListBacklogRuns(ctx, plan.ProjectID, true, 1)
+	if err != nil || len(runs) == 0 {
+		return
+	}
+	run := runs[0]
+	items, err := s.store.ListBacklogRunItems(ctx, run.ID)
+	if err != nil {
+		return
+	}
+	for _, it := range items {
+		if it.ItemID != plan.ItemID {
+			continue
+		}
+		// Park the item and settle in one write: it may have been the last unsettled one.
+		now := s.now().UTC()
+		updated, _, err := s.store.UpdateBacklogRunState(ctx, run.ID, now, func(r *domain.BacklogRun, its []domain.BacklogRunItem, _ int) error {
+			for i := range its {
+				if its[i].ItemID == plan.ItemID && waitsForPlan(its[i]) {
+					its[i].Status, its[i].Reason = domain.BacklogRunItemNeedsYou, domain.BacklogRunReasonPlanCancelled
+					its[i].Question = fmt.Sprintf("The plan for %s was cancelled. Plan it again from its backlog item or run `tallpine plan start %s`, or skip it.", its[i].ItemRef(), its[i].ItemRef())
+				}
+			}
+			settle(r, its, now)
+			return nil
+		})
+		if err != nil {
+			slog.Warn("backlog run: park cancelled plan", "run", run.Ref(), "item", it.ItemRef(), "error", err)
+			return
+		}
+		s.requestPlans(ctx, updated)
 		return
 	}
 }

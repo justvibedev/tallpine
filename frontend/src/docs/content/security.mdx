@@ -12,7 +12,7 @@ Tallpine does not claim any compliance framework or third-party certification.
 - **Off by default.** A fresh install runs agents the way they would run without Tallpine. You turn protection on with one switch: **Settings > Security > Protected**.
 - **Tallpine protects its own things**: the keys and database that control Tallpine. A protected agent cannot read Tallpine's secrets. Kiro, Codex and DeepSeek Harness, when fenced, also cannot write outside their own work folder, their own state and a few caches.
 - **Tallpine does not police the harness.** Each agent keeps the access it needs to its own folders and sign-in (for example Kiro keeps `~/.aws`, Codex keeps `~/.codex`). Bugs or weak defaults inside a harness are for that harness's vendor to fix.
-- **It does not protect against another malicious app running as the same user.** Tallpine's secrets are readable by your user; Security mode keeps only fenced agents away from them. See [Security mode](/configuration/security-mode).
+- **It does not protect against another malicious app running as the same user.** Tallpine's secrets are readable by your user; Security mode keeps only fenced agents away from them. See [Security mode](/configuration/security-mode). Signed macOS releases now record which programs use the daemon API; see [Who reaches the daemon API](#who-reaches-the-daemon-api).
 - **It is a file fence, not a firewall.** Network access is not restricted. Anything an agent is allowed to read could be sent anywhere.
 
 ## What Tallpine protects
@@ -222,6 +222,29 @@ When a locally built release is installed for the main-health orchestrator, the 
 ### Phone connection
 
 The phone connection is off until you turn it on. It uses HTTPS with a certificate your Mac creates, which the phone pins when it pairs; plain HTTP is refused. Each phone gets its own credential from a one-time pairing code, only hashes are stored, and repeated failed attempts are locked out. Shutdown, phone-control and browser-control routes are not served there. An administrator can turn it off for good with a managed `app.mobile.enabled = false`. Details are in [Connections](/configuration/remote-access#security-model).
+
+### Who reaches the daemon API
+
+The daemon's local socket is the one door that drives Tallpine: it can start agents and read and change their state. On a signed macOS release, Tallpine now records which processes use that door, by what the operating system reports about the caller and never by anything in the request:
+
+- the signed Tallpine desktop app, checked by its code signature (Team ID and the app's signing identifier);
+- an agent, its hooks, a reviewer or a chat host, whose scoped token is presented by a process running under that session's own runtime processes;
+- a shell opened inside the Tallpine desktop app, and its children.
+
+Anything else presenting a valid token is **recorded as "would refuse", and still served**. This release refuses nothing. `tallpine doctor` shows the mode and the records under `peer-check`, including the program, token class and route of each. A later release, after these records are reviewed, will refuse those callers on signed builds. Being a child of the daemon never counts: chat agents stay limited to their own scope.
+
+Health probes, CORS preflights, capability-labelled preview hosts and render documents are served as before, with or without a token. Loopback TCP cannot say who connected, so a request over it counts as an unidentified caller, and `TALLPINE_LOOPBACK_TCP` grants nothing extra.
+
+**Routes this check does not close.** Each one is same-user access the daemon cannot see:
+
+- Attaching to Tallpine's tmux socket and typing into or reading an agent pane. That yields that agent's scoped powers.
+- Attaching to a shell terminal opened in the desktop app, while one is open. That yields install-token authority, because those shells are admitted.
+- Editing `ao.db` or files under `~/.tallpine` and restarting the daemon.
+- Using mobile bearer tokens from `data/mobile` on the LAN or tunnel listener.
+- Killing the daemon, replacing the PATH shim or shell startup files, or adding LaunchAgents.
+- Other local sockets (`browser.sock`, the browser stream, `hostsock`, the supervisor socket and chat host ports), which use the user id and their own key files. They are not the daemon API.
+- Driving the desktop app's interface with an Accessibility permission, which macOS asks you to grant.
+- Everything on Linux, Windows and unsigned or development builds, where the check is off and the socket is limited by user id alone. `tallpine doctor` says so.
 
 ## Not covered
 

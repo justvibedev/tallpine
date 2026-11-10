@@ -134,6 +134,7 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 	// A session waiting on the person is not idle either: ending it would drop
 	// the question.
 	if rec.Activity.State == domain.ActivityActive || rec.Activity.State.NeedsInput() {
+		m.autoCloseRetry.finishedItems(id, false)
 		return false, nil
 	}
 	done, err := m.sessionComplete(ctx, id)
@@ -269,6 +270,10 @@ type autoCloseRetry struct {
 	// kept is the last logged reason a finished worker stayed open (B588). It
 	// is separate from held so a keep never ages an end-on-merge hold.
 	kept map[domain.SessionID]string
+	// finishedItemsSince is when a finished worker first stayed open on open
+	// linked items (B616). The finished path is never a hold, so it needs its
+	// own clock; it resets on activity, on no open items, and on close.
+	finishedItemsSince map[domain.SessionID]time.Time
 	// after schedules f; nil uses time.AfterFunc. clock is time.Now when nil.
 	// Tests replace them.
 	after func(d time.Duration, f func())
@@ -357,6 +362,28 @@ func (r *autoCloseRetry) forgetKept(id domain.SessionID) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.kept, id)
+	delete(r.finishedItemsSince, id)
+}
+
+// finishedItems tracks a finished worker's open-linked-items clock: with open
+// false it resets; otherwise it starts the clock on first call and reports
+// whether it ran past autoCloseMaxHold.
+func (r *autoCloseRetry) finishedItems(id domain.SessionID, open bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !open {
+		delete(r.finishedItemsSince, id)
+		return false
+	}
+	if r.finishedItemsSince == nil {
+		r.finishedItemsSince = map[domain.SessionID]time.Time{}
+	}
+	since, ok := r.finishedItemsSince[id]
+	if !ok {
+		since = r.now()
+		r.finishedItemsSince[id] = since
+	}
+	return r.now().Sub(since) >= autoCloseMaxHold
 }
 
 func (r *autoCloseRetry) arm(id domain.SessionID, f func()) {

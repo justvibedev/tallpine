@@ -264,7 +264,11 @@ func (s *Service) inPlaceOrRefuse(ctx context.Context, item domain.BacklogItem, 
 	if err != nil {
 		return "", "", err
 	}
-	return "\n\n" + inPlaceBrief(item.Ref()), reserved.ID, nil
+	extra := "\n\n" + inPlaceBrief(item.Ref())
+	if prior := s.plans.supersededBrief(ctx, item, reserved.ID, maxPlanContextRunes); prior != "" {
+		extra += "\n\n" + prior
+	}
+	return extra, reserved.ID, nil
 }
 
 // approvedPlanContext is the plan section of the task prompt for an item whose

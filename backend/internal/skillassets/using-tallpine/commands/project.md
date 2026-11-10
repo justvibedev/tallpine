@@ -130,7 +130,7 @@ Update a project's saved configuration. Tallpine reads these settings when it sp
 
 **Note:** the merge reads the config and writes it back in two requests with no revision check, so a concurrent config change made in between is overwritten.
 
-**Warning:** `--config-json` replaces the whole config. The CLI silently ignores unknown keys in it, so a typo can leave the replacement empty. Its config mirror also omits `effort`; `tallpine project get --json` cannot show it, and a `--config-json` replacement drops existing effort values (focused flags keep them). Use Project Settings in the desktop app or the daemon API when you need to preserve or change effort. See the [full-config warning](https://docs.orchestrator.inc/configuration/projects/#update-from-the-cli) before updating project settings from the CLI.
+**Warning:** `--config-json` replaces the whole config. The CLI silently ignores unknown keys in it, so a typo can leave the replacement empty. Set or clear reasoning effort per role with `--worker-effort`, `--orchestrator-effort` and `--reviewer-effort`; `tallpine project get --json` shows it and `--config-json` carries it, but a replacement without `effort` still drops saved values. See the [full-config warning](https://docs.orchestrator.inc/configuration/projects/#update-from-the-cli) before updating project settings from the CLI.
 
 **Syntax:**
 ```
@@ -153,6 +153,7 @@ tallpine project set-config <id> [flags]
 | `--model string` | Agent model override (e.g. `claude-opus-4-5`) | - |
 | `--no-ci` | Declare that the project has no CI: when the provider reports no checks at all for a PR head, CI counts as passing only once a Tallpine review (`tallpine review trigger`) approved that exact head; provider review approvals do not count. Failing or pending checks still block. `--no-ci=false` clears it | Disabled |
 | `--orchestrator-agent string` | Harness override for orchestrator sessions | - |
+| `--orchestrator-effort string` | Reasoning effort for orchestrator sessions (`orchestrator.agentConfig.effort`); empty clears | - |
 | `--orchestrator-rules string` | Project-specific standing instructions appended to orchestrator session prompts | - |
 | `--permission string` | Permission mode: `default`, `accept-edits`, `auto`, `bypass-permissions` | - |
 | `--post-create stringArray` | Command to run after workspace creation (repeatable) | - |
@@ -162,7 +163,9 @@ tallpine project set-config <id> [flags]
 | `--tracker-intake` | Opt this project into GitHub or GitLab issue intake; inert unless the daemon also has `TALLPINE_TRACKER_INTAKE=on` | Disabled |
 | `--tracker-repo string` | Provider-native issue repository (`owner/repo` or `group/subgroup/repo`); defaults to the Git origin | - |
 | `--reviewer stringArray` | Reviewer harness for worker PRs (repeatable) | - |
+| `--reviewer-effort string` | Reasoning effort for every configured reviewer; needs `--reviewer` first; empty clears | - |
 | `--worker-agent string` | Harness override for worker sessions | - |
+| `--worker-effort string` | Reasoning effort for worker sessions (`worker.agentConfig.effort`); empty clears | - |
 
 Use `--config-json` for fields without a dedicated flag, including
 `trackerIntake.provider`, `autoReview`, `containerReap.disabled`,

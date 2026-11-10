@@ -81,6 +81,7 @@ type collectorStore interface {
 type Collector struct {
 	store                   collectorStore
 	roots                   SourceRoots
+	claudeProjects          *claudeProjectIndex
 	notifySourcesChanged    func(reconcile bool)
 	notifyRouteResolved     func()
 	codexLogicalSourceLimit int
@@ -127,6 +128,7 @@ func newCollectorWithCodexSourceLimit(
 	return &Collector{
 		store:                   store,
 		roots:                   roots,
+		claudeProjects:          newClaudeProjectIndex(roots.ClaudeProjects),
 		notifySourcesChanged:    notifySourcesChanged,
 		codexLogicalSourceLimit: limit,
 		now:                     time.Now,

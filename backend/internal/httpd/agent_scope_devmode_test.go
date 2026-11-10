@@ -19,7 +19,7 @@ func TestAgentScopeDevMode(t *testing.T) {
 	scopes := newAgentScopes(tokens, base, nil)
 	scopes.devMode = func(context.Context, domain.ProjectID) bool { return on }
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner)
+	h := daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner)
 	orch, worker := base.tokenFor(tokens, "app-orch"), base.tokenFor(tokens, "app-1")
 
 	orchNew := `{"projectId":"web","clean":true}`

@@ -1815,6 +1815,7 @@ Available Commands:
   answer       Answer the questions and correct assumptions
   approve      Approve the submitted plan
   build-anyway Build from the approved plan although the base moved
+  cancel       Drop the plan that waits on the owner and stop its planner; the item stays open
   defaults     Go with the recommended answers and every assumption
   questions    Planner: submit at most 5 questions and 20 assumptions, once
   replan       Supersede the plan and plan again
@@ -1864,6 +1865,19 @@ Flags:
       --json                   Print JSON
       --owner-message string   The owner's chat message that approves (id, or last); required for an agent
       --project string         Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+```
+
+### `tallpine plan cancel`
+
+```text
+Drop the plan that waits on the owner and stop its planner; the item stays open
+
+Usage:
+  tallpine plan cancel <ref> [flags]
+
+Flags:
+      --json             Print JSON
+      --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
 ```
 
 ### `tallpine plan defaults`
@@ -1917,6 +1931,7 @@ Usage:
 
 Flags:
       --json             Print JSON
+      --plan-id string   Show this plan of the item (a superseded one too) instead of the current plan
       --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
 ```
 
@@ -2249,6 +2264,7 @@ Flags:
       --no-ci                                                            Declare that the project has no CI: when the provider reports no checks for a PR head, an approved Tallpine review of that exact head is the merge gate (failing or pending checks still block); --no-ci=false restores the default
       --orchestrator-agent string                                        Harness override for orchestrator sessions
       --orchestrator-compact-window string                               Context size at which orchestrator sessions compact: a size from 50k to 1m, a percent of the model window (20%-95%), or off; empty uses the default (120k unless the project environment sets the window)
+      --orchestrator-effort string                                       Reasoning effort for orchestrator sessions (e.g. low, medium, high); empty clears it
       --orchestrator-idle-action string                                  What an idle orchestrator past its idle threshold does: compact (default) or handoff to a fresh orchestrator that rebuilds its state from the daemon
       --orchestrator-idle-compact string                                 Context size above which an idle orchestrator compacts between tasks: a percent of its compaction window, not the model window (20%-95%), a size from 50k to 1m, or off; empty uses the default (30%)
       --orchestrator-research-window tallpine orchestrator research on   Compaction window of an orchestrator in research mode (tallpine orchestrator research on): a size from 50k to 1m or a percent of the model window; off disables research mode for the project; empty uses the default (250k)
@@ -2259,6 +2275,7 @@ Flags:
       --plan-in-place tallpine spawn --backlog                           Let tallpine spawn --backlog start an implementer that plans in place when an item needs a plan, instead of a separate planner. A managed policy can lock it off; --plan-in-place=false restores the default
       --post-create stringArray                                          Command to run after workspace creation (repeatable)
       --reviewer stringArray                                             Reviewer harness that reviews worker PRs (repeatable; e.g. claude-code)
+      --reviewer-effort string                                           Reasoning effort for every configured reviewer (set --reviewer first); empty clears it
       --session-prefix string                                            Displayed session-id prefix
       --symlink stringArray                                              Repo-relative path to symlink into workspaces (repeatable)
       --tracker-assignee string                                          Issue assignee required for intake eligibility
@@ -2266,6 +2283,7 @@ Flags:
       --tracker-repo string                                              Provider-native repo for issue intake (owner/repo or group/subgroup/repo; default: derive from git origin)
       --unset-env stringArray                                            Env var KEY to remove from the project's env (repeatable)
       --worker-agent string                                              Harness override for worker sessions
+      --worker-effort string                                             Reasoning effort for worker sessions (e.g. low, medium, high); empty clears it
 ```
 
 ## `tallpine release`

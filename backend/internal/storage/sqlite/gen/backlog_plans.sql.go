@@ -300,6 +300,58 @@ func (q *Queries) SelectOpenBacklogPlansForProject(ctx context.Context, projectI
 	return items, nil
 }
 
+const selectSupersededBacklogPlansForItem = `-- name: SelectSupersededBacklogPlansForItem :many
+SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id FROM backlog_plans WHERE item_id = ? AND status = 'superseded' ORDER BY started_at DESC, id DESC
+`
+
+func (q *Queries) SelectSupersededBacklogPlansForItem(ctx context.Context, itemID string) ([]BacklogPlan, error) {
+	rows, err := q.db.QueryContext(ctx, selectSupersededBacklogPlansForItem, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BacklogPlan{}
+	for rows.Next() {
+		var i BacklogPlan
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ItemID,
+			&i.Status,
+			&i.PlannerSessionID,
+			&i.BaseCommit,
+			&i.BaseBranch,
+			&i.QuestionsJson,
+			&i.AssumptionsJson,
+			&i.AnswersJson,
+			&i.PlanMarkdown,
+			&i.DecisionsMarkdown,
+			&i.PRSplitJson,
+			&i.ReviewFocusJson,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.OwnerMessageID,
+			&i.BuildAnyway,
+			&i.ItemUpdatedAtStart,
+			&i.StartedAt,
+			&i.UpdatedAt,
+			&i.Failure,
+			&i.ItemChangedAt,
+			&i.NotifySessionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateBacklogPlan = `-- name: UpdateBacklogPlan :exec
 UPDATE backlog_plans SET
     status = ?1,

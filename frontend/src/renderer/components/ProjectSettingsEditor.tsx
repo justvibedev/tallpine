@@ -82,6 +82,8 @@ export type ProjectAgentPickerProps = {
 	disabled?: boolean;
 	/** Accessible name when the picker is not the role's own agent picker. */
 	label?: string;
+	/** The stronger-reviewer picker: it never inherits the app default reviewer. */
+	stronger?: boolean;
 	onChange: (agent: string) => void;
 };
 type Capabilities = {
@@ -250,28 +252,29 @@ export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, ini
 				{list.map((role) => {
 					const fields = roleFields[role];
 					const selectedAgent = draft[fields.agent];
-					const agent = selectedAgent || (role === "reviewer" ? defaultReviewer(draft) : "");
+					const appReviewer = role === "reviewer" && !selectedAgent ? appDefaults?.reviewerHarness ?? "" : "";
+					const agent = selectedAgent || appReviewer || (role === "reviewer" ? defaultReviewer(draft) : "");
+					const inheritsApp = appReviewer !== "";
 					// With no reviewer configured, review runs with the worker agent's own
 					// model and effort when that agent is also the reviewer. Show that, and
 					// keep it when the user pins the reviewer by editing one field.
-					const inheritsWorker = role === "reviewer" && !selectedAgent && agent !== "" && agent === draft.workerAgent;
+					const inheritsWorker = role === "reviewer" && !selectedAgent && !inheritsApp && agent !== "" && agent === draft.workerAgent;
+					const pinInherited = (current: ProjectSettingsDraft) => role === "reviewer" && !current.reviewerHarness && agent
+						? { reviewerHarness: agent, ...(inheritsApp ? { reviewerModel: appDefaults?.reviewerModel ?? "" } : agent === current.workerAgent ? { reviewerModel: current.workerModel, reviewerEffort: current.workerEffort } : {}) }
+						: {};
 					const updateConfig = (key: RoleFields["model"] | RoleFields["mode"] | RoleFields["effort"] | RoleFields["permissions"], value: string) => setDraft((current) => ({
 						...current,
-						...(role === "reviewer" && !current.reviewerHarness && agent
-							? { reviewerHarness: agent, ...(agent === current.workerAgent ? { reviewerModel: current.workerModel, reviewerEffort: current.workerEffort } : {}) }
-							: {}),
+						...pinInherited(current),
 						[key]: value,
 					}));
 					const updatePermissions = (value: string) => setDraft((current) => ({
 						...current,
-						...(role === "reviewer" && !current.reviewerHarness && agent
-							? { reviewerHarness: agent, ...(agent === current.workerAgent ? { reviewerModel: current.workerModel, reviewerEffort: current.workerEffort } : {}) }
-							: {}),
+						...pinInherited(current),
 						[fields.permissions]: value,
 					}));
 					return <Fragment key={role}><ManagedLock locked={managedKeys?.has(roleManagedKey[role]) === true}><ProjectSettingsSection title={t(`settings.models.${role}Role`)} grouped>
 						<ProjectSettingsRow label={t("settings.project.agent")}><div className="flex min-w-0 flex-wrap items-center justify-end gap-2"><div className="min-w-0">{renderAgent({ disabled: capabilities.lockedAgents, role, draft, value: selectedAgent, invalid: error !== undefined && !selectedAgent, onChange: (value) => setDraft((current) => ({ ...current, [fields.agent]: value, ...(value !== current[fields.agent] ? { [fields.model]: "", [fields.mode]: "", [fields.effort]: "", ...(role === "reviewer" || capabilities.runtimeDefaults ? { [fields.permissions]: "" } : {}) } : {}) })) })}</div>
-						<div className="min-w-0 space-y-1.5"><AgentModelField role={role} agentId={agent} projectId={modelScope(agent)} hostId={modelHostId} model={inheritsWorker ? draft.workerModel : draft[fields.model]} mode={draft[fields.mode]} effort={inheritsWorker ? draft.workerEffort : draft[fields.effort]}
+						<div className="min-w-0 space-y-1.5"><AgentModelField role={role} agentId={agent} projectId={modelScope(agent)} hostId={modelHostId} model={inheritsWorker ? draft.workerModel : inheritsApp ? appDefaults?.reviewerModel ?? "" : draft[fields.model]} mode={draft[fields.mode]} effort={inheritsWorker ? draft.workerEffort : draft[fields.effort]}
 							allowCustomFallback={capabilities.runtimeDefaults} followCatalogDefaults={!capabilities.runtimeDefaults}
 							supportedEfforts={capabilities.runtimeDefaults ? AGENT_EFFORTS[agent] : undefined}
 							emptyLabel={capabilities.runtimeDefaults && agent === "" ? t("settings.cloudProject.sessionModel") : undefined}
@@ -281,7 +284,7 @@ export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, ini
 					</ProjectSettingsSection></ManagedLock>
 					{role === "reviewer" && <ManagedLock locked={managedKeys?.has(PROJECT_LOCK_KEY.reviewRisk) === true}><ProjectSettingsSection title={t("settings.reviewDefaults.strongerReviewer")} grouped>
 						<StrongerReviewerControls values={draft} onChange={patch} modelScope={modelScope} modelHostId={modelHostId}
-							renderAgent={({ value, onChange }) => renderAgent({ role: "reviewer", draft, value, invalid: false, disabled: capabilities.lockedAgents, label: t("settings.reviewDefaults.strongerReviewer"), onChange })} />
+							renderAgent={({ value, onChange }) => renderAgent({ role: "reviewer", draft, value, invalid: false, disabled: capabilities.lockedAgents, label: t("settings.reviewDefaults.strongerReviewer"), stronger: true, onChange })} />
 					</ProjectSettingsSection></ManagedLock>}
 					</Fragment>;
 				})}

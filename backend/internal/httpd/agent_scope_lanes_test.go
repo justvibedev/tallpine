@@ -40,7 +40,7 @@ func TestAgentScopeLanePolicy(t *testing.T) {
 	scopes := newAgentScopes(tokens, store, nil)
 	scopes.lanesEnabled = func(context.Context, domain.ProjectID) bool { return on }
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner)
+	h := daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner)
 
 	main, lane, worker := base.tokenFor(tokens, "app-orch"), base.tokenFor(tokens, "app-lane"), base.tokenFor(tokens, "app-1")
 	start := `{"projectId":"app","lane":"B1","prompt":"brief"}`

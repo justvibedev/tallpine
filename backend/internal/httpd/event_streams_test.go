@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"tallpine.eu/tallpine/backend/internal/config"
+	"tallpine.eu/tallpine/backend/internal/daemonsock"
 )
 
 const testStreamOrigin = "app://renderer"
@@ -247,5 +248,37 @@ func TestEventStreamsCloseWhenTheServerShutsDown(t *testing.T) {
 	// reconnects either way.
 	if err := wsjson.Read(ctx, c, &message); err == nil || ctx.Err() != nil {
 		t.Fatalf("read after shutdown: %v, want the socket closed", err)
+	}
+}
+
+func TestEventStreamsKeepTheUpgradePeer(t *testing.T) {
+	seen := make(chan daemonsock.Peer, 1)
+	r := chi.NewRouter()
+	r.Get("/api/v1/events", func(w http.ResponseWriter, req *http.Request) {
+		peer, _ := daemonsock.PeerFrom(req.Context())
+		seen <- peer
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.(http.Flusher).Flush()
+	})
+	mountEventStreams(r, r, discardLogger(), []string{testStreamOrigin})
+	srv := httptest.NewUnstartedServer(r)
+	srv.Config.ConnContext = daemonsock.ContextWithConn
+	srv.Start()
+	defer srv.Close()
+	c, _, err := dialStreams(t, srv, http.Header{"Origin": {testStreamOrigin}})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.CloseNow()
+	if err := wsjson.Write(context.Background(), c, eventStreamClientMessage{Op: "open", ID: "e1", Path: "/api/v1/events"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case peer := <-seen:
+		if peer.Transport != daemonsock.TransportTCP {
+			t.Fatalf("stream lost its connection's peer: %+v", peer)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream never opened")
 	}
 }

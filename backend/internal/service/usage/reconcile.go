@@ -25,6 +25,10 @@ func (c *Collector) ReconcileSources(ctx context.Context, limit int64) error {
 	if err != nil {
 		return err
 	}
+	// One refresh serves the whole pass; per-binding lookups must not rescan.
+	if err := c.claudeProjects.refresh(ctx); err != nil {
+		return err
+	}
 	now := c.now().UTC()
 	var errs []error
 	for _, binding := range bindings {
@@ -213,7 +217,7 @@ func (c *Collector) reconcileBinding(ctx context.Context, binding domain.UsageBi
 		targetState = domain.UsageBindingFinalizing
 	}
 
-	path, err := c.discoverPath(ctx, binding.Harness, binding.NativeRootID)
+	path, err := c.discoverIndexedPath(ctx, binding.Harness, binding.NativeRootID)
 	if err != nil {
 		return err
 	}

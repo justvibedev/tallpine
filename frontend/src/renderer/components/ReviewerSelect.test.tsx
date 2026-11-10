@@ -186,4 +186,40 @@ describe("ReviewerSelect", () => {
 		expect(onConfigChange).toHaveBeenCalledWith("codex", { model: "gpt-test" });
 	});
 
+
+	it("lets a project pin the harness it would otherwise inherit when the empty row is named", async () => {
+		const onChange = vi.fn();
+		render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ReviewerSelect ariaLabel="Reviewer" value="" defaultHarness="codex" emptyLabel="Inherit app default (Codex)" harnessOnly onChange={onChange} /></QueryClientProvider>);
+		const trigger = screen.getByRole("button", { name: "Reviewer" });
+		expect(trigger).toHaveTextContent("Inherit app default (Codex)");
+		await userEvent.click(trigger);
+		const pinned = (await screen.findAllByRole("menuitem", { name: /Codex/ })).filter((item) => !/Inherit/.test(item.textContent ?? ""));
+		expect(pinned).toHaveLength(1);
+		await userEvent.click(pinned[0]);
+		expect(onChange).toHaveBeenCalledWith("codex");
+	});
+
+	it("checks only the empty row when nothing is pinned and only the pinned row when the app default is pinned", async () => {
+		const open = async (value: string) => {
+			const { unmount } = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ReviewerSelect ariaLabel="Reviewer" value={value} defaultHarness="codex" emptyLabel="Inherit app default (Codex)" harnessOnly onChange={vi.fn()} /></QueryClientProvider>);
+			await userEvent.click(screen.getByRole("button", { name: "Reviewer" }));
+			const rows = (await screen.findAllByRole("menuitem")).filter((row) => row.querySelector(".lucide-check"));
+			const names = rows.map((row) => row.textContent ?? "");
+			unmount();
+			return names;
+		};
+		expect(await open("")).toEqual(["Inherit app default (Codex)"]);
+		const pinned = await open("codex");
+		expect(pinned).toHaveLength(1);
+		expect(pinned[0]).toMatch(/^Codex/);
+	});
+
+	it("shows no harness and no setup warning for an empty row that names no harness", () => {
+		render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ReviewerSelect ariaLabel="Reviewer" value="" defaultHarness="" emptyLabel="Worker-derived" harnessOnly onChange={vi.fn()}
+			agents={[agentReadiness("codex", "Codex")]} /></QueryClientProvider>);
+		const trigger = screen.getByRole("button", { name: "Reviewer" });
+		expect(trigger).toHaveTextContent("Worker-derived");
+		expect(trigger).not.toHaveTextContent(/needs setup/i);
+	});
 });
+

@@ -234,9 +234,19 @@ func (c *SettingsController) setWorkflowDefaults(w http.ResponseWriter, r *http.
 		}
 		update.PlanningMode = &mode
 	}
-	if req.AutoReview == nil && req.PlanningMode == nil && req.PlanAutoApprove == nil {
+	if req.ReviewerHarness != nil {
+		harness := domain.ReviewerHarness(*req.ReviewerHarness)
+		if harness != "" && !harness.IsKnown() {
+			envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
+				"WORKFLOW_DEFAULTS_INVALID", "reviewerHarness must be a supported reviewer or empty", nil)
+			return
+		}
+		update.ReviewerHarness = &harness
+	}
+	update.ReviewerModel = req.ReviewerModel
+	if req.AutoReview == nil && req.PlanningMode == nil && req.PlanAutoApprove == nil && req.ReviewerHarness == nil && req.ReviewerModel == nil {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
-			"WORKFLOW_DEFAULTS_INVALID", "provide autoReview, planningMode or planAutoApprove", nil)
+			"WORKFLOW_DEFAULTS_INVALID", "provide autoReview, planningMode, planAutoApprove, reviewerHarness or reviewerModel", nil)
 		return
 	}
 	prev, prevOK := c.appSnapshotForAudit(r.Context())
@@ -292,7 +302,7 @@ func (c *SettingsController) response(snapshot settingssvc.Snapshot) SettingsRes
 		ChatHibernationWorkerIdleSeconds:       int64(snapshot.ChatHibernation.WorkerIdle / time.Second),
 		ChatHibernationOrchestratorIdleSeconds: int64(snapshot.ChatHibernation.OrchestratorIdle / time.Second),
 		VersionRefresh:                         snapshot.VersionRefresh,
-		WorkflowDefaults:                       WorkflowDefaultsResponse{AutoReview: snapshot.WorkflowDefaults.AutoReview, PlanningMode: string(snapshot.WorkflowDefaults.PlanningMode), PlanAutoApprove: snapshot.WorkflowDefaults.PlanAutoApprove},
+		WorkflowDefaults:                       WorkflowDefaultsResponse{AutoReview: snapshot.WorkflowDefaults.AutoReview, PlanningMode: string(snapshot.WorkflowDefaults.PlanningMode), PlanAutoApprove: snapshot.WorkflowDefaults.PlanAutoApprove, ReviewerHarness: string(snapshot.WorkflowDefaults.ReviewerHarness), ReviewerModel: snapshot.WorkflowDefaults.ReviewerModel},
 		DynamicOrchestratorContext:             snapshot.DynamicOrchestratorContext,
 		StorageCompaction:                      snapshot.StorageCompaction,
 		ProviderEventRetentionDays:             snapshot.ProviderEventRetentionDays,

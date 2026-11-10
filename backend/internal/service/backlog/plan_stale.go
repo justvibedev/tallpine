@@ -194,7 +194,10 @@ func (p *PlanService) ItemClosed(ctx context.Context, itemID string) {
 	if err != nil || !ok {
 		return
 	}
-	if _, err := p.transition(ctx, open.ID, domain.PlanSuperseded, nil); err != nil {
+	if _, err := p.transition(ctx, open.ID, domain.PlanSuperseded, func(pl *domain.BacklogPlan) error {
+		noteEnding(pl, planItemClosedNote)
+		return nil
+	}); err != nil {
 		p.log.Warn("supersede plan of closed item", "plan", open.ID, "error", err)
 		return
 	}

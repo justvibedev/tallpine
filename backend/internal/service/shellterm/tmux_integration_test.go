@@ -15,6 +15,15 @@ import (
 	"tallpine.eu/tallpine/backend/internal/testenv"
 )
 
+// tmuxCommandBudget bounds one real tmux command and the wait for the shell's
+// exit. It only guards against a hang: the assertions are on state, not speed,
+// and a host loaded by other suites needs seconds to start a tmux server.
+const tmuxCommandBudget = 12 * time.Second
+
+// subtestBudget must cover every budgeted step of one subtest (about a dozen
+// tmux commands plus the exit wait), so only a real hang can exhaust it.
+const subtestBudget = 5 * time.Minute
+
 func TestTmuxUserShellExitReconciliation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("tmux requires a Unix shell")
@@ -53,7 +62,7 @@ func TestTmuxUserShellExitReconciliation(t *testing.T) {
 				if socket == "" {
 					socket = "default"
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), subtestBudget)
 				defer cancel()
 				tmuxCommand := func(args ...string) string {
 					t.Helper()
@@ -81,7 +90,7 @@ func TestTmuxUserShellExitReconciliation(t *testing.T) {
 				if !tc.noAnchor {
 					tmuxCommand("new-session", "-d", "-s", "anchor", "/bin/sh")
 				}
-				rt := tmux.New(tmux.Options{Binary: binary, LegacyBinary: binary, SocketName: tc.socket, Shell: "/bin/sh", Timeout: time.Second})
+				rt := tmux.New(tmux.Options{Binary: binary, LegacyBinary: binary, SocketName: tc.socket, Shell: "/bin/sh", Timeout: tmuxCommandBudget})
 				st := &fakeShellTerminalStore{}
 				workspace := t.TempDir()
 				svc := NewService(rt, st, nil, nil, workspace, "first-launch", testLogger())
@@ -107,7 +116,7 @@ func TestTmuxUserShellExitReconciliation(t *testing.T) {
 				if err := rt.SendMessage(ctx, handle, "exit"); err != nil {
 					t.Fatal(err)
 				}
-				deadline := time.Now().Add(3 * time.Second)
+				deadline := time.Now().Add(tmuxCommandBudget)
 				for {
 					alive, err := rt.IsChildAlive(ctx, handle)
 					// Server shutdown can race the probe (Linux may report

@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // Listen creates the socket directory (0700, must be owned by us), removes a
@@ -123,4 +124,29 @@ func peerUID(conn net.Conn) (int, error) {
 		return -1, err
 	}
 	return uid, credErr
+}
+
+// readUnixPeer reads the peer pid and, on macOS, the audit token. A failure is
+// recorded on the Peer: the connection was already admitted by uid.
+func readUnixPeer(uc *net.UnixConn) Peer {
+	peer := Peer{Transport: TransportUnix}
+	raw, err := uc.SyscallConn()
+	if err != nil {
+		peer.Err = err.Error()
+		return peer
+	}
+	var credErr error
+	if err := raw.Control(func(fd uintptr) {
+		peer.PID, peer.AuditToken, peer.HasAuditToken, credErr = fdPeerIdentity(int(fd))
+	}); err != nil {
+		peer.Err = err.Error()
+		return peer
+	}
+	switch {
+	case errors.Is(credErr, syscall.ENOTCONN), errors.Is(credErr, syscall.EINVAL):
+		peer.Exited = true
+	case credErr != nil:
+		peer.Err = credErr.Error()
+	}
+	return peer
 }

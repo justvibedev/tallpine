@@ -39,6 +39,7 @@ func (c *ProjectsController) Register(r chi.Router) {
 	r.Put("/projects/{id}", c.updateSettings)
 	r.Put("/projects/{id}/config", c.setConfig)
 	c.registerRules(r)
+	c.registerRoleSettings(r)
 	r.Patch("/projects/{id}/permissions", c.setPermissions)
 	r.Delete("/projects/{id}/permissions", c.forgetPermissions)
 	r.Delete("/projects/{id}", c.remove)

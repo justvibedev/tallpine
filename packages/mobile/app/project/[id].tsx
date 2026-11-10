@@ -146,6 +146,12 @@ function ProjectScreenContent() {
 								onPress={() => router.push({ pathname: "/backlog", params: { projectId: id, hostId: routeHostId } })}
 							/>
 							<Button
+								title="Agent settings"
+								icon="sliders"
+								variant="ghost"
+								onPress={() => router.push({ pathname: "/role-settings", params: { projectId: id, hostId: routeHostId } })}
+							/>
+							<Button
 								title="Merge digest"
 								icon="git-merge"
 								variant="ghost"

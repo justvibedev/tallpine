@@ -18,6 +18,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/go-chi/chi/v5"
 
+	"tallpine.eu/tallpine/backend/internal/daemonsock"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
 )
 
@@ -143,7 +144,9 @@ type eventStreamSession struct {
 func serveEventStreams(upgrade *http.Request, conn *websocket.Conn, root http.Handler) {
 	// Streams inherit nothing from the upgrade request's context but the LAN
 	// connection auth records a credential on; they end with the socket.
-	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), lanConnContextKey{}, upgrade.Context().Value(lanConnContextKey{})))
+	// Each stream re-enters the router; it still belongs to the upgrade's peer.
+	base := daemonsock.WithPeerFrom(context.WithValue(context.Background(), lanConnContextKey{}, upgrade.Context().Value(lanConnContextKey{})), upgrade.Context())
+	ctx, cancel := context.WithCancel(base)
 	defer context.AfterFunc(upgrade.Context(), cancel)()
 	if shutdown, ok := upgrade.Context().Value(eventStreamsShutdownKey{}).(<-chan struct{}); ok {
 		go func() {

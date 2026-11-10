@@ -98,7 +98,7 @@ retryProjection:
 	m.mu.Lock()
 	toolFlightBeforeProjection := cloneToolFlight(m.flights[id])
 	if s.Valid {
-		s = m.applyToolPrecedenceLocked(id, rec.Activity.State, s)
+		s = m.applyToolPrecedenceLocked(id, rec.Activity.State, rec.Harness, s)
 	}
 	m.mu.Unlock()
 	if !s.Valid && !metadataChanged {

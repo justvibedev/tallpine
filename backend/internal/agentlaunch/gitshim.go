@@ -24,6 +24,24 @@ const (
 	EnvAllowSharedGitConfig = brand.EnvPrefix + "ALLOW_SHARED_GIT_CONFIG"
 )
 
+// EnvGitShimTried lists the "pid|dir" PATH entries the shim already handed
+// off to. exec keeps the pid, so a wrapper git that calls the shim's own path
+// comes back with the same pid and the shim skips what it already tried and
+// moves on to the next git (or stops with an error) instead of looping. A hook
+// or other child git has another pid and still sees every directory.
+const EnvGitShimTried = brand.EnvPrefix + "GIT_SHIM_TRIED"
+
+// EnvGitShimHops counts the shim passes in one process tree, whatever the pid
+// and whichever path (plain exec or `tallpine git-exec`) a pass took. It bounds
+// wrappers that run the shim as a child or reach it through git-exec; ordinary
+// nesting (git -> hook -> git) stays below gitShimMaxHops. The cap is small on
+// purpose: a wrapper that calls the shim twice per run fans out into 2^cap
+// processes before every leaf stops.
+const (
+	EnvGitShimHops = brand.EnvPrefix + "GIT_SHIM_HOPS"
+	gitShimMaxHops = 8
+)
+
 // gitShimParent is the runtime directory the git shim directories live in.
 const gitShimParent = "git-shim"
 
@@ -55,20 +73,34 @@ func EnsureGitShim(exe, dataDir string) (string, error) {
 // PATH is left as it is so git's own children stay behind the shim.
 func gitShimScript(exe, dir string) string {
 	return "#!/bin/sh\n" +
+		"hops=${" + EnvGitShimHops + ":-0}\n" +
+		`if [ "$hops" -ge ` + fmt.Sprint(gitShimMaxHops) + ` ] 2>/dev/null; then` + "\n" +
+		`  echo "` + brand.CLIName + ` git: git not found on PATH outside the session shim (the git on PATH leads back to the shim)" >&2` + "\n" +
+		"  exit 127\n" +
+		"fi\n" +
+		EnvGitShimHops + "=$((hops + 1))\n" +
+		"export " + EnvGitShimHops + "\n" +
 		`case " $* " in` + "\n" +
 		`*" remote "*|*" config "*) exec ` + singleQuote(exe) + " git-exec " + singleQuote(dir) + ` -- "$@" ;;` + "\n" +
 		"esac\n" +
 		"shim=" + singleQuote(dir) + "\n" +
+		"me=$$\n" +
+		"tried=${" + EnvGitShimTried + ":-}\n" +
 		"set -f\n" +
 		"IFS=:\n" +
 		"for d in $PATH; do\n" +
 		`  [ "$d" = "$shim" ] && continue` + "\n" +
+		"  skip=\n" +
+		`  for t in $tried; do [ "$t" = "$me|$d" ] && skip=1; done` + "\n" +
+		`  [ -n "$skip" ] && continue` + "\n" +
 		`  if [ -f "$d/git" ] && [ -x "$d/git" ]; then` + "\n" +
 		"    unset IFS\n" +
+		"    " + EnvGitShimTried + `="$tried:$me|$d"` + "\n" +
+		"    export " + EnvGitShimTried + "\n" +
 		`    exec "$d/git" "$@"` + "\n" +
 		"  fi\n" +
 		"done\n" +
-		`echo "` + brand.CLIName + ` git: git not found on PATH outside the session shim" >&2` + "\n" +
+		`echo "` + brand.CLIName + ` git: git not found on PATH outside the session shim (a wrapper git may lead back to it)" >&2` + "\n" +
 		"exit 127\n"
 }
 

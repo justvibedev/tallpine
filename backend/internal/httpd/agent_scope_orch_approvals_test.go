@@ -35,7 +35,7 @@ func approvalsHarness(t *testing.T, on func(domain.ProjectID) bool) (agentScopeH
 	if on != nil {
 		scopes.approvals = func(_ context.Context, p domain.ProjectID) bool { return on(p) }
 	}
-	h := daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner)
+	h := daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner)
 	return agentScopeHarness{t: t, handler: h, logs: logs}, store, tokens
 }
 

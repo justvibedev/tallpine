@@ -13,6 +13,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/requestscope"
+	"tallpine.eu/tallpine/backend/internal/peeradmit"
 	healthsvc "tallpine.eu/tallpine/backend/internal/service/health"
 )
 
@@ -104,5 +105,31 @@ func TestHealthStatusScopedAgentSeesOnlyItsProject(t *testing.T) {
 	}
 	if rec.Code != 200 || len(got.ReportBatches) != 1 || got.ReportBatches[0].ProjectID != "a" {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestHealthPeerCheckOnlyForFullAuthorityCallers(t *testing.T) {
+	checker := peeradmit.New(peeradmit.Options{Mode: peeradmit.ModeOff, ModeReason: "unsigned or development build"})
+	r := chi.NewRouter()
+	(&HealthController{Svc: fakeHealth{}, PeerCheck: checker}).Register(r)
+
+	serve := func(req *http.Request) SilentFailuresResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		var got SilentFailuresResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	full := serve(httptest.NewRequest(http.MethodGet, "/health/silent-failures", nil))
+	if full.PeerCheck == nil || full.PeerCheck.Mode != "off" || full.PeerCheck.ModeReason == "" {
+		t.Fatalf("full-authority report = %+v", full.PeerCheck)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/health/silent-failures", nil)
+	req = req.WithContext(requestscope.WithAgent(req.Context(), requestscope.Agent{Role: requestscope.RoleOrchestrator, ProjectID: "p"}))
+	if got := serve(req); got.PeerCheck != nil {
+		t.Fatalf("scoped callers must not see daemon-wide records: %+v", got.PeerCheck)
 	}
 }

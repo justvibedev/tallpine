@@ -330,3 +330,61 @@ func TestCoordinatorPeriodicallyEvaluatesPersistedFacts(t *testing.T) {
 	cancel()
 	<-done
 }
+
+type appDefaultsStore struct {
+	*fakeStore
+	app domain.WorkflowDefaults
+}
+
+func (s appDefaultsStore) WorkflowDefaults(context.Context) (domain.WorkflowDefaults, error) {
+	return s.app, nil
+}
+
+// A project without reviewers triggers with the app-wide default reviewer; a
+// project's own reviewer ignores it.
+func TestEvaluateSessionInheritsAppDefaultReviewer(t *testing.T) {
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	for name, tc := range map[string]struct {
+		reviewers []domain.ReviewerConfig
+		want      domain.ReviewerHarness
+	}{
+		"inherits": {nil, domain.ReviewerCodex},
+		"own wins": {[]domain.ReviewerConfig{{Harness: domain.ReviewerKiro}}, domain.ReviewerKiro},
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := &fakeStore{
+				session: domain.SessionRecord{ID: "s1", ProjectID: "p1", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode, AutoReviewEnabled: true, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now.Add(-time.Minute)}},
+				project: domain.ProjectRecord{ID: "p1", Config: domain.ProjectConfig{Reviewers: tc.reviewers}},
+				prs:     []domain.PullRequest{{URL: "pr1", Number: 1, HeadSHA: "sha1"}},
+			}
+			store := appDefaultsStore{base, domain.WorkflowDefaults{ReviewerHarness: domain.ReviewerCodex}}
+			trigger := &fakeTrigger{}
+			result, err := New(store, trigger, Config{Clock: func() time.Time { return now }}).EvaluateSession(context.Background(), "s1")
+			if err != nil || !result.Triggered {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if trigger.harness != tc.want {
+				t.Fatalf("harness=%q, want %q", trigger.harness, tc.want)
+			}
+		})
+	}
+}
+
+// With no app default, a project whose default worker is claude-code reviews with
+// claude-code even for a session spawned on codex, as the engine does.
+func TestEvaluateSessionUsesProjectWorkerDerivedReviewer(t *testing.T) {
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	store := &fakeStore{
+		session: domain.SessionRecord{ID: "s1", ProjectID: "p1", Kind: domain.KindWorker, Harness: domain.HarnessCodex, AutoReviewEnabled: true, Activity: domain.Activity{State: domain.ActivityIdle, LastActivityAt: now.Add(-time.Minute)}},
+		project: domain.ProjectRecord{ID: "p1", Config: domain.ProjectConfig{Worker: domain.RoleOverride{Harness: domain.HarnessClaudeCode}}},
+		prs:     []domain.PullRequest{{URL: "pr1", Number: 1, HeadSHA: "sha1"}},
+	}
+	trigger := &fakeTrigger{}
+	result, err := New(store, trigger, Config{Clock: func() time.Time { return now }}).EvaluateSession(context.Background(), "s1")
+	if err != nil || !result.Triggered {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if trigger.harness != domain.ReviewerClaudeCode {
+		t.Fatalf("harness=%q, want claude-code", trigger.harness)
+	}
+}

@@ -3,10 +3,11 @@ package session
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"tallpine.eu/tallpine/backend/internal/testgit"
 )
 
 // mergeBaseCandidate must resolve a candidate with a single merge-base spawn:
@@ -18,7 +19,7 @@ func TestMergeBaseCandidateSpawnsNoExistenceProbe(t *testing.T) {
 	head := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
 	tree := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD^{tree}"))
 
-	realGit, err := exec.LookPath("git")
+	realGit, err := testgit.Real()
 	if err != nil {
 		t.Skip("git unavailable")
 	}

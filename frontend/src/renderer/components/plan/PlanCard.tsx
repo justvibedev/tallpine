@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBacklogInvalidate } from "../../hooks/useBacklogInvalidate";
 import {
-	acceptPlanDefaults, answerPlan, approvePlan, replanItem, startPlan,
+	acceptPlanDefaults, answerPlan, approvePlan, cancelPlan, replanItem, startPlan,
 	type PlanView,
 } from "../../lib/plan-api";
 import { formatUsageReset } from "@tallpine/shared/format/usage-reset";
@@ -51,6 +51,11 @@ export function PlanCard({ projectId, itemRef, itemTitle, plan, collapsed: contr
 	});
 	const busy = act.isPending;
 	const answered = () => { clearPlanDraft(plan.id); setOwnCollapsed(true); onAnswered?.(); };
+	const cancel = (
+		<button type="button" disabled={busy} onClick={() => act.mutate(async () => { const p = await cancelPlan(projectId, itemRef); clearPlanDraft(plan.id); return p; })} className={cn(QUIET_ACTION_PILL, "mr-auto")}>
+			{t("planCard.cancel")}
+		</button>
+	);
 	const error = act.error instanceof Error ? act.error.message : undefined;
 
 	return (
@@ -84,6 +89,7 @@ export function PlanCard({ projectId, itemRef, itemTitle, plan, collapsed: contr
 						<AnsweringBody
 							plan={plan}
 							busy={busy}
+							cancel={cancel}
 							onSend={(draft) => act.mutate(() => answerPlan(projectId, itemRef, toAnswersRequest(plan, draft)), { onSuccess: answered })}
 							onDefaults={() => act.mutate(() => acceptPlanDefaults(projectId, itemRef), { onSuccess: answered })}
 						/>
@@ -95,6 +101,7 @@ export function PlanCard({ projectId, itemRef, itemTitle, plan, collapsed: contr
 						<>
 							<div data-testid="plan-card-scroll" className="min-h-0 overflow-y-auto"><PlanReader plan={plan} /></div>
 							<Footer>
+								{cancel}
 								<button type="button" disabled={busy} onClick={() => act.mutate(() => replanItem(projectId, itemRef))} className={QUIET_ACTION_PILL}>
 									{t("planCard.replan")}
 								</button>
@@ -110,6 +117,7 @@ export function PlanCard({ projectId, itemRef, itemTitle, plan, collapsed: contr
 								<p className="px-3 pb-1 text-xs text-muted-foreground">{plan.failure || t("planCard.failed")}</p>
 							</div>
 							<Footer>
+								{cancel}
 								<button type="button" disabled={busy} onClick={() => act.mutate(() => startPlan(projectId, itemRef))} className={ACCENT_ACTION_PILL}>
 									{t("planCard.planAgain")}
 								</button>
@@ -127,7 +135,7 @@ function Footer({ children }: { children: React.ReactNode }) {
 	return <div className="flex items-center justify-end gap-2 px-3 pt-1">{children}</div>;
 }
 
-function AnsweringBody({ plan, busy, onSend, onDefaults }: { plan: PlanView; busy: boolean; onSend: (draft: PlanDraft) => void; onDefaults: () => void }) {
+function AnsweringBody({ plan, busy, cancel, onSend, onDefaults }: { plan: PlanView; busy: boolean; cancel: React.ReactNode; onSend: (draft: PlanDraft) => void; onDefaults: () => void }) {
 	const { t } = useTranslation();
 	const [draft, setDraft] = useState<PlanDraft>(() => loadPlanDraft(plan) ?? initialDraft(plan));
 	const update = (change: (d: PlanDraft) => PlanDraft) => setDraft((d) => { const next = change(d); savePlanDraft(plan.id, next); return next; });
@@ -218,8 +226,9 @@ function AnsweringBody({ plan, busy, onSend, onDefaults }: { plan: PlanView; bus
 				) : null}
 			</div>
 			<Footer>
+				{cancel}
 				{plan.assumptions.length > 0 ? (
-					<span className="mr-auto text-caption text-muted-foreground">{t("planCard.acceptedCount", { count: accepted })}</span>
+					<span className="text-caption text-muted-foreground">{t("planCard.acceptedCount", { count: accepted })}</span>
 				) : null}
 				<button type="button" disabled={busy} onClick={onDefaults} className={QUIET_ACTION_PILL}>
 					{t("planCard.defaults")}

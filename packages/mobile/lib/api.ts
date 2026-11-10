@@ -9,6 +9,7 @@ export * from "./api/notifications";
 export * from "./api/pr";
 export * from "./api/reviews";
 export * from "./api/backlog";
+export * from "./api/roleSettings";
 export * from "./api/preview";
 export * from "./api/actions";
 export * from "./api/artifacts";

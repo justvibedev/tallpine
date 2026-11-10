@@ -69,6 +69,9 @@ type AgentLaunchOptions struct {
 	// AutoMemoryOff starts Claude Code with auto-memory off (the project's
 	// claudeAutoMemory setting for the session's role). Filled at launch.
 	AutoMemoryOff bool `json:"-"`
+	// ShellOutputChars caps the shell output the agent reads inline (see
+	// ShellOutputLimit). Filled at launch; 0 leaves the harness default.
+	ShellOutputChars int `json:"-"`
 	// HandoffNote is a terminal switch target's note, kept until the target has
 	// started. A relaunch that finds it follows a switch cut short by a daemon
 	// stop or crash, and delivers the note in place of the session's task.

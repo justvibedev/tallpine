@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
@@ -189,10 +190,10 @@ func TestLastAssistantModelSkipsSyntheticAndTruncatedLines(t *testing.T) {
 {"type":"assistant","message":{"model":"<synthetic>","role":"assistant"}}
 {"type":"system"}
 `)
-	if got := lastAssistantModelFromJSONL(data); got != "claude-opus-4-8" {
+	if got := lastAssistantModelFromJSONL(data, time.Time{}); got != "claude-opus-4-8" {
 		t.Fatalf("last assistant model = %q", got)
 	}
-	if got := lastAssistantModelFromJSONL([]byte(`{"type":"user"}`)); got != "" {
+	if got := lastAssistantModelFromJSONL([]byte(`{"type":"user"}`), time.Time{}); got != "" {
 		t.Fatalf("model without assistant message = %q", got)
 	}
 }
@@ -211,5 +212,20 @@ func TestLastAssistantModelReadsSessionTranscript(t *testing.T) {
 	got, err := LastAssistantModel(context.Background(), map[string]string{claudeConfigDirEnv: configDir}, sessionID)
 	if err != nil || got != "claude-haiku-4-5-20251001" {
 		t.Fatalf("LastAssistantModel = %q, %v", got, err)
+	}
+}
+
+func TestLastAssistantModelSinceIgnoresEntriesBeforeTheCurrentRun(t *testing.T) {
+	data := []byte(`{"type":"assistant","timestamp":"2026-11-09T10:00:00.000Z","message":{"model":"claude-fable-5-2"}}` + "\n")
+	before := time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC)
+	after := time.Date(2026, 11, 9, 11, 0, 0, 0, time.UTC)
+	if got := lastAssistantModelFromJSONL(data, before); got != "claude-fable-5-2" {
+		t.Fatalf("current-run model = %q", got)
+	}
+	if got := lastAssistantModelFromJSONL(data, after); got != "" {
+		t.Fatalf("previous-run model = %q, want empty", got)
+	}
+	if got := lastAssistantModelFromJSONL([]byte(`{"type":"assistant","message":{"model":"m"}}`), before); got != "" {
+		t.Fatalf("untimestamped model = %q, want empty", got)
 	}
 }

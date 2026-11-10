@@ -138,14 +138,26 @@ func pathWithinRoot(ctx context.Context, path, root string) bool {
 	return err == nil && within && ctx.Err() == nil
 }
 
+// discoverPath finds the newest transcript for a native session id from a fresh
+// view of the provider root. Callers resolving many ids refresh once and use
+// discoverIndexedPath; see ReconcileSources.
 func (c *Collector) discoverPath(ctx context.Context, harness domain.AgentHarness, nativeID string) (string, error) {
+	if harness == domain.HarnessClaudeCode {
+		if err := c.claudeProjects.refresh(ctx); err != nil {
+			return "", err
+		}
+	}
+	return c.discoverIndexedPath(ctx, harness, nativeID)
+}
+
+func (c *Collector) discoverIndexedPath(ctx context.Context, harness domain.AgentHarness, nativeID string) (string, error) {
 	if !nativeUsageIDPattern.MatchString(nativeID) {
 		return "", nil
 	}
-	var patterns []string
+	var paths []string
 	switch harness {
 	case domain.HarnessClaudeCode:
-		patterns = []string{filepath.Join(c.roots.ClaudeProjects, "*", nativeID+".jsonl")}
+		paths = c.claudeProjects.lookup(nativeID + ".jsonl")
 	case domain.HarnessCodex:
 		return c.discoverCodexPath(ctx, nativeID, "")
 	}
@@ -153,25 +165,16 @@ func (c *Collector) discoverPath(ctx context.Context, harness domain.AgentHarnes
 		path string
 		mod  time.Time
 	}
+	if len(paths) > 128 {
+		paths = paths[:128]
+	}
 	var matches []candidate
-	for _, pattern := range patterns {
+	for _, path := range paths {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		paths, err := filepath.Glob(pattern)
-		if err != nil {
-			return "", err
-		}
-		if len(paths) > 128 {
-			paths = paths[:128]
-		}
-		for _, path := range paths {
-			if err := ctx.Err(); err != nil {
-				return "", err
-			}
-			if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-				matches = append(matches, candidate{path: path, mod: info.ModTime()})
-			}
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			matches = append(matches, candidate{path: path, mod: info.ModTime()})
 		}
 	}
 	sort.Slice(matches, func(i, j int) bool { return matches[i].mod.After(matches[j].mod) })

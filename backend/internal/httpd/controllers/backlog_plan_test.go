@@ -82,7 +82,7 @@ func TestPlanAPI_404WhenSwitchOff(t *testing.T) {
 	base := "/projects/p1/backlog"
 	a.must(201, "POST", base, "", map[string]any{"title": "first"})
 	for _, rt := range []struct{ method, path string }{
-		{"GET", base + "/B1/plan"}, {"POST", base + "/B1/plan"}, {"POST", base + "/B1/plan/replan"},
+		{"GET", base + "/B1/plan"}, {"POST", base + "/B1/plan"}, {"POST", base + "/B1/plan/replan"}, {"POST", base + "/B1/plan/cancel"},
 		{"POST", base + "/B1/plan/questions"}, {"POST", base + "/B1/plan/submit"}, {"POST", base + "/B1/plan/answers"},
 		{"POST", base + "/B1/plan/defaults"}, {"POST", base + "/B1/plan/approve"}, {"POST", base + "/B1/plan/build-anyway"},
 	} {
@@ -172,5 +172,27 @@ func TestPlanAPI_PlannerUsageLimitShowsPausedUntil(t *testing.T) {
 	list := a.must(200, "GET", "/projects/p1/plans", "", nil)["plans"].([]any)
 	if got := list[0].(map[string]any)["plan"].(map[string]any)["pausedUntil"]; got != until.Format(time.RFC3339) {
 		t.Fatalf("listed plan pausedUntil = %v", got)
+	}
+}
+
+func TestPlanAPI_ShowSupersededPlanByID(t *testing.T) {
+	a := newPlanAPI(t, true)
+	base := "/projects/p1/backlog"
+	a.must(201, "POST", base, "", map[string]any{"title": "first", "open": true})
+	a.must(201, "POST", base, "", map[string]any{"title": "second", "open": true})
+	old := a.must(201, "POST", base+"/B1/plan", "", nil)["plan"].(map[string]any)
+	other := a.must(201, "POST", base+"/B2/plan", "", nil)["plan"].(map[string]any)
+	a.must(201, "POST", base+"/B1/plan/replan", "", nil)
+	got := a.must(200, "GET", base+"/B1/plan?planId="+old["id"].(string), "", nil)["plan"].(map[string]any)
+	if got["id"] != old["id"] || got["status"] != "superseded" {
+		t.Fatalf("by id = %v, want the superseded plan", got)
+	}
+	cur := a.must(200, "GET", base+"/B1/plan", "", nil)["plan"].(map[string]any)
+	if cur["id"] == old["id"] {
+		t.Fatalf("plain show returned the superseded plan: %v", cur)
+	}
+	code, out := a.do("GET", base+"/B1/plan?planId="+other["id"].(string), "", nil)
+	if code != 404 || !strings.Contains(string(runBody(t, out)), "PLAN_NOT_FOUND") {
+		t.Fatalf("another item's plan id = %d %v, want 404 PLAN_NOT_FOUND", code, out)
 	}
 }

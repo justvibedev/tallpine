@@ -65,6 +65,10 @@ func SetAfterFailedWakeRead(hook func()) (restore func()) {
 // joiner of a failed wake does.
 func (s *Service) DeferWake(id domain.SessionID) bool { return s.deferWake(id) }
 
+// RunBackgroundWake starts a background wake the way a send (retry false) or the
+// retry scan (retry true) does.
+func (s *Service) RunBackgroundWake(id domain.SessionID, retry bool) { s.runBackgroundWake(id, retry) }
+
 // WakeRetryState reports the pending retry's failure count and next due time.
 func (s *Service) WakeRetryState(id domain.SessionID) (failures int, next time.Time, pending bool) {
 	s.wakeMu.Lock()

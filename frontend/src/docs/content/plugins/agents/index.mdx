@@ -22,8 +22,8 @@ The current daemon registers the following capabilities. Availability still depe
 | --- | --- | --- | --- |
 | `claude-code` | Yes | Yes | Yes |
 | `codex` | Yes | Yes | Yes |
-| `kiro` | Yes | — | Yes |
-| `deepseek-harness` | Yes (one-shot task) | Yes | — |
+| `kiro` | Yes | Yes | Yes |
+| `deepseek-harness` | Yes (one-shot task) | Yes | Yes |
 
 The table shows shipped capabilities, not whether an agent is ready on your machine. Run the catalog for current readiness or when scripting:
 
@@ -36,15 +36,18 @@ The readiness probe reports whether a harness is supported, installed, and authe
 
 ## Chat versus Terminal UI
 
-Claude Code, Codex and DeepSeek have structured Chat drivers:
+Every harness has a structured Chat driver:
 
 | Harness | Chat transport |
 | --- | --- |
 | `codex` | Codex native app-server |
 | `claude-code` | `claude-agent-acp` using the user's Claude executable |
+| `kiro` | `kiro-cli acp` (Agent Client Protocol, v3 engine) |
 | `deepseek-harness` | `dsh` Agent Client Protocol (ACP) server |
 
-Kiro is Terminal UI-only. Choose the initial interface with `tallpine spawn --mode chat|tui`. Compatible Claude Code and Codex sessions can hand off between Chat and Terminal UI while retaining the Tallpine session and worktree.
+Choose the initial interface with `tallpine spawn --mode chat|tui`. Compatible Claude Code and Codex sessions can hand off between Chat and Terminal UI while retaining the Tallpine session and worktree.
+
+Not every harness supports every feature. Steering, compaction, approvals from the terminal, usage readouts and accounts differ; each harness page lists its limits.
 
 Chat registration does not imply interface handoff support. Use the switch action and its disabled reason in the session UI.
 
@@ -56,7 +59,7 @@ tallpine spawn --project my-app --name auth-fix --agent claude-code --mode chat
 
 To make Codex the default worker, use `tallpine project set-config my-app --worker-agent codex`. Focused flags merge into the existing config; only `--config-json` replaces it. See [Update from the CLI](/configuration/projects#update-from-the-cli).
 
-`--agent` and `--harness` are aliases. The CLI's project-config mirror also omits `effort`: `tallpine project get --json` cannot show it, and a CLI configuration replacement drops existing effort values. Use Project Settings in the desktop app or the daemon API to preserve or change effort. Use `tallpine project set-config --help` for supported fields.
+`--agent` and `--harness` are aliases. Set reasoning effort per role with `--worker-effort`, `--orchestrator-effort` and `--reviewer-effort`; `tallpine project get --json` shows it. Use `tallpine project set-config --help` for supported fields.
 
 ## Harnesses that were removed
 
@@ -65,5 +68,5 @@ Earlier versions supported more harnesses. A project, automation or reviewer set
 <Cards>
 	<Card title="Claude Code" description="Terminal UI and structured Chat." href="/plugins/agents/claude-code" />
 	<Card title="Codex" description="Terminal UI and native app-server Chat." href="/plugins/agents/codex" />
-	<Card title="Kiro" description="Terminal UI." href="/plugins/agents/kiro" />
+	<Card title="Kiro" description="Terminal UI and Chat." href="/plugins/agents/kiro" />
 </Cards>

@@ -53,15 +53,26 @@ func (m *Manager) tryCloseFinishedWorker(ctx context.Context, rec domain.Session
 // queue and job checks are the freshest thing read before the kill.
 func (m *Manager) finishedWorkerKeepReason(ctx context.Context, rec domain.SessionRecord, hooks autoCloseHooks) (string, error) {
 	reason, err := hooks.FinishedWorkerKeepReason(ctx, rec, m.autoCloseRetry.now())
-	if err != nil || reason != "" {
-		return reason, err
+	if err != nil {
+		return "", err
+	}
+	if reason != "" {
+		// Fresh work or a pending report: the open-items clock measures only
+		// continuous time held by open items.
+		m.autoCloseRetry.finishedItems(rec.ID, false)
+		return reason, nil
 	}
 	items, err := hooks.OpenBacklogItems(ctx, rec.ID)
 	if err != nil {
 		return "", fmt.Errorf("check backlog items for %s: %w", rec.ID, err)
 	}
-	if items > 0 {
+	// Bounded like the merged-PR hold (B608): items left open must not keep a
+	// finished worker and its worktree forever.
+	if items > 0 && !m.autoCloseRetry.finishedItems(rec.ID, true) {
 		return "open linked backlog items", nil
+	}
+	if items == 0 {
+		m.autoCloseRetry.finishedItems(rec.ID, false)
 	}
 	jobs, err := hooks.RunningJobs(ctx, rec)
 	if err != nil {

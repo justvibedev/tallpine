@@ -45,6 +45,8 @@ var schemaNames = map[string]string{ // #nosec G101 -- Public OpenAPI type names
 	"ControllersUpdateCleanupArtifactsPolicy":              "UpdateCleanupArtifactsPolicy",
 	"ControllersUpdateCleanupPolicyRequest":                "UpdateCleanupPolicyRequest",
 	"ControllersSilentFailuresChatIssue":                   "SilentFailuresChatIssue",
+	"ControllersSilentFailuresPeerCheck":                   "SilentFailuresPeerCheck",
+	"ControllersSilentFailuresPeerRefusal":                 "SilentFailuresPeerRefusal",
 	"ControllersSilentFailuresReportIssue":                 "SilentFailuresReportIssue",
 	"ControllersSilentFailuresFallbackIssue":               "SilentFailuresFallbackIssue",
 	"ControllersSilentFailuresResponse":                    "SilentFailuresResponse",

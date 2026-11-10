@@ -180,6 +180,10 @@ var lanRouteTable = []lanRouteRule{
 	mobile("GET", "/api/v1/projects/*/merges"),
 	// The project backlog list, read-only. Item reads and every write stay loopback-only.
 	mobile("GET", "/api/v1/projects/*/backlog"),
+	// The phone may change only the agent, model and effort of the three roles:
+	// a narrow route that decodes strictly. PUT .../config stays loopback-only
+	// (env and post-create would give a phone token code execution on the Mac).
+	mobile("PATCH", "/api/v1/projects/*/role-settings"),
 	mobile(readOnly, "/api/v1/settings"),
 	loopback(anyMethod, "/api/v1/settings/**"),
 	loopback(anyMethod, "/api/v1/projects/**"),

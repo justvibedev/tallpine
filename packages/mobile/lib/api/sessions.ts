@@ -153,8 +153,9 @@ export type ProjectDetail = ProjectInfo & {
 	agent?: string;
 	config?: {
 		agentConfig?: { model?: string };
-		worker?: { agent?: string; agentConfig?: { model?: string } };
-		reviewers?: { harness?: string }[];
+		worker?: { agent?: string; agentConfig?: { model?: string; effort?: string } };
+		orchestrator?: { agent?: string; agentConfig?: { model?: string; effort?: string } };
+		reviewers?: { harness?: string; agentConfig?: { model?: string; effort?: string } }[];
 	};
 };
 

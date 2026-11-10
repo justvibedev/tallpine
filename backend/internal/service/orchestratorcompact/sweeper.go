@@ -2,8 +2,8 @@
 //
 // An orchestrator answers every report batch with a full turn, so its context
 // keeps growing between the owner's tasks. When it has been quiet for a while
-// and nothing it coordinates is in flight, compacting it lets the next task
-// start small. The compaction keeps the session, so its chat, workers, PR
+// (workers and reviews in flight do not matter: the summary keeps them), compacting
+// it lets the next task start small. The compaction keeps the session, so its chat, workers, PR
 // claims and review delivery are untouched; the provider's own window (B193)
 // still caps it mid-task.
 package orchestratorcompact
@@ -78,6 +78,12 @@ type Sweeper struct {
 	attempts map[domain.SessionID]int64
 	// stalled remembers the stalled workers already logged, by activity time.
 	stalled map[domain.SessionID]time.Time
+	// running holds the orchestrators with a sweep or hibernation check in
+	// progress, so the two never both start a compaction (the loser would hit
+	// "cannot compact while a turn is in flight" right after the winner).
+	running map[domain.SessionID]bool
+	// skipped is the last skip reason logged per orchestrator.
+	skipped map[domain.SessionID]string
 }
 
 // New returns a Sweeper.
@@ -88,7 +94,8 @@ func New(deps Deps) *Sweeper {
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
-	return &Sweeper{deps: deps, attempts: map[domain.SessionID]int64{}, stalled: map[domain.SessionID]time.Time{}}
+	return &Sweeper{deps: deps, attempts: map[domain.SessionID]int64{}, stalled: map[domain.SessionID]time.Time{},
+		running: map[domain.SessionID]bool{}, skipped: map[domain.SessionID]string{}}
 }
 
 // Sweep compacts every idle orchestrator that qualifies.
@@ -121,6 +128,20 @@ func (s *Sweeper) MaybeCompact(ctx context.Context, id domain.SessionID) (bool, 
 
 // maybe is MaybeCompact; handoffNow says whether a handoff may run here.
 func (s *Sweeper) maybe(ctx context.Context, id domain.SessionID, handoffNow bool) (bool, error) {
+	s.mu.Lock()
+	if s.running[id] {
+		s.mu.Unlock()
+		// Another check is deciding or compacting; keep the chat awake for the
+		// before-hibernate hook rather than stopping it under that check.
+		return true, nil
+	}
+	s.running[id] = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.running, id)
+		s.mu.Unlock()
+	}()
 	rec, found, err := s.deps.Store.GetSession(ctx, id)
 	if err != nil || !found || rec.Kind != domain.KindOrchestrator || rec.IsTerminated {
 		return false, err
@@ -130,7 +151,9 @@ func (s *Sweeper) maybe(ctx context.Context, id domain.SessionID, handoffNow boo
 	if err != nil || !ok {
 		return false, err
 	}
-	if reason := facts.IdleCompactSkipReason(); reason != "" {
+	reason := facts.IdleCompactSkipReason()
+	s.logSkip(id, reason, facts)
+	if reason != "" {
 		return false, nil
 	}
 	if facts.Handoff && !handoffNow {
@@ -161,6 +184,30 @@ func (s *Sweeper) maybe(ctx context.Context, id domain.SessionID, handoffNow boo
 	}
 	s.deps.Log.Info("idle orchestrator compacted", "session", id, "contextUsed", facts.ContextUsed, "threshold", facts.Threshold)
 	return true, nil
+}
+
+// logSkip logs why id is not compacting, only when the reason changes. The
+// routine reasons (a busy or recently active orchestrator, below threshold)
+// log at debug; the ones an operator wonders about log at info.
+func (s *Sweeper) logSkip(id domain.SessionID, reason string, facts domain.IdleCompactFacts) {
+	s.mu.Lock()
+	prev := s.skipped[id]
+	if reason == "" {
+		delete(s.skipped, id)
+	} else {
+		s.skipped[id] = reason
+	}
+	s.mu.Unlock()
+	if reason == "" || reason == prev {
+		return
+	}
+	level := slog.LevelInfo
+	switch reason {
+	case "off", "busy", "recently active", "below threshold":
+		level = slog.LevelDebug
+	}
+	s.deps.Log.Log(context.Background(), level, "idle orchestrator compaction skipped", "session", id, "reason", reason,
+		"contextUsed", facts.ContextUsed, "threshold", facts.Threshold)
 }
 
 // expireResearch ends research mode of an orchestrator that has had no turn
@@ -266,7 +313,9 @@ func (s *Sweeper) addWorkerFacts(ctx context.Context, orch domain.SessionRecord,
 		}
 		if len(reports) == 0 || reports[len(reports)-1].State != domain.ReportDone {
 			if now.Sub(w.Activity.LastActivityAt) > domain.IdleCompactStalledWorker {
-				s.logStalled(orch.ID, w)
+				if facts.Handoff {
+					s.logStalled(orch.ID, w)
+				}
 			} else {
 				facts.InFlightWorkers = append(facts.InFlightWorkers, w.ID)
 			}
@@ -281,7 +330,7 @@ func (s *Sweeper) addWorkerFacts(ctx context.Context, orch domain.SessionRecord,
 }
 
 // logStalled notes, once per quiet spell, a worker with an open task that no
-// longer holds idle compaction back, so its orchestrator can follow it up.
+// longer holds an idle handoff back, so its orchestrator can follow it up.
 func (s *Sweeper) logStalled(orch domain.SessionID, w domain.SessionRecord) {
 	s.mu.Lock()
 	seen, ok := s.stalled[w.ID]
@@ -290,6 +339,6 @@ func (s *Sweeper) logStalled(orch domain.SessionID, w domain.SessionRecord) {
 	if ok && seen.Equal(w.Activity.LastActivityAt) {
 		return
 	}
-	s.deps.Log.Info("idle compaction: worker with an open task has been quiet; not waiting for it",
+	s.deps.Log.Info("idle handoff: worker with an open task has been quiet; not waiting for it",
 		"orchestrator", orch, "worker", w.ID, "lastActivity", w.Activity.LastActivityAt)
 }

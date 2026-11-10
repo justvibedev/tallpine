@@ -195,7 +195,7 @@ func (p *PlanService) replanInPlace(ctx context.Context, cur domain.BacklogPlan,
 	if err != nil {
 		return domain.BacklogPlan{}, err
 	}
-	brief := p.bl.planChildrenBrief(ctx, item)
+	brief := strings.TrimSpace(p.bl.planChildrenBrief(ctx, item) + "\n\n" + p.priorBrief(ctx, item, cur))
 	msg := fmt.Sprintf("The plan is being redone. Stay read-only, plan again and submit with `tallpine plan questions %s` / `tallpine plan submit %s`.", item.Ref(), item.Ref())
 	if strings.TrimSpace(brief) != "" {
 		msg += "\n\n" + brief

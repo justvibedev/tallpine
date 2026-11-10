@@ -207,42 +207,6 @@ func (s *Service) compactProjectConfig(ctx context.Context, project domain.Proje
 	return rec.Config
 }
 
-// reconcileCompaction moves a running agent to its chosen window where the ACP
-// bridge allows it, and reports whether the choice is still waiting for a
-// restart. A bridge that cannot, or any failure, never fails the chat: the
-// value is already saved and the next start uses it.
-func (s *Service) reconcileCompaction(ctx context.Context, c *Controller) (pending bool) {
-	if contextwindow.AutoCompactEnvKey(c.harness) == "" {
-		return false
-	}
-	desired := s.desiredCompactTokens(ctx, c)
-	c.mu.Lock()
-	live := c.compactLive
-	c.mu.Unlock()
-	if live == desired {
-		return false
-	}
-	setter, ok := c.conv.(ports.ChatCompactionWindowSetter)
-	if !ok {
-		s.log.Info("compaction window waits for a restart: agent cannot change it live", "session", c.sessionID, "live", live, "desired", desired)
-		return true
-	}
-	applied, err := setter.SetAutoCompactWindow(ctx, desired)
-	if err != nil {
-		s.log.Warn("could not change the live compaction window; it applies after a restart", "session", c.sessionID, "live", live, "desired", desired, "error", err)
-		return true
-	}
-	if !applied {
-		s.log.Info("compaction window waits for a restart: agent kept its window", "session", c.sessionID, "live", live, "desired", desired)
-		return true
-	}
-	c.mu.Lock()
-	c.compactLive = desired
-	c.mu.Unlock()
-	s.log.Info("compaction window applied live", "session", c.sessionID, "previous", live, "tokens", desired)
-	return false
-}
-
 func (s *Service) reconcileCompactionAsync(c *Controller) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)

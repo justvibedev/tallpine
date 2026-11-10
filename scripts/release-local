@@ -248,6 +248,7 @@ done
   notarized-check) require_notarized "${positional[1]}" "${positional[2]:-}" ;; # test hook
   hardened-check) require_hardened_runtime "${positional[1]}" ;; # test hook
   helpers-check) require_helper_identities "${positional[1]}" ;; # test hook
+  team-id-check) require_team_id_baked "${positional[1]}" ;; # test hook
   signing-setup) signing_setup; printf 'identity=%s\n' "${APPLE_SIGNING_IDENTITY:-}"
     printf 'release_repo=%s\n' "$(env | sed -n 's/^TALLPINE_RELEASE_GITHUB_REPO=//p')" ;; # test hook (child-visible env)
   *) die "unknown command ${command_name} (build, install, rollback, status, notary-check, publish, pppc)" ;;

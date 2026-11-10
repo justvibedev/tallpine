@@ -17,6 +17,7 @@ type fakeSessions struct {
 	duringSpawn func()
 	failSpawn   error
 	terminated  []domain.SessionID
+	onTerminate func() // runs inside TerminatePlanner, to model a run pass the kill sets off
 	mu          sync.Mutex
 	store       *sqlite.Store
 	spawned     []backlog.PlannerSpawn
@@ -51,6 +52,11 @@ func (f *fakeSessions) TerminatePlanner(_ context.Context, id domain.SessionID) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.terminated = append(f.terminated, id)
+	if f.onTerminate != nil {
+		f.mu.Unlock()
+		f.onTerminate()
+		f.mu.Lock()
+	}
 	return nil
 }
 

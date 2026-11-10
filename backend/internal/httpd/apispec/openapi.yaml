@@ -5338,6 +5338,58 @@ paths:
       summary: Remember project permissions for future sessions
       tags:
       - projects
+  /api/v1/projects/{id}/role-settings:
+    patch:
+      operationId: setProjectRoleSettings
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectSetRoleSettingsInput'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+      summary: Set only the agent, model and effort of a project's orchestrator, worker
+        and reviewer roles
+      tags:
+      - projects
   /api/v1/projects/{id}/rules:
     put:
       operationId: setProjectRules
@@ -6905,6 +6957,14 @@ paths:
         schema:
           description: Item ref (B12 or 12) or item id.
           type: string
+      - description: Show this plan of the item (a superseded one too) instead of
+          the current plan.
+        in: query
+        name: planId
+        schema:
+          description: Show this plan of the item (a superseded one too) instead of
+            the current plan.
+          type: string
       responses:
         "200":
           content:
@@ -6948,7 +7008,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
-      summary: Get an item's current plan
+      summary: Get an item's current plan, or one of its plans by planId
       tags:
       - backlog
     post:
@@ -7222,6 +7282,71 @@ paths:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
       summary: Build from the approved plan although it may be stale
+      tags:
+      - backlog
+  /api/v1/projects/{projectId}/backlog/{ref}/plan/cancel:
+    post:
+      operationId: cancelBacklogItemPlan
+      parameters:
+      - description: Project that owns the backlog.
+        in: path
+        name: projectId
+        required: true
+        schema:
+          description: Project that owns the backlog.
+          type: string
+      - description: Item ref (B12 or 12) or item id.
+        in: path
+        name: ref
+        required: true
+        schema:
+          description: Item ref (B12 or 12) or item id.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanEnvelope'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Drop the plan that waits on the owner and stop its planner; the item
+        stays open
       tags:
       - backlog
   /api/v1/projects/{projectId}/backlog/{ref}/plan/defaults:
@@ -21865,6 +21990,17 @@ components:
           type:
           - "null"
           - string
+        reviewerHarness:
+          description: Default reviewer harness for projects that set no reviewer
+            of their own; empty clears it and the default model.
+          type:
+          - "null"
+          - string
+        reviewerModel:
+          description: Default reviewer model paired with the default reviewer harness.
+          type:
+          - "null"
+          - string
       type: object
     ControllersWorkflowDefaultsResponse:
       properties:
@@ -21873,6 +22009,10 @@ components:
         planAutoApprove:
           type: boolean
         planningMode:
+          type: string
+        reviewerHarness:
+          type: string
+        reviewerModel:
           type: string
       required:
       - autoReview
@@ -25324,6 +25464,30 @@ components:
       required:
       - project
       type: object
+    ProjectRoleSettingsPatch:
+      properties:
+        agent:
+          type:
+          - "null"
+          - string
+        effort:
+          type:
+          - "null"
+          - string
+        model:
+          type:
+          - "null"
+          - string
+      type: object
+    ProjectSetRoleSettingsInput:
+      properties:
+        orchestrator:
+          $ref: '#/components/schemas/ProjectRoleSettingsPatch'
+        reviewer:
+          $ref: '#/components/schemas/ProjectRoleSettingsPatch'
+        worker:
+          $ref: '#/components/schemas/ProjectRoleSettingsPatch'
+      type: object
     ProjectSkill:
       properties:
         convention:
@@ -28344,6 +28508,64 @@ components:
       - id
       - sessionId
       type: object
+    SilentFailuresPeerCheck:
+      properties:
+        admitted:
+          additionalProperties:
+            format: int64
+            type: integer
+          type:
+          - object
+          - "null"
+        dropped:
+          format: int64
+          type: integer
+        mode:
+          type: string
+        modeReason:
+          type: string
+        overflow:
+          format: int64
+          type: integer
+        teamId:
+          type: string
+        wouldRefuse:
+          items:
+            $ref: '#/components/schemas/SilentFailuresPeerRefusal'
+          type: array
+      required:
+      - mode
+      - modeReason
+      - admitted
+      - wouldRefuse
+      - overflow
+      - dropped
+      type: object
+    SilentFailuresPeerRefusal:
+      properties:
+        count:
+          format: int64
+          type: integer
+        executable:
+          type: string
+        lastPid:
+          type: integer
+        lastSeen:
+          type: string
+        reason:
+          type: string
+        route:
+          type: string
+        tokenClass:
+          type: string
+      required:
+      - executable
+      - tokenClass
+      - route
+      - reason
+      - count
+      - lastPid
+      type: object
     SilentFailuresReportIssue:
       properties:
         claimed:
@@ -28374,6 +28596,8 @@ components:
           type: array
         healthy:
           type: boolean
+        peerCheck:
+          $ref: '#/components/schemas/SilentFailuresPeerCheck'
         reportBatches:
           items:
             $ref: '#/components/schemas/SilentFailuresReportIssue'

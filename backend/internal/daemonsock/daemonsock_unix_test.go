@@ -6,10 +6,12 @@ import (
 	"context"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -150,5 +152,78 @@ func TestListenRejectsLongPath(t *testing.T) {
 	long := "/" + strings.Repeat("a", 120) + "/daemon.sock"
 	if _, err := Listen(long, nil); err == nil {
 		t.Fatal("want ErrPathTooLong")
+	}
+}
+
+func TestContextPeerFromRealConnection(t *testing.T) {
+	path := filepath.Join(shortDir(t), "peer.sock")
+	ln, err := Listen(path, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	client, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	peer, ok := PeerFrom(ContextWithConn(t.Context(), conn))
+	if !ok || peer.Transport != TransportUnix || peer.PID != os.Getpid() || peer.Err != "" || peer.Exited {
+		t.Fatalf("peer = %+v", peer)
+	}
+	if runtime.GOOS == "darwin" && (!peer.HasAuditToken || peer.AuditToken == [8]uint32{}) {
+		t.Fatalf("macOS must capture the audit token: %+v", peer)
+	}
+}
+
+func TestPeerClosedBeforeReadIsExited(t *testing.T) {
+	path := filepath.Join(shortDir(t), "gone.sock")
+	ln, err := Listen(path, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	client, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	peer, ok := PeerFrom(ContextWithConn(t.Context(), conn))
+	if !ok || peer.Transport != TransportUnix || peer.Err != "" || (runtime.GOOS == "darwin" && !peer.Exited) {
+		t.Fatalf("a disconnected peer must read as exited: %+v", peer)
+	}
+}
+
+func TestTCPConnHasNoPeerFacts(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	client, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	peer, _ := PeerFrom(ContextWithConn(t.Context(), conn))
+	if peer.Transport != TransportTCP || peer.PID != 0 || peer.HasAuditToken {
+		t.Fatalf("peer = %+v", peer)
 	}
 }

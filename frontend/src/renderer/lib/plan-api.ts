@@ -53,6 +53,12 @@ export async function replanItem(projectId: string, ref: string): Promise<PlanVi
 	return data.plan;
 }
 
+export async function cancelPlan(projectId: string, ref: string): Promise<PlanView> {
+	const { data, error } = await apiClient.POST(PLAN_PATHS.cancel, at(projectId, ref));
+	if (error || !data) fail(error);
+	return data.plan;
+}
+
 export async function buildPlanAnyway(projectId: string, ref: string): Promise<PlanView> {
 	const { data, error } = await apiClient.POST(PLAN_PATHS.buildAnyway, { ...at(projectId, ref), body: {} });
 	if (error || !data) fail(error);

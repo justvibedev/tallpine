@@ -31,7 +31,7 @@ func (b *boot) wireReview() error {
 		gated.SetPlanGate(b.planSvc.OpenPlanOf)
 	}
 
-	b.reportSvc = reportsvc.New(reportsvc.Deps{Store: b.store, FileDeferred: b.backlogSvc.FileDeferred, Artifacts: b.chatSvc, RefreshBranchState: b.sessionSvc.ReconcileSessionBranchState, ClaimReportedPR: reportedPRClaimer{sessions: b.sessionSvc}.Claim, DigestCount: b.reportDigestCount, OnCreated: func(r domain.ReportRecord) {
+	b.reportSvc = reportsvc.New(reportsvc.Deps{Store: b.store, BatchWindow: domain.ReportBatchWindow, FileDeferred: b.backlogSvc.FileDeferred, Artifacts: b.chatSvc, RefreshBranchState: b.sessionSvc.ReconcileSessionBranchState, ClaimReportedPR: reportedPRClaimer{sessions: b.sessionSvc}.Claim, DigestCount: b.reportDigestCount, OnCreated: func(r domain.ReportRecord) {
 		// A daemon-authored notice about the worker is not the worker reporting.
 		if !r.Synthesized {
 			b.turnNotifier.ReportFiled(r)

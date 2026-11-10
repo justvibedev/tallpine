@@ -8,9 +8,11 @@ import { LocalReviewsSection } from "./LocalReviewsSection";
 export type ReviewerHarness = NonNullable<components["schemas"]["TriggerReviewRequest"]["harness"]>;
 export type AgentCatalog = components["schemas"]["AgentReadinessResponse"];
 
-export function resolveDefaultReviewerHarness(config: ProjectConfig | undefined, workerHarness: WorkspaceSession["provider"]): ReviewerHarness {
+/** The reviewer a session follows: the project's own, then the app-wide default, then the worker's. */
+export function resolveDefaultReviewerHarness(config: ProjectConfig | undefined, workerHarness: WorkspaceSession["provider"], appHarness?: string): ReviewerHarness {
 	const configuredHarness = config?.reviewers?.[0]?.harness;
 	if (configuredHarness) return configuredHarness as ReviewerHarness;
+	if (appHarness) return appHarness as ReviewerHarness;
 	return WORKER_DEFAULT_REVIEWERS[workerHarness] ?? "claude-code";
 }
 

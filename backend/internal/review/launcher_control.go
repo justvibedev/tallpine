@@ -178,3 +178,11 @@ func BatchMessageID(batchID string) string {
 	}
 	return "review-batch:" + batchID
 }
+
+// Remind types message into a live terminal reviewer pane.
+func (l *agentLauncher) Remind(ctx context.Context, handleID, message string) error {
+	if _, ok := reviewerChatID(handleID); ok {
+		return fmt.Errorf("chat reviewers settle on turn end")
+	}
+	return l.runtime.SendMessage(ctx, ports.RuntimeHandle{ID: handleID}, message)
+}

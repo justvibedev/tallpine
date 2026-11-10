@@ -258,6 +258,7 @@ function Shell() {
 				<Stack.Screen name="project/[id]" options={{ headerShown: false }} />
 				<Stack.Screen name="merges" options={{ headerShown: false }} />
 				<Stack.Screen name="backlog" options={{ headerShown: false }} />
+				<Stack.Screen name="role-settings" options={{ headerShown: false }} />
 				<Stack.Screen name="artifacts" options={{ headerShown: false }} />
 				<Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
 				<Stack.Screen name="pair" options={{ presentation: "modal", headerShown: false }} />

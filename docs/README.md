@@ -26,6 +26,7 @@ Start with [architecture.md](architecture.md) for the current backend model and
 | [planning.md](planning.md) | Planning before building: modes, flow, plan card, stale plans, MDM and CLI. |
 | [switch-claude-subscription.md](switch-claude-subscription.md) | User guide: add a Claude account and move every session to it, what the first turn costs, and what Remove does. |
 | [harness-version-refresh.md](harness-version-refresh.md) | Managed harness release switching, idle terminal refresh, and the native-resume support matrix. |
+| [harnesses/parity-matrix.md](harnesses/parity-matrix.md) | Per-harness feature matrix (Chat and Terminal) with code evidence and the limits that remain. |
 | [onboarding-contract-review.md](onboarding-contract-review.md) | Project onboarding readiness contract review and the remaining journey/acceptance gaps. |
 | [onboarding-recovery-testing.md](onboarding-recovery-testing.md) | How to test clone-onboarding recovery: automated checks, browser flows, and manual desktop fixtures. |
 | [awake-follow-up-controls.md](awake-follow-up-controls.md) | Stay Awake controls deliberately deferred from the first desktop-awake release (see ADR 0006). |

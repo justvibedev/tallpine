@@ -16,6 +16,7 @@ import (
 // agentConfig mirrors the daemon's typed domain.AgentConfig for the CLI client.
 type agentConfig struct {
 	Model       string `json:"model,omitempty"`
+	Effort      string `json:"effort,omitempty"`
 	Mode        string `json:"mode,omitempty"`
 	Permissions string `json:"permissions,omitempty"`
 }
@@ -103,17 +104,20 @@ type setConfigRequest struct {
 }
 
 type projectSetConfigOptions struct {
-	canonicalRepoURL  string
-	githubUser        string
-	defaultBranch     string
-	sessionPrefix     string
-	model             string
-	permission        string
-	workerAgent       string
-	orchestratorAgent string
-	agentRules        string
-	agentRulesFile    string
-	orchestratorRules string
+	canonicalRepoURL   string
+	githubUser         string
+	defaultBranch      string
+	sessionPrefix      string
+	model              string
+	permission         string
+	workerAgent        string
+	orchestratorAgent  string
+	workerEffort       string
+	orchestratorEffort string
+	reviewerEffort     string
+	agentRules         string
+	agentRulesFile     string
+	orchestratorRules  string
 	// orchestratorCompactWindow is orchestrator.autoCompactWindow.
 	orchestratorCompactWindow string
 	// orchestratorIdleCompact is orchestrator.idleCompactAt.
@@ -229,6 +233,9 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 	f.StringVar(&opts.permission, "permission", "", "Permission mode: default, accept-edits, auto, bypass-permissions")
 	f.StringVar(&opts.workerAgent, "worker-agent", "", "Harness override for worker sessions")
 	f.StringVar(&opts.orchestratorAgent, "orchestrator-agent", "", "Harness override for orchestrator sessions")
+	f.StringVar(&opts.workerEffort, "worker-effort", "", "Reasoning effort for worker sessions (e.g. low, medium, high); empty clears it")
+	f.StringVar(&opts.orchestratorEffort, "orchestrator-effort", "", "Reasoning effort for orchestrator sessions (e.g. low, medium, high); empty clears it")
+	f.StringVar(&opts.reviewerEffort, "reviewer-effort", "", "Reasoning effort for every configured reviewer (set --reviewer first); empty clears it")
 	f.StringVar(&opts.orchestratorResearchWindow, "orchestrator-research-window", "", "Compaction window of an orchestrator in research mode (`tallpine orchestrator research on`): a size from 50k to 1m or a percent of the model window; off disables research mode for the project; empty uses the default (250k)")
 	f.StringVar(&opts.orchestratorIdleCompact, "orchestrator-idle-compact", "", "Context size above which an idle orchestrator compacts between tasks: a percent of its compaction window, not the model window (20%-95%), a size from 50k to 1m, or off; empty uses the default (30%)")
 	f.StringVar(&opts.orchestratorIdleAction, "orchestrator-idle-action", "", "What an idle orchestrator past its idle threshold does: compact (default) or handoff to a fresh orchestrator that rebuilds its state from the daemon")
@@ -278,7 +285,7 @@ func buildProjectConfig(opts projectSetConfigOptions) (map[string]any, error) {
 // config.
 var projectConfigFieldFlags = []string{
 	"default-branch", "canonical-repo-url", "github-user", "session-prefix", "default-session-mode", "model", "permission",
-	"worker-agent", "orchestrator-agent", "orchestrator-compact-window", "orchestrator-idle-compact", "orchestrator-research-window", "orchestrator-idle-action", "agent-rules", "agent-rules-file", "orchestrator-rules",
+	"worker-agent", "orchestrator-agent", "worker-effort", "orchestrator-effort", "reviewer-effort", "orchestrator-compact-window", "orchestrator-idle-compact", "orchestrator-research-window", "orchestrator-idle-action", "agent-rules", "agent-rules-file", "orchestrator-rules",
 	"env", "unset-env", "symlink", "post-create", "tracker-intake", "tracker-repo", "tracker-assignee", "reviewer",
 	"no-ci",
 	"plan-auto-approve",
@@ -371,6 +378,22 @@ func (c *commandContext) mergeProjectConfigFlags(ctx context.Context, id string,
 	if changed("orchestrator-agent") {
 		setNestedConfigString(cfg, "orchestrator", "agent", opts.orchestratorAgent)
 	}
+	for flag, v := range map[string]*string{"worker-effort": &opts.workerEffort, "orchestrator-effort": &opts.orchestratorEffort, "reviewer-effort": &opts.reviewerEffort} {
+		if !changed(flag) {
+			continue
+		}
+		// Store the canonical lowercase level: spawn compares effort case-sensitively.
+		*v = strings.ToLower(strings.TrimSpace(*v))
+		if *v != "" && !domain.ValidEffort(*v) {
+			return nil, usageError{fmt.Errorf("--%s %q: want one of %s", flag, *v, strings.Join(domain.EffortOrder, ", "))}
+		}
+	}
+	if changed("worker-effort") {
+		setRoleEffort(cfg, "worker", opts.workerEffort)
+	}
+	if changed("orchestrator-effort") {
+		setRoleEffort(cfg, "orchestrator", opts.orchestratorEffort)
+	}
 	if changed("orchestrator-compact-window") {
 		setNestedConfigString(cfg, "orchestrator", "autoCompactWindow", opts.orchestratorCompactWindow)
 	}
@@ -434,6 +457,11 @@ func (c *commandContext) mergeProjectConfigFlags(ctx context.Context, id string,
 	}
 	if changed("reviewer") {
 		setConfigReviewers(cfg, opts.reviewers)
+	}
+	if changed("reviewer-effort") {
+		if err := setReviewerEffort(cfg, opts.reviewerEffort); err != nil {
+			return nil, err
+		}
 	}
 	return cfg, nil
 }

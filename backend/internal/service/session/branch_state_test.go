@@ -3,13 +3,13 @@ package session
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/testgit"
 )
 
 type branchStateStore struct {
@@ -169,7 +169,7 @@ func TestReconcileSessionBranchStateSkipsTerminatedSessions(t *testing.T) {
 // git processes started since.
 func countGitCalls(t *testing.T) func() int {
 	t.Helper()
-	realGit, err := exec.LookPath("git")
+	realGit, err := testgit.Real()
 	if err != nil {
 		t.Fatal(err)
 	}

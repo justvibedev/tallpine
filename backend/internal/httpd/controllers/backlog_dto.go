@@ -69,6 +69,11 @@ type BacklogNextQuery struct {
 	Parent string `query:"parent,omitempty" description:"Only children of this parent ref."`
 }
 
+// PlanShowQuery holds the optional plan id of GET /projects/{projectId}/backlog/{ref}/plan.
+type PlanShowQuery struct {
+	PlanID string `query:"planId,omitempty" description:"Show this plan of the item (a superseded one too) instead of the current plan."`
+}
+
 // BacklogInboxCountsResponse is the body of GET /backlog/inbox-counts.
 type BacklogInboxCountsResponse struct {
 	Counts map[string]int `json:"counts" description:"Inbox items waiting for triage per non-archived project; projects with none are absent."`

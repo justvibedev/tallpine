@@ -47,6 +47,7 @@ describe("goLdflags", () => {
 		});
 		expect(out).toContain(`-X ${cli}.releaseRepo=example-owner/example-repo`);
 		expect(out).toContain(`-X ${signer}.ExpectedTeamID=ABCDE12345`);
+		expect(out).toContain(`-X ${BUILDINFO_PACKAGE}.TeamID=ABCDE12345`);
 	});
 
 	it("rejects a release repo that is not an owner/repo slug (e.g. a checkout path)", () => {

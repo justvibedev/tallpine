@@ -366,6 +366,13 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 			}
 		}
 	}
+	// w2's queued send is delivered once w2's own resume finishes, which a loaded
+	// host can push past any quiet window, so wait for it (and the turn it ends)
+	// before settling: the exactly-once counts below then only need to catch a
+	// duplicate, never a delivery that has not happened yet.
+	waitFor("w2's queued send and its turn notice", func() bool {
+		return count("QUEUED-behind-w2") >= 1 && count("[auto] turn_ended", "[w2]") >= 1+count(restartNote, "repo-3")
+	})
 	settle()
 	assertOnce("after restart", false)
 

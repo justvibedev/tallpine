@@ -38,7 +38,7 @@ tallpine project ls
 tallpine project get <project-id>
 ```
 
-Use Project Settings in the desktop app for interactive changes. The CLI's `set-config` focused flags merge into the existing project config, while `--config-json` replaces the entire config. Before using `--config-json`, read [the CLI update warning](/configuration/projects#update-from-the-cli). It ignores unknown JSON keys and drops existing effort values; use Project Settings or the daemon API to view or change effort.
+Use Project Settings in the desktop app for interactive changes. The CLI's `set-config` focused flags merge into the existing project config, while `--config-json` replaces the entire config. Before using `--config-json`, read [the CLI update warning](/configuration/projects#update-from-the-cli). It ignores unknown JSON keys and drops any saved effort it omits; set effort with the focused `--worker-effort`, `--orchestrator-effort` and `--reviewer-effort` flags.
 
 Project configuration has typed fields for the base branch, session prefix, environment variables, symlinks, setup commands, worker and orchestrator agents, agent options, project rules, reviewers, automatic review, trusted repository URLs, issue intake, and container cleanup. The daemon API rejects unknown fields. The CLI's `--config-json` decoder ignores unknown keys, so a typo can clear existing settings when the full config is replaced.
 

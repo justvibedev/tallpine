@@ -74,3 +74,31 @@ func TestSessionDetailFillsEffectiveModel(t *testing.T) {
 		t.Fatalf("status=%d model=%q body=%s", status, resp.Session.Model, body)
 	}
 }
+
+// `session get` shows the model the agent is serving after an in-session
+// /model switch, not the launch model; "" from the observer keeps the launch one.
+func TestSessionDetailReportsServedModel(t *testing.T) {
+	svc := newFakeSessionService()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	served := ""
+	deps := httpd.APIDeps{Sessions: svc, ServedModel: func(context.Context, domain.Session) string { return served }}
+	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil, deps, httpd.ControlDeps{}))
+	t.Cleanup(srv.Close)
+	get := func() string {
+		body, status, _ := doRequest(t, srv, http.MethodGet, "/api/v1/sessions/tp-1", "")
+		var resp struct {
+			Session struct {
+				Model string `json:"model"`
+			} `json:"session"`
+		}
+		if status != http.StatusOK || json.Unmarshal(body, &resp) != nil {
+			t.Fatalf("status=%d body=%s", status, body)
+		}
+		return resp.Session.Model
+	}
+	launch := get()
+	served = "claude-fable-5-2"
+	if got := get(); got != "claude-fable-5-2" {
+		t.Fatalf("served model = %q, want claude-fable-5-2 (launch %q)", got, launch)
+	}
+}

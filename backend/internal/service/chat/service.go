@@ -328,7 +328,7 @@ func conversationOwner(cfg StartConfig) domain.ConversationOwner {
 
 func providerHostID(cfg StartConfig) domain.SessionID {
 	if owner := conversationOwner(cfg); owner.Kind == domain.ConversationOwnerReview {
-		return domain.SessionID("review-" + owner.ID)
+		return domain.ReviewChatHostID(owner.ID)
 	}
 	return cfg.SessionID
 }

@@ -22,6 +22,7 @@ type PlanStore interface {
 	GetBacklogPlan(ctx context.Context, id string) (domain.BacklogPlan, bool, error)
 	OpenBacklogPlanForItem(ctx context.Context, itemID string) (domain.BacklogPlan, bool, error)
 	CurrentBacklogPlanForItem(ctx context.Context, itemID string) (domain.BacklogPlan, bool, error)
+	SupersededBacklogPlansForItem(ctx context.Context, itemID string) ([]domain.BacklogPlan, error)
 	BacklogPlanByPlanner(ctx context.Context, sessionID domain.SessionID) (domain.BacklogPlan, bool, error)
 	OpenBacklogPlansForProject(ctx context.Context, projectID domain.ProjectID) ([]domain.BacklogPlan, error)
 	UpdateBacklogPlan(ctx context.Context, id string, mutate func(*domain.BacklogPlan) error) (domain.BacklogPlan, error)
@@ -124,6 +125,8 @@ type PlanService struct {
 	log   *slog.Logger
 	// observer hears every plan status change (backlog runs, B205 PR 6).
 	observer func(ctx context.Context, plan domain.BacklogPlan)
+	// cancelObserver hears a plan the owner cancelled (no successor follows).
+	cancelObserver func(ctx context.Context, plan domain.BacklogPlan)
 }
 
 // NewPlanService builds the plan service and registers it with the backlog
@@ -150,6 +153,12 @@ func NewPlanService(d PlanDeps) *PlanService {
 // caller's goroutine, after the change is stored.
 func (p *PlanService) SetObserver(f func(ctx context.Context, plan domain.BacklogPlan)) {
 	p.observer = f
+}
+
+// SetCancelObserver registers the hook for a plan the owner cancelled. Cancel
+// has no successor plan, unlike a replan, so it needs its own signal.
+func (p *PlanService) SetCancelObserver(f func(ctx context.Context, plan domain.BacklogPlan)) {
+	p.cancelObserver = f
 }
 
 func (p *PlanService) changed(ctx context.Context, plan domain.BacklogPlan) {
@@ -222,6 +231,25 @@ func (p *PlanService) Get(ctx context.Context, projectID domain.ProjectID, ref s
 	return plan, nil
 }
 
+// GetByID returns one plan of the item by plan id, superseded ones included.
+func (p *PlanService) GetByID(ctx context.Context, projectID domain.ProjectID, ref, planID string) (domain.BacklogPlan, error) {
+	if err := p.guard(); err != nil {
+		return domain.BacklogPlan{}, err
+	}
+	item, err := p.bl.resolve(ctx, projectID, ref)
+	if err != nil {
+		return domain.BacklogPlan{}, err
+	}
+	plan, ok, err := p.store.GetBacklogPlan(ctx, planID)
+	if err != nil {
+		return domain.BacklogPlan{}, err
+	}
+	if !ok || plan.ItemID != item.ID {
+		return domain.BacklogPlan{}, apierr.NotFound("PLAN_NOT_FOUND", fmt.Sprintf("%s has no plan %s", item.Ref(), planID))
+	}
+	return plan, nil
+}
+
 // ProjectPlan is a plan with the item it belongs to.
 type ProjectPlan struct {
 	ItemRef   string
@@ -283,9 +311,9 @@ func (p *PlanService) Start(ctx context.Context, projectID domain.ProjectID, act
 		return domain.BacklogPlan{}, false, apierr.Conflict("PLAN_ALREADY_APPROVED", fmt.Sprintf("%s already has an approved plan: run `tallpine plan replan %s` to plan again", item.Ref(), item.Ref()), nil)
 	} else if ok && cur.Status == domain.PlanFailed && cur.Answers != nil {
 		// The owner already answered: the new planner gets the record and does not ask again.
-		return p.startFor(ctx, item, actor, answerRecord(cur))
+		return p.startFor(ctx, item, actor, answerRecord(cur), p.supersededBrief(ctx, item, "", maxPlanContextRunes))
 	}
-	return p.startFor(ctx, item, actor, "")
+	return p.startFor(ctx, item, actor, "", p.supersededBrief(ctx, item, "", maxPlanContextRunes))
 }
 
 // startFor creates the record and the planner session. record carries the

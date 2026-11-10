@@ -49,3 +49,25 @@ func TestWorkflowDefaultsKeepEvalWaiverClosed(t *testing.T) {
 		t.Fatalf("stored %+v, want the eval waiver gate kept", st.d)
 	}
 }
+
+// Changing the reviewer harness drops the old harness's model unless the same
+// update supplies one.
+func TestWorkflowDefaultsHarnessChangeClearsModel(t *testing.T) {
+	st := &wdStore{d: domain.WorkflowDefaults{ReviewerHarness: domain.ReviewerClaudeCode, ReviewerModel: "claude-old"}}
+	svc := settingssvc.New(st, nil, settingssvc.Offering{}, nil)
+	codex := domain.ReviewerCodex
+	if _, err := svc.SetWorkflowDefaults(context.Background(), settingssvc.WorkflowDefaultsUpdate{ReviewerHarness: &codex}); err != nil {
+		t.Fatal(err)
+	}
+	if st.d.ReviewerHarness != domain.ReviewerCodex || st.d.ReviewerModel != "" {
+		t.Fatalf("stored %+v, want codex with no model", st.d)
+	}
+	model := "gpt-new"
+	claude := domain.ReviewerClaudeCode
+	if _, err := svc.SetWorkflowDefaults(context.Background(), settingssvc.WorkflowDefaultsUpdate{ReviewerHarness: &claude, ReviewerModel: &model}); err != nil {
+		t.Fatal(err)
+	}
+	if st.d.ReviewerModel != "gpt-new" {
+		t.Fatalf("stored %+v, want the supplied model kept", st.d)
+	}
+}

@@ -119,6 +119,8 @@ if [[ -n "${TALLPINE_RELEASE_GITHUB_REPO:-}" ]]; then
 fi
 if [[ -n "${team_id}" ]]; then
   ldflags="${ldflags} -X tallpine.eu/tallpine/backend/internal/releasesigner.ExpectedTeamID=${team_id}"
+  # The daemon's peer check is active only on builds carrying this (B631).
+  ldflags="${ldflags} -X ${buildinfo_pkg}.TeamID=${team_id}"
 fi
 
 (cd "${backend_dir}" && go build -ldflags "${ldflags}" -o "${binary_path}" ./cmd/tallpine)

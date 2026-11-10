@@ -88,7 +88,7 @@ func TestSpawn_ResolvesProjectConfig(t *testing.T) {
 	if _, _, _, err := m.Spawn(ctx, ports.SpawnConfig{ProjectID: "bare", Kind: domain.KindWorker, Harness: domain.HarnessCodex}); err != nil {
 		t.Fatal(err)
 	}
-	if agent.lastConfig != (ports.AgentConfig{Permissions: ports.PermissionModeAuto}) {
+	if agent.lastConfig != (ports.AgentConfig{Permissions: ports.PermissionModeAuto, Launch: domain.AgentLaunchOptions{ShellOutputChars: domain.DefaultShellOutputLimit}}) {
 		t.Fatalf("launch config = %#v, want Auto permissions for project without config", agent.lastConfig)
 	}
 	if got := ws.lastCfg.BaseBranch; got != "" {

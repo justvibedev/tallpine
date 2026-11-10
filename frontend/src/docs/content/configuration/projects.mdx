@@ -53,7 +53,7 @@ tallpine project rm <project-id>
 | `symlinks` | Repository-relative paths linked into each session workspace. |
 | `postCreate` | Shell commands Tallpine runs after creating a workspace. A step whose first line is `# tallpine-timeout: <N>m` runs for at most N minutes (1 to 120). |
 | `preRemove` | Shell commands Tallpine runs before permanently removing a managed Git worktree. A step may set its own time limit the same way. |
-| `agentConfig` | Default model, permission, and effort settings. Set effort through Project Settings or the daemon API; CLI replacement drops it. |
+| `agentConfig` | Default model, permission, and effort settings. Role-level effort has CLI flags (`--worker-effort`, `--orchestrator-effort`, `--reviewer-effort`); set the project-wide default in Project Settings. |
 | `worker` | Worker harness and agent-config overrides. |
 | `orchestrator` | Tallpine harness and agent-config overrides. |
 | `agentRules` | Standing instructions for workers. |
@@ -217,7 +217,7 @@ tallpine project get <project-id> --json
 
 The `--config-json` flag takes a JSON string, not a filename. The CLI silently ignores unknown keys, so a typo can replace the configuration with an empty object. The daemon API rejects unknown fields.
 
-The CLI's project-config mirror also has an `effort` limitation: `tallpine project get --json` cannot show the configured effort, and a `--config-json` replacement drops existing effort values (focused flags keep them). Use Project Settings in the desktop app or the daemon API to view or change effort. For other full-config CLI updates, include every field you want to keep and inspect the result afterward.
+Set or clear reasoning effort per role with `tallpine project set-config <id> --worker-effort high --orchestrator-effort high --reviewer-effort high` (an empty value clears it; `--reviewer-effort` needs a configured reviewer). `tallpine project get --json` shows effort, and `--config-json` carries it, but a replacement that omits effort drops the saved values. For other full-config CLI updates, include every field you want to keep and inspect the result afterward.
 
 For example, this command replaces the entire configuration with one worker choice; it does not keep setup, rules, reviewers, or effort:
 

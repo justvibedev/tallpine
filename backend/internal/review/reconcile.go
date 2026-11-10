@@ -124,6 +124,37 @@ type ScreenReader interface {
 	Screen(ctx stdctx.Context, handleID string, lines int) (string, error)
 }
 
+// ReviewerReminder is an optional Launcher capability: type a message into a
+// live terminal reviewer, to wake one whose turn ended without a submit.
+type ReviewerReminder interface {
+	Remind(ctx stdctx.Context, handleID, message string) error
+}
+
+// reviewerReminderGrace is how long a reminded reviewer may stay idle again
+// before its pass is failed.
+const reviewerReminderGrace = 3 * time.Minute
+
+const reviewerSubmitReminder = "Your turn ended but no review result was recorded. Do not wait on any background command. Finish now: post the GitHub review (step 1 of the review task) and then run the `tallpine review submit` command (step 2). If you are blocked, submit what you have."
+
+func (e *Engine) reminderSentAt(runID string) (time.Time, bool) {
+	e.launchedMu.Lock()
+	defer e.launchedMu.Unlock()
+	at, ok := e.remindedAt[runID]
+	return at, ok
+}
+
+func (e *Engine) forgetReminded(runID string) {
+	e.launchedMu.Lock()
+	delete(e.remindedAt, runID)
+	e.launchedMu.Unlock()
+}
+
+func (e *Engine) markReminded(runID string) {
+	e.launchedMu.Lock()
+	e.remindedAt[runID] = e.clock()
+	e.launchedMu.Unlock()
+}
+
 // ReviewerNotStartedPrefix starts the body of a pass whose reviewer terminal
 // never reported activity (stuck on a startup screen); the rest is the screen.
 const ReviewerNotStartedPrefix = "reviewer did not start: "
@@ -322,17 +353,47 @@ func (e *Engine) failIdleReviewerRuns(ctx stdctx.Context, review domain.Review, 
 			body, apiErr, grace = ReviewerAPIErrorPrefix+message, true, apiGrace
 		}
 	}
-	if idleFor < e.idleGrace && !apiErr {
-		return false, nil
-	}
+	reminder, canRemind := e.launcher.(ReviewerReminder)
+	canRemind = canRemind && !limited && !apiErr
+	remindGrace := min(e.idleGrace, reviewerReminderGrace)
+	remindTried, remindSent := false, false
 	for _, run := range running {
 		if run.CreatedAt.IsZero() || now.Sub(run.CreatedAt) < grace {
+			continue
+		}
+		if canRemind {
+			// B651: a reviewer can end its turn while parked on a background
+			// command and never wake. Ask it to finish before the pass counts as
+			// failed; only a pane still idle after the reminder fails the pass.
+			if at, sent := e.reminderSentAt(run.ID); sent {
+				if now.Sub(at) < remindGrace || idleFor < remindGrace {
+					continue
+				}
+			} else if idleFor < e.idleGrace {
+				continue
+			} else {
+				// One pane can hold several running runs (a batch): wake it once.
+				if !remindTried {
+					remindTried = true
+					if err := reminder.Remind(ctx, review.ReviewerHandleID, reviewerSubmitReminder); err != nil {
+						slog.Warn("review: could not remind an idle reviewer to submit", "review", review.ID, "err", err)
+					} else {
+						remindSent = true
+					}
+				}
+				if remindSent {
+					e.markReminded(run.ID)
+					continue
+				}
+			}
+		} else if idleFor < e.idleGrace && !apiErr {
 			continue
 		}
 		updated, err := e.store.UpdateReviewRunResult(ctx, run.ID, domain.ReviewRunFailed, domain.VerdictNone, body, "", run.AutoInjectReview)
 		if err != nil {
 			return false, err
 		}
+		e.forgetReminded(run.ID)
 		changed = changed || updated
 	}
 	if changed && limited {

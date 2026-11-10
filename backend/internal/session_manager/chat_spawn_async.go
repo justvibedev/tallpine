@@ -392,10 +392,10 @@ func (m *Manager) retryFailedChatSpawn(ctx context.Context, rec domain.SessionRe
 		// capabilities can change between attempts. Validate the actual pair
 		// without merging today's project defaults back into the saved choices.
 		cfg.EffortOverride = true
-		resolved, err := m.resolveAgentConfig(ctx, decision, cfg, domain.ProjectConfig{})
+		resolved, err := m.resolveChatAgentConfig(ctx, decision, cfg, domain.ProjectConfig{})
 		if errors.Is(err, ports.ErrUnsupportedEffort) {
 			cfg.AgentConfig.Effort = "" // use this model's provider default
-			resolved, err = m.resolveAgentConfig(ctx, decision, cfg, domain.ProjectConfig{})
+			resolved, err = m.resolveChatAgentConfig(ctx, decision, cfg, domain.ProjectConfig{})
 		}
 		if err != nil {
 			return RestoreResult{}, false, err

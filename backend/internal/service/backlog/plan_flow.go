@@ -275,12 +275,12 @@ func (p *PlanService) deliverAnswers(ctx context.Context, plan domain.BacklogPla
 	}
 	spawn := PlannerSpawn{
 		ProjectID: plan.ProjectID, ItemID: item.ID, ItemRef: item.Ref(), PlanID: plan.ID,
-		DisplayName: "Plan " + item.Ref(), Prompt: plannerTask(item, record),
+		DisplayName: "Plan " + item.Ref(), Prompt: plannerTask(item, record, p.supersededBrief(ctx, item, plan.ID, maxPlanContextRunes)),
 	}
 	spawnFn := p.sessions.SpawnPlanner
 	if inPlace {
 		// The author ended: start the implementer again in place, never a planner.
-		spawn.DisplayName, spawn.LaneItemID, spawn.Prompt = item.Ref(), item.ParentID, p.inPlaceTask(ctx, item, record)
+		spawn.DisplayName, spawn.LaneItemID, spawn.Prompt = item.Ref(), item.ParentID, strings.TrimSpace(p.inPlaceTask(ctx, item, record)+"\n\n"+p.supersededBrief(ctx, item, plan.ID, maxPlanContextRunes))
 		spawnFn = p.sessions.SpawnInPlace
 	}
 	sid, err := spawnFn(ctx, spawn)
@@ -496,7 +496,7 @@ func (p *PlanService) Replan(ctx context.Context, projectID domain.ProjectID, ac
 		}
 		p.stopPlanner(ctx, cur)
 	}
-	plan, _, err := p.startFor(ctx, item, actor, "", p.bl.planChildrenBrief(ctx, item))
+	plan, _, err := p.startFor(ctx, item, actor, "", p.bl.planChildrenBrief(ctx, item), p.priorBrief(ctx, item, cur))
 	if err != nil {
 		return domain.BacklogPlan{}, err
 	}

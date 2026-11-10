@@ -200,3 +200,23 @@ func TestInboxBodyOmitsSupersededStatuses(t *testing.T) {
 		t.Fatalf("body = %q", body)
 	}
 }
+
+// A worker's report has a recipient through its own project's orchestrator or
+// the parent orchestrator of another project, and nowhere else.
+func TestHasRecipient(t *testing.T) {
+	h := newFallbackHarness(t)
+	ctx := context.Background()
+	w := h.session("p", domain.KindWorker, "")
+	if h.svc.HasRecipient(ctx, "p", w) {
+		t.Fatal("no orchestrator anywhere: no recipient")
+	}
+	parent := h.session("q", domain.KindOrchestrator, "")
+	w2 := h.session("p", domain.KindWorker, parent)
+	if !h.svc.HasRecipient(ctx, "p", w2) {
+		t.Fatal("a live parent orchestrator in another project is a recipient")
+	}
+	h.session("p", domain.KindOrchestrator, "")
+	if !h.svc.HasRecipient(ctx, "p", w) {
+		t.Fatal("the project's own orchestrator is a recipient")
+	}
+}

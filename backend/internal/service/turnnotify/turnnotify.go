@@ -45,6 +45,13 @@ const (
 	// KindStartFailed labels the synthesized report for a worker whose
 	// background start gave up before its agent ran.
 	KindStartFailed = "start_failed"
+	// KindTerminalPrompt labels the plain message telling the orchestrator a
+	// terminal worker stopped on a prompt. It is a message, not a needs-input
+	// report: it holds no open wait that could outlive the prompt.
+	KindTerminalPrompt = "terminal_prompt"
+	// KindTerminalWait is the same for a wait that is not known to be a
+	// permission prompt (a question, a login).
+	KindTerminalWait = "terminal_wait"
 	// KindAuthRequired labels the needs-input report for a worker whose agent
 	// login expired.
 	KindAuthRequired = "auth_required"
@@ -112,6 +119,10 @@ type Deps struct {
 	Jobs Jobs
 	// Now reads the clock; tests inject a fake one.
 	Now func() time.Time
+	// OrchestratorLive reports whether the worker's reports reach a live
+	// orchestrator (its project's, or a parent's in another project); nil
+	// assumes they do.
+	OrchestratorLive func(context.Context, domain.ProjectID, domain.SessionID) bool
 }
 
 type turn struct {
@@ -217,7 +228,19 @@ func (o *Observer) ApplyActivitySignal(ctx context.Context, id domain.SessionID,
 	if err := o.Next.ApplyActivitySignal(ctx, id, s); err != nil {
 		return err
 	}
-	if s.SubagentID != "" || nonInteractive(s.NativeEntrypoint) || o.isClosed() {
+	if nonInteractive(s.NativeEntrypoint) || o.isClosed() {
+		return nil
+	}
+	// Before the subagent return: a child's permission dialog blocks the
+	// whole session, and its tool traffic can be what ends the wait.
+	if terminalInputWait(s) {
+		o.terminalPrompt(ctx, id, s)
+		return nil
+	}
+	if terminalInputResolved(s) {
+		o.terminalPromptResolved(ctx, id, s)
+	}
+	if s.SubagentID != "" {
 		return nil
 	}
 	switch {
@@ -515,47 +538,6 @@ func (o *Observer) inputRequired(ctx context.Context, id domain.SessionID, s por
 	o.sendWithID(id, KindInputRequired, what, reportID)
 }
 
-// approvalNotice is the text of an approval's needs-input report. The request id
-// is never cut (a cut id matches nothing): it gets its full length first, then
-// the reason takes whatever the report limit leaves after the id, the command
-// and a reserve for the prefix. An id over maxRequestIDCharacters is not
-// printed; the orchestrator is pointed at `session approvals` instead. The id
-// comes first and the command last.
-func approvalNotice(s ports.ActivitySignal, reason string) string {
-	var lines []string
-	idLen := 0
-	if id := strings.TrimSpace(s.ApprovalRequestID); id != "" {
-		if utf8.RuneCountInString(id) <= maxRequestIDCharacters {
-			lines = append(lines, "Request id: "+id)
-			idLen = utf8.RuneCountInString(id) + len("Request id: \n")
-		} else {
-			lines = append(lines, "Request id too long to print: list it with `"+brand.CLIName+" session approvals <session>`")
-			idLen = 100
-		}
-	}
-	tool := cmpOr(truncate(strings.TrimSpace(s.ToolName), maxToolNameCharacters), "a tool call")
-	commandLine := "(no command: open the session to see what it would change)"
-	if s.ApprovalCommand != "" {
-		commandLine = "Command: " + s.ApprovalCommand
-	}
-	head := "approval for " + tool + ":"
-	room := domain.MaxReportTextCharacters - prefixReserve - idLen - utf8.RuneCountInString(commandLine) - utf8.RuneCountInString(head) - 2
-	room = min(room, maxReasonCharacters)
-	if room >= minReasonCharacters {
-		lines = append(lines, head+" "+cmpOr(truncate(reason, room), "no reason given"))
-	} else {
-		lines = append(lines, head)
-	}
-	return strings.Join(append(lines, commandLine), "\n")
-}
-
-func cmpOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
-}
-
 // inputResolved ends a waiting episode so a later wait reports again.
 func (o *Observer) inputResolved(ctx context.Context, id domain.SessionID, s ports.ActivitySignal) {
 	generation := o.workerGeneration(ctx, id, s)
@@ -761,6 +743,10 @@ func Message(kind string, rec domain.SessionRecord, last string) string {
 		last = ""
 	case KindAuthRequired:
 		fmt.Fprintf(&b, "the worker's agent (%s) needs login: its authentication expired, so it is waiting and cannot continue; run the harness login, then resume it with `%s session resume-agent %s`", rec.Harness, brand.CLIName, rec.ID)
+	case KindTerminalPrompt:
+		fmt.Fprintf(&b, "the worker's agent is blocked on a permission prompt in its terminal; open session %s to answer it", rec.ID)
+	case KindTerminalWait:
+		fmt.Fprintf(&b, "the worker's agent is waiting for input in its terminal (a question, a login or a prompt); check session %s", rec.ID)
 	case KindInputRequired:
 		fmt.Fprintf(&b, "the worker's agent is blocked on a prompt; answer it in session %s (or `%s session approve|deny <session> <requestId>` where the project allows it)", rec.ID, brand.CLIName)
 	case KindStartFailed:
@@ -770,7 +756,7 @@ func Message(kind string, rec domain.SessionRecord, last string) string {
 	}
 	// A prompt is decided from its command, not its branch; the branch would only
 	// eat the budget the command needs.
-	if rec.Metadata.Branch != "" && kind != KindInputRequired {
+	if rec.Metadata.Branch != "" && kind != KindInputRequired && !terminalKind(kind) {
 		if safeBranchName.MatchString(rec.Metadata.Branch) {
 			fmt.Fprintf(&b, " (branch `%s`)", rec.Metadata.Branch)
 		} else {
@@ -784,7 +770,7 @@ func Message(kind string, rec domain.SessionRecord, last string) string {
 		switch kind {
 		case KindStartFailed:
 			b.WriteString("\nError: ")
-		case KindInputRequired:
+		case KindInputRequired, KindTerminalPrompt, KindTerminalWait:
 			b.WriteString("\n")
 			// Whatever the prefix leaves of the report limit: the command must
 			// not be cut by a smaller excerpt cap.

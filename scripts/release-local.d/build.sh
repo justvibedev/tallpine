@@ -242,6 +242,7 @@ cmd_build() {
     verify_signature "${app}" || die "the app signed with '${identity}' does not verify with a stable requirement (codesign --verify --deep --strict, codesign -d -r-): ${app}"
     require_hardened_runtime "${app}"
     require_helper_identities "${app}"
+    require_team_id_baked "${app}"
     say "Signature verified: stable requirement for ${bundle_id}, hardened runtime"
   fi
   step_end verify

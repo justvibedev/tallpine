@@ -11,7 +11,7 @@ import (
 // Chat sessions get their role's overrides in the launch env; other roles,
 // other harnesses and a value smuggled in through project env get none.
 func TestPinClaudeRoleSettings(t *testing.T) {
-	cfg := domain.ProjectConfig{ClaudeAutoMemory: map[string]bool{"worker": false}}
+	cfg := domain.ProjectConfig{ClaudeAutoMemory: map[string]bool{"worker": false}, Env: map[string]string{domain.EnvShellOutputLimit: "off"}}
 	env := map[string]string{}
 	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindWorker, cfg)
 	if env[domain.EnvClaudeRoleSettings] != `{"autoMemoryEnabled":false}` {
@@ -34,7 +34,7 @@ func TestPrepareChatControllerEnvPinsClaudeRoleSettings(t *testing.T) {
 	m := envFilterManager(t, allowlist(), &fakeGitHubTokens{})
 	rec := domain.SessionRecord{ID: "w-1", ProjectID: "mer", Harness: domain.HarnessClaudeCode, Kind: domain.KindWorker}
 	m.store.(*fakeStore).sessions["w-1"] = rec
-	cfg := domain.ProjectConfig{ClaudeAutoMemory: map[string]bool{"worker": false}}
+	cfg := domain.ProjectConfig{ClaudeAutoMemory: map[string]bool{"worker": false}, Env: map[string]string{domain.EnvShellOutputLimit: "off"}}
 	_, env, err := m.prepareChatControllerEnv(context.Background(), rec, cfg, rec.ControllerOwner(), domain.HarnessClaudeCode)
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +53,7 @@ func TestChatStartEnvCarriesClaudeRoleSettings(t *testing.T) {
 	cfg := testRoleAgents()
 	cfg.ClaudePlugins = map[string]map[string]bool{"orchestrator": plugins, "worker": plugins}
 	cfg.ClaudeAutoMemory = map[string]bool{"worker": false}
+	cfg.Env = map[string]string{domain.EnvShellOutputLimit: "off"}
 	const workerWant = `{"autoMemoryEnabled":false,"enabledPlugins":{"impeccable@impeccable":false}}`
 	const orchWant = `{"enabledPlugins":{"impeccable@impeccable":false}}`
 
@@ -125,4 +126,20 @@ type baseEnvLauncher struct {
 func (l *baseEnvLauncher) StartChat(ctx context.Context, cfg ChatStart) (ChatStarted, error) {
 	l.baseEnvs = append(l.baseEnvs, cfg.Env)
 	return l.recordingLauncher.StartChat(ctx, cfg)
+}
+
+// Chat sessions get the shell output cap in their role settings, and the
+// override turns it off.
+func TestPinClaudeRoleSettingsCapsShellOutput(t *testing.T) {
+	t.Setenv(domain.EnvShellOutputLimit, "")
+	env := map[string]string{}
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindOrchestrator, domain.ProjectConfig{})
+	if env[domain.EnvClaudeRoleSettings] != `{"bashOutputMaxChars":12000}` {
+		t.Fatalf("default env = %v", env)
+	}
+	cfg := domain.ProjectConfig{Env: map[string]string{domain.EnvShellOutputLimit: "20000"}}
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindWorker, cfg)
+	if env[domain.EnvClaudeRoleSettings] != `{"bashOutputMaxChars":20000}` {
+		t.Fatalf("override env = %v", env)
+	}
 }

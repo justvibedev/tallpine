@@ -33,7 +33,7 @@ func evalFixture(t *testing.T) evalWorld {
 	marked := map[domain.ProjectID]bool{"lab": true, "web": true}
 	scopes.evalMarked = func(_ context.Context, p domain.ProjectID) bool { return marked[p] }
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes)(inner), logs: &bytes.Buffer{}}
+	h := agentScopeHarness{t: t, handler: daemonAuthMiddleware(testDaemonToken, "", nil, scopes, nil)(inner), logs: &bytes.Buffer{}}
 	return evalWorld{h: h, cross: &cross, tokens: map[string]string{"orch": store.tokenFor(tokens, "app-orch"), "worker": store.tokenFor(tokens, "app-1")}}
 }
 

@@ -16,7 +16,7 @@ import (
 
 // reviewerSelection resolves which reviewer reviews the worker's PR: a
 // persisted session preference wins, then the project's reviewer config, then
-// the project's default worker config, then the worker's own harness when
+// the app-wide default reviewer, then the project's default worker config, then the worker's own harness when
 // supported, otherwise claude-code.
 func (e *Engine) reviewerSelection(
 	ctx stdctx.Context,
@@ -86,14 +86,18 @@ func (e *Engine) projectReviewerSelection(
 			cfg = proj.Config
 		}
 	}
-	if len(cfg.Reviewers) > 0 {
-		return cfg.Reviewers[0].Harness, cfg.Reviewers[0].AgentConfig, nil
+	var app domain.WorkflowDefaults
+	if s, ok := e.projects.(interface {
+		WorkflowDefaults(stdctx.Context) (domain.WorkflowDefaults, error)
+	}); ok {
+		d, err := s.WorkflowDefaults(ctx)
+		if err != nil {
+			return "", domain.AgentConfig{}, err
+		}
+		app = d
 	}
-	harness, config := cfg.DefaultWorkerReviewer()
-	if harness != "" {
-		return harness, config, nil
-	}
-	return cfg.ResolveReviewerHarness(worker.Harness), domain.AgentConfig{}, nil
+	harness, config := cfg.EffectiveReviewer(app, worker.Harness)
+	return harness, config, nil
 }
 
 // checkModelPolicy refuses a reviewer model the project's model policy denies.

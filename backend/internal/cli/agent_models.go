@@ -8,6 +8,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+
+	"tallpine.eu/tallpine/backend/internal/domain"
 )
 
 // agentModelInfo mirrors the daemon's AgentModelInfo for the CLI client.
@@ -107,6 +109,9 @@ func newAgentModelsCommand(ctx *commandContext) *cobra.Command {
 			if err := tw.Flush(); err != nil {
 				return err
 			}
+			if hint := claudeIDHint(harness, out.Models); hint != "" {
+				_, _ = fmt.Fprintf(w, "note: %s\n", hint)
+			}
 			if out.Project != "" {
 				if out.ProjectModel == "" {
 					_, _ = fmt.Fprintf(w, "project %s: no model set (harness default applies)\n", out.Project)
@@ -130,6 +135,11 @@ func modelCatalogError(cat agentModelsResponse, harness, model string) error {
 	if model == "" || len(cat.Models) == 0 {
 		return nil
 	}
+	if harness == "claude-code" && domain.AcceptsUnlistedClaudeModelID(strings.ToLower(model), catalogIDs(cat.Models)) {
+		// The account's list can lag a release; Claude Code's chat offers the
+		// new model first. A well-formed ID is the provider's to accept.
+		return nil
+	}
 	ids := make([]string, 0, len(cat.Models))
 	for _, m := range cat.Models {
 		if strings.EqualFold(m.ID, model) {
@@ -137,7 +147,7 @@ func modelCatalogError(cat agentModelsResponse, harness, model string) error {
 		}
 		ids = append(ids, m.ID)
 	}
-	return usageError{fmt.Errorf("unknown model %q for %s; valid model IDs: %s (see `tallpine agent models %s`)", model, harness, strings.Join(ids, ", "), harness)}
+	return usageError{fmt.Errorf("unknown model %q for %s; valid model IDs: %s (see `tallpine agent models %s`)%s", model, harness, strings.Join(ids, ", "), harness, hintSuffix(claudeIDHint(harness, cat.Models)))}
 }
 
 // validateModel fails fast on a model name outside the harness catalog. An
@@ -182,4 +192,29 @@ func singleReviewerHarness(rs []reviewerConfig) string {
 		one = h
 	}
 	return one
+}
+
+// claudeIDHint tells a claude-code caller that models newer than the account's
+// list are accepted by their full ID, so a typo reads as a typo. Only a
+// first-party catalog accepts that, so any other gets no hint.
+func claudeIDHint(harness string, models []agentModelInfo) string {
+	if harness != "claude-code" || !domain.AcceptsUnlistedClaudeModelID("claude-opus-0", catalogIDs(models)) {
+		return ""
+	}
+	return "a full ID of the form claude-<fable|opus|sonnet|haiku>-<major>-<minor> is also accepted when the list lags a release"
+}
+
+func catalogIDs(models []agentModelInfo) []string {
+	ids := make([]string, 0, len(models))
+	for _, m := range models {
+		ids = append(ids, m.ID)
+	}
+	return ids
+}
+
+func hintSuffix(hint string) string {
+	if hint == "" {
+		return ""
+	}
+	return "; " + hint
 }

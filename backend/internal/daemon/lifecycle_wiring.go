@@ -49,6 +49,8 @@ type lifecycleStack struct {
 	// startSession can share the same reducer the reaper drives, rather than
 	// standing up a second store+LCM pair that would diverge under writes.
 	LCM *lifecycle.Manager
+	// ActivitySink feeds the screen poller's signals; rebound to the turn notifier.
+	ActivitySink *lateActivitySink
 	// ArtifactVersions is the one artifact version capturer. The session
 	// service deletes artifacts through it so a delete holds the capture lock.
 	ArtifactVersions   *artifactversions.Capturer
@@ -80,7 +82,8 @@ func startLifecycle(ctx context.Context, dataDir string, store *sqlite.Store, ru
 		lifecycle.WithDataDir(dataDir),
 	)
 	rp := reaper.New(lcm, store, runtime, reaper.Config{Logger: logger})
-	activityPoller := activityobserver.New(store, lcm, runtime, agents, activityobserver.Config{Logger: logger, DataDir: dataDir})
+	activitySink := newLateActivitySink(lcm)
+	activityPoller := activityobserver.New(store, activitySink, runtime, agents, activityobserver.Config{Logger: logger, DataDir: dataDir, Tick: screenPollTick})
 	turnFailurePoller := activityobserver.NewTurnFailureObserver(store, lcm, agents, activityobserver.TurnFailureConfig{Logger: logger})
 	artifactVersions := artifactversions.New(store, dataDir, logger)
 	artifactVersions.SetKeep(artifactKeep)
@@ -90,6 +93,7 @@ func startLifecycle(ctx context.Context, dataDir string, store *sqlite.Store, ru
 	artifactsPoller := artifactsobserver.New(store, lcm, artifactVersions, artifactsobserver.Config{Logger: logger})
 	return &lifecycleStack{
 		LCM:              lcm,
+		ActivitySink:     activitySink,
 		ArtifactVersions: artifactVersions,
 		runtimeReaper:    rp,
 		reaperDone:       rp.Start(ctx),

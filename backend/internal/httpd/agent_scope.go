@@ -13,6 +13,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/httpd/controllers"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
 	"tallpine.eu/tallpine/backend/internal/httpd/requestscope"
+	"tallpine.eu/tallpine/backend/internal/peeradmit"
 	"tallpine.eu/tallpine/backend/internal/sessiontoken"
 )
 
@@ -47,6 +48,8 @@ type agentScopes struct {
 	lanesEnabled func(ctx context.Context, project domain.ProjectID) bool
 	// devMode reads the owner-set devMode policy per request. Nil means off.
 	devMode func(ctx context.Context, project domain.ProjectID) bool
+	// peers records who is presenting each token. Nil records nothing.
+	peers *peeradmit.Checker
 }
 
 func newAgentScopes(tokens *sessiontoken.Authority, store AgentScopeStore, log *slog.Logger) *agentScopes {
@@ -68,6 +71,7 @@ func (s *agentScopes) serve(w http.ResponseWriter, r *http.Request, token string
 			"This session token is no longer valid: the session was relaunched or terminated, or the install token rotated. Restart the session's agent to get a fresh token.", nil)
 		return
 	}
+	observePeer(s.peers, r, agentCredential(agent))
 	if agent.Role == requestscope.RoleOrchestrator && s.crossProject != nil {
 		// Decided from the live engine on every request, so a toggle in Settings
 		// or a managed-policy change applies without a relaunch.
@@ -438,6 +442,7 @@ var baseAgentRules = []agentRule{
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/submit", workerUp, targetOwnProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/replan", orchestrator, targetOwnProject},
+	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/cancel", orchestrator, targetOwnProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/answers", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/defaults", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/approve", orchestrator, targetOwnOrEvalProject},

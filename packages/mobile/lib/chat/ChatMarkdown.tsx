@@ -17,12 +17,15 @@ import { iconSize, microLabel, prose, radius, space, type } from "../tokens";
 import type { ChatExcerpt } from "./types";
 import { sessionLink } from "./automationMessages";
 import { linkRegExp } from "../brand";
+import { artifactEntry } from "../artifacts";
 
 // The conversation screen decides how a tapped link opens (it knows the Tallpine host
 // that the agent's localhost links map onto); the renderer only reports the tap.
 
 const AddResponseToChat = createContext<((text: string, source?: Omit<ChatExcerpt, "text">) => void) | null>(null);
 const OpenChatLink = createContext<((url: string) => void) | null>(null);
+// Opens an artifact of this conversation's session by its entry in the artifact folder.
+const OpenArtifact = createContext<{ sessionId: string; open: (entry: string) => void } | null>(null);
 // The name to show for a session a bare `ao://sessions/…` link names, and a way
 // to ask for one the surface does not know yet.
 type SessionNames = { name?: (sessionId: string) => string | undefined; want?: (sessionId: string) => void };
@@ -52,9 +55,10 @@ function defaultOpenChatLink(url: string): void {
  * session link is a link only under a provider, and `sessionName` lets a bare
  * one read as the session's name rather than its URL.
  */
-export function ChatLinkProvider({ onLinkOpen, onAddToChat, sessionName, onSessionNameNeeded, children }: { onLinkOpen: (url: string) => void; onAddToChat?: (text: string, source?: Omit<ChatExcerpt, "text">) => void; sessionName?: (sessionId: string) => string | undefined; onSessionNameNeeded?: (sessionId: string) => void; children: ReactNode }) {
+export function ChatLinkProvider({ onLinkOpen, onArtifactOpen, artifactSessionId, onAddToChat, sessionName, onSessionNameNeeded, children }: { onLinkOpen: (url: string) => void; onArtifactOpen?: (entry: string) => void; artifactSessionId?: string; onAddToChat?: (text: string, source?: Omit<ChatExcerpt, "text">) => void; sessionName?: (sessionId: string) => string | undefined; onSessionNameNeeded?: (sessionId: string) => void; children: ReactNode }) {
 	const names = useMemo<SessionNames>(() => ({ name: sessionName, want: onSessionNameNeeded }), [onSessionNameNeeded, sessionName]);
-	return <OpenChatLink.Provider value={onLinkOpen}><AddResponseToChat.Provider value={onAddToChat ?? null}><SessionNameOf.Provider value={names}>{children}</SessionNameOf.Provider></AddResponseToChat.Provider></OpenChatLink.Provider>;
+	const artifacts = useMemo(() => artifactSessionId && onArtifactOpen ? { sessionId: artifactSessionId, open: onArtifactOpen } : null, [artifactSessionId, onArtifactOpen]);
+	return <OpenChatLink.Provider value={onLinkOpen}><OpenArtifact.Provider value={artifacts}><AddResponseToChat.Provider value={onAddToChat ?? null}><SessionNameOf.Provider value={names}>{children}</SessionNameOf.Provider></AddResponseToChat.Provider></OpenArtifact.Provider></OpenChatLink.Provider>;
 }
 
 /**
@@ -88,6 +92,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text, streaming = false
 	const styles = useThemedStyles(makeStyles);
 	const selectionColor = textSelectionColors(t).selectionColor;
 	const blocks = parseBlocks(text, { relativeImages: Boolean(resolveImage) });
+	const artifacts = useContext(OpenArtifact);
 	if (continuousSelection) {
 		// Native selection cannot cross sibling views. Keep consecutive text blocks
 		// in one text surface; tables render as real scrollable tables between runs.
@@ -124,7 +129,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text, streaming = false
 		if (block.kind === "paragraph" || block.kind === "heading") {
 			// iOS needs RN Text for inline links so VoiceOver can focus them.
 			// Keep those blocks separate without splitting the surrounding prose.
-			if (Platform.OS === "ios" && hasInlineLink(block.text, styles)) {
+			if (Platform.OS === "ios" && hasInlineLink(block.text, styles, artifacts)) {
 				flushProse();
 				content.push(<SelectableInlineText key={content.length} value={block.text} selectionColor={selectionColor} style={block.kind === "heading" ? [styles.heading, block.level > 2 && styles.smallHeading] : styles.body} styles={styles} />);
 			} else prose.push(block);
@@ -145,8 +150,17 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text, streaming = false
 	);
 });
 
-function hasInlineLink(value: string, styles: ReturnType<typeof makeStyles>): boolean {
-	return inline(value, styles).some((node) => isValidElement(node) && node.type === MarkdownLink);
+type ArtifactOpener = { sessionId: string } | null;
+
+// A node is a link only when it will act as one: an artifact path opens only under an opener that resolves it.
+function isLinkNode(node: ReactNode, artifacts: ArtifactOpener): boolean {
+	if (!isValidElement(node)) return false;
+	if (node.type === MarkdownLink) return true;
+	return node.type === ArtifactPath && Boolean(artifacts && artifactEntry((node.props as { path: string }).path, artifacts.sessionId));
+}
+
+function hasInlineLink(value: string, styles: ReturnType<typeof makeStyles>, artifacts: ArtifactOpener): boolean {
+	return inline(value, styles).some((node) => isLinkNode(node, artifacts));
 }
 
 function SelectableProseGroup({ blocks, selectionColor, styles }: { blocks: Array<Extract<MarkdownBlock, { kind: "paragraph" | "heading" }>>; selectionColor: string; styles: ReturnType<typeof makeStyles> }) {
@@ -187,9 +201,10 @@ export function SelectableResponseText({ text, blocks, source, onSelect }: { tex
 
 function SelectableInlineText({ value, selectionColor, style, styles }: { value: string; selectionColor: string; style: StyleProp<TextStyle>; styles: ReturnType<typeof makeStyles> }) {
 	const content = inline(value, styles);
+	const artifacts = useContext(OpenArtifact);
 	// The native UITextView flattens inline children into one accessibility node.
 	// Keep links on RN Text on iOS so VoiceOver can focus their link role.
-	const hasLink = content.some((node) => isValidElement(node) && node.type === MarkdownLink);
+	const hasLink = content.some((node) => isLinkNode(node, artifacts));
 	return <Text selectable uiTextView={Platform.OS !== "ios" || !hasLink} selectionColor={selectionColor} style={style}>{content}</Text>;
 }
 
@@ -261,9 +276,17 @@ function MarkdownLink({ url, label, style }: { url: string; label: string; style
 	return <Text accessibilityRole="link" style={style} onPress={() => { haptics.tap(); open(url); }}>{label}</Text>;
 }
 
+// An absolute path into this session's artifact folder: it opens the artifact; any other text stays words.
+function ArtifactPath({ path, style, plainStyle }: { path: string; style: StyleProp<TextStyle>; plainStyle?: StyleProp<TextStyle> }) {
+	const artifacts = useContext(OpenArtifact);
+	const entry = artifacts ? artifactEntry(path, artifacts.sessionId) : undefined;
+	if (!artifacts || !entry) return <Text style={plainStyle}>{path}</Text>;
+	return <Text accessibilityRole="link" accessibilityHint="Opens this artifact" style={style} onPress={() => { haptics.tap(); artifacts.open(entry); }}>{path}</Text>;
+}
+
 function inline(text: string, styles: ReturnType<typeof makeStyles>, linksPressable = true, codeStyle?: StyleProp<TextStyle>): ReactNode[] {
 	// Web links, and Tallpine's own `ao://` links; a bare session link stops before prose punctuation.
-	const pattern = linkRegExp(String.raw`(\[([^\]]+)\]\(((?:https?|@SCHEME@):\/\/[^\s)]+)\)|<((?:https?|@SCHEME@):\/\/[^\s>]+)>|\x60([^\x60]+)\x60|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*\n]+)\*|_([^_\n]+)_|(https?:\/\/[^\s<]+)|((?:@SCHEME@):\/\/sessions\/[^\s<>()]*[^\s<>().,;:!?'"]))`, "g");
+	const pattern = linkRegExp(String.raw`(\[([^\]]+)\]\(((?:https?|@SCHEME@):\/\/[^\s)]+)\)|<((?:https?|@SCHEME@):\/\/[^\s>]+)>|\x60([^\x60]+)\x60|\*\*([^*]+)\*\*|__([^_]+)__|~~([^~]+)~~|\*([^*\n]+)\*|_([^_\n]+)_|(https?:\/\/[^\s<]+)|((?:@SCHEME@):\/\/sessions\/[^\s<>()]*[^\s<>().,;:!?'"])|(\/(?:[^\s<>()\x60'"\/]+\/)*artifacts\/[^\s\/]+\/[^\s<>()\x60'"]*[^\s<>().,;:!?'"\x60\]*\/]))`, "g");
 	const nodes: ReactNode[] = [];
 	let at = 0;
 	let match: RegExpExecArray | null;
@@ -275,6 +298,13 @@ function inline(text: string, styles: ReturnType<typeof makeStyles>, linksPressa
 			const url = match[3] ?? match[4] ?? match[11] ?? match[12];
 			const label = match[2] ?? url;
 			nodes.push(linksPressable ? <MarkdownLink key={`${match.index}-link`} url={url} label={label} style={styles.link} /> : <Text key={`${match.index}-link`} style={styles.link}>{label}</Text>);
+		} else if (match[13] && (!linksPressable || /[\w.~:\/-]/.test(text[match.index - 1] ?? ""))) {
+			// Not an absolute path (`src/artifacts/x/y.ts`, `~/…`), or links are off: words.
+			nodes.push(match[13]);
+		} else if (match[13]) {
+			nodes.push(<ArtifactPath key={`${match.index}-artifact`} path={match[13]} style={styles.link} />);
+		} else if (match[5] && linksPressable && /^\/(?:[^\s<>()'"\/]+\/)*artifacts\/[^\s\/]+\/\S+$/.test(match[5])) {
+			nodes.push(<ArtifactPath key={`${match.index}-artifact`} path={match[5]} style={[styles.inlineCode, codeStyle, styles.link]} plainStyle={[styles.inlineCode, codeStyle]} />);
 		} else if (match[5]) {
 			nodes.push(<Text key={`${match.index}-code`} style={[styles.inlineCode, codeStyle]}>{match[5]}</Text>);
 		} else if (match[6] || match[7]) {

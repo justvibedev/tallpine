@@ -19,6 +19,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apispec"
 	"tallpine.eu/tallpine/backend/internal/httpd/controllers"
+	"tallpine.eu/tallpine/backend/internal/peeradmit"
 	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/presence"
 	"tallpine.eu/tallpine/backend/internal/service/accountadopt"
@@ -49,6 +50,7 @@ type APIDeps struct {
 	UsageSummary       controllers.UsageSummaryService
 	SessionMemory      controllers.SessionMemoryService
 	LastMessages       controllers.LastAssistantMessageReader
+	ServedModel        func(ctx context.Context, sess domain.Session) string
 	Models             controllers.ModelResolver
 	Instructions       controllers.WorkerInstructionsReader
 	BackgroundTasks    BackgroundTaskTracker
@@ -126,6 +128,9 @@ type APIDeps struct {
 	// StatusReadiness drives the live `status_readiness_changed` SSE frame.
 	StatusReadiness readinessSubscriber
 	Mobile          *controllers.MobileController
+	// PeerCheck records which processes present daemon tokens (B631). Nil
+	// records nothing.
+	PeerCheck *peeradmit.Checker
 	// MobileFeatureEnabled is the mobile feature flag; see ControlDeps.
 	MobileFeatureEnabled func() bool
 	BrowserLive          *BrowserLiveHub
@@ -313,7 +318,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		settingsLog:    &controllers.SettingsChangesController{Store: deps.SettingsChanges},
 		settingsReg:    &controllers.SettingsRegistryController{Values: deps.SettingsValues, Writer: deps.SettingsWriter},
 		storage:        &controllers.StorageUsageController{Svc: deps.Storage},
-		health:         &controllers.HealthController{Svc: deps.Health},
+		health:         &controllers.HealthController{Svc: deps.Health, PeerCheck: deps.PeerCheck},
 		update:         &controllers.UpdateController{Svc: deps.Update},
 		dev:            &controllers.DevController{Import: deps.DevImport},
 		tallpineImport: &controllers.AOImportController{Svc: deps.AOImport},

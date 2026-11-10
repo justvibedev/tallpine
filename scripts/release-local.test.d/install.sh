@@ -128,6 +128,14 @@ check "helpers signed by the release team with runtime pass" 'hc'
 if HOME="${T}/nohome" env -u TALLPINE_SIGN_IDENTITY -u APPLE_SIGNING_IDENTITY -u TALLPINE_RELEASE_TEAM_ID TALLPINE_RELEASE_CODESIGN="${T}/codesign-helpers" "${release}" helpers-check "${T}/helpers.app" >"${T}/out" 2>&1; then bad "unknown release team id fails closed"; else ok "unknown release team id fails closed"; fi
 check "unknown release team id says so" 'grep -q "release Team ID unknown" "${T}/out"'
 check "team id falls back to the identity suffix" 'HOME="${T}/nohome" env -u TALLPINE_RELEASE_TEAM_ID TALLPINE_SIGN_IDENTITY="Developer ID Application: Test (TESTTEAM01)" TALLPINE_RELEASE_CODESIGN="${T}/codesign-helpers" "${release}" helpers-check "${T}/helpers.app"'
+# The peer check is off on a build without the baked Team ID, so a signed build must carry it.
+mkdir -p "${T}/teamid.app/Contents/Resources/daemon"
+tc() { HOME="${T}/nohome" TALLPINE_RELEASE_TEAM_ID=TESTTEAM01 "${release}" team-id-check "${T}/teamid.app" >"${T}/out" 2>&1; }
+printf '#!/bin/sh\n[ "$1 $2" = "version --team-id" ] && echo TESTTEAM01\n' >"${T}/teamid.app/Contents/Resources/daemon/tallpine"; chmod +x "${T}/teamid.app/Contents/Resources/daemon/tallpine"
+check "daemon carrying the release team id passes" 'tc'
+printf '#!/bin/sh\necho\n' >"${T}/teamid.app/Contents/Resources/daemon/tallpine"
+if tc; then bad "daemon without a baked team id refuses the build"; else ok "daemon without a baked team id refuses the build"; fi
+check "the refusal names the daemon" 'grep -q "not built with the release Team ID" "${T}/out"'
 for bad_mode in other adhoc norunt; do
   echo "${bad_mode}" >"${H}/cloudflared/cloudflared"
   if hc; then bad "helper guard refuses ${bad_mode} helper"; else ok "helper guard refuses ${bad_mode} helper"; fi

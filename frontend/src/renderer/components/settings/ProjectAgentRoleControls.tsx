@@ -40,7 +40,8 @@ export function AgentModelField({
 	effort: string;
 	onModelChange: (value: string) => void;
 	onModeChange: (value: string) => void;
-	onEffortChange: (value: string) => void;
+	/** Omit to leave reasoning effort out of the picker (the field has nowhere to store it). */
+	onEffortChange?: (value: string) => void;
 	onValidityChange: (valid: boolean) => void;
 	allowCustomFallback?: boolean;
 	/** Cloud accepts custom model IDs and validates effort at the harness boundary. */
@@ -160,13 +161,13 @@ export function AgentModelField({
 						compact
 						recentScope={agentId}
 						menuAlign="start"
-						tuning={{
+						tuning={onEffortChange ? {
 							effort,
 							effortsWithoutModel: supportedEfforts,
 							onEffortChange,
 							onValidityChange,
 							roleLabel: t(`settings.models.${role}Role`),
-						}}
+						} : undefined}
 					/>
 				</div>
 			</div>

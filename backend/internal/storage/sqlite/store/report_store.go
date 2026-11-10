@@ -181,8 +181,12 @@ func (s *Store) ClaimPendingReportBatch(ctx context.Context, projectID domain.Pr
 	var rows []gen.Report
 	err := s.inTx(ctx, "claim project report batch", func(q *gen.Queries) error {
 		scheduled, err := q.ListPendingReportsByProjectSchedule(ctx, gen.ListPendingReportsByProjectScheduleParams{
-			ProjectID: string(projectID), LaneItemID: lane, Limit: 1,
+			ProjectID: string(projectID), LaneItemID: lane, Limit: 200,
 		})
+		if err != nil || len(scheduled) == 0 {
+			return err
+		}
+		scheduled, err = authoredOrderCandidates(ctx, q, projectID, lane, scheduled, at)
 		if err != nil || len(scheduled) == 0 {
 			return err
 		}

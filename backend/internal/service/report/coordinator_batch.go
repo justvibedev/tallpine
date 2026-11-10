@@ -112,7 +112,7 @@ func (c *Coordinator) PreparePiggyback(ctx context.Context, target domain.Sessio
 	}
 	var reports []domain.ReportRecord
 	for range scheduleLimit {
-		next, err := c.store.ClaimPendingReportBatch(ctx, rec.ProjectID, lane, token, c.now().UTC())
+		next, err := c.store.ClaimPendingReportBatch(domain.WithReportPiggyback(ctx), rec.ProjectID, lane, token, c.now().UTC())
 		if err != nil {
 			_ = c.release(ctx, PreparedBatch{ProjectID: rec.ProjectID, Token: token, Reports: reports}, err)
 			return PreparedBatch{}, err

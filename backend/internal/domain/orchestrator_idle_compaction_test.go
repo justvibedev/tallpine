@@ -41,14 +41,23 @@ func TestIdleCompactSkipReason(t *testing.T) {
 		"already compacted":        func(f *IdleCompactFacts) { f.CompactedAtThisActivity = true },
 		"background tasks running": func(f *IdleCompactFacts) { f.BackgroundTasks = 1 },
 		"reports pending":          func(f *IdleCompactFacts) { f.PendingReports = 1 },
-		"workers in flight":        func(f *IdleCompactFacts) { f.InFlightWorkers = []SessionID{"w"} },
-		"reviews running":          func(f *IdleCompactFacts) { f.RunningReviews = 1 },
+		"workers in flight":        func(f *IdleCompactFacts) { f.Handoff = true; f.InFlightWorkers = []SessionID{"w"} },
+		"reviews running":          func(f *IdleCompactFacts) { f.Handoff = true; f.RunningReviews = 1 },
 	} {
 		f := ready
 		mutate(&f)
 		if got := f.IdleCompactSkipReason(); got != name {
 			t.Errorf("%s: reason = %q", name, got)
 		}
+	}
+}
+
+func TestIdleCompactIgnoresWorkersAndReviews(t *testing.T) {
+	t.Parallel()
+	f := IdleCompactFacts{IdleFor: IdleCompactWait, ContextUsed: 150_000, Threshold: 100_000,
+		InFlightWorkers: []SessionID{"w"}, RunningReviews: 2}
+	if r := f.IdleCompactSkipReason(); r != "" {
+		t.Fatalf("compaction held back by workers or reviews: %s", r)
 	}
 }
 

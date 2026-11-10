@@ -97,8 +97,9 @@ func NewRouterWithControl(cfg config.Config, log *slog.Logger, termMgr *terminal
 			agents.lanesEnabled = orchestratorLanesEnabled(policyDecider(deps.AgentPolicy))
 			agents.creators, _ = deps.AgentScopes.(controllers.ProjectCreatorStore)
 			agents.evalMarked = projectEvalMarked(deps.AgentScopes)
+			agents.peers = deps.PeerCheck
 		}
-		r.Use(daemonAuthMiddleware(control.DaemonToken, control.DaemonTokenPath, control.RepairDaemonToken, agents))
+		r.Use(daemonAuthMiddleware(control.DaemonToken, control.DaemonTokenPath, control.RepairDaemonToken, agents, deps.PeerCheck))
 	}
 	// Credential routes retain their exact renderer-only boundary even for
 	// authenticated LAN callers. Check before CORS can answer a preflight.

@@ -2113,6 +2113,23 @@ export interface paths {
         patch: operations["setProjectPermissions"];
         trace?: never;
     };
+    "/api/v1/projects/{id}/role-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set only the agent, model and effort of a project's orchestrator, worker and reviewer roles */
+        patch: operations["setProjectRoleSettings"];
+        trace?: never;
+    };
     "/api/v1/projects/{id}/rules": {
         parameters: {
             query?: never;
@@ -2449,7 +2466,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get an item's current plan */
+        /** Get an item's current plan, or one of its plans by planId */
         get: operations["getBacklogItemPlan"];
         put?: never;
         /** Start planning an item (Plan now); an open plan is returned as is */
@@ -2505,6 +2522,23 @@ export interface paths {
         put?: never;
         /** Build from the approved plan although it may be stale */
         post: operations["buildBacklogPlanAnyway"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/backlog/{ref}/plan/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drop the plan that waits on the owner and stop its planner; the item stays open */
+        post: operations["cancelBacklogItemPlan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7319,11 +7353,17 @@ export interface components {
             planAutoApprove?: null | boolean;
             /** @description Planning mode (auto, always or off) for projects that set none of their own. */
             planningMode?: null | string;
+            /** @description Default reviewer harness for projects that set no reviewer of their own; empty clears it and the default model. */
+            reviewerHarness?: null | string;
+            /** @description Default reviewer model paired with the default reviewer harness. */
+            reviewerModel?: null | string;
         };
         ControllersWorkflowDefaultsResponse: {
             autoReview: boolean;
             planAutoApprove: boolean;
             planningMode: string;
+            reviewerHarness?: string;
+            reviewerModel?: string;
         };
         ConversationAccountPayload: {
             authFailureId?: string;
@@ -8679,6 +8719,16 @@ export interface components {
         ProjectResponse: {
             project: components["schemas"]["Project"];
         };
+        ProjectRoleSettingsPatch: {
+            agent?: null | string;
+            effort?: null | string;
+            model?: null | string;
+        };
+        ProjectSetRoleSettingsInput: {
+            orchestrator?: components["schemas"]["ProjectRoleSettingsPatch"];
+            reviewer?: components["schemas"]["ProjectRoleSettingsPatch"];
+            worker?: components["schemas"]["ProjectRoleSettingsPatch"];
+        };
         ProjectSkill: {
             /** @enum {string} */
             convention: "claude" | "agents" | "codex" | "tallpine";
@@ -9867,6 +9917,29 @@ export interface components {
             id: string;
             sessionId: string;
         };
+        SilentFailuresPeerCheck: {
+            admitted: {
+                [key: string]: number;
+            } | null;
+            /** Format: int64 */
+            dropped: number;
+            mode: string;
+            modeReason: string;
+            /** Format: int64 */
+            overflow: number;
+            teamId?: string;
+            wouldRefuse: components["schemas"]["SilentFailuresPeerRefusal"][];
+        };
+        SilentFailuresPeerRefusal: {
+            /** Format: int64 */
+            count: number;
+            executable: string;
+            lastPid: number;
+            lastSeen?: string;
+            reason: string;
+            route: string;
+            tokenClass: string;
+        };
         SilentFailuresReportIssue: {
             /** @description Reports claimed for delivery but never acknowledged. */
             claimed: number;
@@ -9881,6 +9954,7 @@ export interface components {
         SilentFailuresResponse: {
             chatNotAttached: components["schemas"]["SilentFailuresChatIssue"][];
             healthy: boolean;
+            peerCheck?: components["schemas"]["SilentFailuresPeerCheck"];
             reportBatches: components["schemas"]["SilentFailuresReportIssue"][];
             turnFallbacks: components["schemas"]["SilentFailuresFallbackIssue"][];
         };
@@ -17707,6 +17781,69 @@ export interface operations {
             };
         };
     };
+    setProjectRoleSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSetRoleSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     setProjectRules: {
         parameters: {
             query?: never;
@@ -19540,7 +19677,10 @@ export interface operations {
     };
     getBacklogItemPlan: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Show this plan of the item (a superseded one too) instead of the current plan. */
+                planId?: string;
+            };
             header?: never;
             path: {
                 /** @description Project that owns the backlog. */
@@ -19879,6 +20019,85 @@ export interface operations {
                 "application/json": components["schemas"]["PlanApproveRequest"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    cancelBacklogItemPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project that owns the backlog. */
+                projectId: string;
+                /** @description Item ref (B12 or 12) or item id. */
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

@@ -11,7 +11,7 @@ import (
 )
 
 // setWorkflowDefault writes one app-wide workflow default (B525).
-func (w *Writer) setWorkflowDefault(ctx context.Context, key settingsreg.Key, raw json.RawMessage) error {
+func (w *Writer) setWorkflowDefault(ctx context.Context, key settingsreg.Key, raw json.RawMessage, plan []planned) error {
 	setter, ok := w.AppSettings.(interface {
 		SetWorkflowDefaults(ctx context.Context, update settingssvc.WorkflowDefaultsUpdate) (settingssvc.Snapshot, error)
 	})
@@ -28,6 +28,23 @@ func (w *Writer) setWorkflowDefault(ctx context.Context, key settingsreg.Key, ra
 		var on bool
 		_ = json.Unmarshal(raw, &on)
 		update.PlanAutoApprove = &on
+	case "app.workflowDefaults.reviewerHarness":
+		var h domain.ReviewerHarness
+		_ = json.Unmarshal(raw, &h)
+		update.ReviewerHarness = &h
+		// A batch that also sets the model applies both together, so the
+		// outcome does not depend on which key comes first.
+		for _, p := range plan {
+			if p.def.Key == "app.workflowDefaults.reviewerModel" {
+				var m string
+				_ = json.Unmarshal(p.value, &m)
+				update.ReviewerModel = &m
+			}
+		}
+	case "app.workflowDefaults.reviewerModel":
+		var m string
+		_ = json.Unmarshal(raw, &m)
+		update.ReviewerModel = &m
 	default:
 		var on bool
 		_ = json.Unmarshal(raw, &on)

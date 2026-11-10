@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -136,4 +137,37 @@ func parseEnvPairs(pairs []string) (map[string]string, error) {
 		env[key] = value
 	}
 	return env, nil
+}
+
+// setRoleEffort sets or clears <role>.agentConfig.effort, pruning emptied
+// parents so a clear leaves no stray objects.
+func setRoleEffort(cfg map[string]any, role, effort string) {
+	if effort == "" {
+		if m, ok := cfg[role].(map[string]any); ok {
+			setAgentConfigEffort(m, "")
+			pruneEmptyConfig(cfg, role)
+		}
+		return
+	}
+	setAgentConfigEffort(nestedConfig(cfg, role), effort)
+}
+
+// setAgentConfigEffort sets or clears parent.agentConfig.effort.
+func setAgentConfigEffort(parent map[string]any, effort string) {
+	setNestedConfigString(parent, "agentConfig", "effort", effort)
+}
+
+// setReviewerEffort sets or clears agentConfig.effort on every configured
+// reviewer. Setting needs at least one reviewer to attach to.
+func setReviewerEffort(cfg map[string]any, effort string) error {
+	list, _ := cfg["reviewers"].([]any)
+	if len(list) == 0 && effort != "" {
+		return usageError{errors.New("--reviewer-effort needs a configured reviewer; set --reviewer first")}
+	}
+	for _, item := range list {
+		if m, ok := item.(map[string]any); ok {
+			setAgentConfigEffort(m, effort)
+		}
+	}
+	return nil
 }

@@ -3,7 +3,7 @@ import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { settingsQueryKey } from "./useSettings";
 
 /** Changes the app-wide workflow defaults projects inherit (Settings, Reviews). */
-export type WorkflowDefaultsPatch = { autoReview?: boolean; planningMode?: "auto" | "always" | "off"; planAutoApprove?: boolean };
+export type WorkflowDefaultsPatch = { autoReview?: boolean; planningMode?: "auto" | "always" | "off"; planAutoApprove?: boolean; reviewerHarness?: string; reviewerModel?: string };
 
 export function useUpdateWorkflowDefaults() {
 	const queryClient = useQueryClient();

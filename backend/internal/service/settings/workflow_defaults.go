@@ -19,6 +19,10 @@ type WorkflowDefaultsUpdate struct {
 	AutoReview      *bool
 	PlanningMode    *domain.PlanningMode
 	PlanAutoApprove *bool
+	// ReviewerHarness and ReviewerModel set the app-wide default reviewer; an
+	// empty harness clears it (and its model).
+	ReviewerHarness *domain.ReviewerHarness
+	ReviewerModel   *string
 }
 
 // WorkflowDefaults reports the app-wide workflow defaults. An unreadable store
@@ -51,6 +55,20 @@ func (s *Service) SetWorkflowDefaults(ctx context.Context, update WorkflowDefaul
 	}
 	if update.PlanAutoApprove != nil {
 		next.PlanAutoApprove = *update.PlanAutoApprove
+	}
+	if update.ReviewerHarness != nil {
+		// A model belongs to its harness: a changed harness drops the old model
+		// unless the same update names a new one.
+		if *update.ReviewerHarness != next.ReviewerHarness && update.ReviewerModel == nil {
+			next.ReviewerModel = ""
+		}
+		next.ReviewerHarness = *update.ReviewerHarness
+	}
+	if update.ReviewerModel != nil {
+		next.ReviewerModel = *update.ReviewerModel
+	}
+	if next.ReviewerHarness == "" {
+		next.ReviewerModel = ""
 	}
 	if err := st.SetWorkflowDefaults(ctx, next.Normalized(), s.now()); err != nil {
 		return Snapshot{}, err

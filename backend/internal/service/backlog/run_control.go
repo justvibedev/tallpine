@@ -155,6 +155,9 @@ func (s *RunService) SetItem(ctx context.Context, projectID domain.ProjectID, ac
 			if up.Status == domain.BacklogRunItemActive && items[i].Reason == domain.BacklogRunReasonPlanPending {
 				return transitionError("%s waits for its plan to be approved", items[i].ItemRef())
 			}
+			if up.Status == domain.BacklogRunItemActive && items[i].Reason == domain.BacklogRunReasonPlanCancelled {
+				return transitionError("the plan for %s was cancelled: the owner plans it again or skips it", items[i].ItemRef())
+			}
 			if err := applyItemUpdate(*r, &items[i], up, active); err != nil {
 				return err
 			}

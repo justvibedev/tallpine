@@ -51,6 +51,11 @@ func ReviewConversationOwner(id string) ConversationOwner {
 	return ConversationOwner{Kind: ConversationOwnerReview, ID: id}
 }
 
+// ReviewChatHostID is the persistent chat host id of a reviewer chat.
+func ReviewChatHostID(reviewID string) SessionID {
+	return SessionID("review-" + reviewID)
+}
+
 // ConversationScope says whether a conversation belongs to a project (the
 // orchestrator narrative, which outlives any single orchestrator session) or to
 // one session (a worker).

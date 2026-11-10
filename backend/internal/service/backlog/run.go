@@ -50,6 +50,7 @@ func NewRunService(d RunDeps) *RunService {
 	s := &RunService{store: d.Store, notify: d.Notify, enabled: d.Enabled, plans: d.Plans, newID: d.NewID, now: d.Now}
 	if d.Plans != nil {
 		d.Plans.SetObserver(s.onPlanChange)
+		d.Plans.SetCancelObserver(s.onPlanCancelled)
 	}
 	return s
 }

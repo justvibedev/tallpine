@@ -129,6 +129,13 @@ func (s *Service) runBackgroundWake(id domain.SessionID, retry bool) {
 		s.wakeMu.Unlock()
 		return
 	}
+	// RetryQueuedWakes picks due sessions before it starts them, so a wake that
+	// fails in between has already scheduled its next retry: starting now would
+	// be an attempt inside the backoff window that deferWake does not count.
+	if pending, ok := s.wakeRetries[id]; retry && ok && pending.next.After(s.now()) {
+		s.wakeMu.Unlock()
+		return
+	}
 	s.backgroundWakes[id] = true
 	s.wakeMu.Unlock()
 	go func() {

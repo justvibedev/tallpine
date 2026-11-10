@@ -142,12 +142,21 @@ func (m *Manager) spawnResolveModelAndMode(ctx context.Context, st *spawnState) 
 			mode = domain.SessionModeTUI
 		}
 		if mode == domain.SessionModeChat {
-			resolved, err := m.resolveAgentConfig(ctx, st.policy, *cfg, project.Config)
-			if err != nil {
+			resolved, err := m.resolveChatAgentConfig(ctx, st.policy, *cfg, project.Config)
+			switch {
+			case err != nil && !modeExplicitlyRequested && cfg.Harness == domain.HarnessClaudeCode &&
+				(errors.Is(err, ErrUnsupportedModel) || errors.Is(err, ports.ErrModelCapabilitiesUnavailable)) && domain.IsClaudeModelID(agentConfig.Model):
+				// Chat cannot confirm a model the account list lacks (it would
+				// keep Claude Code's own model); a terminal session can run it.
+				m.logger.Warn("spawn: default Chat cannot confirm an unlisted model; falling back to TUI",
+					"harness", cfg.Harness, "model", agentConfig.Model, "error", err)
+				mode = domain.SessionModeTUI
+			case err != nil:
 				return spawnFail(fmt.Errorf("spawn: %w", err))
+			default:
+				cfg.AgentConfig = resolved
+				cfg.AgentConfigResolved = true
 			}
-			cfg.AgentConfig = resolved
-			cfg.AgentConfigResolved = true
 		}
 	}
 	if mode == domain.SessionModeTUI && (cfg.Harness == domain.HarnessClaudeCode || cfg.Harness == domain.HarnessCodex || strings.TrimSpace(cfg.AgentConfig.Effort) != "") {

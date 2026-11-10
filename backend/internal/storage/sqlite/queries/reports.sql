@@ -59,8 +59,25 @@ LIMIT ?;
 -- name: ListPendingReportsByProjectSchedule :many
 SELECT * FROM reports
 WHERE project_id = ? AND delivery_state = 'pending' AND lane_item_id = ?
-ORDER BY available_at, created_at, id
+ORDER BY created_at, id
 LIMIT ?;
+
+-- name: HoldReportsBehindRetry :execrows
+-- Keeps authored order: while an older retry batch backs off until hold_until,
+-- the lane's newer non-urgent reports wait for it instead of overtaking it. A
+-- head backing off for a busy orchestrator passes its marker on, so expediting
+-- the head (orchestrator idle again) releases them too.
+UPDATE reports SET available_at = sqlc.arg(hold_until),
+    last_error = CASE WHEN sqlc.arg(busy_reason) != '' THEN sqlc.arg(busy_reason) ELSE last_error END
+WHERE project_id = sqlc.arg(project_id) AND delivery_state = 'pending'
+  AND lane_item_id = sqlc.arg(lane_item_id) AND delivery_batch_id != sqlc.arg(batch_id)
+  AND available_at < sqlc.arg(hold_until)
+  AND state NOT IN ('needs_input', 'stuck') AND synthesized = 0;
+
+-- name: UrgentReportsDue :one
+SELECT COUNT(*) FROM reports
+WHERE project_id = ? AND delivery_state = 'pending' AND lane_item_id = ?
+  AND available_at <= ? AND (state IN ('needs_input', 'stuck') OR synthesized = 1);
 
 -- name: AssignPendingReportsToBatch :exec
 UPDATE reports

@@ -592,6 +592,41 @@ func (q *Queries) GetReportInterrupt(ctx context.Context, sessionID string) (tim
 	return last_interrupted_at, err
 }
 
+const holdReportsBehindRetry = `-- name: HoldReportsBehindRetry :execrows
+UPDATE reports SET available_at = ?1,
+    last_error = CASE WHEN ?2 != '' THEN ?2 ELSE last_error END
+WHERE project_id = ?3 AND delivery_state = 'pending'
+  AND lane_item_id = ?4 AND delivery_batch_id != ?5
+  AND available_at < ?1
+  AND state NOT IN ('needs_input', 'stuck') AND synthesized = 0
+`
+
+type HoldReportsBehindRetryParams struct {
+	HoldUntil  time.Time
+	BusyReason interface{}
+	ProjectID  string
+	LaneItemID string
+	BatchID    string
+}
+
+// Keeps authored order: while an older retry batch backs off until hold_until,
+// the lane's newer non-urgent reports wait for it instead of overtaking it. A
+// head backing off for a busy orchestrator passes its marker on, so expediting
+// the head (orchestrator idle again) releases them too.
+func (q *Queries) HoldReportsBehindRetry(ctx context.Context, arg HoldReportsBehindRetryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, holdReportsBehindRetry,
+		arg.HoldUntil,
+		arg.BusyReason,
+		arg.ProjectID,
+		arg.LaneItemID,
+		arg.BatchID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const latestOpenNeedsInputReports = `-- name: LatestOpenNeedsInputReports :many
 SELECT r.session_id, r.id, r.note, r.created_at
 FROM reports r
@@ -762,7 +797,7 @@ func (q *Queries) ListPendingReports(ctx context.Context, arg ListPendingReports
 const listPendingReportsByProjectSchedule = `-- name: ListPendingReportsByProjectSchedule :many
 SELECT id, session_id, project_id, state, note, message, created_at, delivery_state, available_at, settlement_deadline, repeat_count, claim_token, claimed_at, delivery_attempts, acknowledged_at, last_error, delivery_batch_id, synthesized, lane_item_id FROM reports
 WHERE project_id = ? AND delivery_state = 'pending' AND lane_item_id = ?
-ORDER BY available_at, created_at, id
+ORDER BY created_at, id
 LIMIT ?
 `
 
@@ -1222,4 +1257,23 @@ func (q *Queries) SweepFreshLaneReportsIntoBatch(ctx context.Context, arg SweepF
 		return nil, err
 	}
 	return items, nil
+}
+
+const urgentReportsDue = `-- name: UrgentReportsDue :one
+SELECT COUNT(*) FROM reports
+WHERE project_id = ? AND delivery_state = 'pending' AND lane_item_id = ?
+  AND available_at <= ? AND (state IN ('needs_input', 'stuck') OR synthesized = 1)
+`
+
+type UrgentReportsDueParams struct {
+	ProjectID   string
+	LaneItemID  string
+	AvailableAt time.Time
+}
+
+func (q *Queries) UrgentReportsDue(ctx context.Context, arg UrgentReportsDueParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, urgentReportsDue, arg.ProjectID, arg.LaneItemID, arg.AvailableAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }

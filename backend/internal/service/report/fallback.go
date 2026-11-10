@@ -104,30 +104,52 @@ func oldestReport(reports []domain.ReportRecord) time.Time {
 // own orchestrator; empty means they reach it. parent may be empty, in which
 // case the worker's persisted parent is used.
 func (s *Service) RouteNotice(ctx context.Context, project domain.ProjectID, worker, parent domain.SessionID) string {
-	lister, ok := s.store.(interface {
+	own, parentID, ok := s.recipient(ctx, project, worker, parent)
+	if !ok || own {
+		return ""
+	}
+	if parentID != "" {
+		return fmt.Sprintf("project %s has no orchestrator: reports go to the parent orchestrator %s", project, parentID)
+	}
+	return fmt.Sprintf("project %s has no orchestrator: reports go to the Inbox after %d minutes", project, int(NoOrchestratorGrace.Minutes()))
+}
+
+// HasRecipient reports whether a report from the worker reaches a live
+// orchestrator: its project's own, or the parent orchestrator of another
+// project that spawned it. Without one reports only reach the Inbox later.
+func (s *Service) HasRecipient(ctx context.Context, project domain.ProjectID, worker domain.SessionID) bool {
+	own, parentID, ok := s.recipient(ctx, project, worker, "")
+	return ok && (own || parentID != "")
+}
+
+// recipient resolves where reports go: own is the project's live orchestrator,
+// parentID a live parent orchestrator elsewhere (only looked up without own).
+// ok is false when the store cannot list sessions.
+func (s *Service) recipient(ctx context.Context, project domain.ProjectID, worker, parent domain.SessionID) (own bool, parentID domain.SessionID, ok bool) {
+	lister, canList := s.store.(interface {
 		ListSessions(context.Context, domain.ProjectID) ([]domain.SessionRecord, error)
 	})
-	if !ok {
-		return ""
+	if !canList {
+		return false, "", false
 	}
 	recs, err := lister.ListSessions(ctx, project)
 	if err != nil {
-		return ""
+		return false, "", false
 	}
 	if _, live := domain.PickOrchestrator(recs, nil, ""); live {
-		return ""
+		return true, "", true
 	}
-	if ls, ok := s.store.(LaneStore); ok && parent == "" && worker != "" {
+	if ls, isLane := s.store.(LaneStore); isLane && parent == "" && worker != "" {
 		if sl, err := ls.SessionLane(ctx, worker); err == nil {
 			parent = sl.ParentSessionID
 		}
 	}
 	if parent != "" {
 		if rec, found, err := s.store.GetSession(ctx, parent); err == nil && found && liveOrchestratorElsewhere(rec, project) {
-			return fmt.Sprintf("project %s has no orchestrator: reports go to the parent orchestrator %s", project, parent)
+			return false, parent, true
 		}
 	}
-	return fmt.Sprintf("project %s has no orchestrator: reports go to the Inbox after %d minutes", project, int(NoOrchestratorGrace.Minutes()))
+	return false, "", true
 }
 
 func liveOrchestratorElsewhere(rec domain.SessionRecord, project domain.ProjectID) bool {

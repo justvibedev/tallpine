@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,8 +67,10 @@ type harness struct {
 	now       time.Time
 	// onCompact runs inside the fake Compact, standing in for the real turn.
 	onCompact func() error
-	logs      *bytes.Buffer
-	sweeper   *Sweeper
+	// onState runs at the start of the fake State read.
+	onState func()
+	logs    *bytes.Buffer
+	sweeper *Sweeper
 }
 
 // newHarness is one idle orchestrator above its threshold with one worker
@@ -87,7 +90,12 @@ func newHarness() *harness {
 	}
 	h.sweeper = New(Deps{
 		Store: h.store,
-		State: func(context.Context, domain.SessionID) (ChatState, bool) { return h.state, true },
+		State: func(context.Context, domain.SessionID) (ChatState, bool) {
+			if h.onState != nil {
+				h.onState()
+			}
+			return h.state, true
+		},
 		Compact: func(_ context.Context, id domain.SessionID) error {
 			h.compacted = append(h.compacted, id)
 			if h.onCompact != nil {
@@ -169,11 +177,6 @@ func TestSweepSkipsWhileSomethingIsInFlight(t *testing.T) {
 		"pending report": func(h *harness) {
 			h.store.reports["w1"] = append(h.store.reports["w1"], domain.ReportRecord{State: domain.ReportDone, DeliveryState: domain.ReportPending})
 		},
-		"worker in flight": func(h *harness) {
-			h.store.reports["w1"] = append(h.store.reports["w1"], domain.ReportRecord{State: domain.ReportNeedsInput, DeliveryState: domain.ReportAcknowledged})
-		},
-		"worker never reported": func(h *harness) { h.store.reports["w1"] = nil },
-		"review running":        func(h *harness) { h.store.reviews["w1"] = []domain.ReviewRun{{}} },
 	} {
 		h := newHarness()
 		setup(h)
@@ -184,21 +187,100 @@ func TestSweepSkipsWhileSomethingIsInFlight(t *testing.T) {
 	}
 }
 
-// A worker with an open task that has been quiet past the stall limit no
-// longer holds compaction back, and is logged once.
-func TestSweepDoesNotWaitForAStalledWorker(t *testing.T) {
+// B649: workers with open tasks and running reviews do not hold a compaction
+// back; a quiet orchestrator compacts during a merge wave.
+func TestSweepCompactsWithWorkersAndReviewsInFlight(t *testing.T) {
 	h := newHarness()
+	h.store.reports["w1"] = append(h.store.reports["w1"], domain.ReportRecord{State: domain.ReportNeedsInput, DeliveryState: domain.ReportAcknowledged})
+	h.store.reviews["w1"] = []domain.ReviewRun{{}}
+	h.sweep(t)
+	if len(h.compacted) != 1 {
+		t.Fatalf("compacted = %v, want one compaction with a worker and a review in flight", h.compacted)
+	}
+}
+
+// The sweep and the hibernation hook run together; both would pass the checks
+// before either records its attempt, and the loser would fail "cannot compact
+// while a turn is in flight". The second check parks the first in State.
+func TestConcurrentChecksCompactOnce(t *testing.T) {
+	h := newHarness()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	h.onState = func() {
+		first := false
+		once.Do(func() { first = true })
+		if first {
+			close(entered)
+			<-release
+		}
+	}
+	done := make(chan bool)
+	go func() { ok, _ := h.sweeper.MaybeCompact(context.Background(), "orch"); done <- ok }()
+	<-entered
+	if ok, err := h.sweeper.MaybeCompact(context.Background(), "orch"); !ok || err != nil {
+		t.Fatalf("second check ok=%v err=%v, want it to keep the chat awake and stand aside", ok, err)
+	}
+	close(release)
+	if !<-done || len(h.compacted) != 1 {
+		t.Fatalf("compacted = %v, want one", h.compacted)
+	}
+}
+
+// The skip reason is logged once while it stays the same.
+func TestSkipReasonLoggedOnChange(t *testing.T) {
+	h := newHarness()
+	h.bg = 1
+	h.sweep(t)
+	h.sweep(t)
+	if n := strings.Count(h.logs.String(), "reason=\"background tasks running\""); n != 1 {
+		t.Fatalf("skip reason logged %d times, want once:\n%s", n, h.logs)
+	}
+}
+
+// In handoff mode a worker with an open task that has been quiet past the
+// stall limit no longer holds the handoff back, and is logged once.
+func TestSweepDoesNotWaitForAStalledWorker(t *testing.T) {
+	h, handed := handoffHarness()
 	h.store.sessions[1].Activity.LastActivityAt = now.Add(-3 * time.Hour)
 	h.store.reports["w1"] = []domain.ReportRecord{{State: domain.ReportCheckpoint, DeliveryState: domain.ReportAcknowledged}}
 	h.sweep(t)
-	if len(h.compacted) != 1 {
-		t.Fatalf("compacted = %v, want the orchestrator despite the stalled worker", h.compacted)
+	if len(*handed) != 1 {
+		t.Fatalf("handed off %v, want a handoff despite the stalled worker", *handed)
 	}
-	h.state.ContextUsed = 151_000 // a real turn since the compaction
+	h.state.ContextUsed = 151_000 // a real turn since the handoff
 	h.sweep(t)
 	if n := strings.Count(h.logs.String(), "worker with an open task has been quiet"); n != 1 {
 		t.Fatalf("stalled worker logged %d times, want once:\n%s", n, h.logs)
 	}
+}
+
+// A handoff, unlike a compaction, waits for workers and reviews in flight.
+func TestIdleHandoffWaitsForWorkersAndReviews(t *testing.T) {
+	for name, setup := range map[string]func(*harness){
+		"worker in flight": func(h *harness) {
+			h.store.reports["w1"] = append(h.store.reports["w1"], domain.ReportRecord{State: domain.ReportNeedsInput, DeliveryState: domain.ReportAcknowledged})
+		},
+		"worker never reported": func(h *harness) { h.store.reports["w1"] = nil },
+		"review running":        func(h *harness) { h.store.reviews["w1"] = []domain.ReviewRun{{}} },
+	} {
+		h, handed := handoffHarness()
+		setup(h)
+		h.sweep(t)
+		if len(*handed) != 0 || len(h.compacted) != 0 {
+			t.Errorf("%s: handed off %v, compacted %v", name, *handed, h.compacted)
+		}
+	}
+}
+
+func handoffHarness() (*harness, *[]domain.SessionID) {
+	h := newHarness()
+	h.state.Handoff = true
+	handed := &[]domain.SessionID{}
+	h.sweeper.deps.Handoff = func(_ context.Context, id domain.SessionID) error {
+		*handed = append(*handed, id)
+		return nil
+	}
+	return h, handed
 }
 
 // A worker routed to another lane's orchestrator does not hold this one back,
@@ -212,7 +294,7 @@ func TestSweepCountsOnlyWorkersRoutedToTheOrchestrator(t *testing.T) {
 		t.Fatalf("default orchestrator held back by another lane's worker: ok=%v err=%v", ok, err)
 	}
 	if ok, _ := h.sweeper.MaybeCompact(context.Background(), "lane-orch"); ok {
-		t.Fatal("lane orchestrator compacted with its own worker in flight")
+		t.Fatal("lane orchestrator compacted with its own worker's report pending")
 	}
 	h = newHarness()
 	h.store.sessions[1].IsTerminated = true
