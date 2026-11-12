@@ -225,6 +225,8 @@ func (s *Service) settleLiveAndPlanBoundary(ctx context.Context, l *launch) erro
 			l.providerBoundary.ReplayTruncated = true
 			// Stored with the branch, so a later restart of its provider reads it back.
 			l.providerBoundary.HandoffNote = l.cfg.ProviderSwitch.Bootstrap
+		} else if note := contextResetNote(*l.cfg); note != "" {
+			l.providerBoundary.HandoffNote = note
 		}
 	}
 	return nil

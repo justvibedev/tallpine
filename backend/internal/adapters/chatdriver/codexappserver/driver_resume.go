@@ -82,6 +82,9 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		_ = conv.Terminate()
 		// Otherwise not falling back to thread/start: silently opening a new
 		// conversation would present unrelated history as continuous.
+		if codexThreadMissing(err) {
+			return nil, fmt.Errorf("%w: %w: %w", ports.ErrChatResumeFailed, ports.ErrChatConversationMissing, err)
+		}
 		return nil, fmt.Errorf("%w: %w", ports.ErrChatResumeFailed, err)
 	}
 

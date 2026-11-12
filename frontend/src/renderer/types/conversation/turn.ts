@@ -99,6 +99,15 @@ export interface ConversationUsageLimit {
 	resumeError?: string;
 }
 
+/** The daemon will retry this failed turn on its own after a network error. */
+export interface ConversationTurnAutoRetry {
+	attempt: number;
+	maxAttempts: number;
+	nextAt: string;
+	/** The network is down; the retry waits for it without spending an attempt. */
+	offline?: boolean;
+}
+
 export interface ConversationTurn {
 	id: string;
 	state: TurnState;
@@ -118,6 +127,10 @@ export interface ConversationTurn {
 	hasHumanPrompt?: boolean;
 	errorMessage?: string;
 	usageLimit?: ConversationUsageLimit;
+	/** The failure was a transient network or API-availability error. */
+	transientError?: boolean;
+	/** Set while the daemon waits to retry this failed turn on its own. */
+	autoRetry?: ConversationTurnAutoRetry;
 	requestedAt: string;
 	startedAt?: string;
 	completedAt?: string;

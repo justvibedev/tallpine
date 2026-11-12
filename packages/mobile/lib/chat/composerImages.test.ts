@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { MAX_IMAGE_BYTES } from "./composerAttachments";
-import { acceptImageAssets, addComposerImages } from "./composerImages";
+import { acceptImageAssets, addComposerImages, placeAddedImages, removeComposerAttachment } from "./composerImages";
+import { stagedAttachmentParts, withAttachmentReferences } from "./messageAttachments";
 
 const png = (id: string, fileSize = 5) => ({ uri: id, fileName: id, mimeType: "image/png", fileSize, base64: "aGVsbG8=" });
 
@@ -36,4 +37,25 @@ it("adds the native paste's overflow to the notice once, beside the composer's o
 	expect(addComposerImages([], [png("a"), { uri: "big", mimeType: "image/png", fileSize: MAX_IMAGE_BYTES + 1 }], "size").error).toBe("Each image must be under 10 MB. Images must total under 25 MB.");
 	const nine = 9 * 1024 * 1024;
 	expect(addComposerImages([], [png("a", nine), png("b", nine), png("c", nine)], "size")).toMatchObject({ added: 2, error: "Images must total under 25 MB." });
+});
+
+it("inserts an [IMGn] per added image at the caret, numbered after the images already attached", () => {
+	const before = [{ kind: "image" }, { kind: "resource" }];
+	expect(placeAddedImages("compare with", 7, before, 2)).toEqual({ text: "compare [IMG2] [IMG3] with", caret: 21 });
+	expect(placeAddedImages("same", 2, before, 0)).toEqual({ text: "same", caret: 2 });
+});
+
+it("removing an image drops its placeholder and renumbers the later ones; a file leaves the text alone", () => {
+	const items = [{ id: "a", kind: "image" }, { id: "f", kind: "resource" }, { id: "b", kind: "image" }, { id: "c", kind: "image" }];
+	const removed = removeComposerAttachment("[IMG1] then [IMG2] and [IMG3]", items, "b");
+	expect(removed).toEqual({ text: "[IMG1] then and [IMG2]", items: [items[0], items[1], items[3]] });
+	expect(removeComposerAttachment("keep [IMG1]", items, "f").text).toBe("keep [IMG1]");
+});
+
+it("sends the placeholders to the agent and shows the owner only their text and the tiles", () => {
+	const paths = [".tallpine/attachments/attachment-a.png", ".tallpine/attachments/attachment-b.png"];
+	const sent = withAttachmentReferences("after [IMG2], before [IMG1]", paths);
+	expect(sent).toContain("after [IMG2], before [IMG1]\n\n---\n");
+	expect(sent).toContain(`- [IMG1] ${paths[0]}\n- [IMG2] ${paths[1]}`);
+	expect(stagedAttachmentParts(sent)).toEqual({ body: "after [IMG2], before [IMG1]", attachments: paths });
 });

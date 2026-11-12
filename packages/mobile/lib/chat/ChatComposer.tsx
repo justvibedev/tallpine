@@ -31,6 +31,7 @@ import { PRReviewPrompt } from "./PRReviewPrompt";
 import { decodeResponseDraft, encodeResponseDraft, responseReplyText, responseExcerpts, excerptDraftText, isChatExcerpt, type ResponseQuote, type ResponseQuoteRequest } from "./responseQuotes";
 import { afterDraftWrites } from "./pendingSend";
 import { Attachment } from "./composerAttachments";
+import { removeComposerAttachment } from "./composerImages";
 import { changesAccessibilityLabel, makeStyles } from "./chatComposerStyles";
 import { useComposerActions } from "./useComposerActions";
 import { useImagePaste } from "./useImagePaste";
@@ -290,7 +291,7 @@ export function ChatComposer({
 					<View style={styles.reviewDivider} />
 				</Animated.View> : null}
 			{voice.state === "starting" || voice.state === "recording" ? <View style={styles.voice}><Feather name="mic" size={12} color={t.red} /><Text style={styles.voiceText}>{voice.partial || (voice.state === "starting" ? "Keep holding…" : "Listening…")}</Text></View> : null}
-			{attachments.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachments}>{attachments.map((item) => <View key={item.id} style={styles.attachment}>{item.kind === "image" ? <Image accessibilityIgnoresInvertColors source={{ uri: `data:${item.image.mimeType};base64,${item.image.data}` }} style={styles.attachmentImage} /> : <Feather name="file-text" size={12} color={t.accent} />}<Text numberOfLines={1} style={styles.attachmentName}>{item.name}</Text><Pressable hitSlop={7} accessibilityLabel={`Remove ${item.name}`} onPress={() => { haptics.tap(); setAttachments((old) => old.filter((candidate) => candidate.id !== item.id)); }}><Feather name="x" size={12} color={t.textTertiary} /></Pressable></View>)}</ScrollView> : null}
+			{attachments.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachments}>{attachments.map((item) => <View key={item.id} style={styles.attachment}>{item.kind === "image" ? <Image accessibilityIgnoresInvertColors source={{ uri: `data:${item.image.mimeType};base64,${item.image.data}` }} style={styles.attachmentImage} /> : <Feather name="file-text" size={12} color={t.accent} />}<Text numberOfLines={1} style={styles.attachmentName}>{item.name}</Text><Pressable hitSlop={7} accessibilityLabel={`Remove ${item.name}`} onPress={() => { haptics.tap(); const removed = removeComposerAttachment(latestText.current, attachments, item.id); latestText.current = removed.text; setText(removed.text); setAttachments(removed.items); }}><Feather name="x" size={12} color={t.textTertiary} /></Pressable></View>)}</ScrollView> : null}
 			{/* Composer-local only. Conversation and action failures are banners above
 			    the timeline; echoing them here showed one failure twice. */}
 			{localError || voice.error ? <Text accessibilityRole="alert" style={styles.error}>{localError || voice.error}</Text> : null}

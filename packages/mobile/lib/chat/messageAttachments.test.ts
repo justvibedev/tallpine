@@ -1,3 +1,4 @@
+import { PLACEHOLDER_BLOCK_HEADER } from "@tallpine/shared/chat/image-placeholders";
 import { describe, expect, it } from "vitest";
 import { attachmentTileSize, editableMessageText, isImageAttachment, isSameAttachmentLoad, stagedAttachmentParts, withAttachmentReferences, withEditedBody } from "./messageAttachments";
 
@@ -43,7 +44,7 @@ describe("mobile Chat staged attachments", () => {
 
 	it("round-trips the suffix mobile sends, using the wording desktop can also render", () => {
 		const text = withAttachmentReferences("  Fix this  ", [".tallpine/attachments/attachment-9.png"]);
-		expect(text).toBe("Fix this\n\nAttached files (read these files in the workspace):\n- .tallpine/attachments/attachment-9.png");
+		expect(text).toBe("Fix this\n\n---\n" + PLACEHOLDER_BLOCK_HEADER + "\n- [IMG1] .tallpine/attachments/attachment-9.png");
 		expect(stagedAttachmentParts(text)).toEqual({ body: "Fix this", attachments: [".tallpine/attachments/attachment-9.png"] });
 		expect(withAttachmentReferences("unchanged", [])).toBe("unchanged");
 	});

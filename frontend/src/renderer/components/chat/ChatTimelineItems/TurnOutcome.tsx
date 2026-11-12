@@ -1,6 +1,6 @@
 import { cn } from "../../../lib/utils";
 import { UsageLimitNotice } from "../UsageLimitNotice";
-import { type ConversationUsageLimit } from "../../../types/conversation";
+import { type ConversationTurnAutoRetry, type ConversationUsageLimit } from "../../../types/conversation";
 import { linkifiedProviderErrorText } from "./ErrorActivityRow";
 import { formatDuration } from "./format";
 import { TwoRowTimelineMarker } from "./markers";
@@ -20,12 +20,29 @@ export function TurnOutcome({
 	error,
 	retry,
 	usageLimit,
+	autoRetry,
+	retriedTransient,
 }: {
 	state: "recovered" | "interrupted" | "failed";
 	error?: string;
 	retry?: TurnOutcomeRetryControl;
 	usageLimit?: ConversationUsageLimit;
+	/** The daemon is retrying this network failure on its own. */
+	autoRetry?: ConversationTurnAutoRetry;
+	/** A network failure a later attempt already retried. */
+	retriedTransient?: boolean;
 }) {
+	// A dropped connection the daemon is handling is not a problem to act on, so
+	// it reads as a quiet status line rather than the red failure block.
+	if (state === "failed" && autoRetry) {
+		const message = autoRetry.offline
+			? "Waiting for the network to reconnect…"
+			: `Reconnecting… (attempt ${autoRetry.attempt} of ${autoRetry.maxAttempts})`;
+		return <TwoRowTimelineMarker message={message} detail={error} />;
+	}
+	if (state === "failed" && retriedTransient) {
+		return <TwoRowTimelineMarker message="Connection dropped; the turn was sent again" detail={error} />;
+	}
 	if (state === "failed" && usageLimit) {
 		return (
 			<div className="flex min-w-0 flex-col gap-2 py-3">

@@ -4,6 +4,19 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [Unreleased]
+
+### Added
+- Pasting or attaching an image puts an inline `[IMG1]` placeholder at the cursor on desktop and phone; the agent gets a compact mapping to the staged images, and your message bubble shows only your text and thumbnails (#1162).
+- Chat attachments of ended sessions are swept up by the cleanup service (#1161).
+- A turn that fails on a transient network or API-availability error is retried automatically with backoff, and waits for connectivity instead of failing; the chat shows "Reconnecting..." rather than an error (#1166).
+
+### Fixed
+- An orchestrator whose saved conversation is gone starts fresh instead of failing to resume (#1163).
+- Orphaned agent-browser daemons are reaped (#1164).
+- Pending plan questions reach the owner on the phone and clear once answered (#1167).
+- Local CI build alerts reach the main-health orchestrator (#1165, #1168).
+
 ## [0.13.13]
 
 ### Added

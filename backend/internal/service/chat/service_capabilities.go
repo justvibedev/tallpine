@@ -145,6 +145,16 @@ func withHandoffNote(systemPrompt, note string) string {
 	return strings.TrimSpace(strings.TrimSpace(systemPrompt) + "\n\nTallpine provider handoff context:\n\n" + note)
 }
 
+// contextResetNote is the note that seeds a fresh provider conversation
+// replacing a lost one. A resume keeps the provider's own context, so only a
+// start with no provider conversation takes it.
+func contextResetNote(cfg StartConfig) string {
+	if cfg.ProviderConversationID != "" {
+		return ""
+	}
+	return strings.TrimSpace(cfg.ContextResetNote)
+}
+
 // switchBranchUnanswered reports a branch a switch opened whose agent never
 // finished a turn, so its provider may never have saved the conversation.
 // Resuming it would fail forever; it can start fresh, since its handoff note

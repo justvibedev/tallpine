@@ -3,8 +3,9 @@
 #
 # B631: the local-CI loop and the detached release build run under launchd, outside Tallpine, so a
 # signed daemon refuses their messages. They append alerts to <results>/alerts.tsv instead (see
-# scripts/lib/notify.sh). A Tallpine automation runs this script on a schedule and its agent passes
-# whatever it prints to the main-health orchestrator with its own scoped CLI.
+# scripts/lib/notify.sh). The daemon passes them to the main-health orchestrator itself (B680,
+# backend/internal/service/localcialerts), sharing this script's cursor; run this by hand, or from the
+# automation below, only when no daemon is running.
 #
 #   scripts/local-ci/alerts            print new alerts ("<UTC time> <message>", one per line), then advance
 #   scripts/local-ci/alerts --peek     print them without advancing

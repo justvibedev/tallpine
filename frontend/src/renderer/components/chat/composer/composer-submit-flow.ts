@@ -1,12 +1,13 @@
 import { apiErrorCode, apiErrorMessage, getApiBaseUrl } from "../../../lib/api-client";
 import { isSupportedImageAttachment, type FileAttachment, MAX_ATTACHMENTS, type FileAttachmentPayload } from "../../../hooks/useFileAttachments";
 import { cancelChatComposerMutation, clearRejectedChatComposerDelivery, getChatComposerMutation, isChatComposerMutationCurrent, prepareChatComposerDelivery, readChatSessionDraft, type ChatDraftMutationToken } from "../../../lib/chat-drafts";
-import { attachmentURL, proseBesideImages } from "@tallpine/shared/chat/attachments";
+import { attachmentURL, isImageAttachment, proseBesideImages, splitInlineImagePaths, withAttachmentReferences } from "@tallpine/shared/chat/attachments";
+import { placeholdersForPaths } from "@tallpine/shared/chat/image-placeholders";
 import { useComposerDraftState } from "./useComposerDraftState";
 import { useComposerSuggestions } from "./useComposerSuggestions";
 import { useComposerDraftPersistence } from "./useComposerDraftPersistence";
 import { ChatComposerProps } from "./ComposerProps";
-import { withAttachmentReferences, withResizeNotes, MAX_NATIVE_IMAGE_BYTES, MAX_NATIVE_IMAGES_BYTES, DEFINITIVE_SEND_REJECTIONS, AGENT_SWITCH_FAILED } from "./composer-model";
+import { resizeOriginals, MAX_NATIVE_IMAGE_BYTES, MAX_NATIVE_IMAGES_BYTES, DEFINITIVE_SEND_REJECTIONS, AGENT_SWITCH_FAILED } from "./composer-model";
 
 
 export type SubmitEnv = {
@@ -107,8 +108,16 @@ export async function prepareSubmission(env: SubmitEnv, forceSteer: boolean | un
 		return;
 	}
 	const shouldSteer = Boolean(forceSteer && !savingQueuedEdit && contextReferences.length === 0);
-	const referenced = withAttachmentReferences(body, attachedPaths);
-	const message = (referenced ? withResizeNotes(referenced, settledAttachments) : "") ||
+	// The agent reads [IMGn] where each image chip sat, then the block naming each
+	// image's staged path and full original; the bubble shows only the text.
+	const images = attachedPaths.filter(isImageAttachment);
+	const withPlaceholders = placeholdersForPaths(body, images, (text) => splitInlineImagePaths(text, (path) => images.includes(path)));
+	const originals = {
+		...Object.fromEntries(visibleRetainedAttachments.flatMap((attachment) =>
+			attachment.path && attachment.originalPath ? [[attachment.path, attachment.originalPath]] : [])),
+		...resizeOriginals(settledAttachments),
+	};
+	const message = withAttachmentReferences(withPlaceholders, attachedPaths, originals) ||
 		(contextReferences.length > 0 ? `Use the attached ${contextReferences.length} chat excerpt(s) as context` : "");
 	// Ordinary delivery reserves its exact draft before these staged reads await.
 	// Queue editors use their existing owner/revision CAS before mutation.

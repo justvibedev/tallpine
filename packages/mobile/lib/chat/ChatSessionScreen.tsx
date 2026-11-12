@@ -1,5 +1,6 @@
 import { Feather } from "../icons";
 import { PlanCards } from "../plan/PlanCards";
+import { isOrchestratorChat } from "./chatSessionKind";
 import { useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -369,7 +370,7 @@ export function ChatSessionScreen({ session: boardSession }: { session: MobileCh
 				/>
 				</FilesNavigationContext.Provider>
 			</ChatLinkProvider>
-			{"kind" in session && session.kind === "orchestrator" && session.projectId ? <PlanCards cfg={config} projectId={session.projectId} /> : null}
+			{isOrchestratorChat(session) && session.projectId ? <PlanCards cfg={config} projectId={session.projectId} /> : null}
 			{editingMessage ? <View style={{ height: chatKeyboard.restingInset }} /> : null}
 			<View style={editingMessage ? styles.composerHidden : undefined}>
 				<ChatComposer
@@ -417,7 +418,7 @@ export function ChatSessionScreen({ session: boardSession }: { session: MobileCh
 					restingInset={chatKeyboard.restingInset}
 					dockRiseOverride={chatKeyboard.dockRiseOverride}
 					openingTurnId={startupView?.openingTurnId}
-					orchestrator={"kind" in session && session.kind === "orchestrator"}
+					orchestrator={isOrchestratorChat(session)}
 					startingAgentName={startupShown && !startupView?.failed ? startupView?.agentName : undefined}
 				/>
 			</View>

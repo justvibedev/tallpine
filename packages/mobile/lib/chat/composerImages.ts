@@ -1,4 +1,5 @@
 import { sniffImageMimeType } from "../imageMime";
+import { insertImagePlaceholders, removeImagePlaceholder } from "@tallpine/shared/chat/image-placeholders";
 import { MAX_ATTACHMENTS, MAX_IMAGE_BYTES, MAX_IMAGE_BYTES_TOTAL, SUPPORTED_IMAGE_TYPES, type Attachment } from "./composerAttachments";
 
 /** Which batch limit a native paste stopped at before reading the rest. */
@@ -59,4 +60,25 @@ export function addComposerImages<T extends { kind: string; bytes?: number }>(cu
 	const skipped = overflow ? OVERFLOW_NOTICES[overflow] : undefined;
 	const error = skipped && !accepted.error?.includes(skipped) ? [accepted.error, skipped].filter(Boolean).join(" ") : accepted.error;
 	return { items: [...current, ...accepted.added], error, added: accepted.added.length };
+}
+
+/**
+ * The composer text after `added` images joined `before` (the list they were
+ * added to): one `[IMGn]` each at the caret, numbered after the images already
+ * there, so the agent reads where each image belongs.
+ */
+export function placeAddedImages(text: string, caret: number, before: readonly { kind: string }[], added: number): { text: string; caret: number } {
+	if (added <= 0) return { text, caret };
+	const existing = before.filter((item) => item.kind === "image").length;
+	return insertImagePlaceholders(text, { start: caret, end: caret }, existing + 1, added);
+}
+
+/** Removes one attachment; an image takes its `[IMGn]` with it and later images renumber down. */
+export function removeComposerAttachment<T extends { id: string; kind: string }>(text: string, items: readonly T[], id: string): { text: string; items: T[] } {
+	const images = items.filter((item) => item.kind === "image");
+	const index = images.findIndex((item) => item.id === id);
+	return {
+		text: index < 0 ? text : removeImagePlaceholder(text, index + 1),
+		items: items.filter((item) => item.id !== id),
+	};
 }

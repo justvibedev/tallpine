@@ -12,6 +12,7 @@ import {
 	type ConversationActivity,
 	type ConversationItem,
 	type ConversationTurn,
+	type ConversationTurnAutoRetry,
 	type ConversationUsageLimit,
 	type TurnDiff,
 } from "../../types/conversation";
@@ -139,6 +140,10 @@ export type TimelineGroup = {
 		durationMs?: number;
 		error?: string;
 		usageLimit?: ConversationUsageLimit;
+		/** The daemon is retrying this transient failure on its own. */
+		autoRetry?: ConversationTurnAutoRetry;
+		/** A transient failure that a later attempt already retried. */
+		retriedTransient?: boolean;
 	};
 	/** What the turn changed on disk, when the daemon reported anything. */
 	diff?: TurnDiff;
@@ -356,6 +361,8 @@ export function groupByTurn(snapshot: ConversationSnapshot, hasPlanTab: boolean)
 		group.outcome = {
 			state: turn.state,
 			usageLimit: turn.usageLimit,
+			autoRetry: turn.autoRetry,
+			retriedTransient: Boolean(turn.transientError && turn.hasRetryAttempt),
 			durationMs: settledTurnDuration(turn),
 			error: turn.errorMessage || (turn.state === "failed"
 				? [...group.items].reverse().find(

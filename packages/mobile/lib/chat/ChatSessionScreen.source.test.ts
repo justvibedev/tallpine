@@ -115,3 +115,12 @@ describe("ao://sessions links in the conversation", () => {
 		expect(source).toContain("<ChatLinkProvider onLinkOpen={openLink} onArtifactOpen={openArtifact} artifactSessionId={session.id} sessionName={nameOfSession}");
 	});
 });
+
+describe("orchestrator chat detection", () => {
+	it("gates the plan cards and the composer copy on isOrchestratorChat, not on kind alone", () => {
+		// Board-listed orchestrators carry no `kind` (B681, B552).
+		expect(screenSource).toContain("{isOrchestratorChat(session) && session.projectId ? <PlanCards");
+		expect(screenSource).toContain("orchestrator={isOrchestratorChat(session)}");
+		expect(screenSource).not.toContain('session.kind === "orchestrator"');
+	});
+});

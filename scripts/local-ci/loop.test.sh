@@ -17,6 +17,9 @@ export TALLPINE_LOCAL_CI_DIR="$tmp/ci" HOME="$tmp/home"
 mkdir -p "$HOME"
 # shellcheck disable=SC1091
 LOOP_SOURCE_ONLY=1 source "$here/loop.sh"
+# Every verify run in this file wipes its scratch dir: keep it isolated and short, never the live loop's.
+LIVE_SCRATCH="/tmp/tp-ci-$(id -u)"; live_before="$(stat -f %i "$LIVE_SCRATCH" 2>/dev/null)"
+export VERIFY_SCRATCH="$(mktemp -d /tmp/tplt.XXXXXX)"; trap 'rm -rf "$tmp" "$VERIFY_SCRATCH"' EXIT
 
 # verify's summary parsing.
 cat >"$tmp/v.out" <<'OUT'
@@ -107,13 +110,15 @@ printf '#!/bin/bash\nsleep 3\n' >"$WORK/scripts/verify"
 ( cd "$WORK" && SNAPSHOT_EVERY=1 SUPERSEDE_CHECK=1000 run_verify_supervised "$new" "$tmp/s.log" "$tmp/s.rc" --all >/dev/null 2>&1 )
 grep -q 'sleep 3' "$tmp/s.ps" && head -1 "$tmp/s.ps" | grep -q '^# ' && grep -q 'PPID' "$tmp/s.ps" || { fails=$((fails + 1)); echo "FAIL: no ps snapshot of the verify tree: $(cat "$tmp/s.ps" 2>&1)"; }
 
-# B602: a verify run gets its own TMPDIR under the CI dir, and nothing it leaves there survives.
-mkdir -p "$H/tmp/verify-scratch"; echo stale >"$H/tmp/verify-scratch/left-by-killed-run"
+# B602: a verify run gets its own short TMPDIR, and nothing it leaves there survives.
+SCR="$VERIFY_SCRATCH"; mkdir -p "$SCR"; echo stale >"$SCR/left-by-killed-run"
 printf '#!/bin/bash\necho "$TMPDIR" >"%s"; ls "$TMPDIR" >>"%s"; touch "$TMPDIR/go-build1"\n' "$tmp/td" "$tmp/td" >"$WORK/scripts/verify"
 ( cd "$WORK" && SUPERSEDE_CHECK=1000 run_verify_supervised "$new" "$tmp/s.log" "$tmp/s.rc" --all >/dev/null 2>&1 )
-[ "$(sed -n 1p "$tmp/td")" = "$H/tmp/verify-scratch" ] || { fails=$((fails + 1)); echo "FAIL: verify TMPDIR was $(sed -n 1p "$tmp/td")"; }
+[ "$(sed -n 1p "$tmp/td")" = "$SCR" ] || { fails=$((fails + 1)); echo "FAIL: verify TMPDIR was $(sed -n 1p "$tmp/td")"; }
 grep -q left-by-killed-run "$tmp/td" && { fails=$((fails + 1)); echo "FAIL: a killed run's scratch was not swept"; }
-[ ! -e "$H/tmp/verify-scratch" ] || { fails=$((fails + 1)); echo "FAIL: verify scratch survived the run"; }
+[ ! -e "$SCR" ] || { fails=$((fails + 1)); echo "FAIL: verify scratch survived the run"; }
+DEF="$(sed -n 's/.*VERIFY_SCRATCH:-\(.*\)}" #.*/\1/p' "$here/loop.sh")"; DEF="$(eval "echo \"$DEF\"")"
+[ -n "$DEF" ] && [ "${#DEF}" -le 30 ] || { fails=$((fails + 1)); echo "FAIL: default scratch '$DEF' is ${#DEF} bytes; tests bind unix sockets under it (104-byte sun_path limit)"; }
 
 # B360: LOOP_CORE_BUDGET is clamped (non-numeric -> 12, below 4 -> 4) so -p / GOMAXPROCS are never 0.
 for b in 0 abc 2 ""; do
@@ -246,6 +251,31 @@ rm "$seed/frontend/node_modules/.package-lock.json"; expect_installs 4 "with an 
 rm -rf "$seed/packages/product-ui/node_modules"; expect_installs 4 "with a missing tree"
 seed_locks 1.0.1 3.0.0; NPM_FAIL=1 expect_installs 1 "when the install fails"
 seed_locks 1.0.1 2.0.0; expect_installs 4 "back on the last good lockfile after a failed install"
+
+# B680: an installed loop that is not main's (an old copy kept calling the refusing daemon) raises one
+# alert per main version, and none while the installed loop.sh and notify.sh match main.
+(
+  inst="$tmp/inst" WORK="$tmp/stalework" ALERTS="$tmp/stale-alerts.tsv"
+  mkdir -p "$inst" "$WORK/scripts/local-ci" "$WORK/scripts/lib"
+  cp "$here/loop.sh" "$WORK/scripts/local-ci/loop.sh"; cp "$here/../lib/notify.sh" "$WORK/scripts/lib/notify.sh"
+  cp "$here/loop.sh" "$inst/loop.sh"; cp "$here/../lib/notify.sh" "$inst/notify.sh"; LOOP_SELF="$inst/loop.sh"
+  stale_count() { cat "$ALERTS" 2>/dev/null | grep -c 'differs from main'; }
+  warn_stale_install aaaaaaaaaaaa >/dev/null; [ "$(stale_count)" = 0 ] || echo "FAIL: alerted while current"
+  echo '# old' >>"$inst/loop.sh"
+  warn_stale_install bbbbbbbbbbbb >/dev/null; warn_stale_install cccccccccccc >/dev/null
+  [ "$(stale_count)" = 1 ] || echo "FAIL: stale loop.sh: $(stale_count) alerts, want 1"
+  grep -q "($inst/loop.sh) differs from main bbbbbbbbbb: run scripts/local-ci/install" "$ALERTS" || echo "FAIL: stale alert text: $(cat "$ALERTS")"
+  echo '# newer main' >>"$WORK/scripts/local-ci/loop.sh"
+  warn_stale_install dddddddddddd >/dev/null; [ "$(stale_count)" = 2 ] || echo "FAIL: a newer main did not alert again"
+  cp "$WORK/scripts/local-ci/loop.sh" "$inst/loop.sh"; warn_stale_install eeeeeeeeeeee >/dev/null
+  [ "$(stale_count)" = 2 ] || echo "FAIL: alerted after reinstall"
+  echo '# old' >>"$inst/notify.sh"
+  warn_stale_install ffffffffffff >/dev/null; [ "$(stale_count)" = 3 ] || echo "FAIL: a stale notify.sh did not alert"
+) >"$tmp/stale.out" 2>&1
+grep -q FAIL "$tmp/stale.out" && { fails=$((fails + 1)); cat "$tmp/stale.out"; }
+
+# The live loop's scratch dir must be exactly as this test found it (not created, not recreated).
+[ "$(stat -f %i "$LIVE_SCRATCH" 2>/dev/null)" = "$live_before" ] || { fails=$((fails + 1)); echo "FAIL: the test touched the live scratch dir $LIVE_SCRATCH"; }
 
 [ "$fails" = 0 ] && echo "local-ci loop tests: ok"
 exit "$fails"

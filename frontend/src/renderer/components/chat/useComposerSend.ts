@@ -9,7 +9,8 @@ import {
 import { apiErrorCode } from "../../lib/api-client";
 import { useStableCallback } from "./useStableCallback";
 import { type StoredComposerAttachment } from "./composer/composer-model";
-import { stagedAttachmentParts, attachmentName } from "@tallpine/shared/chat/attachments";
+import { stagedAttachmentParts, attachmentName, isImageAttachment } from "@tallpine/shared/chat/attachments";
+import { pathsForPlaceholders } from "@tallpine/shared/chat/image-placeholders";
 import { type QueuedMessage } from "./QueuedMessageDock";
 
 /**
@@ -112,12 +113,13 @@ export function useComposerSend({
 			// Paths and native blocks have no shared persisted identity.
 			const attachments: StoredComposerAttachment[] = parts.attachments.map((path) => ({
 				id: path, name: attachmentName(path), path,
+				...(parts.originals?.[path] ? { originalPath: parts.originals[path] } : {}),
 			}));
 			(message.content ?? []).forEach((item, index) => {
 				attachments.push({ id: `content-${index}`, contentIndex: index, contentType: item.type,
 					name: item.name || (item.type === "image" ? `Image ${index + 1}` : item.uri || "Attachment") });
 			});
-			updateQueueDraft({ turnId, ownerId: crypto.randomUUID(), text: parts.body, expectedRevision: message.revision, attachments, stagedAttachments: [] });
+			updateQueueDraft({ turnId, ownerId: crypto.randomUUID(), text: pathsForPlaceholders(parts.body, parts.attachments.filter(isImageAttachment)), expectedRevision: message.revision, attachments, stagedAttachments: [] });
 		},
 		[newWorkDisabled, queuedMessages, updateQueueDraft],
 	);

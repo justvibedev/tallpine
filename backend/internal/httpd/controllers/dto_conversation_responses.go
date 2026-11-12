@@ -13,9 +13,15 @@ type ConversationTurnResponse struct {
 	HasHumanPrompt bool                            `json:"hasHumanPrompt,omitempty"`
 	ErrorMessage   string                          `json:"errorMessage,omitempty"`
 	UsageLimit     *ConversationUsageLimitResponse `json:"usageLimit,omitempty"`
-	RequestedAt    string                          `json:"requestedAt"`
-	StartedAt      *string                         `json:"startedAt,omitempty"`
-	CompletedAt    *string                         `json:"completedAt,omitempty"`
+	// TransientError marks a failed turn whose error was a transient network or
+	// API-availability failure, the kind the daemon retries on its own.
+	TransientError bool `json:"transientError,omitempty"`
+	// AutoRetry is set while the daemon waits to retry this failed turn on its own
+	// after a transient network or API-availability error.
+	AutoRetry   *ConversationTurnAutoRetryResponse `json:"autoRetry,omitempty"`
+	RequestedAt string                             `json:"requestedAt"`
+	StartedAt   *string                            `json:"startedAt,omitempty"`
+	CompletedAt *string                            `json:"completedAt,omitempty"`
 	// RolledBack marks a turn an undo discarded. Its messages and activities are
 	// absent from this snapshot because the agent no longer remembers them; the turn
 	// is still reported so a client can say what was taken back rather than letting
@@ -43,6 +49,15 @@ type ConversationUsageLimitResponse struct {
 	ResetsAt    *string `json:"resetsAt,omitempty"`
 	AutoResume  bool    `json:"autoResume"`
 	ResumeError string  `json:"resumeError,omitempty"`
+}
+
+// ConversationTurnAutoRetryResponse is a pending automatic retry of a failed turn.
+type ConversationTurnAutoRetryResponse struct {
+	Attempt     int    `json:"attempt"`
+	MaxAttempts int    `json:"maxAttempts"`
+	NextAt      string `json:"nextAt"`
+	// Offline reports that the network is down and the retry waits for it.
+	Offline bool `json:"offline,omitempty"`
 }
 
 // ConversationPlanResponse is the agent's plan for one turn.

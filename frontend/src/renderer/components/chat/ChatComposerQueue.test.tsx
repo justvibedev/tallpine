@@ -830,7 +830,7 @@ it("reserves a restored image send across remount and preserves typing during na
 		await act(async () => { pending.resolve(response); });
 		await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
 		expect(onSend).toHaveBeenCalledWith(
-			"inspect restored image\n\nAttached files (read these files in the workspace):\n- .tallpine/attachments/restored.png",
+			expect.stringMatching(/^inspect restored image\n\n---\n.+\n- \[IMG1\] \.tallpine\/attachments\/restored\.png$/),
 			[{ mimeType: "image/png", data: "iVBORw==" }],
 			delivery?.clientMessageId,
 		);

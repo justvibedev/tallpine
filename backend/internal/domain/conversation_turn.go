@@ -39,9 +39,12 @@ type ConversationTurn struct {
 	// ErrorMessage is set for failed turns. Interrupted turns are not errors.
 	ErrorMessage string                  `json:"errorMessage,omitempty"`
 	UsageLimit   *ConversationUsageLimit `json:"usageLimit,omitempty"`
-	RequestedAt  time.Time               `json:"requestedAt"`
-	StartedAt    *time.Time              `json:"startedAt,omitempty"`
-	CompletedAt  *time.Time              `json:"completedAt,omitempty"`
+	// AutoRetry is a snapshot-only overlay: the live controller has scheduled an
+	// automatic retry of this failed turn after a transient network error.
+	AutoRetry   *ConversationTurnAutoRetry `json:"autoRetry,omitempty"`
+	RequestedAt time.Time                  `json:"requestedAt"`
+	StartedAt   *time.Time                 `json:"startedAt,omitempty"`
+	CompletedAt *time.Time                 `json:"completedAt,omitempty"`
 	// RolledBackAt is set when a rollback discarded this turn provider-side. The
 	// row survives because Tallpine does not destroy durable facts, but the agent no
 	// longer remembers the exchange, so its messages and activities are left out
@@ -57,6 +60,17 @@ type ConversationTurn struct {
 	// the whole plan on every change, so only the latest is an answer and the
 	// earlier ones are the same plan with fewer steps ticked off.
 	Plan *ConversationPlan `json:"plan,omitempty"`
+}
+
+// ConversationTurnAutoRetry is a pending automatic retry of a failed turn.
+type ConversationTurnAutoRetry struct {
+	// Attempt is the retry about to run, from 1 to MaxAttempts.
+	Attempt     int `json:"attempt"`
+	MaxAttempts int `json:"maxAttempts"`
+	// NextAt is when the retry, or the next connectivity check, runs.
+	NextAt time.Time `json:"nextAt"`
+	// Offline reports that the network is down and the retry waits for it.
+	Offline bool `json:"offline,omitempty"`
 }
 
 // ConversationTurnDiff is the turn's changed-file summary.

@@ -46,17 +46,6 @@ export const SEND_CONCEAL_MS = 3000;
 export const MAX_NATIVE_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_NATIVE_IMAGES_BYTES = 25 * 1024 * 1024;
 
-/**
- * Tell the agent to open the attached files. Mirrors the wording spawn uses for a task
- * brief, so the same instruction reaches the agent whether a file was attached at
- * spawn or mid-conversation.
- */
-export function withAttachmentReferences(text: string, paths: string[]): string {
-	if (paths.length === 0) return text;
-	const lead = text.trim() === "" ? "" : `${text}\n\n`;
-	return `${lead}Attached files (read these files in the workspace):\n${paths.map((path) => `- ${path}`).join("\n")}`;
-}
-
 /** A saved draft descriptor back as an attachment, keeping its resize note and original link. */
 export function attachmentFromDraft(attachment: ChatDraftAttachment): FileAttachment {
 	return {
@@ -76,17 +65,12 @@ export function draftResize({ resize }: Pick<FileAttachment, "resize">): { resiz
 		: {};
 }
 
-/** Tells the agent which images were downscaled and where the full original is. */
-export function withResizeNotes(
-	message: string,
+/** Each downscaled image's staged path mapped to its full original, for the placeholder block. */
+export function resizeOriginals(
 	attachments: ReadonlyArray<Partial<Pick<FileAttachment, "stagedPath" | "resize">>>,
-): string {
-	const lines = attachments.flatMap(({ stagedPath, resize }) =>
-		stagedPath && resize?.originalPath
-			? [`- ${stagedPath} was ${resize.note}; full original: ${resize.originalPath}`]
-			: []);
-	if (lines.length === 0) return message;
-	return `${message}\n\nDownscaled images (open the original only if the detail matters):\n${lines.join("\n")}`;
+): Record<string, string> {
+	return Object.fromEntries(attachments.flatMap(({ stagedPath, resize }) =>
+		stagedPath && resize?.originalPath ? [[stagedPath, resize.originalPath]] : []));
 }
 
 export function restoredDeliveryNotice(delivery: ChatComposerDelivery | undefined): string | null {

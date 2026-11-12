@@ -320,4 +320,31 @@ describe("ChatWorkspace retry", () => {
 
 		expect(screen.queryByRole("button", { name: "Retry this turn" })).toBeNull();
 	});
+
+	it("shows a quiet reconnecting line while the daemon retries a network failure", () => {
+		const snapshot = failedSnapshot();
+		snapshot.turns = snapshot.turns.map((turn) =>
+			turn.id === "turn-1"
+				? { ...turn, transientError: true, autoRetry: { attempt: 1, maxAttempts: 5, nextAt: turn.requestedAt } }
+				: turn,
+		);
+
+		render(<ChatWorkspace snapshot={snapshot} retryControl={{ retry: vi.fn() }} />);
+
+		expect(screen.getByText("Reconnecting… (attempt 1 of 5)")).toBeInTheDocument();
+		expect(screen.queryByText("The agent ran into a problem")).toBeNull();
+		expect(screen.queryByRole("button", { name: "Retry this turn" })).toBeNull();
+	});
+
+	it("keeps a network failure quiet once it was retried", () => {
+		const snapshot = failedSnapshot();
+		snapshot.turns = snapshot.turns.map((turn) =>
+			turn.id === "turn-1" ? { ...turn, transientError: true, hasRetryAttempt: true } : turn,
+		);
+
+		render(<ChatWorkspace snapshot={snapshot} retryControl={{ retry: vi.fn() }} />);
+
+		expect(screen.getByText("Connection dropped; the turn was sent again")).toBeInTheDocument();
+		expect(screen.queryByText("The agent ran into a problem")).toBeNull();
+	});
 });

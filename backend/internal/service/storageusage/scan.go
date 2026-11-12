@@ -139,7 +139,7 @@ func scan(r roots, ix sessionIndex) []Entry {
 		if _, ok := ix[domain.SessionID(se.Name())]; ok {
 			ix.ownedBySession(e, domain.SessionID(se.Name()), "")
 		}
-		e.Protected = "referenced by conversations"
+		e.Protected = "referenced by conversations; files of ended sessions are removed after 14 days"
 	})
 	// Salvaged work: <data>/salvage/<session>/<stamp>.
 	each(filepath.Join(r.data, "salvage"), func(se os.DirEntry, sdir string) {

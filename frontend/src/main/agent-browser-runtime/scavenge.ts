@@ -2,12 +2,14 @@
 
 import { readFile, readdir, readlink, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import { ProcessCommandLookup, ProcessSignal, reapAgentBrowserDaemons } from "./reap";
 import { BROWSER_RUNTIME_RECLAIM_GRACE_MS, NativeProcessResult, RUNTIME_OWNER_FILE, RUNTIME_OWNER_MARKER, RUNTIME_ROOT_PATTERN, RuntimeOwner, SOCKET_ALIAS_PATTERN, STREAM_ALREADY_DISABLED_MESSAGE, defaultProcessAlive, isRecord, numberIsInteger, removePath } from "./common";
 
 export async function scavengeBrowserRuntime(
 	dataDir: string,
 	processAlive: (pid: number) => boolean = defaultProcessAlive,
 	log: (message: string) => void = () => undefined,
+	reap: { command?: ProcessCommandLookup; signal?: ProcessSignal } = {},
 ): Promise<void> {
 	let entries;
 	try {
@@ -42,7 +44,10 @@ export async function scavengeBrowserRuntime(
 			log(`agent-browser runtime scan skipped ${entry.name}: ${String(error)}`);
 			continue;
 		}
-		removals.push(removePath(runDir, log, `stale runtime root ${entry.name}`));
+		// The owner died without closing its native daemons; they outlive it as PPID 1.
+		removals.push(
+			reapAgentBrowserDaemons(path.join(runDir, "s"), log, reap).then(() => removePath(runDir, log, `stale runtime root ${entry.name}`)),
+		);
 	}
 	await Promise.all(removals);
 }

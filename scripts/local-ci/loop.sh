@@ -125,8 +125,10 @@ run_verify_supervised() {
   rm -f "$rcf" "${rcf%.rc}.ps" # a stale snapshot from the previous run must never be reported
   # B602: the job's TMPDIR is /tmp; a run killed mid-test would strand its go-build and t.TempDir
   # trees there. Keep them under a directory this run owns and wipes (a kill is swept next run).
-  local scratch="$H/tmp/verify-scratch"
-  rm -rf "$scratch"; mkdir -p "$scratch"
+  # Keep it SHORT: tests bind unix sockets and compare process paths under TMPDIR, and macOS caps
+  # sun_path at 104 bytes ($H/tmp/verify-scratch pushed them over and turned main red).
+  local scratch="${VERIFY_SCRATCH:-/tmp/tp-ci-$(id -u)}" # overridable so the loop tests never touch the live run's dir
+  rm -rf "$scratch"; mkdir -p -m 700 "$scratch"
   TMPDIR="$scratch" python3 -I -c 'import os,sys
 os.setsid()
 os.execv("/bin/bash",["bash","-c",sys.argv[1],"bash"]+sys.argv[2:])' \
@@ -299,6 +301,20 @@ record_alert() {
   echo "[$(date)] $(tp_record_alert "$ALERTS" "$1")"
 }
 
+# B680: launchd runs the copy scripts/local-ci/install wrote, so a fix on main does nothing until it is
+# reinstalled (an old copy kept messaging the daemon, which refuses it). Alert once per main version.
+LOOP_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+warn_stale_install() {
+  local stamp="$H/stale-install-alerted" f h=""
+  for f in local-ci/loop.sh lib/notify.sh; do [ -f "$WORK/scripts/$f" ] || return 0; done
+  if cmp -s "$LOOP_SELF" "$WORK/scripts/local-ci/loop.sh" && { [ ! -f "$(dirname "$LOOP_SELF")/notify.sh" ] ||
+    cmp -s "$(dirname "$LOOP_SELF")/notify.sh" "$WORK/scripts/lib/notify.sh"; }; then rm -f "$stamp"; return 0; fi
+  h="$(cat "$WORK/scripts/local-ci/loop.sh" "$WORK/scripts/lib/notify.sh" | shasum -a 256 | cut -d' ' -f1)"
+  [ "$(cat "$stamp" 2>/dev/null)" = "$h" ] && return 0
+  echo "$h" >"$stamp"
+  record_alert "[local-ci] the running loop ($LOOP_SELF) differs from main ${1:0:10}: run scripts/local-ci/install from a main checkout, then launchctl kickstart -k gui/\$(id -u)/ee.justdev.tallpine.local-ci."
+}
+
 # B590: the repo is private and the machine-wide gh login can be any account, so which account reaches it
 # is decided here, per repo: $H/github-user if set, else the ambient login, else any other gh account that can.
 export GIT_TERMINAL_PROMPT=0
@@ -372,6 +388,7 @@ while true; do
   sha="$(git -C "$WORK" rev-parse origin/main)"
   if [ "$1" = "--once" ] || ! grep -q "^main	$sha	" "$TSV" 2>/dev/null; then
     git -C "$WORK" checkout -q --force --detach "$sha" && git -C "$WORK" clean -qfdx -e node_modules
+    warn_stale_install "$sha"
     gc_kb=$(du -sk "$H/gocache" 2>/dev/null | cut -f1); [ "${gc_kb:-0}" -gt 20971520 ] && { echo "[$(date)] gocache over 20G, clearing"; rm -rf "$H/gocache"; }
     echo "[$(date)] evaluating main $sha"; run_suite "$sha"; echo "[$(date)] done $sha: $(tail -1 "$TSV")"; notify_orchestrators "$sha"; build_on_green "$sha"
   fi

@@ -15,6 +15,7 @@ func (c *Controller) Close(ctx context.Context) error {
 	c.mu.Lock()
 	c.explicitClose = true
 	c.stopPauseWakeLocked()
+	c.stopTransientRetryLocked()
 	c.mu.Unlock()
 	c.once.Do(func() {
 		if preserver, ok := c.conv.(ports.ChatProviderPreserver); ok && preserver.PreservesProviderOnClose() {
@@ -43,6 +44,7 @@ func (c *Controller) Terminate(ctx context.Context) error {
 	c.mu.Lock()
 	c.explicitClose = true
 	c.stopPauseWakeLocked()
+	c.stopTransientRetryLocked()
 	if c.forkCancel != nil {
 		c.forkCancel()
 	}

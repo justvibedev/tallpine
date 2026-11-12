@@ -180,7 +180,7 @@ describe("ChatComposer steering", () => {
 		await userEvent.keyboard("{Control>}{Enter}{/Control}");
 		await waitFor(() => expect(stage).toHaveBeenCalledOnce());
 		expect(onSteer).toHaveBeenCalledWith(
-			"Attached files (read these files in the workspace):\n- .tallpine/attachments/shot.png",
+			expect.stringMatching(/^---\n.+\n- \[IMG1\] \.tallpine\/attachments\/shot\.png$/),
 			[{ mimeType: "image/png", data: expect.any(String) }],
 		);
 		expect(onSend).not.toHaveBeenCalled();
@@ -231,7 +231,7 @@ describe("ChatComposer steering", () => {
 		await waitFor(() => expect(stage).toHaveBeenCalledOnce());
 		await waitFor(() =>
 			expect(onSteer).toHaveBeenCalledWith(
-				"inspect this\n\nAttached files (read these files in the workspace):\n- .tallpine/attachments/slow.png",
+				expect.stringMatching(/^inspect this\n\n---\n.+\n- \[IMG1\] \.tallpine\/attachments\/slow\.png$/),
 				[{ mimeType: "image/png", data: "iVBORw==" }],
 			),
 		);

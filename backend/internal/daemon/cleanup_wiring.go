@@ -101,6 +101,7 @@ func newCleanup(dataDir, systemTemp string, store *sqlite.Store, sessMgr any, pr
 		cleanupsvc.NewSessionTempRule(dataDir),
 		cleanupsvc.NewHarnessCacheRule(dataDir),
 		cleanupsvc.NewGoBuildCacheRule(""),
+		cleanupsvc.NewAttachmentRule(dataDir),
 		cleanupsvc.NewSystemTempRule(systemTemp, dataDir),
 	)
 	if store != nil {

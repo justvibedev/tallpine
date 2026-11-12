@@ -1,3 +1,4 @@
+import { PLACEHOLDER_BLOCK_HEADER } from "../../packages/shared/chat/image-placeholders";
 import { expect, test } from "@playwright/test";
 import { installFakeAgent } from "./support/fake-bridge";
 
@@ -138,12 +139,12 @@ test("a pasted image sits inline in the prose, in the composer and in history @T
 		transfer.items.add(new File([bytes], "image.png", { type: "image/png" }));
 		document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
 	}, png);
-	await expect(field.locator('[data-composer-token="image"]')).toHaveText("Image 1");
+	await expect(field.locator('[data-composer-token="image"]')).toHaveText("[IMG1]");
 	await page.keyboard.type("shorter");
-	await expect(field).toHaveText("Make this one Image 1 shorter");
+	await expect(field).toHaveText("Make this one [IMG1] shorter");
 	await page.screenshot({ path: test.info().outputPath("composer.png") });
 	await page.keyboard.press("Enter");
 	await expect.poll(() => sent).toEqual([
-		`Make this one ${staged} shorter\n\nAttached files (read these files in the workspace):\n- ${staged}`,
+		`Make this one [IMG1] shorter\n\n---\n${PLACEHOLDER_BLOCK_HEADER}\n- [IMG1] ${staged}`,
 	]);
 });

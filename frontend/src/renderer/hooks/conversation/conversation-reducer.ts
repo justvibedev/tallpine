@@ -130,6 +130,10 @@ export function toSnapshot(wire: WireSnapshot): ConversationSnapshot {
 				autoResume: turn.usageLimit.autoResume,
 				resumeError: turn.usageLimit.resumeError,
 			} : undefined,
+			transientError: turn.transientError,
+			autoRetry: turn.autoRetry
+				? { attempt: turn.autoRetry.attempt, maxAttempts: turn.autoRetry.maxAttempts, nextAt: turn.autoRetry.nextAt, offline: turn.autoRetry.offline }
+				: undefined,
 			requestedAt: turn.requestedAt,
 			startedAt: turn.startedAt ?? undefined,
 			completedAt: turn.completedAt ?? undefined,

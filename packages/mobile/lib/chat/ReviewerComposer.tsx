@@ -15,7 +15,7 @@ import { useVoiceInput } from "../voice/useVoiceInput";
 import { ChatAttachmentMenu } from "./ChatAttachmentMenu";
 import { ComposerGlass } from "./composer-glass";
 import { COMPOSER_FIELD_HEIGHT, COMPOSER_FIELD_MAX_HEIGHT, COMPOSER_RADIUS, composerStyleRules } from "./composerStyles";
-import { addComposerImages, type ComposerImageAsset, type PasteOverflow } from "./composerImages";
+import { addComposerImages, placeAddedImages, removeComposerAttachment, type ComposerImageAsset, type PasteOverflow } from "./composerImages";
 import { useImagePaste } from "./useImagePaste";
 import type { ChatImage, ChatResource } from "./types";
 
@@ -58,9 +58,12 @@ export function ReviewerComposer({ busy, stopped, attachmentsEnabled = true, onS
 	const latestAttachments = useRef(attachments);
 	latestAttachments.current = attachments;
 	const addImages = (assets: readonly ComposerImageAsset[], overflow?: PasteOverflow) => {
-		const added = addComposerImages(latestAttachments.current, assets, overflow);
+		const before = latestAttachments.current;
+		const added = addComposerImages(before, assets, overflow);
 		latestAttachments.current = added.items;
 		setAttachments(added.items);
+		// No caret is tracked here, so the placeholders follow what is typed.
+		if (added.added > 0) setText((old) => placeAddedImages(old, old.length, before, added.added).text);
 		setError(added.error ?? "");
 		if (added.added > 0) haptics.tap();
 	};
@@ -113,7 +116,7 @@ export function ReviewerComposer({ busy, stopped, attachmentsEnabled = true, onS
 	const sendDisabled = stopped || submitting || (!text.trim() && !attachments.length);
 	return <Animated.View style={[styles.dock, { paddingBottom: restingInset }, dockRise]}>
 		{voice.state === "starting" || voice.state === "recording" ? <View style={styles.voice}><Feather name="mic" size={12} color={t.red} /><Text style={styles.voiceText}>{voice.partial || (voice.state === "starting" ? "Keep holding…" : "Listening…")}</Text></View> : null}
-		{attachments.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachments}>{attachments.map((item) => <View key={item.id} style={styles.attachment}>{item.kind === "image" ? <Image accessibilityIgnoresInvertColors source={{ uri: `data:${item.image.mimeType};base64,${item.image.data}` }} style={styles.attachmentImage} /> : <Feather name="file-text" size={12} color={t.accent} />}<Text numberOfLines={1} style={styles.attachmentName}>{item.name}</Text><Pressable hitSlop={7} accessibilityLabel={`Remove ${item.name}`} onPress={() => { haptics.tap(); setAttachments((current) => current.filter((candidate) => candidate.id !== item.id)); }}><Feather name="x" size={12} color={t.textTertiary} /></Pressable></View>)}</ScrollView> : null}
+		{attachments.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.attachments}>{attachments.map((item) => <View key={item.id} style={styles.attachment}>{item.kind === "image" ? <Image accessibilityIgnoresInvertColors source={{ uri: `data:${item.image.mimeType};base64,${item.image.data}` }} style={styles.attachmentImage} /> : <Feather name="file-text" size={12} color={t.accent} />}<Text numberOfLines={1} style={styles.attachmentName}>{item.name}</Text><Pressable hitSlop={7} accessibilityLabel={`Remove ${item.name}`} onPress={() => { haptics.tap(); const removed = removeComposerAttachment(text, attachments, item.id); setText(removed.text); setAttachments(removed.items); }}><Feather name="x" size={12} color={t.textTertiary} /></Pressable></View>)}</ScrollView> : null}
 		{error || voice.error ? <Text accessibilityRole="alert" style={styles.error}>{error || voice.error}</Text> : null}
 		<View style={[styles.composer, stopped && { opacity: 0.55 }]}>
 			<ComposerGlass radius={COMPOSER_RADIUS} />

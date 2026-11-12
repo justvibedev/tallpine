@@ -20,9 +20,17 @@ describe("inline image paths", () => {
 		expect(proseBesideImages(b, [])).toBe(b);
 	});
 
-	it("labels attached inline images for one-line surfaces and keeps the reference block", () => {
+	it("labels attached inline images for one-line surfaces and drops the reference block", () => {
 		const block = `\n\nAttached files (read these files in the workspace):\n- ${a}\n- ${b}`;
-		expect(labelInlineImages(`make ${b} like ${a}${block}`)).toBe(`make [Image 2] like [Image 1]${block}`);
+		expect(labelInlineImages(`make ${b} like ${a}${block}`)).toBe("make [Image 2] like [Image 1]");
+	});
+
+	// The queued-message dock shows this; the placeholder block is not the owner's text.
+	it("shows only the owner's words for a placeholder message, or the attachments when there are none", () => {
+		const doc = ".tallpine/attachments/attachment-notes.pdf";
+		expect(labelInlineImages(withAttachmentReferences("compare [IMG1] with [IMG2]", [a, b]))).toBe("compare [IMG1] with [IMG2]");
+		expect(labelInlineImages(withAttachmentReferences("", [a, doc]))).toBe("[Image 1] attachment-notes.pdf");
+		expect(labelInlineImages("plain words")).toBe("plain words");
 	});
 });
 

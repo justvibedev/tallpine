@@ -14,7 +14,7 @@ import { userFacingError } from "../connectionError";
 import { encodeResponseDraft, responseReplyText, responseExcerpts, type ResponseQuote } from "./responseQuotes";
 import { afterDraftWrites } from "./pendingSend";
 import { Attachment, MAX_ATTACHMENTS, MAX_EMBEDDED_FILE_BYTES } from "./composerAttachments";
-import { addComposerImages, type ComposerImageAsset, type PasteOverflow } from "./composerImages";
+import { addComposerImages, placeAddedImages, type ComposerImageAsset, type PasteOverflow } from "./composerImages";
 import { RequestGate } from "./requestGate";
 
 export function useComposerActions({
@@ -130,9 +130,17 @@ export function useComposerActions({
 	latestAttachments.current = attachments;
 	const addImages = (assets: readonly ComposerImageAsset[], overflow?: PasteOverflow) => {
 		// Reads the latest list, so a pick or paste that outlives this render still lands.
-		const added = addComposerImages(latestAttachments.current, assets, overflow);
+		const before = latestAttachments.current;
+		const added = addComposerImages(before, assets, overflow);
 		latestAttachments.current = added.items;
 		setAttachments(added.items);
+		if (added.added > 0) {
+			const placed = placeAddedImages(latestText.current, latestCursor.current, before, added.added);
+			latestText.current = placed.text;
+			latestCursor.current = placed.caret;
+			setText(placed.text);
+			setCursor(placed.caret);
+		}
 		setLocalError(added.error);
 		return added.added > 0;
 	};

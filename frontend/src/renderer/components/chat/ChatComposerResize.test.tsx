@@ -29,8 +29,9 @@ describe("ChatComposer oversized images", () => {
 		await userEvent.keyboard("{Enter}");
 		await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
 		const text = onSend.mock.calls[0]?.[0] as string;
-		expect(text).toContain("- .tallpine/attachments/small.jpg");
-		expect(text).toContain(".tallpine/attachments/small.jpg was resized from 4000×3000 to 1568×1176; full original: .tallpine/attachments/original.png");
+		// After the separator, the block maps the image to its downscaled copy and full original.
+		expect(text.startsWith("look\n\n---\n")).toBe(true);
+		expect(text).toContain("- [IMG1] .tallpine/attachments/small.jpg (full original: .tallpine/attachments/original.png)");
 		expect(onSend.mock.calls[0]?.[1]).toEqual([{ mimeType: "image/jpeg", data: expect.any(String) }]);
 	});
 

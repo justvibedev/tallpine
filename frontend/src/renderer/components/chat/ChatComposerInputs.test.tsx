@@ -1,3 +1,4 @@
+import { PLACEHOLDER_BLOCK_HEADER } from "@tallpine/shared/chat/image-placeholders";
 import {
 	render,
 	SKILLS,
@@ -409,15 +410,6 @@ describe("attachments", () => {
 		expect(stage).not.toHaveBeenCalled();
 	});
 
-	it("shows image-only pastes once in the attachment strip", async () => {
-		const stage = vi.fn().mockResolvedValue([".tallpine/attachments/attachment-a.png", ".tallpine/attachments/attachment-b.png"]);
-		const { field } = renderComposer({ onStageAttachments: stage });
-		fireEvent.paste(field, { clipboardData: clipboardData([png("a.png"), png("b.png")]) });
-		await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
-		expect(field.querySelector('[data-composer-token="image"]')).toBeNull();
-		expect(field.textContent).toBe("");
-	});
-
 	it("places a pasted image inline at the caret and drops it with its attachment", async () => {
 		const stage = vi.fn().mockResolvedValue([".tallpine/attachments/attachment-a.png"]);
 		const { onSend, field } = renderComposer({ onStageAttachments: stage });
@@ -429,9 +421,9 @@ describe("attachments", () => {
 			expect(node).not.toBeNull();
 			return node as HTMLElement;
 		});
-		expect(chip).toHaveTextContent("Image 1");
+		expect(chip).toHaveTextContent("[IMG1]");
 		expect(chip).toHaveAttribute("title", "a.png");
-		expect(field.textContent).toBe("compare Image 1 ");
+		expect(field.textContent).toBe("compare [IMG1] ");
 
 		await userEvent.click(screen.getByLabelText("Remove a.png"));
 		await waitFor(() => expect(field.querySelector('[data-composer-token="image"]')).toBeNull());
@@ -455,7 +447,7 @@ describe("attachments", () => {
 		finishStaging([".tallpine/attachments/attachment-a.png"]);
 
 		await waitFor(() => expect(onSend).toHaveBeenCalledWith(
-			"make .tallpine/attachments/attachment-a.png shorter\n\nAttached files (read these files in the workspace):\n- .tallpine/attachments/attachment-a.png",
+			`make [IMG1] shorter\n\n---\n${PLACEHOLDER_BLOCK_HEADER}\n- [IMG1] .tallpine/attachments/attachment-a.png`,
 		));
 	});
 
@@ -508,8 +500,8 @@ describe("attachments", () => {
 		]);
 		await waitFor(() =>
 			expect(onSend).toHaveBeenCalledWith(
-				// Pasting into an empty draft names the image only in the attachment block.
-				"what is wrong here\n\nAttached files (read these files in the workspace):\n- .tallpine/attachments/attachment-ab12cd34ef.png",
+				// The chip went in at the caret of the empty draft, ahead of the words.
+				`[IMG1] what is wrong here\n\n---\n${PLACEHOLDER_BLOCK_HEADER}\n- [IMG1] .tallpine/attachments/attachment-ab12cd34ef.png`,
 			),
 		);
 		// Consumed, so the next message does not silently resend them.
@@ -527,7 +519,7 @@ describe("attachments", () => {
 
 		await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
 		expect(onSend.mock.calls[0]?.[0]).toBe(
-			"Attached files (read these files in the workspace):\n- .tallpine/attachments/attachment-1.png",
+			`---\n${PLACEHOLDER_BLOCK_HEADER}\n- [IMG1] .tallpine/attachments/attachment-1.png`,
 		);
 	});
 
@@ -654,7 +646,7 @@ describe("attachments", () => {
 		await userEvent.keyboard("{Enter}");
 
 		expect(await screen.findByRole("alert")).toHaveTextContent("attachments were kept");
-		expect(field.textContent).toBe("inspect this");
+		expect(field.textContent).toBe("[IMG1] inspect this");
 		expect(screen.getAllByRole("listitem")).toHaveLength(1);
 
 		await userEvent.keyboard("{Enter}");

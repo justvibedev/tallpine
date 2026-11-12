@@ -24,6 +24,15 @@ func isACPAuthRequired(err error) bool {
 // session/load or session/resume for an id the agent never persisted returns it.
 const acpResourceNotFound = -32002
 
+// missingConversation marks wrapped with ports.ErrChatConversationMissing when
+// cause is the agent's -32002 answer to a session/load or session/resume.
+func missingConversation(wrapped, cause error) error {
+	if isACPResourceNotFound(cause) {
+		return fmt.Errorf("%w: %w", ports.ErrChatConversationMissing, wrapped)
+	}
+	return wrapped
+}
+
 func isACPResourceNotFound(err error) bool {
 	var requestErr *acpsdk.RequestError
 	return errors.As(err, &requestErr) && requestErr.Code == acpResourceNotFound

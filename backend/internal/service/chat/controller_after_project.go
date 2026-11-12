@@ -59,6 +59,11 @@ func (c *Controller) afterProject(ctx context.Context, event ports.ChatEvent, pr
 				signal.UsageLimitAutoResume = c.autoResumes(limit)
 			}
 		}
+		// Armed before the activity write: that write is what makes clients
+		// refetch, and the snapshot must already show the pending retry.
+		if !reauthRequired && c.armTransientRetry(ctx, event) {
+			signal.State, signal.Event = domain.ActivityActive, "chat.turn.retrying"
+		}
 		c.reportActivitySignal(ctx, signal)
 		c.armUsageLimitedTurn(ctx, event, now)
 		// Only a completed turn releases queued work; a failed or recovered one holds

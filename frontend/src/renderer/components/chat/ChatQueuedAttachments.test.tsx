@@ -1,97 +1,16 @@
-import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatWorkspace } from "./ChatWorkspace";
 import { purgeFileAttachmentsForSession, useFileAttachments } from "../../hooks/useFileAttachments";
 import { readChatSessionDraft } from "../../lib/chat-drafts";
 import { chatFixture } from "../../lib/chat-fixture";
 import { typeInLexicalEditor } from "../../test/lexical";
-import { TooltipProvider } from "../ui/tooltip";
-import type { ConversationContentSummary, ConversationSnapshot } from "../../types/conversation";
+import { beginEdit, pasteImage, path, sent, setup, suffix } from "./ChatQueuedAttachments.test.setup";
 
 beforeEach(() => {
 	window.localStorage.clear();
 	purgeFileAttachmentsForSession(chatFixture.sessionId);
 });
-
-const path = ".tallpine/attachments/attachment-shot.png";
-const suffix = `Attached files (read these files in the workspace):\n- ${path}`;
-
-function setup(text = "inspect this", content: ConversationContentSummary[] = [], nativeImages = true) {
-	const edit = vi.fn().mockResolvedValue(undefined);
-	const send = vi.fn().mockResolvedValue(undefined);
-	const stage = vi.fn().mockResolvedValue([path]);
-	const cancel = vi.fn().mockResolvedValue(undefined);
-	const snapshot: ConversationSnapshot = {
-		...chatFixture,
-		turns: [{ id: "q1", state: "queued" as const, requestedAt: "2026-09-06T10:00:00Z" }],
-		items: [
-			{
-				kind: "message" as const,
-				id: "m1",
-				turnId: "q1",
-				sequence: 1,
-				revision: 0,
-				role: "user" as const,
-				origin: "human" as const,
-				text,
-				content,
-				streaming: false,
-				createdAt: "2026-09-06T10:00:00Z",
-			},
-		],
-	};
-	const view = render(
-		<TooltipProvider>
-			<ChatWorkspace
-				snapshot={snapshot}
-				onSend={send}
-				onEditQueuedTurn={edit}
-				onCancelQueuedTurn={cancel}
-				onStageAttachments={stage}
-				nativeImages={nativeImages}
-			/>
-		</TooltipProvider>,
-	);
-	return {
-		unmount: view.unmount,
-		edit,
-		send,
-		stage,
-		cancel,
-		snapshot,
-		field: screen.getByRole("combobox"),
-		rerenderSnapshot: (next: ConversationSnapshot) =>
-			view.rerender(
-				<TooltipProvider>
-					<ChatWorkspace
-						snapshot={next}
-						onSend={send}
-						onEditQueuedTurn={edit}
-						onCancelQueuedTurn={cancel}
-						onStageAttachments={stage}
-						nativeImages={nativeImages}
-					/>
-				</TooltipProvider>,
-			),
-	};
-}
-
-async function beginEdit() {
-	await userEvent.click(
-		within(screen.getByTestId("queued-message-q1")).getByRole("button", { name: "Edit queued message" }),
-	);
-}
-
-async function pasteImage(field: HTMLElement, name = "shot.png") {
-	fireEvent.paste(field, {
-		clipboardData: {
-			files: [new File([new Uint8Array([137, 80, 78, 71])], name, { type: "image/png" })],
-			items: [],
-		},
-	});
-	await screen.findByLabelText(`Remove ${name}`);
-}
 
 describe("queued message attachments", () => {
 	it("keeps a reused delivery key locked for recovery", async () => {
@@ -151,7 +70,7 @@ describe("queued message attachments", () => {
 		await pasteImage(screen.getByRole("combobox"));
 		await userEvent.click(screen.getByRole("button", { name: "Send message" }));
 		await waitFor(() =>
-			expect(edit).toHaveBeenCalledWith("q1", `inspect this ${path}\n\n${suffix}`, {
+			expect(edit).toHaveBeenCalledWith("q1", `inspect this [IMG1]\n\n${sent}`, {
 				attachments: [{ mimeType: "image/png", data: expect.any(String) }],
 				retainedContent: [],
 				clientMessageId: expect.any(String), expectedRevision: 0,
@@ -167,7 +86,7 @@ describe("queued message attachments", () => {
 		await beginEdit();
 		await pasteImage(screen.getByRole("combobox"));
 		await userEvent.click(screen.getByRole("button", { name: "Send message" }));
-		await waitFor(() => expect(edit).toHaveBeenCalledWith("q1", `inspect this ${path}\n\n${suffix}`, {
+		await waitFor(() => expect(edit).toHaveBeenCalledWith("q1", `inspect this [IMG1]\n\n${sent}`, {
 			retainedContent: [0], clientMessageId: expect.any(String), expectedRevision: 0,
 		}));
 		expect(stage).toHaveBeenCalledOnce();
@@ -182,7 +101,7 @@ describe("queued message attachments", () => {
 		await typeInLexicalEditor(screen.getByRole("combobox"), " carefully");
 		await userEvent.click(screen.getByRole("button", { name: "Send message" }));
 		await waitFor(() =>
-			expect(edit).toHaveBeenCalledWith("q1", `inspect this carefully\n\n${suffix}`, {
+			expect(edit).toHaveBeenCalledWith("q1", `inspect this carefully\n\n${sent}`, {
 				retainedContent: [0],
 				clientMessageId: expect.any(String), expectedRevision: 0,
 			}),
@@ -195,7 +114,7 @@ describe("queued message attachments", () => {
 		await userEvent.click(screen.getByLabelText(selected === "path" ? "Remove attachment-shot.png" : "Remove Image 1"));
 		await userEvent.click(screen.getByRole("button", { name: "Send message" }));
 		await waitFor(() =>
-			expect(edit).toHaveBeenCalledWith("q1", selected === "path" ? "inspect this" : `inspect this\n\n${suffix}`, {
+			expect(edit).toHaveBeenCalledWith("q1", selected === "path" ? "inspect this" : `inspect this\n\n${sent}`, {
 				retainedContent: selected === "path" ? [0] : [],
 				clientMessageId: expect.any(String), expectedRevision: 0,
 			}),
@@ -212,7 +131,7 @@ describe("queued message attachments", () => {
 		if (count === 8) await pasteImage(screen.getByRole("combobox"));
 		await userEvent.click(screen.getByRole("button", { name: "Send message" }));
 		await waitFor(() => expect(edit).toHaveBeenCalledWith(
-			"q1", count === 8 ? `inspect this carefully ${path}\n\n${suffix}` : "inspect this carefully",
+			"q1", count === 8 ? `inspect this carefully [IMG1]\n\n${sent}` : "inspect this carefully",
 			{
 				retainedContent: resources.map((_, index) => index), clientMessageId: expect.any(String), expectedRevision: 0,
 				...(count === 8 ? { attachments: [{ mimeType: "image/png", data: expect.any(String) }] } : {}),
@@ -368,7 +287,7 @@ describe("queued message attachments", () => {
 		await waitFor(() => expect(stage).toHaveBeenCalledOnce());
 		fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
 		await act(async () => settle([path]));
-		await waitFor(() => expect(edit).toHaveBeenCalledWith("q1", `inspect this\n\n${suffix}`, { retainedContent: [], clientMessageId: expect.any(String), expectedRevision: 0 }));
+		await waitFor(() => expect(edit).toHaveBeenCalledWith("q1", `inspect this\n\n${sent}`, { retainedContent: [], clientMessageId: expect.any(String), expectedRevision: 0 }));
 		expect(send).not.toHaveBeenCalled();
 	});
 

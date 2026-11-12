@@ -21,6 +21,7 @@ const (
 	CategoryContainers    Category = "containers"
 	CategoryBacklog       Category = "backlog"
 	CategoryGoBuildCache  Category = "go_build_cache"
+	CategoryAttachments   Category = "attachments"
 )
 
 // Pass is how thorough a run is. The hourly light pass runs the cheap rules;

@@ -41,6 +41,11 @@ var (
 	// resumed. Callers must surface a recovery choice, never silently start a
 	// new provider conversation.
 	ErrChatResumeFailed = errors.New("chat conversation resume failed")
+	// ErrChatConversationMissing accompanies ErrChatResumeFailed when the
+	// provider itself reports the stored conversation does not exist (ACP
+	// -32002 Resource not found, a missing Codex thread). Retrying the same
+	// resume can never succeed; only a fresh conversation can.
+	ErrChatConversationMissing = errors.New("provider conversation not found")
 	// ErrChatRecoveryInconclusive means a detached provider host may still own
 	// live work, but this daemon could not safely attach to it. Startup recovery
 	// must preserve the durable session and worktree rather than treating the

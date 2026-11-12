@@ -20529,6 +20529,7 @@ components:
           - go_build_cache
           - backlog
           - session_retention
+          - attachments
           type: string
         error:
           type: string
@@ -21634,6 +21635,21 @@ components:
       - status
       - at
       type: object
+    ControllersConversationTurnAutoRetryResponse:
+      properties:
+        attempt:
+          type: integer
+        maxAttempts:
+          type: integer
+        nextAt:
+          type: string
+        offline:
+          type: boolean
+      required:
+      - attempt
+      - maxAttempts
+      - nextAt
+      type: object
     ControllersCreateIntentRequest:
       properties:
         text:
@@ -22703,6 +22719,8 @@ components:
       type: object
     ConversationTurnResponse:
       properties:
+        autoRetry:
+          $ref: '#/components/schemas/ControllersConversationTurnAutoRetryResponse'
         completedAt:
           type:
           - "null"
@@ -22741,6 +22759,8 @@ components:
           - failed
           - cancelled
           type: string
+        transientError:
+          type: boolean
         usageLimit:
           $ref: '#/components/schemas/ConversationUsageLimitResponse'
       required:

@@ -29,8 +29,8 @@ func TestCodexResumeOfAThreadThatNeverStarted(t *testing.T) {
 				FreshIfMissing: tt.freshIfMissing,
 			})
 			if !tt.freshIfMissing {
-				if !errors.Is(err, ports.ErrChatResumeFailed) {
-					t.Fatalf("resume = %v, want ErrChatResumeFailed", err)
+				if !errors.Is(err, ports.ErrChatResumeFailed) || !errors.Is(err, ports.ErrChatConversationMissing) {
+					t.Fatalf("resume = %v, want ErrChatResumeFailed marked ErrChatConversationMissing", err)
 				}
 				return
 			}
@@ -42,5 +42,18 @@ func TestCodexResumeOfAThreadThatNeverStarted(t *testing.T) {
 				t.Fatalf("thread = %q, want the new thread-new", got)
 			}
 		})
+	}
+}
+
+// A thread/resume failure that does not say the thread is gone may succeed on a
+// retry, so it is not marked missing (B678).
+func TestCodexResumeFailureOtherThanMissingIsNotMarkedMissing(t *testing.T) {
+	d, srv := newTestDriver(t)
+	srv.replyError("thread/resume", -32603, "transport hiccup")
+	_, err := d.Resume(context.Background(), ports.ChatResumeConfig{
+		SessionID: "codex-hiccup", ProviderConversationID: "thread-1", WorkspacePath: t.TempDir(),
+	})
+	if !errors.Is(err, ports.ErrChatResumeFailed) || errors.Is(err, ports.ErrChatConversationMissing) {
+		t.Fatalf("resume = %v, want ErrChatResumeFailed without ErrChatConversationMissing", err)
 	}
 }

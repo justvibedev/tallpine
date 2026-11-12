@@ -126,6 +126,13 @@ export type AgentBrowserRuntimeOptions = {
 	processRunner?: NativeProcessRunner;
 	bridgeFactory?: (provider: AgentBrowserTargetProvider) => AgentBrowserBridge;
 	processAlive?: (pid: number) => boolean;
+	/** Test seams for orphan-daemon reaping (B679); production shells out to ps/lsof and signals for real. */
+	reap?: {
+		command?: (pid: number) => Promise<string>;
+		signal?: (pid: number, signal: NodeJS.Signals) => void;
+		listProcesses?: () => Promise<{ pid: number; ppid: number; command: string }[]>;
+		listSockets?: (pid: number) => Promise<string[]>;
+	};
 };
 
 export type AgentBrowserJSONResult = Record<string, unknown>;

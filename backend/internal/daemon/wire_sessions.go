@@ -89,6 +89,7 @@ func (b *boot) wireSessions() error {
 		b.stop()
 		<-cleanupDone
 	})
+	b.wireLocalCIAlerts()
 
 	// servers isn't clobbered. See preview_wiring.go (issue #4500).
 	wireManagedPreviewExit(b.managedPreview, b.sessionSvc, b.log)
@@ -128,6 +129,9 @@ func (b *boot) wireSessionManagerHooks() {
 		return accountpool.Of(b.agentPolicySvc.DecideStatic(b.ctx)).Placement()
 	})
 	b.chatSvc.SetUsageLimitAccounts(b.agentAccountSvc)
+	// Worker and orchestrator turns that fail on a dropped network retry on their own (B682).
+	retryPolicy := chatsvc.DefaultTransientRetryPolicy()
+	b.chatSvc.SetTransientRetryPolicy(&retryPolicy)
 	if starter, ok := b.sessMgr.(interface {
 		StartAccountTransition(context.Context, domain.SessionID, string, domain.SessionInterfaceTransitionPolicy) (domain.SessionInterfaceTransition, error)
 	}); ok {

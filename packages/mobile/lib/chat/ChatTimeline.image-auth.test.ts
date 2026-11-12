@@ -16,8 +16,10 @@ let AndroidImage, attachmentHelpers, imageViewer;
 const styles = { create: value => value };
 const nativeModule = value => ({ __esModule: true, default: value });
 Module._load = function(name, parent, main) {
- if (name.startsWith("@tallpine/shared/")) {
-  const file = path.resolve("../shared", name.slice("@tallpine/shared/".length) + ".ts");
+ const sharedRoot = path.resolve("../shared") + path.sep;
+ const sharedSibling = name.startsWith("./") && parent?.filename?.startsWith(sharedRoot);
+ if (name.startsWith("@tallpine/shared/") || sharedSibling) {
+  const file = sharedSibling ? path.resolve(path.dirname(parent.filename), name + ".ts") : path.resolve("../shared", name.slice("@tallpine/shared/".length) + ".ts");
   return compile(file, ts.transpileModule(fs.readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText);
  }
  if (parent?.filename === imageFile) {

@@ -152,6 +152,7 @@ func (s *Service) Snapshot(ctx context.Context, id domain.SessionID) (Snapshot, 
 	var dispatching []string
 	if controller, err := s.Controller(id); err == nil {
 		dispatching = controller.DispatchingTurnIDs()
+		rows.Turns = withTransientRetry(rows.Turns, controller)
 		if live := controller.State(); (record.HibernatedAt == nil && !waking) || live != ports.ChatControllerStopped {
 			state = live
 			caps = controller.Capabilities()
@@ -263,6 +264,7 @@ func (s *Service) SnapshotPage(ctx context.Context, id domain.SessionID, beforeS
 	var dispatching []string
 	if controller, err := s.Controller(id); err == nil {
 		dispatching = controller.DispatchingTurnIDs()
+		rows.Turns = withTransientRetry(rows.Turns, controller)
 		if live := controller.State(); (record.HibernatedAt == nil && !waking) || live != ports.ChatControllerStopped {
 			state = live
 			caps = controller.Capabilities()

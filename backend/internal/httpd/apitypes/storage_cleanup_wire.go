@@ -25,7 +25,7 @@ type CleanupBranchesPolicy struct {
 
 // CleanupCategoryReport sums one category of a cleanup run.
 type CleanupCategoryReport struct {
-	Category       string        `json:"category" enum:"worktrees,artifacts,session_temp,harness_caches,system_temp,containers,branches,go_build_cache,backlog,session_retention"`
+	Category       string        `json:"category" enum:"worktrees,artifacts,session_temp,harness_caches,system_temp,containers,branches,go_build_cache,backlog,session_retention,attachments"`
 	FreedBytes     int64         `json:"freedBytes"`
 	WouldFreeBytes int64         `json:"wouldFreeBytes" description:"Bytes a real run would free (dry runs)."`
 	PendingBytes   int64         `json:"pendingBytes" description:"Bytes eligible but waiting for confirmation."`

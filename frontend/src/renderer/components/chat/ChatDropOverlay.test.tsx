@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ChatDropOverlay } from "./ChatDropOverlay";
-import { withResizeNotes } from "./composer/composer-model";
+import { resizeOriginals } from "./composer/composer-model";
 
 const filesDrag = { types: ["Files"], files: [new File(["x"], "a.png", { type: "image/png" })] };
 
@@ -68,12 +68,12 @@ describe("ChatDropOverlay", () => {
 	});
 });
 
-describe("withResizeNotes", () => {
-	it("links the original of a downscaled image", () => {
-		const out = withResizeNotes("hi", [{ stagedPath: "a/1.jpg", resize: { note: "resized from 4000×3000 to 1568×1176", originalBytes: 9, originalPath: "a/0.png" } }]);
-		expect(out).toContain("- a/1.jpg was resized from 4000×3000 to 1568×1176; full original: a/0.png");
+describe("resizeOriginals", () => {
+	it("maps a downscaled image to its full original", () => {
+		expect(resizeOriginals([{ stagedPath: "a/1.jpg", resize: { note: "resized from 4000×3000 to 1568×1176", originalBytes: 9, originalPath: "a/0.png" } }]))
+			.toEqual({ "a/1.jpg": "a/0.png" });
 	});
-	it("leaves messages without resized images unchanged", () => {
-		expect(withResizeNotes("hi", [{ stagedPath: "a/1.png" }])).toBe("hi");
+	it("names nothing for images that were not resized", () => {
+		expect(resizeOriginals([{ stagedPath: "a/1.png" }])).toEqual({});
 	});
 });

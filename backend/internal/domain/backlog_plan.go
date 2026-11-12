@@ -30,6 +30,12 @@ func (s PlanStatus) Open() bool {
 	return s != ""
 }
 
+// WaitsOnOwner reports whether the plan is parked on the owner: questions to
+// answer or a plan to approve. These are the states that notify the owner.
+func (s PlanStatus) WaitsOnOwner() bool {
+	return s == PlanAwaitingAnswers || s == PlanAwaitingApproval
+}
+
 // planTransitions is the state machine. A same-status write is not a transition.
 var planTransitions = map[PlanStatus][]PlanStatus{
 	PlanDrafting:         {PlanAwaitingAnswers, PlanWriting, PlanFailed, PlanSuperseded},

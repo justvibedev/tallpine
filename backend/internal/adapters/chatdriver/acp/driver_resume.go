@@ -157,7 +157,7 @@ func (d *Driver) resumeSession(
 				return d.resumeFresh(ctx, conv, init, launchCfg, cfg, additional, mcpServers)
 			}
 			conv.discard()
-			return nil, fmt.Errorf("%w: %w", ports.ErrChatResumeFailed, normalizeACPLoadError("ACP session/load", err))
+			return nil, fmt.Errorf("%w: %w", ports.ErrChatResumeFailed, missingConversation(normalizeACPLoadError("ACP session/load", err), err))
 		}
 		configOptions = resp.ConfigOptions
 		modes = resp.Modes
@@ -176,7 +176,7 @@ func (d *Driver) resumeSession(
 				return d.resumeFresh(ctx, conv, init, launchCfg, cfg, additional, mcpServers)
 			}
 			conv.discard()
-			return nil, fmt.Errorf("%w: %w", ports.ErrChatResumeFailed, err)
+			return nil, fmt.Errorf("%w: %w", ports.ErrChatResumeFailed, missingConversation(err, err))
 		}
 		configOptions = resp.ConfigOptions
 		modes = resp.Modes

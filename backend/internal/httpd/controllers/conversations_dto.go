@@ -53,6 +53,8 @@ func conversationSnapshotResponse(s chatsvc.Snapshot) ConversationSnapshotRespon
 			HasHumanPrompt:  turn.HasHumanPrompt,
 			ErrorMessage:    turn.ErrorMessage,
 			UsageLimit:      usageLimitPayload(turn.UsageLimit),
+			AutoRetry:       autoRetryPayload(turn.AutoRetry),
+			TransientError:  turn.State == domain.TurnStateFailed && domain.IsTransientTurnError(turn.ErrorMessage),
 			RequestedAt:     turn.RequestedAt.UTC().Format(time.RFC3339),
 			StartedAt:       optionalTimestamp(turn.StartedAt),
 			CompletedAt:     optionalTimestamp(turn.CompletedAt),
@@ -115,6 +117,14 @@ func usageLimitPayload(limit *domain.ConversationUsageLimit) *ConversationUsageL
 		return nil
 	}
 	return &ConversationUsageLimitResponse{ResetsAt: optionalTimestamp(limit.ResetsAt), AutoResume: limit.AutoResume, ResumeError: limit.ResumeError}
+}
+
+func autoRetryPayload(retry *domain.ConversationTurnAutoRetry) *ConversationTurnAutoRetryResponse {
+	if retry == nil {
+		return nil
+	}
+	return &ConversationTurnAutoRetryResponse{Attempt: retry.Attempt, MaxAttempts: retry.MaxAttempts,
+		NextAt: retry.NextAt.UTC().Format(time.RFC3339), Offline: retry.Offline}
 }
 
 func branchMaterializationPayload(branch domain.ConversationBranch) *ConversationBranchMaterializationResponse {

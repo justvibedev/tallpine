@@ -76,7 +76,10 @@ type PlanDeps struct {
 	// NotifyOwner tells the human a plan waits on them (a stored notification,
 	// and with it the push). nil skips it. itemRef and itemTitle name the item.
 	NotifyOwner func(ctx context.Context, plan domain.BacklogPlan, itemRef, itemTitle string)
-	Base        PlanBase
+	// ClearOwner closes that notification once the plan no longer waits on
+	// the owner (answered, approved, superseded, failed). nil skips it.
+	ClearOwner func(ctx context.Context, plan domain.BacklogPlan)
+	Base       PlanBase
 	// Diff powers the stale check; nil turns it off.
 	Diff PlanDiff
 	// Mode reads the project's planning mode; nil means auto. Always makes a
@@ -110,6 +113,7 @@ type PlanService struct {
 	notify   PlanNotifier
 	// notifyOwner: see PlanDeps.NotifyOwner.
 	notifyOwner func(ctx context.Context, plan domain.BacklogPlan, itemRef, itemTitle string)
+	clearOwner  func(ctx context.Context, plan domain.BacklogPlan)
 	base        PlanBase
 	diff        PlanDiff
 	mode        func(ctx context.Context, projectID domain.ProjectID) domain.PlanningMode
@@ -141,7 +145,7 @@ func NewPlanService(d PlanDeps) *PlanService {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	p := &PlanService{bl: d.Backlog, store: d.Store, sessions: d.Sessions, notify: d.Notify, notifyOwner: d.NotifyOwner, base: d.Base, diff: d.Diff, mode: d.Mode, autoApprove: d.AutoApprove, inPlace: d.InPlace, eval: d.Eval, enabled: d.Enabled, newID: d.NewID, now: d.Now, log: d.Log}
+	p := &PlanService{bl: d.Backlog, store: d.Store, sessions: d.Sessions, notify: d.Notify, notifyOwner: d.NotifyOwner, clearOwner: d.ClearOwner, base: d.Base, diff: d.Diff, mode: d.Mode, autoApprove: d.AutoApprove, inPlace: d.InPlace, eval: d.Eval, enabled: d.Enabled, newID: d.NewID, now: d.Now, log: d.Log}
 	if d.Backlog != nil {
 		d.Backlog.plans = p
 	}
@@ -162,6 +166,9 @@ func (p *PlanService) SetCancelObserver(f func(ctx context.Context, plan domain.
 }
 
 func (p *PlanService) changed(ctx context.Context, plan domain.BacklogPlan) {
+	if p.clearOwner != nil && plan.PlannerSessionID != "" && !plan.Status.WaitsOnOwner() {
+		p.clearOwner(ctx, plan)
+	}
 	if p.observer != nil {
 		p.observer(ctx, plan)
 	}

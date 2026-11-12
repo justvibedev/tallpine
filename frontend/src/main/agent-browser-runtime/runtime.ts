@@ -7,6 +7,7 @@ import { AgentBrowserCDPBridge, type AgentBrowserTargetProvider } from "../agent
 import { AgentBrowserBridge, AgentBrowserJSONResult, AgentBrowserRunResult, AgentBrowserRuntimeOptions, CLOSE_TIMEOUT_MS, COMMAND_TIMEOUT_MS, MAX_SCREENSHOT_BYTES, NATIVE_ENV_ALLOWLIST, NativeProcessRunner, RUNTIME_OWNER_FILE, RUNTIME_OWNER_MARKER, RuntimeOwner, SCREENSHOT_TIMEOUT_MS, SessionRuntime, assertAgentBrowserSocketPath, closeBridgeWithTimeout, defaultProcessAlive, ensurePrivateDirectory, isRecord, removePath, runtimeError, sessionNamespace } from "./common";
 import { nativeArgumentsForAction, optionalStringValue, parseAgentBrowserJSON, pngDimensions } from "./native-actions";
 import { runNativeProcess } from "./native-process";
+import { reapAgentBrowserDaemons, reapOrphanedAgentBrowserProcesses } from "./reap";
 import { scavengeBrowserRuntime, scavengeBrowserSocketAliases, streamAlreadyDisabled } from "./scavenge";
 import { validateAgentBrowserArguments } from "./validate";
 
@@ -42,7 +43,8 @@ export class AgentBrowserRuntime {
 		if (this.platform !== "win32") {
 			await scavengeBrowserSocketAliases(this.options.dataDir, this.processAlive, this.log);
 		}
-		await scavengeBrowserRuntime(this.options.dataDir, this.processAlive, this.log);
+		await scavengeBrowserRuntime(this.options.dataDir, this.processAlive, this.log, this.options.reap);
+		await reapOrphanedAgentBrowserProcesses({ binaryPath: this.options.binaryPath, processAlive: this.processAlive, log: this.log, ...this.options.reap });
 	}
 
 	async run(
@@ -300,6 +302,10 @@ export class AgentBrowserRuntime {
 			);
 		} catch (error) {
 			this.log(`agent-browser close failed for ${sessionId}: ${String(error)}`);
+		}
+		// `close` can fail or time out; never leave the native daemon behind.
+		if (this.socketDir) {
+			await reapAgentBrowserDaemons(this.socketDir, this.log, { ...this.options.reap, filter: (file) => file.includes(runtime.namespace) });
 		}
 		try {
 			await closeBridgeWithTimeout(runtime.bridge);

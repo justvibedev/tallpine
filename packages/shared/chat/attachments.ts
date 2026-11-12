@@ -2,15 +2,25 @@
 // slightly different wording, and older conversations used "Attached images";
 // accepting every shipped form lets the transcript improve without rewriting
 // its durable history. Earlier mobile builds wrote "Attached files are available in the worktree".
-// Desktop and phone both read through this module.
-const ATTACHMENT_REFERENCE_BLOCK =
-	/(?:^|\n\n)(?:Attached files \(read these files in the workspace(?: for context)?\)|Attached images \(read these files in the workspace for visual context\)|Attached files are available in the worktree):\n((?:- [^\n]+(?:\n|$))+)$/;
-const STAGED_ATTACHMENT_PATH = /^\.(?:tallpine|ao)\/attachments\/(?:attachment|image)-[A-Za-z0-9][A-Za-z0-9._-]*$/;
-export const IMAGE_ATTACHMENT_PATH = /\.(?:png|jpe?g|gif|webp|bmp)$/i;
+// Desktop and phone both read through this module; current image messages use the
+// placeholder block in ./image-placeholders.
+import { IMAGE_ATTACHMENT_PATH, STAGED_ATTACHMENT_PATH, placeholderParts, withOriginals, withPlaceholderBlock, type StagedParts } from "./image-placeholders";
 
-export function stagedAttachmentParts(text: string): { body: string; attachments: string[] } {
+export { IMAGE_ATTACHMENT_PATH } from "./image-placeholders";
+export type { StagedParts } from "./image-placeholders";
+
+// Earlier desktop builds followed the reference block with a list of downscaled
+// images and their originals; it is Tallpine's text too, so it is read back out.
+const ATTACHMENT_REFERENCE_BLOCK =
+	/(?:^|\n\n)(?:Attached files \(read these files in the workspace(?: for context)?\)|Attached images \(read these files in the workspace for visual context\)|Attached files are available in the worktree):\n((?:- [^\n]+(?:\n|$))+?)(?:\nDownscaled images \(open the original only if the detail matters\):\n((?:- [^\n]+(?:\n|$))+))?$/;
+const DOWNSCALED_LINE = /^- (\S+) was [^\n]+; full original: (\S+)$/;
+
+export function stagedAttachmentParts(text: string): StagedParts {
+	const current = placeholderParts(text);
+	if (current) return current;
+	const unchanged = { body: text, attachments: [] };
 	const match = ATTACHMENT_REFERENCE_BLOCK.exec(text);
-	if (!match?.[1]) return { body: text, attachments: [] };
+	if (!match?.[1]) return unchanged;
 
 	const attachments = match[1]
 		.trimEnd()
@@ -19,11 +29,19 @@ export function stagedAttachmentParts(text: string): { body: string; attachments
 	// Only reinterpret paths Tallpine itself stages. A user can write an identically
 	// worded example about docs/screenshot.png; that prose must remain untouched.
 	if (attachments.length === 0 || attachments.some((path) => !STAGED_ATTACHMENT_PATH.test(path))) {
-		return { body: text, attachments: [] };
+		return unchanged;
+	}
+	const originals: Record<string, string> = {};
+	for (const line of match[2]?.trimEnd().split("\n") ?? []) {
+		const downscaled = DOWNSCALED_LINE.exec(line);
+		if (!downscaled?.[1] || !downscaled[2] || !attachments.includes(downscaled[1]) || !STAGED_ATTACHMENT_PATH.test(downscaled[2])) {
+			return unchanged;
+		}
+		originals[downscaled[1]] = downscaled[2];
 	}
 	// The match begins at the generated separator, so slicing at its index
 	// removes only Tallpine-owned text and preserves the authored body byte-for-byte.
-	return { body: text.slice(0, match.index), attachments };
+	return withOriginals({ body: text.slice(0, match.index), attachments }, originals);
 }
 
 export function attachmentName(path: string): string {
@@ -100,26 +118,38 @@ export function proseBesideImages(text: string, attached: string[]): string {
 	return onlyImages ? "" : text;
 }
 
-/** Plain-text form for one-line surfaces: attached inline images read as `[Image N]`. */
+/**
+ * Plain-text form for one-line surfaces: only the owner's words, never Tallpine's
+ * attachment block. Legacy inline image paths read as `[Image N]`; a message that
+ * is only attachments reads as its image labels and file names.
+ */
 export function labelInlineImages(text: string, label: (index: number) => string = (index) => `Image ${index}`): string {
 	const { body, attachments } = stagedAttachmentParts(text);
+	if (attachments.length === 0) return text;
 	const images = attachments.filter((path) => IMAGE_ATTACHMENT_PATH.test(path));
-	if (images.length === 0) return text;
 	const labelled = splitInlineImagePaths(body, (path) => images.includes(path))
 		.map((segment) => segment.path === undefined ? segment.text : `[${label(images.indexOf(segment.path) + 1)}]`)
-		.join("");
-	return labelled + text.slice(body.length);
+		.join("")
+		.trim();
+	return labelled || attachments
+		.map((path) => images.includes(path) ? `[${label(images.indexOf(path) + 1)}]` : attachmentName(path))
+		.join(" ");
 }
 
-/** Appends staged paths using the chat wording, so either surface renders them. */
-export function withAttachmentReferences(text: string, paths: string[]): string {
+/**
+ * Appends staged paths using the chat wording, so either surface renders them. A
+ * message with images gets the placeholder block, numbering images in path order
+ * and naming each downscaled image's full original from `originals`.
+ */
+export function withAttachmentReferences(text: string, paths: string[], originals: Record<string, string> = {}): string {
 	if (paths.length === 0) return text;
+	if (paths.some((path) => IMAGE_ATTACHMENT_PATH.test(path))) return withPlaceholderBlock(text, paths, originals);
 	const body = text.trim();
 	return `${body}${body ? "\n\n" : ""}Attached files (read these files in the workspace):\n${paths.map((path) => `- ${path}`).join("\n")}`;
 }
 
-export function withEditedBody(body: string, attachments: string[]): string {
-	return attachments.length ? withAttachmentReferences(body, attachments) : body.trimEnd();
+export function withEditedBody(body: string, attachments: string[], originals: Record<string, string> = {}): string {
+	return attachments.length ? withAttachmentReferences(body, attachments, originals) : body.trimEnd();
 }
 
 export function isImageAttachment(path: string): boolean {

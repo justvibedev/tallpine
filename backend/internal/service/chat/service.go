@@ -130,6 +130,7 @@ type Service struct {
 	autoResumeScanning bool
 	usageLimitAccounts usageLimitAccountReader
 	usageLimitFailover UsageLimitFailover
+	transientRetry     atomic.Pointer[TransientRetryPolicy] // nil: failed turns are not retried on their own
 	// failoverMoves maps an armed turn to the account move started for it.
 	failoverMoves   map[string]failoverMove // guarded by autoResumeMu
 	failoverRetryAt map[string]time.Time    // guarded by autoResumeMu

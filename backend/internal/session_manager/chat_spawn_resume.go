@@ -29,6 +29,9 @@ import (
 // that fails is reported, not silently replaced with a fresh conversation:
 // presenting unrelated history as continuous is worse than an error the user can
 // act on, and it would strand the work the old conversation was holding.
+// The one exception is an orchestrator whose conversation the agent and its
+// transcript probe both report gone (B678): its state lives in the daemon, so
+// it goes on in a fresh, seeded conversation (see lostConversationStart).
 func (m *Manager) resumeChatController(
 	ctx context.Context,
 	operation string,
@@ -78,7 +81,7 @@ func (m *Manager) resumeChatController(
 		return RestoreResult{}, err
 	}
 	var completionErr error
-	_, err = m.chat.StartChat(ctx, ChatStart{
+	start := ChatStart{
 		Policy:                  decision,
 		AwakeReconnectTarget:    awakeTarget,
 		ReconnectOnly:           reconnectOnly,
@@ -160,7 +163,21 @@ func (m *Manager) resumeChatController(
 				),
 			}, completionErr
 		},
-	})
+	}
+	_, err = m.chat.StartChat(ctx, start)
+	if err != nil && completionErr == nil && !requireNativeHistory && !reconnectOnly &&
+		providerHandoff == nil && controllerGeneration == "" && recoversLostConversation(rec, err) &&
+		m.lostConversationConfirmed(ctx, rec, project) {
+		// The agent lost the saved conversation for good; retrying the resume
+		// can never succeed, so the orchestrator goes on in a fresh one (B678).
+		// PrepareControllerEnv may have moved rec's owner during the attempt.
+		freshIfMissing = false
+		start.ExpectedControllerOwner = rec.ControllerOwner()
+		start = lostConversationStart(start, rec, m.artifactDir(rec.ID))
+		m.logger.Warn("chat: saved orchestrator conversation is gone; starting a fresh one",
+			"session", rec.ID, "providerConversationID", rec.Metadata.ProviderConversationID, "error", err)
+		_, err = m.chat.StartChat(ctx, start)
+	}
 	if err != nil {
 		return RestoreResult{}, m.chatStartError(ctx, operation, rec, project, err, completionErr)
 	}

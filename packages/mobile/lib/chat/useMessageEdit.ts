@@ -32,9 +32,9 @@ export function useMessageEdit({ items, onEditMessage, onEditingChange, onStart 
 	const startEdit = useCallback((message: ConversationMessage) => {
 		if (!message.turnId) return;
 		// Edit what the user typed: the worker reports the daemon folded in are not theirs to resend.
-		const { body, attachments } = editableMessageText(humanVisibleText(message.text));
+		const { body, attachments, originals } = editableMessageText(humanVisibleText(message.text));
 		onStart?.();
-		setEditDraft(messageEditDraft({ turnId: message.turnId, initialText: body, attachments }));
+		setEditDraft(messageEditDraft({ turnId: message.turnId, initialText: body, attachments, ...(originals ? { originals } : {}) }));
 	}, [onStart]);
 	const cancelEdit = useCallback(() => setEditDraft(undefined), []);
 	/** Sends `payload`; `body` is what the editor shows if the delivery comes back uncertain. */

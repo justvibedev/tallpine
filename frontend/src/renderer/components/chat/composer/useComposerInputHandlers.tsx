@@ -1,7 +1,7 @@
 import { useCallback, useEffect, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactElement } from "react";
 import { type ComposerEditorSnapshot } from "../ComposerEditor";
 import { moveHighlight } from "../composerSuggest";
-import { isInlineImagePath, proseBesideImages, removeInlineImagePath } from "@tallpine/shared/chat/attachments";
+import { isInlineImagePath, removeInlineImagePath } from "@tallpine/shared/chat/attachments";
 import { firstDragEntryIsDirectory } from "../../../lib/dropClassify";
 import { useComposerDraftState } from "./useComposerDraftState";
 import { useComposerSuggestions } from "./useComposerSuggestions";
@@ -47,7 +47,6 @@ export function useComposerInputHandlers(props: ChatComposerProps, draft: Return
 	const {
 		canSteerDraft,
 		canSteerNext,
-		composerImages,
 		draftMutationPending,
 		draftPersistenceError,
 		queuedDockWithSteer,
@@ -178,12 +177,10 @@ export function useComposerInputHandlers(props: ChatComposerProps, draft: Return
 		persistComposerText(draft);
 	}
 
-	// Images get an inline chip only beside prose that can refer to them.
-	// Image-only drafts already show every image in the attachment strip.
+	// Every image gets an [IMGn] chip at the caret, so the agent reads where it belongs.
 	function attachFiles(files: File[]) {
 		// Reserve the spot now: staging can take a while, and the user keeps typing.
-		const reservation = proseBesideImages(textRef.current.trim(), composerImages.map((image) => image.path)) &&
-			files.some((file) => file.type.startsWith("image/"))
+		const reservation = files.some((file) => file.type.startsWith("image/"))
 			? editor.current?.reserveImages()
 			: undefined;
 		void fileAttachments.addFiles(files).then((added) => {

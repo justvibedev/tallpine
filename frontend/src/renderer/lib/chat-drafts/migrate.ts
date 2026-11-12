@@ -161,6 +161,7 @@ export function isChatSessionDraft(value: unknown, scope: ChatDraftScope): value
 			(draft.queuedEdit.attachments === undefined || (Array.isArray(draft.queuedEdit.attachments) && draft.queuedEdit.attachments.every((item) =>
 				item !== null && typeof item === "object" && typeof item.id === "string" && typeof item.name === "string" &&
 				(item.path === undefined || typeof item.path === "string") &&
+				(item.originalPath === undefined || typeof item.originalPath === "string") &&
 				(item.contentIndex === undefined || (Number.isSafeInteger(item.contentIndex) && item.contentIndex >= 0)) &&
 				(item.contentType === undefined || typeof item.contentType === "string")))) &&
 			(draft.queuedEdit.saving === undefined || typeof draft.queuedEdit.saving === "boolean")

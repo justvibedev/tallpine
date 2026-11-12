@@ -13,8 +13,9 @@ import (
 )
 
 type recordingOwnerNotifier struct {
-	got []ports.NotificationIntent
-	err error
+	got      []ports.NotificationIntent
+	resolved []ports.NotificationResolution
+	err      error
 }
 
 func (r *recordingOwnerNotifier) Notify(_ context.Context, in ports.NotificationIntent) error {
@@ -128,5 +129,23 @@ func TestPlanOwnerAlert_LaneItemPlannedByItsOwnLaneNotifiesDefault(t *testing.T)
 	planOwnerAlert(&recordingOwnerNotifier{}, ls, ls)(context.Background(), plan, "B9", "t")
 	if len(ls.sent) != 1 {
 		t.Fatalf("sent = %v", ls.sent)
+	}
+}
+
+func (r *recordingOwnerNotifier) Resolve(_ context.Context, res ports.NotificationResolution) error {
+	r.resolved = append(r.resolved, res)
+	return r.err
+}
+
+// B681: clearing resolves the planner's plan_waiting row, so the desktop
+// and phone stop showing an answered plan as pending.
+func TestPlanOwnerClear_ResolvesPlannerPlanWaiting(t *testing.T) {
+	rec := &recordingOwnerNotifier{}
+	planOwnerClear(rec)(context.Background(), domain.BacklogPlan{ID: "plan_1", PlannerSessionID: "s-planner", Status: domain.PlanWriting})
+	if len(rec.resolved) != 1 || rec.resolved[0].Type != domain.NotificationPlanWaiting || rec.resolved[0].SessionID != "s-planner" {
+		t.Fatalf("resolved = %+v", rec.resolved)
+	}
+	if planOwnerClear(nil) != nil {
+		t.Fatal("nil notifier must disable the clear")
 	}
 }

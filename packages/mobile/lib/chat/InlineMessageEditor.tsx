@@ -22,6 +22,8 @@ export type MessageEditDraft = {
 	text: string;
 	/** Tallpine-staged paths re-appended to the edited body, exactly as first sent. */
 	attachments: string[];
+	/** Each downscaled image's full original, named again in the re-sent block. */
+	originals?: Record<string, string>;
 	/**
 	 * Retrying an uncertain send reuses this, so the daemon replays the first
 	 * result instead of branching twice; a definitive refusal replaces it.
@@ -91,7 +93,7 @@ export function InlineMessageEditor({
 		setSending(true);
 		setError(undefined);
 		try {
-			await (pending ? onEdit(pending.payload, pending.body) : onEdit(withEditedBody(text, draft.attachments), text));
+			await (pending ? onEdit(pending.payload, pending.body) : onEdit(withEditedBody(text, draft.attachments, draft.originals), text));
 			haptics.success();
 		} catch (cause) {
 			haptics.error();

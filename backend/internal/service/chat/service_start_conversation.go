@@ -248,6 +248,8 @@ func (s *Service) prepareLaunchEnv(ctx context.Context, l *launch) error {
 	handoffNote := l.activeBranch.HandoffNote
 	if l.cfg.ProviderSwitch != nil {
 		handoffNote = l.cfg.ProviderSwitch.Bootstrap
+	} else if note := contextResetNote(*l.cfg); note != "" {
+		handoffNote = note
 	}
 	l.providerSystemPrompt = withHandoffNote(l.cfg.SystemPrompt, handoffNote)
 	return nil

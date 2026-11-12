@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import { Image as ImageIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { imagePlaceholder } from "@tallpine/shared/chat/image-placeholders";
 
 /** What an inline image chip shows for a staged path; the path itself is the wire text. */
 export type ComposerImage = { path: string; name: string; src?: string };
@@ -38,9 +39,9 @@ export function ComposerImageChip({ path }: { path: string }) {
 			) : (
 				<ImageIcon aria-hidden="true" className="size-3 shrink-0" />
 			)}
-			{/* Numbered like the sent message will be; the file name stays in the tooltip. */}
+			{/* The placeholder the sent message carries here; the file name stays in the tooltip. */}
 			<span className="truncate">
-				{image ? t("chat.image.numbered", { index: index + 1 }) : t("chat.image.untitled")}
+				{image ? imagePlaceholder(index + 1) : t("chat.image.untitled")}
 			</span>
 		</span>
 	);

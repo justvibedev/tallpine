@@ -6775,7 +6775,7 @@ export interface components {
         };
         CleanupCategoryReport: {
             /** @enum {string} */
-            category: "worktrees" | "artifacts" | "session_temp" | "harness_caches" | "system_temp" | "containers" | "branches" | "go_build_cache" | "backlog" | "session_retention";
+            category: "worktrees" | "artifacts" | "session_temp" | "harness_caches" | "system_temp" | "containers" | "branches" | "go_build_cache" | "backlog" | "session_retention" | "attachments";
             error?: string;
             failed: number;
             freed: number;
@@ -7218,6 +7218,12 @@ export interface components {
             status: "compacting" | "completed" | "failed";
             trigger?: string;
         };
+        ControllersConversationTurnAutoRetryResponse: {
+            attempt: number;
+            maxAttempts: number;
+            nextAt: string;
+            offline?: boolean;
+        };
         ControllersCreateIntentRequest: {
             text: string;
         };
@@ -7630,6 +7636,7 @@ export interface components {
             truncated?: boolean;
         };
         ConversationTurnResponse: {
+            autoRetry?: components["schemas"]["ControllersConversationTurnAutoRetryResponse"];
             completedAt?: null | string;
             diff?: components["schemas"]["ConversationTurnDiffResponse"];
             errorMessage?: string;
@@ -7644,6 +7651,7 @@ export interface components {
             startedAt?: null | string;
             /** @enum {string} */
             state: "queued" | "running" | "completed" | "recovered" | "interrupted" | "failed" | "cancelled";
+            transientError?: boolean;
             usageLimit?: components["schemas"]["ConversationUsageLimitResponse"];
         };
         ConversationTurnSettingsPayload: {

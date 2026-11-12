@@ -3,10 +3,10 @@
 #
 # B631: a signed daemon refuses API calls from processes Tallpine did not start, and these scripts are
 # such processes, so they no longer message an orchestrator. They append the alert to alerts.tsv next
-# to local-ci.tsv instead. A Tallpine automation runs scripts/local-ci/alerts, which prints the alerts
-# not yet passed on, and its agent sends them to the orchestrator with its own scoped CLI.
-# Until that automation runs (or if it stops), each alert is also shown as a macOS notification, so
-# none is parked unseen.
+# to local-ci.tsv instead. The daemon reads it every minute and passes new alerts to the session in
+# <local-ci>/notify-target (B680, backend/internal/service/localcialerts); scripts/local-ci/alerts is
+# the manual reader sharing its cursor. While no reader runs (the app is closed, or no notify-target),
+# each alert is also shown as a macOS notification, so none is parked unseen.
 
 # tp_record_alert <alerts-file> <message>: appends "<UTC time><TAB><message>" as one line (tabs and
 # newlines in the message become spaces) and prints one status line; never fails. When no reader has
@@ -21,7 +21,7 @@ tp_record_alert() {
     echo "could not record the alert in ${file}"
   fi
   if tp_alert_reader_stale "$(dirname "${file}")/alerts.cursor"; then
-    echo "WARNING: no reader has passed local-CI alerts on in the last ${TALLPINE_ALERT_READER_STALE:-3600}s; set up the Local CI alerts automation (scripts/local-ci/alerts --help). Showing this alert on the desktop instead."
+    echo "WARNING: no reader has passed local-CI alerts on in the last ${TALLPINE_ALERT_READER_STALE:-3600}s; the Tallpine app passes them on while it runs, to the orchestrator named in the local-CI notify-target file (scripts/local-ci/alerts --help). Showing this alert on the desktop instead."
     tp_desktop_notify "${msg}"
   fi
   return 0

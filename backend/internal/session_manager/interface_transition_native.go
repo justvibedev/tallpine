@@ -208,7 +208,18 @@ func (m *Manager) persistedNativeConversationID(
 	if err != nil {
 		return "", err
 	}
-	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
+	return m.persistedNativeConversationIDIn(ctx, rec, id, probe, m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env))
+}
+
+// persistedNativeConversationIDIn is persistedNativeConversationID probing
+// under env, for a caller that built and checked the launch environment itself.
+func (m *Manager) persistedNativeConversationIDIn(
+	ctx context.Context,
+	rec domain.SessionRecord,
+	id string,
+	probe ports.AgentInterfaceHandoffHistoryProbe,
+	env map[string]string,
+) (string, error) {
 	exists, err := probe.NativeConversationExists(ctx, ports.SessionRef{
 		ID:            string(rec.ID),
 		WorkspacePath: rec.Metadata.WorkspacePath,

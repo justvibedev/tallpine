@@ -15,6 +15,7 @@ func (s *Service) newReplacementController(id domain.SessionID, source *Controll
 	replacement.onAsyncTask = s.onAsyncTask
 	replacement.onAsyncTasksGone = s.onAsyncTasksGone
 	replacement.kind = source.kind
+	replacement.transientRetry.policy = s.transientRetryPolicy()
 	replacement.compactBaseline = source.projectCompactBaseline()
 	return replacement
 }

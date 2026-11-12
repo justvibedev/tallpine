@@ -77,6 +77,8 @@ export interface ChatDraftRetainedAttachment {
 	id: string;
 	name: string;
 	path?: string;
+	/** The full original of a downscaled staged image, named again when the edit is sent. */
+	originalPath?: string;
 	contentIndex?: number;
 	contentType?: string;
 }

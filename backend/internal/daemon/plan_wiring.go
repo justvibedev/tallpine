@@ -24,7 +24,7 @@ import (
 
 // newPlanService builds the plan service behind the TALLPINE_PLANNER switch;
 // with the switch off every call answers "disabled".
-func newPlanService(cfg config.Config, store *sqlite.Store, backlog *backlogsvc.Service, sessions planSessions, policy *agentpolicy.Engine, owner ownerNotifier) *backlogsvc.PlanService {
+func newPlanService(cfg config.Config, store *sqlite.Store, backlog *backlogsvc.Service, sessions planSessions, policy *agentpolicy.Engine, owner planOwner) *backlogsvc.PlanService {
 	return backlogsvc.NewPlanService(backlogsvc.PlanDeps{
 		Backlog: backlog, Store: store, Sessions: plannerSessions{sessions: sessions},
 		Notify: newBacklogNotifier(sessions, store), Base: planBase{store: store, resolver: gitdefault.New("", nil)}, Diff: planBase{store: store, resolver: gitdefault.New("", nil)},
@@ -34,6 +34,7 @@ func newPlanService(cfg config.Config, store *sqlite.Store, backlog *backlogsvc.
 		Eval:        planModeSource{store: store, policy: policy}.Eval,
 		Enabled:     cfg.Planner,
 		NotifyOwner: planOwnerAlert(owner, sessions, store),
+		ClearOwner:  planOwnerClear(owner),
 	})
 }
 
@@ -351,6 +352,26 @@ func (w workerPlanSource) LinkedItemForWorker(ctx context.Context, id domain.Ses
 // ownerNotifier writes a stored notification (and so the push) for the human.
 type ownerNotifier interface {
 	Notify(ctx context.Context, intent ports.NotificationIntent) error
+}
+
+// planOwner also resolves the plan's notification once its cause is gone.
+type planOwner interface {
+	ownerNotifier
+	Resolve(ctx context.Context, res ports.NotificationResolution) error
+}
+
+// planOwnerClear resolves the planner's plan_waiting notification once the
+// plan stops waiting on the owner, so an answered plan no longer reads as
+// pending on desktop or phone. A failure is logged only.
+func planOwnerClear(owner planOwner) func(ctx context.Context, plan domain.BacklogPlan) {
+	if owner == nil {
+		return nil
+	}
+	return func(ctx context.Context, plan domain.BacklogPlan) {
+		if err := owner.Resolve(ctx, ports.NotificationResolution{Type: domain.NotificationPlanWaiting, SessionID: plan.PlannerSessionID}); err != nil {
+			slog.Warn("could not clear a plan's owner notification", "plan", plan.ID, "error", err)
+		}
+	}
 }
 
 // planOwnerAlert turns a plan reaching awaiting_answers or awaiting_approval

@@ -361,6 +361,8 @@ export const TurnGroup = memo(function TurnGroup({
 					state={group.outcome.state}
 					error={group.outcome.error}
 					usageLimit={group.outcome.usageLimit}
+					autoRetry={group.outcome.autoRetry}
+					retriedTransient={group.outcome.retriedTransient}
 					retry={group.outcome.state === "failed" ? retry : undefined}
 				/>
 			) : null}
