@@ -151,7 +151,7 @@ type Config struct {
 	// that just completed, when it differs from selectedModel in a way worth
 	// showing (for example an alias resolving to a concrete model). It returns
 	// "" when there is nothing to report. Optional.
-	ServedModel func(ctx context.Context, cfg LaunchConfig, sessionID, selectedModel string) (served, reason string)
+	ServedModel func(ctx context.Context, cfg LaunchConfig, sessionID, selectedModel string, since time.Time) (served, reason string)
 	// ValidateModel optionally rejects a model the binding knows the running
 	// agent cannot use (for example one its CLI version predates) before Tallpine
 	// asks the agent to switch to it. It returns nil when the model may be tried.

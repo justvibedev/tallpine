@@ -25,6 +25,7 @@ type OrchestratorResearchResponse struct {
 	WindowTokens   int    `json:"windowTokens" description:"The compaction window in effect, in tokens; 0 is the agent's own default."`
 	ResearchWindow string `json:"researchWindow,omitempty" description:"The window research mode uses; empty when it is turned off for the project or globally."`
 	Since          string `json:"since,omitempty" description:"When research mode was switched on (RFC 3339); empty when it is off."`
+	RestartPending bool   `json:"restartPending" description:"Research mode is switched on but waits for the agent to be idle and restart before its window applies."`
 }
 
 // researchModeService is the optional Chat service ability behind the route.
@@ -34,8 +35,8 @@ type researchModeService interface {
 }
 
 func researchResponse(st chatsvc.ResearchStatus) OrchestratorResearchResponse {
-	out := OrchestratorResearchResponse{Active: st.Active, Available: st.Available, WindowTokens: max(st.Window, 0), ResearchWindow: st.ResearchWindow}
-	if st.Active && !st.Since.IsZero() {
+	out := OrchestratorResearchResponse{Active: st.Active, Available: st.Available, WindowTokens: max(st.Window, 0), ResearchWindow: st.ResearchWindow, RestartPending: st.RestartPending}
+	if (st.Active || st.RestartPending) && !st.Since.IsZero() {
 		out.Since = st.Since.UTC().Format(time.RFC3339)
 	}
 	return out
@@ -94,11 +95,9 @@ func (c *ConversationsController) getOrchestratorResearch(w http.ResponseWriter,
 func writeResearchError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, chatsvc.ErrResearchUnsupported):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "RESEARCH_MODE_UNSUPPORTED", "research mode is not supported for this agent: only a Claude Code orchestrator can change its compaction window while it runs", nil)
+		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "RESEARCH_MODE_UNSUPPORTED", "research mode is not supported for this agent: only a Claude Code orchestrator offers it", nil)
 	case errors.Is(err, chatsvc.ErrResearchDisabled):
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "RESEARCH_MODE_DISABLED", "research mode is turned off: enable \"Dynamic orchestrator context\" in Settings, or set the project's orchestrator.researchCompactWindow to a size", nil)
-	case errors.Is(err, chatsvc.ErrResearchNotApplied):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "RESEARCH_MODE_NOT_APPLIED", "research mode was not enabled: this agent keeps its compaction window until it restarts, and nothing is queued for the restart; the orchestrator stays in coordination mode, so delegate the reading to workers", nil)
 	case errors.Is(err, chatsvc.ErrResearchRequestFailed):
 		envelope.WriteAPIError(w, r, http.StatusBadGateway, "bad_gateway", "RESEARCH_MODE_REQUEST_FAILED", "research mode was not enabled: the request to change the agent's compaction window failed before it answered; try again", nil)
 	default:

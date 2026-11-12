@@ -23,6 +23,8 @@ func (s *Service) Stop(ctx context.Context, id domain.SessionID) error {
 	if err := s.closeSessionSides(ctx, id); err != nil {
 		s.log.Warn("side chat cleanup deferred while stopping session", "session", id, "error", err)
 	}
+	// A stopped chat is not restarted for a pending research mode (B638).
+	s.researchCarried.take(id)
 	s.viewMu.Lock()
 	delete(s.viewClosedAt, id)
 	delete(s.viewLeases, id)

@@ -97,8 +97,10 @@ type Writer struct {
 	AppSettings   AppSettings
 	CleanupPolicy CleanupPolicy
 	AgentPolicy   AgentPolicy
-	Audit         *settingsaudit.Recorder
-	Now           func() time.Time
+	// PeerCheck owns app.daemon.peerCheck; nil refuses it.
+	PeerCheck PeerCheckSwitch
+	Audit     *settingsaudit.Recorder
+	Now       func() time.Time
 }
 
 // planned is one validated key: its new value (nil to clear a project field).
@@ -164,14 +166,8 @@ func (w *Writer) validate(ctx context.Context, ch Change) ([]planned, error) {
 	if len(ch.Set) == 0 && len(ch.Unset) == 0 {
 		return nil, &Error{Code: CodeInvalid, Message: "set or unset at least one setting"}
 	}
-	retired := map[string]string{}
-	for _, k := range append(slices.Clone(ch.Unset), mapKeys(ch.Set)...) {
-		if why, ok := retiredSettings[k]; ok {
-			retired[string(k)] = why
-		}
-	}
-	if len(retired) > 0 {
-		return nil, &Error{Code: CodeRetired, Message: "retired settings: " + joinKeys(retired), Keys: retired}
+	if err := w.refuseKeys(ctx, ch); err != nil {
+		return nil, err
 	}
 	agent, isAgent := requestscope.AgentFrom(ctx)
 	var agentRule agentsettings.Outcome
@@ -350,6 +346,10 @@ func (w *Writer) applyApp(ctx context.Context, plan []planned) error {
 			}
 		case "app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel":
 			if err := w.setWorkflowDefault(ctx, p.def.Key, raw, plan); err != nil {
+				return err
+			}
+		case PeerCheckKey:
+			if err := w.setPeerCheck(ctx, raw); err != nil {
 				return err
 			}
 		case "app.versionRefresh":
@@ -537,18 +537,4 @@ func joinKeys(m map[string]string) string {
 	}
 	sort.Strings(keys)
 	return strings.Join(keys, ", ")
-}
-
-// retiredSettings are keys that no longer exist, with where their value lives
-// now. A write names the new home instead of failing as an unknown key.
-var retiredSettings = map[settingsreg.Key]string{
-	"app.reviewDefaults": "retired; review settings are per project: set project.autoReview, project.terminateOnPrMerge and project.reviewRisk",
-}
-
-func mapKeys(m map[settingsreg.Key]json.RawMessage) []settingsreg.Key {
-	out := make([]settingsreg.Key, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
 }

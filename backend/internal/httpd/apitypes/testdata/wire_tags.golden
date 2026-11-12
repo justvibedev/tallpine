@@ -46,6 +46,7 @@ CleanupSkippedSession: reason sessionId
 CleanupStatusResponse: firstPassPending lastDryRun,omitempty lastFullRunAt,omitempty lastRun,omitempty nextFullRunAt,omitempty nextLightRunAt,omitempty policy policyError,omitempty policyUpdatedAt,omitempty running
 CleanupSystemTempPolicy: enabled minAgeDays patterns
 CleanupWorktreePolicy: enabled requireMerged retentionDays
+ClearedContextNoteResponse: note
 ConversationImageContentRequest: data mimeType
 CreateAutomationRequest: cron,omitempty displayName enabled,omitempty harness,omitempty kind projectId prompt rrule,omitempty timezone
 CreateBacklogRequest: agentNotes,omitempty doneWhen,omitempty excerpt,omitempty hold,omitempty note,omitempty open,omitempty parent,omitempty scope,omitempty title

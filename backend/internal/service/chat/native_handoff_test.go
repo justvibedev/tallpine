@@ -116,6 +116,12 @@ func TestNativeChatHandoffAtomicPublication(t *testing.T) {
 						t.Fatal(err)
 					}
 				case "owner_changed":
+					// An ordinary rebind adopts a still-queued predecessor prompt
+					// (B667), which would trip the history guard first. Settle it
+					// so this scenario keeps exercising the ownership guard.
+					if err := f.store.SettleTurnByID(ctx, "old-turn", domain.TurnStateCompleted, "", time.Now()); err != nil {
+						t.Fatal(err)
+					}
 					_, err := f.store.CreateConversation(ctx, "unused", domain.ConversationScopeProject, testProject, f.target.ID, time.Now())
 					if err != nil {
 						t.Fatal(err)
@@ -205,6 +211,9 @@ func TestNativeChatHandoffAtomicPublication(t *testing.T) {
 			wantTurn, wantRequest := domain.TurnStateQueued, domain.ActivityStatusPending
 			if published := scenario == "success" || scenario == "laned_orchestrator_alongside"; published {
 				wantTurn, wantRequest = domain.TurnStateFailed, domain.ActivityStatusFailed
+			}
+			if scenario == "owner_changed" {
+				wantTurn = domain.TurnStateCompleted
 			}
 			for _, turn := range rows.Turns {
 				if turn.ID == "old-turn" && turn.State != wantTurn {

@@ -264,4 +264,5 @@ var shippedMigrations = map[int64]string{
 	20261108100000000: "20261108100000000_session_auto_review_override.sql",
 	20261108120000000: "20261108120000000_worktree_kept_notifications.sql",
 	20261108130000000: "20261108130000000_review_trigger_queue.sql",
+	20261110100000000: "20261110100000000_app_settings_peer_check.sql",
 }

@@ -147,6 +147,12 @@ describe("inspect image source for a chat session", () => {
 		return inspection.ok ? inspection.image : inspection.reason;
 	};
 
+	it("maps video and audio files the same way", async () => {
+		expect(await image("/data/worktrees/proj/s-1/out/run.mp4")).toEqual({ kind: "workspace", path: "out/run.mp4" });
+		expect(await image("/data/artifacts/s-1/take.mp3")).toEqual({ kind: "artifact", sessionId: "s-1", path: "take.mp3" });
+		expect(await image("/Users/me/Desktop/run.mp4")).toBeUndefined();
+	});
+
 	it("maps a file inside the session's real worktree or artifact directory", async () => {
 		expect(await image("/data/worktrees/proj/s-1/docs/shot.png")).toEqual({ kind: "workspace", path: "docs/shot.png" });
 		// A worktree folder that happens to be named artifacts/<x> is still the worktree.

@@ -79,10 +79,12 @@ type Deps struct {
 	Out io.Writer
 	Err io.Writer
 
-	HTTPClient            *http.Client
-	Executable            func() (string, error)
-	StartProcess          func(processStartConfig) error
-	ProcessAlive          func(pid int) bool
+	HTTPClient   *http.Client
+	Executable   func() (string, error)
+	StartProcess func(processStartConfig) error
+	ProcessAlive func(pid int) bool
+	// Terminate sends SIGTERM to pid (tallpine stop when the API refuses it).
+	Terminate             func(pid int) error
 	LookPath              func(file string) (string, error)
 	CommandOutput         func(ctx context.Context, name string, args ...string) ([]byte, error)
 	CommandOutputInDir    func(ctx context.Context, dir, name string, args ...string) ([]byte, error)
@@ -108,6 +110,7 @@ func DefaultDeps() Deps {
 		Executable:            os.Executable,
 		StartProcess:          startProcess,
 		ProcessAlive:          processalive.Alive,
+		Terminate:             terminateProcess,
 		LookPath:              exec.LookPath,
 		CommandOutput:         commandOutput,
 		CommandOutputInDir:    commandOutputInDir,

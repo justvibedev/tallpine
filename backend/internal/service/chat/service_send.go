@@ -10,22 +10,38 @@ import (
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
-// ErrClearUnsupported reports a "/clear" that cannot be carried out. Codex's
-// app-server treats slash commands as plain prompt text (the model answers
-// "Cleared." and remembers everything), so Tallpine clears it by opening a new
-// thread instead; this is returned only when that is unavailable.
-var ErrClearUnsupported = errors.New("Codex can't clear its context in place; start a new session instead") //nolint:staticcheck // user-facing copy, shown verbatim in the clients
+// ErrClearWithText refuses a message that opens with "/clear" but holds more.
+// Claude Code would run it as /clear with arguments, a native clear that drops
+// the task brief; only the bare command clears, and Tallpine runs that one.
+var ErrClearWithText = errors.New("send /clear on its own to clear the context") //nolint:staticcheck // user-facing copy
 
 // isClearCommand reports whether a message is exactly the "/clear" command.
 func isClearCommand(msg ports.ChatUserMessage) bool {
 	return strings.TrimSpace(msg.Text) == "/clear" && len(msg.Content) == 0
 }
 
-// interceptsClear reports a "/clear" Tallpine carries out itself, because the
-// agent would treat it as prompt text. Send, Steer and SteerOrSend all share it
-// so no delivery path forwards the text.
+// opensWithClear reports a message whose first word is "/clear", the bare
+// command included. A "/clear" later in the text is ordinary prose.
+func opensWithClear(msg ports.ChatUserMessage) bool {
+	fields := strings.Fields(msg.Text)
+	return len(fields) > 0 && fields[0] == "/clear"
+}
+
+// refusedClear is the refusal of a "/clear" with more in the message, for an
+// agent that would clear natively on it. Codex reads such a message as prompt
+// text, so it goes through.
+func refusedClear(record domain.SessionRecord, msg ports.ChatUserMessage) error {
+	if record.Harness == domain.HarnessClaudeCode && opensWithClear(msg) && !isClearCommand(msg) {
+		return ErrClearWithText
+	}
+	return nil
+}
+
+// interceptsClear reports a "/clear" Tallpine carries out itself (see
+// clearsByHandoff). Send, Steer and SteerOrSend all share it so no delivery
+// path forwards the text.
 func interceptsClear(record domain.SessionRecord, msg ports.ChatUserMessage) bool {
-	return record.Harness == domain.HarnessCodex && isClearCommand(msg)
+	return clearsByHandoff(record.Harness) && isClearCommand(msg)
 }
 
 // Send delivers a message to a session's agent.
@@ -38,8 +54,11 @@ func (s *Service) Send(
 	if err != nil {
 		return domain.ConversationTurn{}, err
 	}
+	if err := refusedClear(record, msg); err != nil {
+		return domain.ConversationTurn{}, err
+	}
 	if interceptsClear(record, msg) {
-		marker, err := s.clearContext(ctx, id)
+		marker, err := s.clearByHandoff(ctx, id)
 		if err != nil {
 			return domain.ConversationTurn{}, err
 		}
@@ -274,32 +293,4 @@ func truncateExcerptContext(text string) string {
 		return text
 	}
 	return truncateUTF8Head(text, maxExcerptPairedTextBytes) + "\n[truncated]"
-}
-
-// clearContext runs a Codex /clear on the session's live controller and returns
-// the transcript marker's id.
-func (s *Service) clearContext(ctx context.Context, id domain.SessionID) (string, error) {
-	controller, release, err := s.workingController(ctx, id)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-	marker, err := controller.ClearContext(ctx)
-	if err != nil {
-		return marker, err
-	}
-	// Mirror the owner the rebind just made durable, as a branch activation does:
-	// a stale field fails the next ownership fence (credential rotation, branch
-	// edit, awake or reconnect checks).
-	owner := domain.SessionConversationOwner(id)
-	s.mu.Lock()
-	if cfg, ok := s.startConfigs[owner]; ok {
-		next := controller.ProviderConversationID()
-		cfg.ExpectedControllerOwner.AgentSessionID = next
-		cfg.ExpectedControllerOwner.AgentSessionIDLaunchID = ""
-		cfg.ExpectedControllerOwner.ProviderConversationID = next
-		s.startConfigs[owner] = cfg
-	}
-	s.mu.Unlock()
-	return marker, nil
 }

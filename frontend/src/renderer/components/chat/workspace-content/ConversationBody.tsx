@@ -15,6 +15,7 @@ import { ComposerModeItems } from "../turn-settings/composer-menu";
 import { McpServerBanner } from "../ChatStatusBanners";
 import { UsageLimitNotice } from "../UsageLimitNotice";
 import { can } from "../../../types/conversation";
+import { ChatDropOverlay } from "../ChatDropOverlay";
 import type { ChatContentState } from "./chat-content-state";
 import type { ChatWorkspaceContentProps } from "./chat-content-props";
 
@@ -136,6 +137,10 @@ export function ConversationBody({ props, v }: { props: ChatWorkspaceContentProp
 	} = v;
 	return (
 		<>
+			<ChatDropOverlay
+				enabled={!agentInputDisabled && !newWorkDisabled}
+				onFiles={(files) => composerFocusRef.current?.attachFiles(files) ?? false}
+			>
 					<div
 						className={cn("flex min-h-0 flex-1 flex-col", conversationEmpty && "justify-center", arrivingWithHistory && snapshot.items.length === 0 && "justify-end")}
 						data-composer-placement={conversationEmpty ? "center" : "dock"}
@@ -349,6 +354,7 @@ export function ConversationBody({ props, v }: { props: ChatWorkspaceContentProp
 							</div>
 						</div>
 					</div>
+			</ChatDropOverlay>
 		</>
 	);
 }

@@ -99,27 +99,17 @@ install_deps() {
     { tail -n 20 "${log}" >&2; die "npm ci failed in ${d} (full log: ${log})"; }
 }
 
-# notify_build <log> <sha> <rc>: one line to the orchestrator, like loop.sh's build_on_green.
-# Target: ~/.tallpine/local-ci/notify-target if that session is live, else the oldest live orchestrator.
+# notify_build <log> <sha> <rc>: one alert for the orchestrator, like loop.sh's build_on_green, recorded in
+# alerts.tsv next to local-ci.tsv (B631: the daemon refuses a message sent from this detached build).
 notify_build() {
-  local log="$1" sha="$2" rc="$3" app msg cli
+  local log="$1" sha="$2" rc="$3" app msg
   if [[ "${rc}" -eq 0 ]]; then
     app="$(grep '^Built: ' "${log}" | tail -n 1 | cut -c8-)"
     msg="[local-ci] build ${sha:0:10} OK: ${app:-unknown}. Log: ${log}"
   else
     msg="[local-ci] build ${sha:0:10} FAILED (rc ${rc}). Log: ${log}"
   fi
-  cli="${TALLPINE_RELEASE_NOTIFY_CLI:-}"
-  if [[ -z "${cli}" ]]; then
-    for cli in "${HOME}/Applications/${product_name}.app/Contents/Resources/daemon/${cli_name}" "$(command -v "${cli_name}" || true)"; do
-      [[ -x "${cli}" ]] && break
-      cli=""
-    done
-  fi
-  [[ -n "${cli}" ]] || { say "notify: no CLI found"; return 0; }
-  local target
-  target="$(head -n 1 "$(dirname "${ci_tsv}")/../notify-target" 2>/dev/null | tr -d '[:space:]')"
-  say "$(tp_notify_orchestrator "${cli}" agent-orchestrator "${target}" "${msg}")"
+  say "$(tp_record_alert "$(dirname "${ci_tsv}")/alerts.tsv" "${msg}")"
 }
 
 
@@ -128,7 +118,7 @@ build_exists() {
   grep -q "$(printf '\t%s\t' "${1:0:12}")" "${releases_dir}/build-times.tsv" 2>/dev/null
 }
 
-# build_detached <sha>: builds in its own session (never installs), then notifies. Log next to local-ci.tsv.
+# build_detached <sha>: builds in its own session (never installs), then records an alert. Log next to local-ci.tsv.
 build_detached() {
   local sha="$1" log self
   log="$(dirname "${ci_tsv}")/build-${sha:0:8}.log"
@@ -139,11 +129,11 @@ build_detached() {
     die "cannot write the build log ${log} (is this shell sandboxed? use 'tallpine release request-build' so the daemon builds)"
   say "Building ${sha:0:12} now, detached (log ${log})"
   local defs child
-  defs="$(declare -f notify_build say tp_notify_orchestrator)"
+  defs="$(declare -f notify_build say; tp_alert_defs)"
   child='"$3" --state-dir "$4" build "$2" --no-fetch </dev/null; rc=$?
 notify_build "$1" "$2" "$rc"'
   env -i HOME="${HOME}" PATH="${PATH}" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" TMPDIR="${TMPDIR:-/tmp}" \
-    TALLPINE_RELEASE_CI_TSV="${ci_tsv}" TALLPINE_RELEASE_NOTIFY_CLI="${TALLPINE_RELEASE_NOTIFY_CLI:-}" \
+    TALLPINE_RELEASE_CI_TSV="${ci_tsv}" \
     TALLPINE_RELEASE_SKIP_STALE_CHECK="${TALLPINE_RELEASE_SKIP_STALE_CHECK:-}" \
     product_name="${product_name}" cli_name="${cli_name}" ci_tsv="${ci_tsv}" \
     python3 -I -c 'import os,sys

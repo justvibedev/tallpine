@@ -2,6 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef } 
 import { type ComposerEditorSnapshot } from "../ComposerEditor";
 import { acknowledgeChatComposerMutation, cancelChatComposerMutation, clearAcceptedChatComposer, clearUncertainChatComposerDelivery, finishChatComposerMutation, getChatComposerMutation, loadChatSessionDraft, markChatComposerDeliveryAccepted, writeChatComposerText, type ChatDraftMutationToken, type ChatComposerDelivery, type DraftClearResult } from "../../../lib/chat-drafts";
 import { setChatDraftBoundary } from "../../../lib/chat-draft-boundary";
+import { attachmentFromDraft } from "./composer-model";
 import { useComposerDraftState } from "./useComposerDraftState";
 import { useComposerSuggestions } from "./useComposerSuggestions";
 import { ChatComposerProps } from "./ComposerProps";
@@ -258,13 +259,7 @@ export function useComposerDraftPersistence(props: ChatComposerProps, draft: Ret
 		// Keep this surface's native bytes for retry; only a new surface needs descriptors.
 		if (committedDraft && (!committedDraft.composer.delivery?.draft || restoredSeedKey.current === undefined)) {
 			fileAttachments.reconcilePersistedAttachments(
-				(committedDraft.composer.delivery?.draft?.attachments ?? committedDraft.composer.attachments).map((attachment) => ({
-					id: attachment.id,
-					name: attachment.name,
-					mimeType: attachment.mimeType,
-					bytes: attachment.bytes,
-					stagedPath: attachment.path,
-				})),
+				(committedDraft.composer.delivery?.draft?.attachments ?? committedDraft.composer.attachments).map(attachmentFromDraft),
 			);
 		}
 		const committedSeedText =
@@ -437,6 +432,7 @@ export function useComposerDraftPersistence(props: ChatComposerProps, draft: Ret
 				if (snapshot) onEditorChange(snapshot);
 				editor.current?.focus();
 			},
+			attachFiles: (files: File[]) => draft.attachFilesRef.current(files),
 		}),
 		[focusEditor, hasDraft, onEditorChange],
 	);

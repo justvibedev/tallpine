@@ -109,8 +109,8 @@ func (d *Driver) initialize(
 	conv.promptResponseFailure = d.cfg.PromptResponseFailure
 	if d.cfg.ServedModel != nil {
 		servedModel := d.cfg.ServedModel
-		conv.servedModel = func(ctx context.Context, sessionID, selectedModel string) (string, string) {
-			return servedModel(ctx, cfg, sessionID, selectedModel)
+		conv.servedModel = func(ctx context.Context, sessionID, selectedModel string, since time.Time) (string, string) {
+			return servedModel(ctx, cfg, sessionID, selectedModel, since)
 		}
 	}
 	if d.cfg.ValidateModel != nil {

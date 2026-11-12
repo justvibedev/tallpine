@@ -84,3 +84,11 @@ type UsageHookMetadata struct {
 	SubagentID             string              `json:"subagentId,omitempty"`
 	SubagentTranscriptPath string              `json:"subagentTranscriptPath,omitempty"`
 }
+
+// ClearedContextNoteResponse is the body of GET
+// /api/v1/sessions/{sessionId}/cleared-context-note: the note an agent reads
+// after its context was cleared, carrying the task, the workspace state and a
+// record of the conversation.
+type ClearedContextNoteResponse struct {
+	Note string `json:"note"`
+}

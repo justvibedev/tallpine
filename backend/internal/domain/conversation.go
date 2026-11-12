@@ -94,6 +94,13 @@ const (
 	TurnStateCancelled TurnState = "cancelled"
 )
 
+// Answered reports a turn the agent finished, so its provider holds it. A
+// turn cut short (interrupted, failed, cancelled) or never run proves nothing
+// was saved; a recovered one was proven from the provider's own history.
+func (s TurnState) Answered() bool {
+	return s == TurnStateCompleted || s == TurnStateRecovered
+}
+
 // Terminal reports whether no further work is expected on the turn.
 func (s TurnState) Terminal() bool {
 	switch s {

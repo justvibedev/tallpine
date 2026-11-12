@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatDraftScopeSessionId } from "../lib/chat-drafts";
+import {
+	beginSharedAttachmentWork,
+	endSharedAttachmentWork,
+	notifySharedAttachmentEntry,
+	sharedAttachmentDescriptors,
+	sharedAttachmentEntries,
+	sharedAttachmentPending,
+	sharedAttachmentWorkIsCurrent,
+	subscribeSharedAttachmentWork,
+	type SharedAttachmentWork,
+} from "./fileAttachmentRegistry";
+import { resizeImageIfNeeded, resizeNote } from "../lib/resizeImage";
 
 // Client-side mirror of the backend spawn caps in
 // backend/internal/httpd/controllers/sessions.go (maxAttachments /
@@ -27,6 +39,20 @@ export type FileAttachment = {
 	data?: string;
 	/** Durable worktree-relative path, present only after daemon staging succeeds. */
 	stagedPath?: string;
+	/**
+	 * Set when an oversized image was downscaled: `bytes`, `data` and `stagedPath`
+	 * describe the downscaled copy, and the full original is kept here.
+	 */
+	resize?: {
+		/** "resized from 4000×3000 to 1568×1176". */
+		note: string;
+		/** Base64 of the full original, dropped once it is staged. */
+		originalData?: string;
+		originalMimeType?: string;
+		originalBytes: number;
+		/** Worktree-relative path of the staged original. */
+		originalPath?: string;
+	};
 };
 
 /** Attachment payload shape accepted by the spawn API. */
@@ -48,23 +74,9 @@ export type FileAttachmentOptions = {
 	prepareAttachments?: (attachments: FileAttachment[]) => Promise<FileAttachment[]>;
 	/** Called after an accepted add, removal, or clear. */
 	onAttachmentsChange?: (attachments: FileAttachment[]) => void;
+	/** Downscale oversized images; the original is kept in `resize` for staging. */
+	resizeImages?: boolean;
 };
-
-type SharedAttachmentUpdate = {
-	pending: number;
-	attachments?: FileAttachment[];
-	error?: string | null;
-};
-
-type SharedAttachmentEntry = {
-	pending: Set<symbol>;
-	generation: number;
-	listeners: Map<symbol, (update: SharedAttachmentUpdate) => void>;
-	attachments?: FileAttachment[];
-	error?: string | null;
-};
-
-type SharedAttachmentWork = { token: symbol; generation: number };
 
 type CapturedPendingFileAttachmentEntry = {
 	key: string;
@@ -78,101 +90,6 @@ const pendingFileAttachmentCaptureEntries = Symbol("pending-file-attachment-capt
 export type PendingFileAttachmentCapture = {
 	readonly [pendingFileAttachmentCaptureEntries]: readonly CapturedPendingFileAttachmentEntry[];
 };
-
-function sharedAttachmentDescriptors(attachments: FileAttachment[]): FileAttachment[] {
-	return attachments.map(({ id, mimeType, bytes, name, stagedPath }) => ({
-		id,
-		mimeType,
-		bytes,
-		name,
-		...(stagedPath ? { stagedPath } : {}),
-	}));
-}
-
-// Staging belongs to the Tallpine session, not to one React mount. A controller or
-// surface remount can happen while the daemon is writing bytes; keeping this
-// tiny registry lets the replacement hook remain pending and receive the staged
-// descriptors instead of restoring storage before the write and missing them.
-const sharedAttachmentEntries = new Map<string, SharedAttachmentEntry>();
-
-function sharedEntry(key: string): SharedAttachmentEntry {
-	let entry = sharedAttachmentEntries.get(key);
-	if (!entry) {
-		entry = { pending: new Set(), generation: 0, listeners: new Map() };
-		sharedAttachmentEntries.set(key, entry);
-	}
-	return entry;
-}
-
-function notifySharedAttachmentEntry(
-	key: string,
-	update: Omit<SharedAttachmentUpdate, "pending"> = {},
-	originToken?: symbol,
-): void {
-	const entry = sharedAttachmentEntries.get(key);
-	if (!entry) return;
-	if (update.attachments !== undefined) entry.attachments = update.attachments;
-	if (update.error !== undefined) entry.error = update.error;
-	const notification = { pending: entry.pending.size, ...update };
-	for (const [token, listener] of entry.listeners) {
-		if (token !== originToken) listener(notification);
-	}
-}
-
-function beginSharedAttachmentWork(key: string): SharedAttachmentWork {
-	const entry = sharedEntry(key);
-	const work = { token: Symbol("chat-attachment-work"), generation: entry.generation };
-	entry.pending.add(work.token);
-	notifySharedAttachmentEntry(key);
-	return work;
-}
-
-function endSharedAttachmentWork(key: string, token: symbol): void {
-	const entry = sharedAttachmentEntries.get(key);
-	if (!entry) return;
-	entry.pending.delete(token);
-	notifySharedAttachmentEntry(key);
-	if (
-		entry.pending.size === 0 &&
-		entry.listeners.size === 0 &&
-		(entry.attachments?.length ?? 0) === 0
-	) {
-		sharedAttachmentEntries.delete(key);
-	}
-}
-
-function subscribeSharedAttachmentWork(
-	key: string,
-	token: symbol,
-	listener: (update: SharedAttachmentUpdate) => void,
-): () => void {
-	const entry = sharedEntry(key);
-	entry.listeners.set(token, listener);
-	listener({
-		pending: entry.pending.size,
-		...(entry.attachments !== undefined ? { attachments: entry.attachments } : {}),
-		...(entry.error !== undefined ? { error: entry.error } : {}),
-	});
-	return () => {
-		entry.listeners.delete(token);
-		if (
-			entry.pending.size === 0 &&
-			entry.listeners.size === 0 &&
-			(entry.attachments?.length ?? 0) === 0
-		) {
-			sharedAttachmentEntries.delete(key);
-		}
-	};
-}
-
-function sharedAttachmentPending(key: string | undefined): boolean {
-	return Boolean(key && (sharedAttachmentEntries.get(key)?.pending.size ?? 0) > 0);
-}
-
-function sharedAttachmentWorkIsCurrent(key: string, work: SharedAttachmentWork): boolean {
-	const entry = sharedAttachmentEntries.get(key);
-	return Boolean(entry && entry.generation === work.generation && entry.pending.has(work.token));
-}
 
 export function discardPendingFileAttachments(key: string): void {
 	const entry = sharedAttachmentEntries.get(key);
@@ -258,7 +175,7 @@ const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "
 export const isSupportedImageAttachment = (type: string) =>
 	SUPPORTED_IMAGE_TYPES.has(type.toLowerCase().trim());
 
-const readFileAsBase64 = (file: File): Promise<{ dataUrl: string; data: string }> =>
+const readFileAsBase64 = (file: Blob): Promise<{ dataUrl: string; data: string }> =>
 	new Promise((resolve, reject) => {
 		const reader = new FileReader();
 		reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
@@ -292,6 +209,7 @@ export function useFileAttachments(options: FileAttachmentOptions = {}) {
 		initialKey,
 		prepareAttachments,
 		onAttachmentsChange,
+		resizeImages = false,
 	} = options;
 	const [attachments, setAttachments] = useState<FileAttachment[]>(() => initialAttachments);
 	const [error, setError] = useState<string | null>(null);
@@ -358,7 +276,11 @@ export function useFileAttachments(options: FileAttachmentOptions = {}) {
 		// Reserve budget only after a successful read: a later small file can still
 		// fit if an earlier read fails.
 		const pendingReads = (async () => {
-			const results: Array<{ file: File; result: { dataUrl: string; data: string } }> = [];
+			const results: Array<{
+				file: File;
+				result: { dataUrl: string; data: string };
+				resized?: { blob: Blob; note: string; originalData: string; originalMimeType: string };
+			}> = [];
 			let freshBytes = 0;
 			for (const file of valid) {
 				if (generationRef.current !== generation ||
@@ -381,7 +303,19 @@ export function useFileAttachments(options: FileAttachmentOptions = {}) {
 					errors.add(`Some files couldn't be read and were skipped.`);
 					continue;
 				}
-				results.push({ file, result });
+				const resizedImage = resizeImages && isSupportedImageAttachment(file.type)
+					? await resizeImageIfNeeded(file)
+					: null;
+				const resizedResult = resizedImage
+					? await readFileAsBase64(resizedImage.blob).catch(() => null)
+					: null;
+				results.push({
+					file,
+					result: resizedResult ?? result,
+					...(resizedImage && resizedResult
+						? { resized: { blob: resizedImage.blob, note: resizeNote(resizedImage), originalData: result.data, originalMimeType: file.type } }
+						: {}),
+				});
 				freshBytes += file.size;
 			}
 			return results;
@@ -393,7 +327,7 @@ export function useFileAttachments(options: FileAttachmentOptions = {}) {
 		if (initialKey && sharedWork && !sharedAttachmentWorkIsCurrent(initialKey, sharedWork)) return [];
 
 		const fresh: FileAttachment[] = [];
-		for (const { file, result } of results) {
+		for (const { file, result, resized } of results) {
 			const isImage = file.type.startsWith("image/") && isSupportedImageAttachment(file.type);
 			fresh.push({
 				id:
@@ -401,10 +335,13 @@ export function useFileAttachments(options: FileAttachmentOptions = {}) {
 						? crypto.randomUUID()
 						: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
 				mimeType: file.type || "application/octet-stream",
-				bytes: file.size,
+				bytes: resized ? resized.blob.size : file.size,
 				name: file.name,
 				dataUrl: isImage ? result.dataUrl : undefined,
 				data: result.data,
+				...(resized
+					? { mimeType: resized.blob.type || file.type, resize: { note: resized.note, originalData: resized.originalData, originalMimeType: resized.originalMimeType, originalBytes: file.size } }
+					: {}),
 			});
 		}
 
@@ -467,7 +404,7 @@ export function useFileAttachments(options: FileAttachmentOptions = {}) {
 		setError(nextError);
 		if (initialKey) notifySharedAttachmentEntry(initialKey, { error: nextError });
 		return added;
-	}, [initialKey, onAttachmentsChange, prepareAttachments]);
+	}, [initialKey, onAttachmentsChange, prepareAttachments, resizeImages]);
 
 	/** Resolves with the attachments this batch actually added, staged when staging is on. */
 	const addFiles = useCallback((files: Iterable<File>): Promise<FileAttachment[]> => {

@@ -17,7 +17,8 @@ func newOrchestratorResearchCommand(ctx *commandContext) *cobra.Command {
 		Use:   "research",
 		Short: "Raise this orchestrator's compaction window while it examines a large codebase itself",
 		Long: "Research mode (Claude Code orchestrators only) raises the compaction window, 250k by default, so material you read " +
-			"yourself is not compacted away mid-analysis. Plain coordination keeps the early window: switch it on only when you " +
+			"yourself is not compacted away mid-analysis. Claude Code applies the window only at launch, so switching it on " +
+			"restarts your agent once it is idle (your conversation is kept) and sends you a message to continue the reading. Plain coordination keeps the early window: switch it on only when you " +
 			"decide a task needs you to read broadly, and off when the analysis is done. It also ends on its own when you are " +
 			"idle-compacted or handed off, or after an hour without a turn. The owner can turn the feature off in Settings " +
 			"(Dynamic orchestrator context) or per project (`tallpine project set --orchestrator-research-window off`).",
@@ -44,6 +45,8 @@ func writeResearchStatus(cmd *cobra.Command, res controllers.OrchestratorResearc
 	state := "off (coordination window)"
 	if res.Active {
 		state = "on since " + res.Since
+	} else if res.RestartPending {
+		state = "on since " + res.Since + ", waiting for the agent to restart when idle"
 	}
 	window := "the agent's own default"
 	if res.WindowTokens > 0 {

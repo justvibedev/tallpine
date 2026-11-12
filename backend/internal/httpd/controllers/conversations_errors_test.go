@@ -33,8 +33,10 @@ func TestWriteConversationErrorMapping(t *testing.T) {
 		{chatsvc.ErrExcerptStale, 409, "CHAT_EXCERPT_STALE"},
 		{chatsvc.ErrPromptSuggestionStale, 409, "CHAT_PROMPT_SUGGESTION_STALE"},
 		{chatsvc.ErrControllerHandoff, 409, "CHAT_INTERFACE_TRANSITION"},
-		{chatsvc.ErrClearUnsupported, 409, "CHAT_CLEAR_UNSUPPORTED"},
 		{chatsvc.ErrClearWhileBusy, 409, "CHAT_CLEAR_WHILE_BUSY"},
+		{chatsvc.ErrClearWithText, 400, "CHAT_CLEAR_WITH_TEXT"},
+		// A Claude Code /clear runs as a handoff and is refused as a switch is.
+		{fmt.Errorf("clear: %w", &domain.ProviderSwitchError{Kind: domain.ProviderSwitchRefusalPendingInteraction, Detail: "answer first"}), 409, "PROVIDER_SWITCH_pending_interaction"},
 		{chatsvc.ErrCompactionUnsupported, 409, "CHAT_COMPACTION_UNSUPPORTED"},
 		{chatsvc.ErrCompactionWhileBusy, 409, "CHAT_COMPACTION_BUSY"},
 		{chatsvc.ErrNoActiveTurn, 409, "CHAT_NO_ACTIVE_TURN"},

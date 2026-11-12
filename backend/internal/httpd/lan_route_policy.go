@@ -92,6 +92,7 @@ var lanRouteTable = []lanRouteRule{
 	loopback(anyMethod, "/api/v1/sessions/*/provider-switch"),
 	loopback(anyMethod, "/api/v1/sessions/*/reviewer"),
 	loopback(anyMethod, "/api/v1/sessions/*/activity"),
+	loopback(anyMethod, "/api/v1/sessions/*/cleared-context-note"),
 	loopback(anyMethod, "/api/v1/sessions/*/agent-browser/**"),
 	loopback(anyMethod, "/api/v1/sessions/*/exit-agent"),
 	loopback(anyMethod, "/api/v1/sessions/*/rollback"),

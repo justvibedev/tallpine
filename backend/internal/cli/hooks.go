@@ -114,6 +114,9 @@ func (c *commandContext) runHook(ctx context.Context, agent, event string) error
 	if err := c.enforceGitGuard(ctx, agent, event, payload); err != nil {
 		return err
 	}
+	// Runs after the activity report, on its own budget: that report carries
+	// the cleared session's new native id, and a slow note must not cost it.
+	defer c.rebriefClearedContext(ctx, agent, event, sessionID, payload)
 	facts := activitydispatch.Facts(agent, event, payload)
 	if !facts.Reportable {
 		// Unknown agent, or an event carrying neither activity nor resumable

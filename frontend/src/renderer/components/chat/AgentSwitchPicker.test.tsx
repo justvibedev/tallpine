@@ -18,7 +18,7 @@ vi.mock("../../hooks/useAgentModelsQuery", () => ({
 			refreshError: "droid failed to start: Cannot find module 'tree-sitter'\n    at Module._resolveFilename",
 		} : ({
 			models: agent === "codex"
-				? [{ id: "gpt-x", label: "GPT X", isDefault: true, efforts: ["low", "high"], defaultEffort: "high" }]
+				? [{ id: "gpt-x", label: "GPT X", isDefault: true, efforts: ["low", "high"], defaultEffort: "high" }, { id: "gpt-y", label: "GPT Y" }]
 				: agent === "cursor"
 					? ["claude-opus-4-8-high", "claude-opus-4-8-thinking-high"].map((id) => ({ id, label: id }))
 					: [],
@@ -26,7 +26,7 @@ vi.mock("../../hooks/useAgentModelsQuery", () => ({
 	}),
 }));
 
-function open(pending?: PendingAgentSwitch, terminal = false, harness = "claude-code", extra: Partial<PickerSource> = {}, loading = false, loadingModels = false, savedModel?: string) {
+function open(pending?: PendingAgentSwitch, terminal = false, harness = "claude-code", extra: Partial<PickerSource> = {}, loading = false, loadingModels = false, savedModel?: string, onPickSaved?: (model: string) => void) {
 	const onPendingChange = vi.fn();
 	const current: PickerSource = {
 		models: [{ id: "opus", label: "Opus" }, { id: "sonnet", label: "Sonnet" }],
@@ -47,6 +47,7 @@ function open(pending?: PendingAgentSwitch, terminal = false, harness = "claude-
 				loading={loading}
 				loadingModels={loadingModels}
 				savedModel={savedModel}
+				onPickSaved={onPickSaved}
 				agentSwitch={{ projectId: "p", pending, onPendingChange }}
 			/>
 		</QueryClientProvider>,
@@ -131,6 +132,25 @@ describe("AgentModelPicker", () => {
 		expect(row).toHaveAttribute("aria-checked", "true");
 		expect(row).toHaveAttribute("aria-disabled", "true");
 		expect(current.onPickModel).not.toHaveBeenCalled();
+	});
+
+	it("saves a pick for the next start while the agent is not running", async () => {
+		const user = userEvent.setup();
+		const onPickSaved = vi.fn();
+		open(undefined, false, "codex", { models: [], modelId: undefined, modelLabel: "Codex" }, false, true, "gpt-x", onPickSaved);
+		await screen.findByText("GPT X");
+		await user.click(screen.getByRole("button", { name: /Agent, model and reasoning effort/ }));
+		await user.click(screen.getByRole("menuitem", { name: /Model/ }));
+		expect(await screen.findByRole("menuitemradio", { name: /GPT X/ })).toHaveAttribute("aria-checked", "true");
+		fireEvent.click(await screen.findByRole("menuitemradio", { name: /GPT Y/ }));
+		expect(onPickSaved).toHaveBeenCalledWith("gpt-y");
+	});
+
+	it("names the agent, not a spinner, for a stopped agent with no saved model or catalog default", async () => {
+		open(undefined, false, "claude-code", { models: [], modelId: undefined, modelLabel: "Claude Code" }, false, true, undefined, vi.fn());
+		const trigger = screen.getByRole("button", { name: /Agent, model and reasoning effort/ });
+		expect(trigger).toHaveTextContent("Claude Code");
+		expect(trigger).not.toHaveTextContent("Loading models…");
 	});
 
 	it("stars a row when its model was starred under another id", async () => {

@@ -145,6 +145,46 @@ SELECT * FROM conversations WHERE project_id = ? AND scope = 'project' LIMIT 1;
 UPDATE conversations SET current_session_id = ?, updated_at = ?
 WHERE id = ? AND scope = 'project';
 
+-- A project conversation's queue is drained only by its current owner, and a
+-- primary Chat turn binds only under its handling session's generation. When
+-- the conversation is rebound to a new orchestrator, turns still queued for an
+-- earlier one move to it; otherwise the successor's drain cannot bind them.
+-- name: SelectForeignQueuedTurnRows :many
+SELECT CAST('message' AS TEXT) AS kind, conversation_messages.id, conversation_messages.sequence
+FROM conversation_messages
+JOIN conversation_turns ON conversation_turns.id = conversation_messages.turn_id
+WHERE conversation_turns.conversation_id = sqlc.arg(conversation_id)
+  AND conversation_messages.conversation_id = sqlc.arg(conversation_id)
+  AND conversation_turns.state = 'queued'
+  AND conversation_turns.handled_by_review_id IS NULL
+  AND conversation_turns.handled_by_session_id <> sqlc.arg(session_id)
+UNION ALL
+SELECT CAST('activity' AS TEXT) AS kind, conversation_activities.id, conversation_activities.sequence
+FROM conversation_activities
+JOIN conversation_turns ON conversation_turns.id = conversation_activities.turn_id
+WHERE conversation_turns.conversation_id = sqlc.arg(conversation_id)
+  AND conversation_activities.conversation_id = sqlc.arg(conversation_id)
+  AND conversation_turns.state = 'queued'
+  AND conversation_turns.handled_by_review_id IS NULL
+  AND conversation_turns.handled_by_session_id <> sqlc.arg(session_id)
+ORDER BY 3;
+
+-- name: SetConversationMessageSequence :exec
+UPDATE conversation_messages SET sequence = sqlc.arg(sequence)
+WHERE id = sqlc.arg(id) AND conversation_id = sqlc.arg(conversation_id);
+
+-- name: SetConversationActivitySequence :exec
+UPDATE conversation_activities SET sequence = sqlc.arg(sequence)
+WHERE id = sqlc.arg(id) AND conversation_id = sqlc.arg(conversation_id);
+
+-- name: AdoptQueuedConversationTurns :exec
+UPDATE conversation_turns
+SET handled_by_session_id = sqlc.arg(session_id)
+WHERE conversation_id = sqlc.arg(conversation_id)
+  AND state = 'queued'
+  AND handled_by_review_id IS NULL
+  AND handled_by_session_id <> sqlc.arg(session_id);
+
 -- name: SelectConversationByID :one
 SELECT * FROM conversations WHERE id = ? LIMIT 1;
 

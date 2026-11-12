@@ -14,7 +14,7 @@ import (
 
 const getAppSettings = `-- name: GetAppSettings :one
 
-SELECT id, default_session_mode, updated_at, cloud_offering, harness_defaults, version_refresh, storage_compaction, provider_event_retention_days, chat_hibernation, chat_hibernation_worker_idle_seconds, chat_hibernation_orchestrator_idle_seconds, agent_policy, review_defaults, dynamic_orchestrator_context, workflow_defaults FROM app_settings WHERE id = 1
+SELECT id, default_session_mode, updated_at, cloud_offering, harness_defaults, version_refresh, storage_compaction, provider_event_retention_days, chat_hibernation, chat_hibernation_worker_idle_seconds, chat_hibernation_orchestrator_idle_seconds, agent_policy, review_defaults, dynamic_orchestrator_context, workflow_defaults, peer_check FROM app_settings WHERE id = 1
 `
 
 // Daemon-owned user preferences. One row, seeded by migration 0042, so a read
@@ -38,6 +38,7 @@ func (q *Queries) GetAppSettings(ctx context.Context) (AppSetting, error) {
 		&i.ReviewDefaults,
 		&i.DynamicOrchestratorContext,
 		&i.WorkflowDefaults,
+		&i.PeerCheck,
 	)
 	return i, err
 }
@@ -128,6 +129,20 @@ type SetHarnessDefaultParams struct {
 
 func (q *Queries) SetHarnessDefault(ctx context.Context, arg SetHarnessDefaultParams) error {
 	_, err := q.db.ExecContext(ctx, setHarnessDefault, arg.HarnessPath, arg.Config, arg.UpdatedAt)
+	return err
+}
+
+const setPeerCheck = `-- name: SetPeerCheck :exec
+UPDATE app_settings SET peer_check = ?, updated_at = ? WHERE id = 1
+`
+
+type SetPeerCheckParams struct {
+	PeerCheck string
+	UpdatedAt time.Time
+}
+
+func (q *Queries) SetPeerCheck(ctx context.Context, arg SetPeerCheckParams) error {
+	_, err := q.db.ExecContext(ctx, setPeerCheck, arg.PeerCheck, arg.UpdatedAt)
 	return err
 }
 

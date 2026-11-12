@@ -17,7 +17,7 @@ import (
 // ReleaseInstaller verifies a local release build and starts its detached
 // install (releaseinstall.Installer).
 type ReleaseInstaller interface {
-	Install(ctx context.Context, sha, notifySession string) (releaseinstall.Result, error)
+	Install(ctx context.Context, sha string) (releaseinstall.Result, error)
 }
 
 // ReleaseInstallController serves the orchestrator-only release install: the
@@ -55,7 +55,10 @@ type ReleaseInstallResponse struct {
 	SHA string `json:"sha"`
 	App string `json:"app"`
 	Log string `json:"log"`
-	PID int    `json:"pid"`
+	// Result is where the install writes its outcome when it ends: line 1
+	// "ok" or "failed", line 2 the message. Poll it; nothing is sent.
+	Result string `json:"result,omitempty"`
+	PID    int    `json:"pid"`
 }
 
 func (c *ReleaseInstallController) install(w http.ResponseWriter, r *http.Request) {
@@ -63,21 +66,19 @@ func (c *ReleaseInstallController) install(w http.ResponseWriter, r *http.Reques
 		apispec.NotImplemented(w, r, "POST", "/api/v1/release/install")
 		return
 	}
-	notify := ""
 	if agent, scoped := scopedAgent(r); scoped {
 		// Defense in depth behind the agent route allowlist: only an orchestrator.
 		if agent.Role != requestscope.RoleOrchestrator {
 			writeAgentScopeForbidden(w, r, "install a release: only an orchestrator session may")
 			return
 		}
-		notify = string(agent.SessionID)
 	}
 	var in ReleaseInstallRequest
 	if err := decodeJSONStrict(r, &in); err != nil {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INVALID_BODY", "body must be {\"sha\": \"<40 hex>\"}", nil)
 		return
 	}
-	res, err := c.Svc.Install(r.Context(), strings.TrimSpace(in.SHA), notify)
+	res, err := c.Svc.Install(r.Context(), strings.TrimSpace(in.SHA))
 	if errors.Is(err, releaseinstall.ErrRefused) {
 		envelope.WriteAPIError(w, r, http.StatusForbidden, "forbidden", "RELEASE_INSTALL_REFUSED", err.Error(), nil)
 		return
@@ -86,7 +87,7 @@ func (c *ReleaseInstallController) install(w http.ResponseWriter, r *http.Reques
 		envelope.WriteError(w, r, err)
 		return
 	}
-	envelope.WriteJSON(w, http.StatusAccepted, ReleaseInstallResponse{SHA: res.SHA, App: res.App, Log: res.Log, PID: res.PID})
+	envelope.WriteJSON(w, http.StatusAccepted, ReleaseInstallResponse{SHA: res.SHA, App: res.App, Log: res.Log, Result: res.ResultFile, PID: res.PID})
 }
 
 // requestBuild lets a fenced agent ask for a build without write access to

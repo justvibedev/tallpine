@@ -10516,6 +10516,45 @@ paths:
       summary: Keep a viewed chat awake or release its view lease
       tags:
       - conversations
+  /api/v1/sessions/{sessionId}/cleared-context-note:
+    get:
+      operationId: getClearedContextNote
+      parameters:
+      - description: Session identifier, e.g. project-1.
+        in: path
+        name: sessionId
+        required: true
+        schema:
+          description: Session identifier, e.g. project-1.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClearedContextNoteResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read the note that re-briefs an agent after its context was cleared
+      tags:
+      - sessions
   /api/v1/sessions/{sessionId}/commit:
     post:
       operationId: commitSessionWorktree
@@ -20859,6 +20898,13 @@ components:
       - clearEpoch
       - clearSequence
       type: object
+    ClearedContextNoteResponse:
+      properties:
+        note:
+          type: string
+      required:
+      - note
+      type: object
     CloneDestination:
       properties:
         canUseExisting:
@@ -21705,6 +21751,10 @@ components:
           description: The window research mode uses; empty when it is turned off
             for the project or globally.
           type: string
+        restartPending:
+          description: Research mode is switched on but waits for the agent to be
+            idle and restart before its window applies.
+          type: boolean
         since:
           description: When research mode was switched on (RFC 3339); empty when it
             is off.
@@ -21717,6 +21767,7 @@ components:
       - active
       - available
       - windowTokens
+      - restartPending
       type: object
     ControllersPreviewFileURLResponse:
       properties:
@@ -21752,6 +21803,8 @@ components:
           type: string
         pid:
           type: integer
+        result:
+          type: string
         sha:
           type: string
       required:
@@ -28510,6 +28563,8 @@ components:
       type: object
     SilentFailuresPeerCheck:
       properties:
+        active:
+          type: boolean
         admitted:
           additionalProperties:
             format: int64
@@ -28536,6 +28591,7 @@ components:
       required:
       - mode
       - modeReason
+      - active
       - admitted
       - wouldRefuse
       - overflow

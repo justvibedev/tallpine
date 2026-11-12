@@ -28,6 +28,10 @@ import (
 // is verified and authorized against the agent capability policy instead; it
 // never carries the install token's full authority.
 //
+// On a signed build a valid token is not enough: peers decides whether the
+// process presenting it is one Tallpine started (B631) and refuses it with
+// 403 PEER_NOT_ADMITTED otherwise. Exempt routes are never checked.
+//
 // tokenPath is only used to tell an unauthenticated caller where the token
 // lives; repair rewrites the file if it went missing while the daemon runs.
 func daemonAuthMiddleware(token, tokenPath string, repair func(), agents *agentScopes, peers *peeradmit.Checker) func(http.Handler) http.Handler {
@@ -43,10 +47,9 @@ func daemonAuthMiddleware(token, tokenPath string, repair func(), agents *agentS
 				return
 			}
 			if presentedTokenValid(r, token) {
-				if !daemonAuthExempt(r) {
-					observePeer(peers, r, peeradmit.Credential{Kind: peeradmit.CredentialInstall})
+				if daemonAuthExempt(r) || admitPeer(peers, w, r, peeradmit.Credential{Kind: peeradmit.CredentialInstall}) {
+					next.ServeHTTP(w, r)
 				}
-				next.ServeHTTP(w, r)
 				return
 			}
 			if daemonAuthExempt(r) {

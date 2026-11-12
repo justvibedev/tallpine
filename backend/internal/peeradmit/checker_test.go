@@ -267,3 +267,21 @@ func TestRouteLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestAdmitNoGraceRefusesAtOnce(t *testing.T) {
+	opts := Options{
+		Mode: ModeEnforce, Inspect: chainOf(500), Roots: &fakeRoots{agent: []int{9}},
+		LaunchGrace: 2 * time.Second, RetryEvery: 100 * time.Millisecond,
+	}
+	c := startChecker(t, opts)
+	start := time.Now()
+	if c.AdmitNoGrace(context.Background(), unixObservation(500, CredentialReview)) {
+		t.Fatal("peer outside its roots was admitted")
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("AdmitNoGrace waited %v", time.Since(start))
+	}
+	if n := len(c.Report().WouldRefuse); n != 0 {
+		t.Fatalf("an expected drop was recorded as a refusal: %d records", n)
+	}
+}

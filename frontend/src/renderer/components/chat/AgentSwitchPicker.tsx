@@ -6,7 +6,7 @@
 
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
-import { Brain, ChevronRight, Loader2, TriangleAlert, X, Zap } from "lucide-react";
+import { Brain, ChevronRight, Loader2, TriangleAlert, Zap } from "lucide-react";
 import { Fragment, memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { agentModelsQueryOptions, type AgentModelCatalog } from "../../hooks/useAgentModelsQuery";
@@ -182,6 +182,7 @@ export function AgentModelPicker({
 	disabled,
 	loading,
 	loadingModels,
+	onPickSaved,
 	savedModel,
 	title,
 	mark,
@@ -203,6 +204,8 @@ export function AgentModelPicker({
 	loading?: boolean;
 	/** The agent is starting again, so its current models are not known yet. */
 	loadingModels?: boolean;
+	/** Over an agent that is not running: a pick is saved for its next start rather than applied now. */
+	onPickSaved?: (model: string) => void;
 	/** The model the session last ran, named while its current models load. */
 	savedModel?: string;
 	title?: string;
@@ -262,12 +265,16 @@ export function AgentModelPicker({
 			currentHarness,
 			filterDeniedModels(offeredCatalogModels(savedCatalog, hostSettings?.harnessDefaults?.[currentHarness]?.disabledModels, [savedModel]), modelPolicy),
 			savedModel ? { harness: currentHarness, model: savedModel } : undefined,
-			() => {},
+			(next) => onPickSaved?.(next.model ?? ""),
 			t,
 		)
 		: undefined;
 	const currentSource: PickerSource = disabled || starting
-		? { ...(starting ?? live), onPickModel: undefined, onPickSetup: undefined, onPickEffort: undefined, onToggleFast: undefined, onToggleThinking: undefined }
+		? {
+			...(starting ?? live),
+			onPickModel: !disabled && starting && onPickSaved ? starting.onPickModel : undefined,
+			onPickSetup: undefined, onPickEffort: undefined, onToggleFast: undefined, onToggleThinking: undefined,
+		}
 		: live;
 	// The other agents' model lists load once the menu is open, so search reaches every model.
 	const others = agents.filter((agent) => agent.id !== currentHarness);
@@ -380,7 +387,7 @@ export function AgentModelPicker({
 				data-shortcut-target={terminal ? undefined : "model-picker"}
 			>
 				<ProviderMark provider={terminal ? currentHarness : shownHarness} className="size-3.5" />
-				{loadingModels && !savedLabel && !pending && !terminal ? (
+				{loadingModels && !onPickSaved && !savedLabel && !pending && !terminal ? (
 					<span className="flex items-center gap-1.5 text-muted-foreground">
 						<Spinner icon={Loader2} className="size-3" />
 						{t("settings.models.loading")}
@@ -724,33 +731,4 @@ function favoriteFor(harness: string, model: PickerModel, chosen: PickerSource |
 /** The top level some agents have past Max: Codex's "ultra", Claude Code's "ultracode". */
 function isUltraEffort(value: string | undefined): boolean {
 	return Boolean(value?.toLowerCase().startsWith("ultra"));
-}
-
-export function DismissButton({ label, onClick, disabled, className }: { label: string; onClick: () => void; disabled?: boolean; className?: string }) {
-	return (
-		<button type="button" aria-label={label} title={label} disabled={disabled} onClick={onClick}
-			className={cn("shrink-0 rounded p-0.5 text-muted-foreground hover:bg-interactive-active hover:text-foreground", className)}>
-			<X aria-hidden="true" className="size-3.5" />
-		</button>
-	);
-}
-
-/** An error from a switch, shown as a strip on top of the chat box. */
-export function ComposerErrorNotice(
-	{ title, message, onDismiss, dismissLabel }: { title: string; message: string; onDismiss: () => void; dismissLabel?: string },
-) {
-	const { t } = useTranslation();
-	return (
-		<div
-			role="alert"
-			className="-mb-2 flex min-w-0 items-start gap-2 rounded-t-(--radius-chat-composer) border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs"
-		>
-			<TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-			<div className="min-w-0 flex-1">
-				<p className="font-medium text-foreground">{title}</p>
-				<p className="break-words text-muted-foreground">{message}</p>
-			</div>
-			<DismissButton label={dismissLabel ?? t("agentSwitch.dismiss")} onClick={onDismiss} />
-		</div>
-	);
 }

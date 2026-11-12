@@ -46,7 +46,6 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		// Neither the tier nor the collaboration mode the thread was left on is
 		// known; the next turn states both.
 		conv.tierUnknown, conv.planUnknown = true, true
-		conv.freshThread = resumeFreshThread(cfg)
 		conv.start(cfg.ProviderConversationID, cfg.Model, cfg.Effort)
 		return conv, nil
 	}
@@ -56,8 +55,6 @@ func (d *Driver) Resume(ctx context.Context, cfg ports.ChatResumeConfig) (ports.
 		Model: cfg.Model, Effort: cfg.Effort, MCPServers: cfg.MCPServers, Env: cfg.Env, SystemPrompt: cfg.SystemPrompt,
 	})
 	params["threadId"] = cfg.ProviderConversationID
-	conv.freshThread = cloneParams(params)
-	delete(conv.freshThread, "threadId")
 	resumeCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	var resp struct {

@@ -34,6 +34,14 @@ export interface ChatDraftAttachment {
 	name: string;
 	mimeType: string;
 	bytes: number;
+	/** Set when an oversized image was downscaled; links the staged full original. */
+	resize?: ChatDraftAttachmentResize;
+}
+
+export interface ChatDraftAttachmentResize {
+	note: string;
+	originalPath: string;
+	originalBytes: number;
 }
 
 export interface ChatDraftInlineEdit {

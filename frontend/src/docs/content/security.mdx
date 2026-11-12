@@ -225,13 +225,19 @@ The phone connection is off until you turn it on. It uses HTTPS with a certifica
 
 ### Who reaches the daemon API
 
-The daemon's local socket is the one door that drives Tallpine: it can start agents and read and change their state. On a signed macOS release, Tallpine now records which processes use that door, by what the operating system reports about the caller and never by anything in the request:
+The daemon's local socket is the one door that drives Tallpine: it can start agents and read and change their state. On a signed macOS release, the daemon acts only for processes Tallpine itself started, judged by what the operating system reports about the caller and never by anything in the request:
 
 - the signed Tallpine desktop app, checked by its code signature (Team ID and the app's signing identifier);
 - an agent, its hooks, a reviewer or a chat host, whose scoped token is presented by a process running under that session's own runtime processes;
 - a shell opened inside the Tallpine desktop app, and its children.
 
-Anything else presenting a valid token is **recorded as "would refuse", and still served**. This release refuses nothing. `tallpine doctor` shows the mode and the records under `peer-check`, including the program, token class and route of each. A later release, after these records are reviewed, will refuse those callers on signed builds. Being a child of the daemon never counts: chat agents stay limited to their own scope.
+Anything else presenting a valid token is **refused with `403 PEER_NOT_ADMITTED`**: other apps, scripts, launchd and cron jobs, and `tallpine` typed in a Terminal window outside the app. A wrong token is still `401`. There is no allowlist by program path or name, since any app could copy one. Being a child of the daemon never counts: chat agents stay limited to their own scope, even holding the install token. Every refusal is logged with the caller's pid, program, token class and route, and `tallpine doctor` lists them under `peer-check` with the mode.
+
+Use the desktop app, an agent, or a terminal opened in the app (Terminals). Scripts that used to message an orchestrator no longer do: `scripts/release-local install` writes its outcome to `<--log>.result`, and local CI records its alerts in `alerts.tsv` next to `local-ci.tsv`, which a scheduled Tallpine automation reads with `scripts/local-ci/alerts`. Until that automation has run within the last hour, each alert also appears as a macOS notification.
+
+**Turning it off.** Settings > Security > Daemon callers shows the mode and has the switch. Only the signed desktop app itself can change it: not agents, phones, or terminals opened in the app. The change applies at once, with no restart. It is stored as `peer_check` (`default` or `off`) in the `app_settings` table, and there is no environment override.
+
+**If the desktop app cannot start.** Agents keep running. `tallpine stop` still stops the daemon: when the API refuses it, it sends `SIGTERM` to the daemon process it has confirmed through `/healthz`, which takes the same shutdown path (`--stop-agents` needs the app). Then roll back with `scripts/release-local rollback` or reinstall the notarized app. As a last resort, with the daemon stopped, run `sqlite3 ~/.tallpine/data/ao.db "UPDATE app_settings SET peer_check = 'off'"`; the next start logs that the check is off.
 
 Health probes, CORS preflights, capability-labelled preview hosts and render documents are served as before, with or without a token. Loopback TCP cannot say who connected, so a request over it counts as an unidentified caller, and `TALLPINE_LOOPBACK_TCP` grants nothing extra.
 
@@ -244,7 +250,8 @@ Health probes, CORS preflights, capability-labelled preview hosts and render doc
 - Killing the daemon, replacing the PATH shim or shell startup files, or adding LaunchAgents.
 - Other local sockets (`browser.sock`, the browser stream, `hostsock`, the supervisor socket and chat host ports), which use the user id and their own key files. They are not the daemon API.
 - Driving the desktop app's interface with an Accessibility permission, which macOS asks you to grant.
-- Everything on Linux, Windows and unsigned or development builds, where the check is off and the socket is limited by user id alone. `tallpine doctor` says so.
+- Everything on Linux, Windows and unsigned or development builds, where the check is off and the socket is limited by user id alone. `tallpine doctor` and Settings > Security say so.
+- Anything run by an agent that leaves both its process tree and its POSIX session (a fully detached background job) is refused like any other process, since nothing ties it to Tallpine any more. A hook that runs while its agent or reviewer is still being started waits up to five seconds for the launch to be recorded before it is refused; one that runs after its session was stopped is refused.
 
 ## Not covered
 

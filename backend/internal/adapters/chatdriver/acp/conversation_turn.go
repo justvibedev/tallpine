@@ -114,8 +114,9 @@ func (c *conversation) checkModelSwitch(ctx context.Context, model string) error
 // the installed CLI resolves to an older concrete model. Each distinct
 // (selection, served) pair is reported once rather than on every turn.
 // selected is the model the turn started with, not the current selection.
-func (c *conversation) reportServedModel(turnID, selected string) {
-	if c.servedModel == nil {
+func (c *conversation) reportServedModel(turnID, selected string, turnStart time.Time) {
+	// Without a start time the lookup cannot tell this turn from an earlier one.
+	if c.servedModel == nil || turnStart.IsZero() {
 		return
 	}
 	c.mu.Lock()
@@ -126,7 +127,7 @@ func (c *conversation) reportServedModel(turnID, selected string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	served, reason := c.servedModel(ctx, sessionID, selected)
+	served, reason := c.servedModel(ctx, sessionID, selected, turnStart)
 	if served == "" || served == selected {
 		return
 	}
@@ -178,6 +179,7 @@ func (c *conversation) StartDeferredTurn(providerTurnID string) error {
 	c.activeTurn = turn.id
 	c.turnModelID = turn.id
 	c.turnModel = c.configOptionCurrentLocked("model")
+	c.turnStart = time.Now()
 	c.settlingTurn = ""
 	turnCtx, cancel := context.WithCancel(context.Background())
 	c.turnCancel = cancel
@@ -245,8 +247,10 @@ func (c *conversation) finishPrompt(
 	// "" when the turn started before this controller (a reattached durable
 	// turn): its model is unknown, and the current selection may not be it.
 	turnModel := ""
+	var turnStart time.Time
 	if c.turnModelID == turnID {
 		turnModel = c.turnModel
+		turnStart = c.turnStart
 	}
 	c.mu.Unlock()
 	c.settleOpenItems(turnID)
@@ -335,7 +339,7 @@ func (c *conversation) finishPrompt(
 		if recovered {
 			c.emit(ports.ChatEvent{Kind: ports.ChatEventAccountChanged, Account: &ports.ChatAccount{ReauthRecovered: true}})
 		}
-		c.reportServedModel(turnID, turnModel)
+		c.reportServedModel(turnID, turnModel, turnStart)
 	}
 	if isCompaction {
 		if state == domain.TurnStateCompleted {

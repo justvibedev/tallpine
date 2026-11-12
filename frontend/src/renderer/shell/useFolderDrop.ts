@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { tallpineBridge } from "../lib/bridge";
+import { dragCarriesFiles, firstDragEntryIsDirectory } from "../lib/dropClassify";
 
 export function useFolderDrop({ requestCreateProjectFromPath }: {
 	requestCreateProjectFromPath: (path: string) => void;
@@ -14,11 +15,8 @@ export function useFolderDrop({ requestCreateProjectFromPath }: {
 	const [isDragActive, setIsDragActive] = useState(false);
 	const dragDepthRef = useRef(0);
 	useEffect(() => {
-		const isFileDrag = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes("Files");
-		const firstEntryIsDirectory = (event: DragEvent) => {
-			const item = event.dataTransfer?.items?.[0];
-			return item?.webkitGetAsEntry?.()?.isDirectory ?? false;
-		};
+		const isFileDrag = (event: DragEvent) => dragCarriesFiles(event.dataTransfer);
+		const firstEntryIsDirectory = (event: DragEvent) => firstDragEntryIsDirectory(event.dataTransfer);
 		const handleDragEnter = (event: DragEvent) => {
 			if (!isFileDrag(event)) return;
 			event.preventDefault();

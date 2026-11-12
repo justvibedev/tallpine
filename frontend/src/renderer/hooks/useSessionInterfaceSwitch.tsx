@@ -29,7 +29,7 @@ import {
 } from "../lib/chat-draft-boundary";
 import { sessionUiKey } from "../lib/hosts";
 import type { WorkspaceSession } from "../types/workspace";
-import { ComposerErrorNotice } from "../components/chat/AgentSwitchPicker";
+import { ComposerErrorNotice } from "../components/chat/ComposerErrorNotice";
 import type { ConversationWorkState } from "../components/chat/SessionChatSurfaceProps";
 
 type Transition = components["schemas"]["SessionInterfaceTransition"];

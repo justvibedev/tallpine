@@ -17,7 +17,8 @@ export function attachmentsEqual(
 				attachment.path === candidate.path &&
 				attachment.name === candidate.name &&
 				attachment.mimeType === candidate.mimeType &&
-				attachment.bytes === candidate.bytes
+				attachment.bytes === candidate.bytes &&
+				attachment.resize?.originalPath === candidate.resize?.originalPath
 			);
 		})
 	);

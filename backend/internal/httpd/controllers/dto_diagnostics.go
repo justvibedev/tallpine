@@ -81,7 +81,8 @@ type ModelUsageResponse struct {
 	Models []ModelUsagePayload `json:"models"`
 }
 
-// SilentFailuresPeerRefusal is one aggregated request the peer check would refuse.
+// SilentFailuresPeerRefusal is one aggregated request the peer check refused
+// (enforce) or would refuse (report).
 type SilentFailuresPeerRefusal struct {
 	Executable string `json:"executable"`
 	TokenClass string `json:"tokenClass"`
@@ -92,10 +93,13 @@ type SilentFailuresPeerRefusal struct {
 	LastSeen   string `json:"lastSeen,omitempty"`
 }
 
-// SilentFailuresPeerCheck is the daemon peer check's mode and records.
+// SilentFailuresPeerCheck is the daemon peer check's mode and records. Mode
+// is effective; Active says whether this build can check peers at all, which
+// is when the owner's off switch (app.daemon.peerCheck) means anything.
 type SilentFailuresPeerCheck struct {
 	Mode        string                      `json:"mode"`
 	ModeReason  string                      `json:"modeReason"`
+	Active      bool                        `json:"active"`
 	TeamID      string                      `json:"teamId,omitempty"`
 	Admitted    map[string]int64            `json:"admitted"`
 	WouldRefuse []SilentFailuresPeerRefusal `json:"wouldRefuse"`

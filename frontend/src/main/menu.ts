@@ -84,6 +84,7 @@ export function buildWindowsAppMenuTemplate(onToggleDevTools?: () => void): Menu
 				{ role: "cut" },
 				{ role: "copy" },
 				{ role: "paste" },
+				{ role: "pasteAndMatchStyle" },
 				{ role: "selectAll" },
 			],
 		},

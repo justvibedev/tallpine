@@ -40,6 +40,9 @@ type ProviderSwitchRequest struct {
 	// HandoffNote is the note the target provider starts with. The switch
 	// front door builds it; it is never accepted from a client.
 	HandoffNote string
+	// ClearContext makes the switch a /clear: the same agent starts a fresh
+	// context from a handoff note. Only Tallpine's /clear sets it.
+	ClearContext bool
 }
 
 // ChatProviderSwitch is an internal launch reservation. The source controller

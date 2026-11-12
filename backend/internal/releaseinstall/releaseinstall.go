@@ -24,12 +24,16 @@ var ErrRefused = errors.New("release install refused")
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
-// Result describes the started install.
+// Result describes the started install. ResultFile is where the installer
+// writes its outcome when it ends ("ok" or "failed", then the message); the
+// requester polls it (B631: the daemon refuses a message sent by the detached
+// installer, so it no longer sends one).
 type Result struct {
-	SHA string
-	App string
-	Log string
-	PID int
+	SHA        string
+	App        string
+	Log        string
+	ResultFile string
+	PID        int
 }
 
 // Installer verifies a build under StateDir/release-builds and starts its
@@ -59,9 +63,8 @@ func refuse(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrRefused, fmt.Sprintf(format, args...))
 }
 
-// Install verifies the build for sha and starts the detached install; notify is
-// the session told the outcome ("" for none).
-func (in *Installer) Install(ctx context.Context, sha, notify string) (Result, error) {
+// Install verifies the build for sha and starts the detached install.
+func (in *Installer) Install(ctx context.Context, sha string) (Result, error) {
 	app, script, err := in.locate(sha)
 	if err != nil {
 		return Result{}, err
@@ -94,14 +97,11 @@ func (in *Installer) Install(ctx context.Context, sha, notify string) (Result, e
 	// --no-fetch and the skip env: a pinned build tree is not a stale checkout, and
 	// the stale check would run git (fetch, diff) unsandboxed in a worktree.
 	argv := []string{script, "install", app, "--yes", "--no-fetch", "--log", logPath}
-	if notify != "" {
-		argv = append(argv, "--notify", notify)
-	}
 	pid, err := in.Start(argv, append(cleanEnv(), "TALLPINE_RELEASE_SKIP_STALE_CHECK=1"), logPath)
 	if err != nil {
 		return Result{}, fmt.Errorf("start release install: %w", err)
 	}
-	return Result{SHA: sha, App: app, Log: logPath, PID: pid}, nil
+	return Result{SHA: sha, App: app, Log: logPath, ResultFile: logPath + ".result", PID: pid}, nil
 }
 
 // locate returns the resolved app and installer script of the build for sha,

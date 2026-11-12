@@ -1,6 +1,6 @@
 /** Validation and normalisation of stored draft shapes. */
 import type { ConversationContentSummary } from "../../types/conversation";
-import { ChatDraftScopeInput, ChatSessionDraft, CHAT_DRAFT_SCHEMA_VERSION, ChatDraftAttachment, ChatDraftExcerptReference, ChatDraftInlineEdit, ChatDraftDeliveryState, ChatComposerDelivery, ChatInlineEditDelivery, ChatDraftScope } from "./types";
+import { ChatDraftScopeInput, ChatSessionDraft, CHAT_DRAFT_SCHEMA_VERSION, ChatDraftAttachment, ChatDraftAttachmentResize, ChatDraftExcerptReference, ChatDraftInlineEdit, ChatDraftDeliveryState, ChatComposerDelivery, ChatInlineEditDelivery, ChatDraftScope } from "./types";
 import { normalizeScope } from "./store";
 
 export function emptyDraft(scope: ChatDraftScopeInput): ChatSessionDraft {
@@ -36,7 +36,21 @@ export function isAttachment(value: unknown): value is ChatDraftAttachment {
 		typeof attachment.mimeType === "string" &&
 		typeof attachment.bytes === "number" &&
 		Number.isFinite(attachment.bytes) &&
-		attachment.bytes >= 0
+		attachment.bytes >= 0 &&
+		(attachment.resize === undefined || isAttachmentResize(attachment.resize))
+	);
+}
+
+function isAttachmentResize(value: unknown): value is ChatDraftAttachmentResize {
+	if (!value || typeof value !== "object") return false;
+	const resize = value as Partial<ChatDraftAttachmentResize>;
+	return (
+		typeof resize.note === "string" &&
+		typeof resize.originalPath === "string" &&
+		/^\.(?:tallpine|ao)\/attachments\//.test(resize.originalPath) &&
+		typeof resize.originalBytes === "number" &&
+		Number.isFinite(resize.originalBytes) &&
+		resize.originalBytes >= 0
 	);
 }
 

@@ -66,6 +66,14 @@ func (s *Service) applyLaunchCompaction(ctx context.Context, cfgp *StartConfig, 
 	if cfg.ProviderConversationID != "" && conversation.Settings.Model != "" {
 		launchModel = conversation.Settings.Model
 	}
+	if tokens, ok := s.researchLaunchTokens(ctx, cfg, conversation.Settings.AutoCompactWindow, window, launchModel); ok {
+		// Research mode (B638) carried across a restart: its window applies at launch.
+		if tokens > 0 && contextwindow.AutoCompactEnvKey(cfg.Harness) != "" {
+			setTallpineCompactWindow(&cfg, tokens)
+		}
+		*cfgp = cfg
+		return
+	}
 	var modelWindow int64
 	if strings.HasSuffix(window, "%") {
 		modelWindow = s.compactModelWindow(ctx, cfg, *conversation, launchModel)

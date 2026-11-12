@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlertTriangle, Bot, Brain, ChevronRight, CircleAlert, FileDiff, Gauge, Keyboard, ListChecks, Loader2, Plug, ShieldCheck, ShieldQuestion, SquareTerminal } from "lucide-react";
@@ -15,6 +15,8 @@ import { ErrorActivityRow } from "./ErrorActivityRow";
 import { FileChangeList, fileChangePatch, Patch } from "./FileChangeList";
 import { McpStatusRow } from "./McpStatusRow";
 import { McpToolRow } from "./McpToolRow";
+import { ChatLocalImageGrid } from "../ChatLocalImageStrip";
+import { toolImagePaths } from "../chat-tool-images";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { ProjectSetupRow, AccountSwitchedRow, ReauthRow } from "./SetupRows";
 import { fileChangeVerb, FileLocationLabel, fileBasename } from "./TurnChangedFiles";
@@ -73,10 +75,19 @@ export function ActivityRow({ activity }: { activity: ConversationActivity }) {
 
 	if (!toolActivity) return content;
 	return (
-		<ActivityTransition value={`${activity.revision}:${activity.summary}:${activity.status}`}>
-			{content}
-		</ActivityTransition>
+		<>
+			<ActivityTransition value={`${activity.revision}:${activity.summary}:${activity.status}`}>
+				{content}
+			</ActivityTransition>
+			<ToolImageThumbnails activity={activity} />
+		</>
 	);
+}
+
+/** Thumbnails of the images a finished tool call touched, under its row. */
+function ToolImageThumbnails({ activity }: { activity: ConversationActivity }) {
+	const paths = useMemo(() => toolImagePaths(activity), [activity]);
+	return <ChatLocalImageGrid paths={paths} className="mb-1 mt-1 px-1" />;
 }
 
 export function ActivityTransition({

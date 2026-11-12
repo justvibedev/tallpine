@@ -1,3 +1,4 @@
+import { firstDragEntryIsDirectory } from "../../lib/dropClassify";
 import type { ChatComposerProps } from "./composer/ComposerProps";
 import { useComposerDraftState } from "./composer/useComposerDraftState";
 import { useComposerSuggestions } from "./composer/useComposerSuggestions";
@@ -153,7 +154,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 			// Cmd/Ctrl steering remains available as a quiet power-user action.
 			onSubmit={(event) => void submit(event, steersDraft)}
 				onDragOver={(event) => {
-					if (!canAttach || submitInFlight.current) return;
+					if (!canAttach || submitInFlight.current || firstDragEntryIsDirectory(event.dataTransfer)) return;
 					event.preventDefault();
 					setDragging(true);
 				}}
@@ -225,10 +226,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 										)}
 										<span
 											className="max-w-[120px] truncate text-xs text-muted-foreground"
-											title={file.name}
+											title={"resize" in file && file.resize ? `${file.name} (${file.resize.note})` : file.name}
 										>
 											{file.name}
 										</span>
+										{"resize" in file && file.resize ? (
+											<span className="shrink-0 text-[10px] text-muted-foreground" data-testid="composer-attachment-resized">
+												{file.resize.note}
+											</span>
+										) : null}
 										<button
 											type="button"
 											onClick={() => {

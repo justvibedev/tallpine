@@ -2,7 +2,7 @@ import path from "node:path";
 import type { Stats } from "node:fs";
 import { hasInAppLinkScheme, parseArtifactLink } from "../shared/session-link-parse";
 import type { LocalImageSource, LocalPathInspection, LocalPathResult } from "../shared/local-path";
-import { isLocalImagePath } from "../shared/local-image-paths";
+import { isLocalImagePath, isLocalMediaPath } from "../shared/local-image-paths";
 
 const MAX_PATH_LENGTH = 4096;
 // Open is an allowlist: only inert document, media and text files (zip and everything else is reveal-only).
@@ -100,7 +100,7 @@ export function createLocalPathActions(deps: LocalPathActionsDeps) {
 		return inside(realDir, realTarget) ? target : { ok: false, reason: "invalid" };
 	}
 
-	/** `sessionId`, when given, is the chat the path is shown in: an image file there also gets its {@link imageSource}. */
+	/** `sessionId`, when given, is the chat the path is shown in: an image, video or audio file there also gets its {@link imageSource}. */
 	async function inspect(input: unknown, sessionId?: unknown): Promise<LocalPathInspection> {
 		let resolved: string | undefined;
 		if (typeof input === "string" && hasInAppLinkScheme(input)) {
@@ -117,7 +117,7 @@ export function createLocalPathActions(deps: LocalPathActionsDeps) {
 		// Sockets, devices and FIFOs can be revealed and copied but never opened.
 		const real = kind ? await deps.realPath(resolved).catch(() => undefined) : undefined;
 		const canOpen = Boolean(kind && real && isOpenableLocalPath(resolved, kind, info.mode, deps.platform) && isOpenableLocalPath(real, kind, info.mode, deps.platform));
-		const image = kind === "file" && typeof sessionId === "string" && SESSION_ID.test(sessionId) && isLocalImagePath(resolved)
+		const image = kind === "file" && typeof sessionId === "string" && SESSION_ID.test(sessionId) && (isLocalImagePath(resolved) || isLocalMediaPath(resolved))
 			? await imageSource(resolved, sessionId)
 			: undefined;
 		return { ok: true, path: resolved, kind: kind ?? "file", canOpen, ...(image ? { image } : {}) };

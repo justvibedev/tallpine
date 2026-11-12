@@ -1,9 +1,10 @@
 import { useTranslation } from "react-i18next";
-import { GitBranch, MoreVertical, Pin, PinOff, Plus, Settings, Trash2 } from "lucide-react";
-import { type WorkspaceSession, type WorkspaceSummary } from "../../types/workspace";
+import { GitBranch, MoreVertical, Pin, PinOff, Plus, RotateCcw, Settings, Trash2 } from "lucide-react";
+import { sessionAgentExited, type WorkspaceSession, type WorkspaceSummary } from "../../types/workspace";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { OrchestratorIcon } from "../icons";
+import { useResetOrchestrator } from "../ResetOrchestrator";
 import { cn } from "../../lib/utils";
 import { useUiStore } from "../../stores/ui-store";
 import { HOVER_ACTION_CLASS, ROW_ACTIONS_CLASS } from "./constants";
@@ -15,6 +16,11 @@ export function ProjectRowActions({ workspace, isStandalone, nameWithHost, selec
 	const requestNewTask = useUiStore((state) => state.requestNewTask);
 	const requestLane = useUiStore((state) => state.requestLaneOrchestrator);
 	const { canPin, isPinned, setPinned } = useProjectPin(workspace, isStandalone);
+	// A stopped orchestrator is still the project's orchestrator, so the row
+	// opens it rather than spawning one; its agent may never come back (a saved
+	// conversation the provider lost, B673). Reset replaces it from here.
+	const resetOrchestrator = useResetOrchestrator(orchestrator?.id ?? "", workspace.hostId);
+	const canResetOrchestrator = sessionAgentExited(orchestrator);
 	return (
 		<>
 		{!isStandalone && <div
@@ -107,6 +113,12 @@ export function ProjectRowActions({ workspace, isStandalone, nameWithHost, selec
 								{isPinned ? t("shell.unpinProject") : t("shell.pinProject")}
 							</DropdownMenuItem>
 						) : null}
+						{canResetOrchestrator ? (
+							<DropdownMenuItem disabled={isProjectRestarting} onSelect={resetOrchestrator.request}>
+								<RotateCcw aria-hidden="true" />
+								{t("orchestratorHandoff.reset")}
+							</DropdownMenuItem>
+						) : null}
 						<DropdownMenuItem onSelect={() => selection.goSettings(workspace.id)}>
 							<Settings aria-hidden="true" />
 							{t("shell.projectSettings")}
@@ -121,6 +133,7 @@ export function ProjectRowActions({ workspace, isStandalone, nameWithHost, selec
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
+				{resetOrchestrator.dialog}
 			</div>}
 		</>
 	);

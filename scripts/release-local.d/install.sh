@@ -287,7 +287,7 @@ This quits ${product_name}: every running agent (orchestrator and workers) stops
   prune_releases
   say "Installed $(short "${new_commit:-unknown}") at ${app_path}; rollback point ${point}"
   notify_armed=0
-  notify_sessions "[release] installed $(sha10); daemon healthy (pid ${healthy_pid}); rollback point ${point}; log $(notify_log_path)"
+  write_result ok "[release] installed $(sha10); daemon healthy (pid ${healthy_pid}); rollback point ${point}; log $(notify_log_path)"
 }
 
 # Re-print the path overrides in hints so they target the same install.
@@ -404,7 +404,7 @@ This quits ${product_name}: every running agent (orchestrator and workers) stops
   prune_releases
   say "Rolled back to $(short "${target_commit:-unknown}"). The replaced app and data are in ${discard}"
   notify_armed=0
-  notify_sessions "[release] rolled back to $(short "${target_commit:-unknown}"); log $(notify_log_path)"
+  write_result ok "[release] rolled back to $(short "${target_commit:-unknown}"); log $(notify_log_path)"
 }
 
 # ------------------------------------------------------------------- status

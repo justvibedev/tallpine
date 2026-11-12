@@ -1,4 +1,4 @@
-import { Pencil } from "lucide-react";
+import { Pencil, RotateCcw } from "lucide-react";
 import { Reorder, useDragControls } from "motion/react";
 import { type PointerEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import { agentLabel } from "../lib/agent-options";
 import { isOrchestratorSession, type WorkspaceSession } from "../types/workspace";
 import { AgentAvatar } from "./AgentAvatar";
 import { TerminalTabFrame } from "./TerminalTabFrame";
+import { useResetOrchestrator } from "./ResetOrchestrator";
 import { SessionCopyContextItems } from "./SessionCopyMenuItems";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "./ui/context-menu";
 import type { CenterPaneWorkspaceTab } from "./CenterPane";
@@ -89,6 +90,8 @@ export function SessionPaneTab({
 	// orchestrator's tab shows its role, not a name, so it is never renamable.
 	const renameSession = onRenamed && session && !isOrchestratorSession(session) ? session : undefined;
 	const rename = useSessionRename(renameSession, onRenamed);
+	const resettable = session && isOrchestratorSession(session) && !session.isTerminated ? session : undefined;
+	const resetOrchestrator = useResetOrchestrator(resettable?.id ?? "", resettable?.hostId);
 	const editingContent = renameSession && rename.isEditing ? (
 		<div className="flex h-full min-w-0 flex-1 items-center gap-2 px-2">
 			{tabIcon}
@@ -156,6 +159,25 @@ export function SessionPaneTab({
 			<span className="truncate">{label}</span>
 		</TerminalTabFrame>
 	);
+	if (resettable && !rename.isEditing) {
+		return (
+			<>
+				<ContextMenu>
+					<ContextMenuTrigger asChild>
+						<span className="contents">{tabFrame}</span>
+					</ContextMenuTrigger>
+					<ContextMenuContent className="min-w-44">
+						<ContextMenuItem onSelect={resetOrchestrator.request}>
+							<RotateCcw aria-hidden="true" />
+							{t("orchestratorHandoff.reset")}
+						</ContextMenuItem>
+						<SessionCopyContextItems projectId={resettable.workspaceId} sessionId={resettable.id} />
+					</ContextMenuContent>
+				</ContextMenu>
+				{resetOrchestrator.dialog}
+			</>
+		);
+	}
 	if (!renameSession || rename.isEditing) return tabFrame;
 	return (
 		<ContextMenu>

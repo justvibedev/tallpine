@@ -29,7 +29,6 @@ func (d *Driver) Start(ctx context.Context, cfg ports.ChatStartConfig) (ports.Ch
 		params["ephemeral"] = true
 	}
 
-	conv.freshThread = cloneParams(params)
 	var resp threadOpened
 	openCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()

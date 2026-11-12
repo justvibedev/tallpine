@@ -40,7 +40,10 @@ type AppSettings struct {
 	ChatHibernation domain.ChatHibernationPolicy
 	// WorkflowDefaults are the app-wide values projects inherit (B525).
 	WorkflowDefaults domain.WorkflowDefaults
-	UpdatedAt        time.Time
+	// PeerCheck is the owner's daemon peer check switch: "default" or "off"
+	// (B631).
+	PeerCheck string
+	UpdatedAt time.Time
 }
 
 // GetAppSettings reads the preference row.
@@ -63,6 +66,7 @@ func (s *Store) GetAppSettings(ctx context.Context) (AppSettings, error) {
 		DynamicOrchestratorContext: row.DynamicOrchestratorContext,
 		StorageCompaction:          row.StorageCompaction,
 		ProviderEventRetentionDays: int(row.ProviderEventRetentionDays),
+		PeerCheck:                  row.PeerCheck,
 		ChatHibernation: domain.ChatHibernationPolicy{
 			Enabled:          row.ChatHibernation,
 			WorkerIdle:       time.Duration(row.ChatHibernationWorkerIdleSeconds) * time.Second,
@@ -97,6 +101,16 @@ func (s *Store) SetDynamicOrchestratorContext(ctx context.Context, enabled bool,
 		UpdatedAt:                  now,
 	}); err != nil {
 		return fmt.Errorf("set dynamic orchestrator context: %w", err)
+	}
+	return nil
+}
+
+// SetPeerCheck persists the daemon peer check switch: "default" or "off".
+func (s *Store) SetPeerCheck(ctx context.Context, value string, now time.Time) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.qw.SetPeerCheck(ctx, gen.SetPeerCheckParams{PeerCheck: value, UpdatedAt: now}); err != nil {
+		return fmt.Errorf("set peer check: %w", err)
 	}
 	return nil
 }

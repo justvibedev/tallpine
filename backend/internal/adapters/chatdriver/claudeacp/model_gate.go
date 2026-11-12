@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"tallpine.eu/tallpine/backend/internal/adapters/agent/claudecode"
 	acpdriver "tallpine.eu/tallpine/backend/internal/adapters/chatdriver/acp"
@@ -60,12 +61,14 @@ func claudeValidateModel(ctx context.Context, plugin claudePlugin, model string)
 
 // claudeServedModel reports what a Claude alias actually resolved to. The ACP
 // adapter does not surface the answering model, but Claude's own transcript
-// records it on every assistant message.
-func claudeServedModel(ctx context.Context, cfg acpdriver.LaunchConfig, sessionID, selected string) (string, string) {
+// records it on every assistant message. since is the turn start: a turn that
+// wrote no assistant message (/clear, local commands) reports nothing instead
+// of the previous turn's model.
+func claudeServedModel(ctx context.Context, cfg acpdriver.LaunchConfig, sessionID, selected string, since time.Time) (string, string) {
 	if !isClaudeNativeModelAlias(selected) {
 		return "", ""
 	}
-	served, err := claudecode.LastAssistantModel(ctx, cfg.Env, sessionID)
+	served, err := claudecode.LastAssistantModelSince(ctx, cfg.Env, sessionID, since)
 	if err != nil || served == "" {
 		return "", ""
 	}

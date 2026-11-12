@@ -57,27 +57,24 @@ lock_releases() {
   rm -rf "${releases_dir}"/*.partial
 }
 
-# notify_sessions <message>: tells every --notify session, with the CLI of the
-# app now installed. Runs as the owner: TALLPINE_SESSION_* is dropped and the
-# daemon is found through this install's run file (its token sits next to it).
-# Retries for notify_timeout seconds; a failure is logged, never fatal.
-notify_timeout="${TALLPINE_RELEASE_NOTIFY_TIMEOUT:-60}"
-notify_sessions() {
-  local msg="$1" sid cli deadline
-  [[ ${#opt_notify[@]} -gt 0 ]] || return 0
-  cli="$(new_cli)"
-  # One retry window for all sessions: a daemon that never comes up (a health-check
-  # timeout leaves it down, nothing is rolled back) costs notify_timeout once, not per session.
-  deadline=$(($(date +%s) + notify_timeout))
-  for sid in "${opt_notify[@]}"; do
-    if [[ -x "${cli}" ]] && TALLPINE_DATA_DIR="${data_dir}" TALLPINE_RUN_FILE="${run_file}" \
-      tp_retry_until "${deadline}" "${TALLPINE_RELEASE_NOTIFY_INTERVAL:-3}" \
-      tp_owner_cli "${cli}" send --session "${sid}" --message "${msg}" >/dev/null 2>&1; then
-      say "Notified session ${sid}"
-    else
-      warn "could not notify session ${sid} within ${notify_timeout}s (the install is unaffected)"
-    fi
-  done
+# write_result <ok|failed> <message>: the outcome for whoever asked for this install or rollback, in
+# <--log>.result next to the log they redirect output to: line 1 "ok" or "failed", line 2 the message.
+# It replaces --notify (B631): the daemon refuses an owner CLI run from here, so nothing is sent; the
+# requesting session polls the file with its own CLI. Written whole (temp file, then rename), so a poller
+# never reads half of it. Without --log nothing is written; a failure to write is logged, never fatal.
+result_path() { [[ -n "${opt_log:-}" ]] && printf '%s.result' "${opt_log}"; }
+clear_result() { local f; f="$(result_path)" && rm -f "${f}"; return 0; }
+write_result() {
+  local f tmp
+  f="$(result_path)" || return 0
+  [[ -n "${TALLPINE_RELEASE_TEST_RESULT_DELAY:-}" ]] && sleep "${TALLPINE_RELEASE_TEST_RESULT_DELAY}"
+  tmp="${f}.tmp.$$"
+  if printf '%s\n%s\n' "$1" "$2" 2>/dev/null >"${tmp}" && mv -f "${tmp}" "${f}"; then
+    say "Result written to ${f}"
+  else
+    rm -f "${tmp}" 2>/dev/null
+    warn "could not write the result to ${f} (the ${notify_what:-install} is unaffected)"
+  fi
   return 0
 }
 sha10() { local c="${new_commit:-unknown}"; printf '%s' "${c:0:10}"; }
@@ -86,9 +83,9 @@ notify_failure() {
   local reason="${last_error:-${notify_what:-install} failed}"
   reason="${reason%%$'\n'*}"
   if [[ "${notify_what:-install}" == rollback ]]; then
-    notify_sessions "[release] rollback FAILED: ${reason}; log $(notify_log_path)"
+    write_result failed "[release] rollback FAILED: ${reason}; log $(notify_log_path)"
   else
-    notify_sessions "[release] install of $(sha10) FAILED: ${reason}; log $(notify_log_path)"
+    write_result failed "[release] install of $(sha10) FAILED: ${reason}; log $(notify_log_path)"
   fi
 }
 

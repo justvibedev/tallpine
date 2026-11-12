@@ -45,6 +45,7 @@ type Lineage struct {
 }
 
 // Options configures a Checker. Inspect and SessionOf default to procmem.
+// Mode is the build's mode (DefaultMode); SetDisabled turns it off live.
 type Options struct {
 	Mode       Mode
 	ModeReason string
@@ -55,6 +56,12 @@ type Options struct {
 	Inspect    func(pid int) (Lineage, error)
 	SessionOf  func(pid int) (int, error)
 	Now        func() time.Time
+	// LaunchGrace is how long Admit keeps re-reading a scoped token's roots
+	// before refusing it, so a hook that runs before its launch is stored is
+	// not refused. Zero means defaultLaunchGrace; negative means none.
+	LaunchGrace time.Duration
+	// RetryEvery spaces those re-reads. Zero means defaultRetryEvery.
+	RetryEvery time.Duration
 }
 
 // Observation is one authenticated request to classify.
@@ -78,9 +85,13 @@ type Record struct {
 
 // Report is the Checker's state for diagnostics.
 type Report struct {
-	Mode        Mode
-	ModeReason  string
-	TeamID      string
+	Mode       Mode
+	ModeReason string
+	TeamID     string
+	// BuildMode is what the build would run with the switch at default;
+	// Disabled is the owner's off switch.
+	BuildMode   Mode
+	Disabled    bool
 	Admitted    map[Class]int64
 	WouldRefuse []Record
 	Overflow    int64
@@ -104,20 +115,24 @@ type cachedRoots struct {
 	at    time.Time
 }
 
-// Checker classifies requests off the request path and records the outcome.
-// Observe does only cheap kernel reads and never blocks; slow work (signature
-// checks, tmux reads) runs on Run's goroutine. A nil Checker observes nothing.
+// Checker classifies requests and records the outcome. In report mode Observe
+// does only cheap kernel reads and never blocks; slow work (signature checks,
+// tmux reads) runs on Run's goroutine. In enforce mode Admit decides on the
+// request path. A nil Checker observes nothing and admits everything.
 type Checker struct {
-	opts    Options
-	queue   chan pending
-	dropped atomic.Int64
+	opts     Options
+	queue    chan pending
+	dropped  atomic.Int64
+	disabled atomic.Bool
 
 	mu       sync.Mutex
 	admitted map[Class]int64
 	records  map[recordKey]*Record
 	overflow int64
 
-	// Only Run's goroutine touches these.
+	// cacheMu guards the caches: Run's goroutine and Admit's request
+	// goroutines share them. It is never held across a read.
+	cacheMu    sync.Mutex
 	roots      map[string]cachedRoots
 	signatures map[[8]uint32]Signature
 }
@@ -135,6 +150,12 @@ func New(opts Options) *Checker {
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
+	}
+	if opts.LaunchGrace == 0 {
+		opts.LaunchGrace = defaultLaunchGrace
+	}
+	if opts.RetryEvery <= 0 {
+		opts.RetryEvery = defaultRetryEvery
 	}
 	return &Checker{
 		opts:       opts,
@@ -162,7 +183,7 @@ func inspectProcess(pid int) (Lineage, error) {
 // queues the classification. It cannot affect the request: a full queue only
 // counts a drop and a panic is contained.
 func (c *Checker) Observe(obs Observation) {
-	if c == nil || c.opts.Mode == ModeOff {
+	if c.Mode() == ModeOff {
 		return
 	}
 	defer func() {
@@ -171,6 +192,15 @@ func (c *Checker) Observe(obs Observation) {
 			c.opts.Log.Error("peer check: observe panicked", "panic", recovered)
 		}
 	}()
+	select {
+	case c.queue <- c.capture(obs):
+	default:
+		c.dropped.Add(1)
+	}
+}
+
+// capture reads the peer's lineage from the kernel while it is in its request.
+func (c *Checker) capture(obs Observation) pending {
 	item := pending{obs: obs, peer: Peer{Transport: obs.Peer.Transport, Exited: obs.Peer.Exited, Err: obs.Peer.Err}}
 	if obs.Peer.Transport == daemonsock.TransportUnix && obs.Peer.Err == "" && !obs.Peer.Exited {
 		lineage, err := c.opts.Inspect(obs.Peer.PID)
@@ -185,11 +215,7 @@ func (c *Checker) Observe(obs Observation) {
 			item.peer.Session = lineage.Session
 		}
 	}
-	select {
-	case c.queue <- item:
-	default:
-		c.dropped.Add(1)
-	}
+	return item
 }
 
 // Run classifies queued observations until ctx ends.
@@ -237,15 +263,21 @@ func (c *Checker) process(ctx context.Context, item pending) {
 			c.opts.Log.Error("peer check: classification panicked", "panic", recovered)
 		}
 	}()
+	c.record(item, c.classify(ctx, &item), ModeReport)
+}
+
+// classify decides one captured request, re-reading cached roots once before
+// calling a peer outside them.
+func (c *Checker) classify(ctx context.Context, item *pending) Decision {
 	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
 	item.peer.Signature = c.signature(item.obs)
-	decision := Decide(item.peer, item.obs.Credential, c.resolve(ctx, item, false))
+	decision := Decide(item.peer, item.obs.Credential, c.resolve(ctx, *item, false))
 	if decision.Class == ClassNotAdmitted && rootsMayBeStale(decision.Reason) {
 		// A pane opened since the cached read must not count as outside.
-		decision = Decide(item.peer, item.obs.Credential, c.resolve(ctx, item, true))
+		decision = Decide(item.peer, item.obs.Credential, c.resolve(ctx, *item, true))
 	}
-	c.record(item, decision)
+	return decision
 }
 
 func rootsMayBeStale(reason Reason) bool {
@@ -261,10 +293,15 @@ func (c *Checker) signature(obs Observation) Signature {
 	if obs.Credential.Kind != CredentialInstall || !obs.Peer.HasAuditToken || c.opts.Verifier == nil {
 		return SignatureUnknown
 	}
-	if cached, ok := c.signatures[obs.Peer.AuditToken]; ok {
+	c.cacheMu.Lock()
+	cached, ok := c.signatures[obs.Peer.AuditToken]
+	c.cacheMu.Unlock()
+	if ok {
 		return cached
 	}
 	result := c.opts.Verifier.Verify(obs.Peer.AuditToken)
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
 	if len(c.signatures) >= maxSignatures {
 		clear(c.signatures)
 	}
@@ -291,7 +328,10 @@ func (c *Checker) resolve(ctx context.Context, item pending, fresh bool) Roots {
 
 func (c *Checker) rootSet(ctx context.Context, key string, fresh bool, read func(context.Context) ([]int, error)) RootSet {
 	now := c.opts.Now()
-	if cached, ok := c.roots[key]; ok {
+	c.cacheMu.Lock()
+	cached, ok := c.roots[key]
+	c.cacheMu.Unlock()
+	if ok {
 		age := now.Sub(cached.at)
 		if age < rootRefreshEvery || (!fresh && age < rootCacheTTL) {
 			return cached.roots
@@ -299,6 +339,8 @@ func (c *Checker) rootSet(ctx context.Context, key string, fresh bool, read func
 	}
 	pids, err := read(ctx)
 	set := NewRootSet(pids, err, c.opts.SessionOf)
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
 	if len(c.roots) >= maxRootCache {
 		clear(c.roots)
 	}
@@ -306,7 +348,9 @@ func (c *Checker) rootSet(ctx context.Context, key string, fresh bool, read func
 	return set
 }
 
-func (c *Checker) record(item pending, decision Decision) {
+// record counts an admitted request, or logs and aggregates one that is not
+// admitted. mode says whether it was refused (enforce) or only recorded.
+func (c *Checker) record(item pending, decision Decision, mode Mode) {
 	if decision.Class != ClassNotAdmitted {
 		c.mu.Lock()
 		c.admitted[decision.Class]++
@@ -316,7 +360,11 @@ func (c *Checker) record(item pending, decision Decision) {
 	route := routeLabel(item.obs.Method, item.obs.Path)
 	tokenClass := string(item.obs.Credential.Kind)
 	executable := item.lineage.Executable
-	c.opts.Log.Warn("peer check: would refuse", "mode", c.opts.Mode, "pid", item.obs.Peer.PID,
+	message := "peer check: would refuse"
+	if mode == ModeEnforce {
+		message = "peer check: refused"
+	}
+	c.opts.Log.Warn(message, "mode", mode, "pid", item.obs.Peer.PID,
 		"executable", executable, "tokenClass", tokenClass, "route", route, "reason", decision.Reason)
 	key := recordKey{executable: executable, tokenClass: tokenClass, route: route, reason: decision.Reason}
 	now := c.opts.Now()
@@ -355,8 +403,9 @@ func (c *Checker) Report() Report {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	mode, reason := c.ModeAndReason()
 	report := Report{
-		Mode: c.opts.Mode, ModeReason: c.opts.ModeReason, TeamID: c.opts.TeamID,
+		Mode: mode, ModeReason: reason, TeamID: c.opts.TeamID, BuildMode: c.opts.Mode, Disabled: c.disabled.Load(),
 		Admitted: make(map[Class]int64, len(c.admitted)),
 		Overflow: c.overflow, Dropped: c.dropped.Load(),
 	}

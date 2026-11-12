@@ -18,14 +18,18 @@ const CONFIRM_MS = 1400;
 export function CopyButton({
 	text,
 	label,
+	/** Visible word on the non-compact button; defaults to "Copy". */
+	caption = "Copy",
 	/** Icon-only, for places where a word of chrome would be one too many. */
 	compact,
 	className,
 	/** Confirmation once the text is on the clipboard; callers outside Chat pass a localized one. */
 	copiedLabel = "Copied",
 }: {
-	text: string;
+	/** A function is read at click time, for text derived from live DOM. */
+	text: string | (() => string);
 	label: string;
+	caption?: string;
 	compact?: boolean;
 	className?: string;
 	copiedLabel?: string;
@@ -39,7 +43,7 @@ export function CopyButton({
 		// Through the bridge rather than `navigator.clipboard`: in Electron that
 		// reaches the native clipboard, which does not need the document to be focused
 		// or a permission the renderer cannot prompt for.
-		void tallpineBridge.clipboard.writeText(text).then(
+		void tallpineBridge.clipboard.writeText(typeof text === "function" ? text() : text).then(
 			() => {
 				setCopied(true);
 				clearTimeout(timer.current);
@@ -68,7 +72,7 @@ export function CopyButton({
 			) : (
 				<Copy aria-hidden="true" className="size-3" />
 			)}
-			{compact ? null : copied ? copiedLabel : "Copy"}
+			{compact ? null : copied ? copiedLabel : caption}
 		</button>
 	);
 

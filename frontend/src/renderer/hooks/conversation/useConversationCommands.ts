@@ -87,6 +87,8 @@ export function useConversationCommands(sessionId: string | undefined, hostId?: 
 		resumeError: resume.error ? apiErrorMessage(resume.error) : undefined,
 		compact: () => compact.mutateAsync(),
 		choosingSettings: chooseSettings.isPending && chooseSettings.variables?.targetSessionId === sessionId,
+		/** A refused pick (e.g. mid-handoff) is shown, not swallowed, so the owner is not left guessing. */
+		settingsError: chooseSettings.error ? apiErrorMessage(chooseSettings.error) : undefined,
 		chooseSettings: (settings: TurnSettings) => chooseSettings.mutate({ targetSessionId: sessionId as string, settings }),
 		chooseStartSettings: (settings: TurnSettings) => chooseConversationStartSettings(scope, chooseSettings, resume, settings),
 		/** A compaction is in flight provider-side and takes seconds, so it reads as

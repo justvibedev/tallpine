@@ -21,14 +21,6 @@ type (
 	ChatInstructedCompactor interface {
 		CompactWithInstructions(ctx context.Context, instructions string) (ChatCompactionResult, error)
 	}
-	// ChatContextClearer opens a fresh provider conversation with the same launch
-	// settings and moves this conversation onto it (chat /clear for a provider
-	// with no in-place clear). commit durably binds the new id and runs before
-	// the switch; an error from it leaves the conversation on its old id. The
-	// caller must keep the conversation idle.
-	ChatContextClearer interface {
-		ClearContext(ctx context.Context, commit func(newProviderConversationID string) error) error
-	}
 	// ChatRollbacker discards history back to a turn, provider-side. This is undo:
 	// it changes what the agent remembers, which is why it is a provider call and
 	// not a UI filter.

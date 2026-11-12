@@ -69,7 +69,7 @@
 1149 backend/internal/daemon/wiring_test.go
 514 backend/internal/domain/projectconfig.go
 626 backend/internal/domain/session.go
-659 backend/internal/httpd/agent_scope.go
+651 backend/internal/httpd/agent_scope.go
 568 backend/internal/httpd/api.go
 579 backend/internal/httpd/auth_test.go
 527 backend/internal/httpd/controllers/codex_accounts_test.go
@@ -185,7 +185,7 @@
 670 backend/internal/service/session/workspace_review.go
 734 backend/internal/service/session/workspace_review_test.go
 795 backend/internal/service/session/workspace_selection.go
-554 backend/internal/service/settingswrite/write.go
+540 backend/internal/service/settingswrite/write.go
 763 backend/internal/service/shellterm/service.go
 2378 backend/internal/service/shellterm/service_test.go
 544 backend/internal/service/systemcheck/systemcheck_test.go
@@ -339,7 +339,7 @@
 799 frontend/src/renderer/hooks/useBrowserViewLayout.test.tsx
 933 frontend/src/renderer/hooks/useBrowserViewTabs.test.tsx
 1393 frontend/src/renderer/hooks/useConversation.test.tsx
-596 frontend/src/renderer/hooks/useFileAttachments.ts
+533 frontend/src/renderer/hooks/useFileAttachments.ts
 829 frontend/src/renderer/hooks/useSessionInterfaceTransition.test.tsx
 1158 frontend/src/renderer/hooks/useTerminalSession.test.tsx
 818 frontend/src/renderer/hooks/useWorkspaceQuery.test.tsx

@@ -5,6 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/local-ci-loop.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 fails=0
+export TALLPINE_ALERT_DESKTOP_NOTIFY="" # alerts here must not reach the real desktop
 check() { if ! "$@"; then fails=$((fails + 1)); echo "FAIL: $*"; fi; }
 
 # No legacy CLI/app/job fallbacks are left in the loop.
@@ -34,29 +35,29 @@ OUT
 [ "$(flaky_detail "$tmp/v.out" | tail -1)" = "AssertionError: expected 1 to be 2" ] || { fails=$((fails + 1)); echo "FAIL: flaky_detail"; }
 job_output "$tmp/v.out" go-test | grep -q -- '--- FAIL: TestX' || { fails=$((fails + 1)); echo "FAIL: job_output"; }
 
-# Notify goes through `tallpine orchestrator notify` with the project and the notify-target.
+# B631: an alert is recorded in $ALERTS (alerts.tsv next to local-ci.tsv), never sent: a signed daemon
+# refuses the CLI run from here. The fake CLI records any call, so a send would show.
 mkdir -p "$tmp/bin"
 cat >"$tmp/bin/tallpine" <<'SH'
 #!/bin/sh
 echo "$@" >>"$CALLS"
-[ "$1 $2" = "orchestrator --help" ] && printf 'Available Commands:\n  ls  List\n  notify  Notify\n'
 exit 0
 SH
 chmod +x "$tmp/bin/tallpine"
 export CALLS="$tmp/calls" PATH="$tmp/bin:$PATH"
-echo "orch-7" >"$H/notify-target"
-send_to_orchestrator "hello"
-grep -q -- "orchestrator notify --project agent-orchestrator --target orch-7 --message hello" "$CALLS" || { fails=$((fails + 1)); echo "FAIL: notify args: $(cat "$CALLS" 2>/dev/null)"; }
-
-# An installed CLI that predates `orchestrator notify`: its `orchestrator --help` exits 0 and lists no
-# notify, and `orchestrator notify` fails with an unknown flag. The loop must fall back to ls + send.
-mkdir -p "$tmp/oldbin"
-cp "$here/../testdata/old-tallpine-cli.sh" "$tmp/oldbin/tallpine"
-chmod +x "$tmp/oldbin/tallpine"
-: >"$CALLS"; rm -f "$H/notify-target"
-PATH="$tmp/oldbin:$PATH" send_to_orchestrator "legacy hello" >/dev/null
-grep -q -- "send --session orch-old --message legacy hello" "$CALLS" || { fails=$((fails + 1)); echo "FAIL: old CLI did not get the send fallback: $(cat "$CALLS")"; }
-grep -q -- "orchestrator notify" "$CALLS" && { fails=$((fails + 1)); echo "FAIL: old CLI was asked for orchestrator notify"; }
+: >"$CALLS"
+[ "$ALERTS" = "$OUT/alerts.tsv" ] || { fails=$((fails + 1)); echo "FAIL: alerts file is $ALERTS"; }
+record_alert "$(printf 'hello\tthere\nagain')" >/dev/null
+grep -qE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z	hello there again$" "$ALERTS" || { fails=$((fails + 1)); echo "FAIL: alert line: $(cat "$ALERTS" 2>/dev/null)"; }
+[ ! -s "$CALLS" ] || { fails=$((fails + 1)); echo "FAIL: an alert called the CLI: $(cat "$CALLS")"; }
+# The detached build child (env -i, bash -c) gets every alert helper and setting, so with no reader its
+# alert still reaches the desktop.
+printf '#!/bin/sh\nfor a; do last="$a"; done\necho "$last" >>"%s/notified"\n' "$tmp" >"$tmp/notifyrec"; chmod +x "$tmp/notifyrec"
+rm -f "$(dirname "$ALERTS")/alerts.cursor"
+defs="$(TALLPINE_ALERT_DESKTOP_NOTIFY="$tmp/notifyrec" alert_child_defs)"
+env -i HOME="$HOME" PATH="$PATH" bash -c "$defs"$'\n''record_alert "from the child"' >"$tmp/child.out" 2>&1
+grep -qx "from the child" "$tmp/notified" 2>/dev/null || { fails=$((fails + 1)); echo "FAIL: the detached child did not notify the desktop: $(cat "$tmp/child.out")"; }
+grep -q "WARNING: no reader" "$tmp/child.out" || { fails=$((fails + 1)); echo "FAIL: the detached child did not warn: $(cat "$tmp/child.out")"; }
 
 # B341: a build request made at main commit X is never fulfilled by a commit older than X.
 WORK="$tmp/repo"; TSV="$tmp/t.tsv"; OUT="$tmp/out"; mkdir -p "$OUT"
@@ -129,22 +130,22 @@ printf '#!/bin/bash\necho "PID PPID PGID STAT COMMAND"; echo "5 1 77 S (bash)"; 
 echo good >"$tmp/q.ps"; PS_CMD="$fakeps" snapshot_tree 77 "$tmp/q.ps"
 [ "$(cat "$tmp/q.ps")" = good ] || { fails=$((fails + 1)); echo "FAIL: degraded ps replaced a readable snapshot"; }
 # B590: GitHub access is per repo, and an unreachable origin is reported rather than idled through.
-fetch_state="$H/fetch-failing"; : >"$CALLS"; rm -f "$fetch_state" "$H/github-user"
+fetch_state="$H/fetch-failing"; : >"$ALERTS"; rm -f "$fetch_state" "$H/github-user"
 printf 'fatal: repository not found https://user:s3cret@github.com/x.git\n' >"$FETCH_ERR"
 FETCH_FAIL_NOTIFY_AFTER=2 note_fetch_failure >/dev/null
-grep -q 'notify' "$CALLS" && { fails=$((fails + 1)); echo "FAIL: notified before the threshold"; }
+grep -q 'cannot reach' "$ALERTS" && { fails=$((fails + 1)); echo "FAIL: notified before the threshold"; }
 [ "$(sed -n 1p "$fetch_state" | cut -d' ' -f1)" = 1 ] || { fails=$((fails + 1)); echo "FAIL: first failure not recorded: $(cat "$fetch_state")"; }
 FETCH_FAIL_NOTIFY_AFTER=2 note_fetch_failure >/dev/null
-grep -q 'orchestrator notify.*cannot reach origin.*repository not found' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: repeated failure did not notify: $(cat "$CALLS")"; }
-grep -q 's3cret' "$CALLS" "$fetch_state" && { fails=$((fails + 1)); echo "FAIL: URL credentials leaked into the notice or state"; }
-n="$(grep -c 'cannot reach origin' "$CALLS")"; FETCH_FAIL_NOTIFY_AFTER=2 note_fetch_failure >/dev/null
-[ "$(grep -c 'cannot reach origin' "$CALLS")" = "$n" ] || { fails=$((fails + 1)); echo "FAIL: renotified on every tick"; }
-: >"$CALLS"; note_fetch_ok >/dev/null
+grep -q 'cannot reach origin.*repository not found' "$ALERTS" || { fails=$((fails + 1)); echo "FAIL: repeated failure did not notify: $(cat "$ALERTS")"; }
+grep -q 's3cret' "$ALERTS" "$fetch_state" && { fails=$((fails + 1)); echo "FAIL: URL credentials leaked into the notice or state"; }
+n="$(grep -c 'cannot reach origin' "$ALERTS")"; FETCH_FAIL_NOTIFY_AFTER=2 note_fetch_failure >/dev/null
+[ "$(grep -c 'cannot reach origin' "$ALERTS")" = "$n" ] || { fails=$((fails + 1)); echo "FAIL: renotified on every tick"; }
+: >"$ALERTS"; note_fetch_ok >/dev/null
 [ ! -e "$fetch_state" ] || { fails=$((fails + 1)); echo "FAIL: recovery left the failure state"; }
-grep -q 'reachable again' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: no all-clear after a notified failure: $(cat "$CALLS")"; }
+grep -q 'reachable again' "$ALERTS" || { fails=$((fails + 1)); echo "FAIL: no all-clear after a notified failure: $(cat "$ALERTS")"; }
 # A blip that never reached the orchestrator gets no all-clear.
-: >"$CALLS"; FETCH_FAIL_NOTIFY_AFTER=9 note_fetch_failure >/dev/null; note_fetch_ok >/dev/null
-grep -q 'reachable again' "$CALLS" && { fails=$((fails + 1)); echo "FAIL: all-clear for an unannounced blip"; }
+: >"$ALERTS"; FETCH_FAIL_NOTIFY_AFTER=9 note_fetch_failure >/dev/null; note_fetch_ok >/dev/null
+grep -q 'reachable again' "$ALERTS" && { fails=$((fails + 1)); echo "FAIL: all-clear for an unannounced blip"; }
 
 # Fake gh with two accounts; only "good" can reach the repo. The fake git fails unless its credential helper yields good's token.
 cat >"$tmp/bin/gh" <<'SH'
@@ -181,32 +182,32 @@ ci_try -C "$WORK" ls-remote origin refs/heads/main >/dev/null 2>&1 && { fails=$(
 rm -f "$H/github-user" "$tmp/bin/git" "$tmp/bin/gh"; hash -r; CI_GH_LOGIN=""
 
 # The real loop against an unreachable origin: it reports and retries, and never evaluates anything.
-loopdir="$tmp/ci2"; mkdir -p "$loopdir"; touch "$loopdir/housekeeping.stamp"; : >"$CALLS"
+loopdir="$tmp/ci2"; mkdir -p "$loopdir"; touch "$loopdir/housekeeping.stamp"; LALERTS="$loopdir/results/alerts.tsv"; rm -f "$LALERTS"
 ( TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/no-such-repo" bash "$here/loop.sh" --once >"$tmp/once.out" 2>&1 ); rc=$?
 [ "$rc" = 1 ] || { fails=$((fails + 1)); echo "FAIL: --once on an unreachable origin exited $rc: $(cat "$tmp/once.out")"; }
 rm -f "$loopdir/fetch-failing"
 TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/no-such-repo" POLL=1 FETCH_FAIL_NOTIFY_AFTER=2 bash "$here/loop.sh" >"$tmp/loop.out" 2>&1 &
-loop_pid=$!; for _ in $(seq 1 30); do grep -q 'cannot reach origin' "$CALLS" 2>/dev/null && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
-grep -q 'orchestrator notify.*cannot reach origin' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: running loop did not report: $(cat "$tmp/loop.out")"; }
+loop_pid=$!; for _ in $(seq 1 30); do grep -q 'cannot reach origin' "$LALERTS" 2>/dev/null && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
+grep -q 'cannot reach origin' "$LALERTS" || { fails=$((fails + 1)); echo "FAIL: running loop did not report: $(cat "$tmp/loop.out")"; }
 [ -s "$loopdir/fetch-failing" ] || { fails=$((fails + 1)); echo "FAIL: running loop left no failure state"; }
 grep -q 'evaluating main' "$tmp/loop.out" && { fails=$((fails + 1)); echo "FAIL: loop evaluated main with no origin"; }
 
 # Recovery on the real loop: origin appears, the failure clears, and a recorded head is not re-run.
 rm -rf "$tmp/up2"; git init -q --bare "$tmp/up2"; git -C "$tmp/w2" push -q "$tmp/up2" HEAD:refs/heads/main 2>/dev/null
 up_sha="$(git -C "$tmp/up2" rev-parse refs/heads/main)"; mkdir -p "$loopdir/results"; printf 'main\t%s\tpass\tok\n' "$up_sha" >"$loopdir/results/local-ci.tsv"
-printf '3 1 1\nold error\n' >"$loopdir/fetch-failing"; : >"$CALLS"
+printf '3 1 1\nold error\n' >"$loopdir/fetch-failing"; rm -f "$LALERTS"
 TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/up2" POLL=1 bash "$here/loop.sh" >"$tmp/loop2.out" 2>&1 &
 loop_pid=$!; for _ in $(seq 1 30); do [ ! -e "$loopdir/fetch-failing" ] && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
 [ ! -e "$loopdir/fetch-failing" ] || { fails=$((fails + 1)); echo "FAIL: loop did not clear the failure: $(cat "$tmp/loop2.out")"; }
-grep -q 'reachable again' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: loop sent no all-clear: $(cat "$tmp/loop2.out")"; }
+grep -q 'reachable again' "$LALERTS" || { fails=$((fails + 1)); echo "FAIL: loop sent no all-clear: $(cat "$tmp/loop2.out")"; }
 grep -q 'evaluating main' "$tmp/loop2.out" && { fails=$((fails + 1)); echo "FAIL: recorded head was re-evaluated"; }
 
 # The incident itself: an existing checkout whose origin stops answering (ls-remote fails), then one where only fetch fails.
 run_failing_loop() { # run_failing_loop <label>: the loop must report without evaluating anything
-  : >"$CALLS"; rm -f "$loopdir/fetch-failing"
+  rm -f "$LALERTS"; rm -f "$loopdir/fetch-failing"
   TALLPINE_LOCAL_CI_DIR="$loopdir" REPO_URL="$tmp/up2" POLL=1 FETCH_FAIL_NOTIFY_AFTER=1 bash "$here/loop.sh" >"$tmp/loop3.out" 2>&1 &
-  loop_pid=$!; for _ in $(seq 1 30); do grep -q 'cannot reach origin' "$CALLS" 2>/dev/null && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
-  grep -q 'orchestrator notify.*cannot reach origin' "$CALLS" || { fails=$((fails + 1)); echo "FAIL: $1 was not reported: $(cat "$tmp/loop3.out")"; }
+  loop_pid=$!; for _ in $(seq 1 30); do grep -q 'cannot reach origin' "$LALERTS" 2>/dev/null && break; sleep 0.5; done; kill "$loop_pid" 2>/dev/null; wait "$loop_pid" 2>/dev/null
+  grep -q 'cannot reach origin' "$LALERTS" || { fails=$((fails + 1)); echo "FAIL: $1 was not reported: $(cat "$tmp/loop3.out")"; }
   grep -q 'evaluating main' "$tmp/loop3.out" && { fails=$((fails + 1)); echo "FAIL: $1 evaluated a stale main"; }
 }
 rm -f "$loopdir/work/main/.git/FETCH_HEAD"; mkdir "$loopdir/work/main/.git/FETCH_HEAD" # ls-remote still answers; fetch cannot write

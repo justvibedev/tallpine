@@ -22,8 +22,10 @@ read the daemon token or database that the installer needs.
 
 The daemon refuses unless the caller is an orchestrator session, the app
 resolves to ~/.tallpine/release-builds/<sha>/frontend/out/**, and codesign
---deep --strict passes with the release Team ID. The install runs detached and
-messages this session when it finishes; its log path is printed.`,
+--deep --strict passes with the release Team ID. The install runs detached; its
+log path and result file are printed. The daemon restarts during the install and
+nothing messages this session, so poll the result file: when it exists, line 1 is
+"ok" or "failed" and line 2 the outcome.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sha := strings.TrimSpace(args[0])
@@ -35,6 +37,9 @@ messages this session when it finishes; its log path is printed.`,
 				return err
 			}
 			_, err := fmt.Fprintf(ctx.deps.Out, "install of %s started (pid %d); log %s\n", res.SHA, res.PID, res.Log)
+			if err == nil && res.Result != "" {
+				_, err = fmt.Fprintf(ctx.deps.Out, "outcome: poll %s (line 1 ok or failed, line 2 the message)\n", res.Result)
+			}
 			return err
 		},
 	})

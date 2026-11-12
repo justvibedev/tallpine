@@ -16,3 +16,6 @@ type SetReviewActivityRequest = apitypes.SetReviewActivityRequest
 
 // UsageHookMetadata aliases apitypes.UsageHookMetadata.
 type UsageHookMetadata = apitypes.UsageHookMetadata
+
+// ClearedContextNoteResponse aliases apitypes.ClearedContextNoteResponse.
+type ClearedContextNoteResponse = apitypes.ClearedContextNoteResponse

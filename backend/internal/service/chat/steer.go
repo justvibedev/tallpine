@@ -125,13 +125,16 @@ func (s *Service) Steer(
 	if strings.TrimSpace(msg.Text) == "" {
 		return SteerResult{}, ErrSteerTextRequired
 	}
-	if isClearCommand(msg) {
+	if opensWithClear(msg) {
 		record, err := s.requireChatSession(ctx, id)
 		if err != nil {
 			return SteerResult{}, err
 		}
+		if err := refusedClear(record, msg); err != nil {
+			return SteerResult{}, err
+		}
 		if interceptsClear(record, msg) {
-			marker, err := s.clearContext(ctx, id)
+			marker, err := s.clearByHandoff(ctx, id)
 			return SteerResult{ActivityID: marker}, err
 		}
 	}
@@ -181,13 +184,16 @@ func (s *Service) SteerOrSend(
 	if msg.ClientMessageID == "" {
 		return SteerOrSendResult{}, ErrSteerDeliveryUncertain
 	}
-	if isClearCommand(msg) {
+	if opensWithClear(msg) {
 		record, err := s.requireChatSession(ctx, id)
 		if err != nil {
 			return SteerOrSendResult{}, err
 		}
+		if err := refusedClear(record, msg); err != nil {
+			return SteerOrSendResult{}, err
+		}
 		if interceptsClear(record, msg) {
-			marker, err := s.clearContext(ctx, id)
+			marker, err := s.clearByHandoff(ctx, id)
 			return SteerOrSendResult{Cleared: err == nil, Steer: SteerResult{ActivityID: marker}}, err
 		}
 	}

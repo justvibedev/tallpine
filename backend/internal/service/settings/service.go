@@ -53,7 +53,26 @@ type Snapshot struct {
 	// ProviderEventRetentionDays is how long provider events of a terminated
 	// session are kept while StorageCompaction is on.
 	ProviderEventRetentionDays int
-	UpdatedAt                  time.Time
+	// PeerCheck is the owner's daemon peer check switch (B631): "default"
+	// follows the build, "off" stops refusing callers Tallpine did not start.
+	// Written only through the desktop app (daemon wiring), never here.
+	PeerCheck string
+	UpdatedAt time.Time
+}
+
+// Peer check switch values (app_settings.peer_check).
+const (
+	PeerCheckDefault = "default"
+	PeerCheckOff     = "off"
+)
+
+// PeerCheckOrDefault reads an empty switch (a store without the column) as
+// the default.
+func PeerCheckOrDefault(value string) string {
+	if value == PeerCheckOff {
+		return PeerCheckOff
+	}
+	return PeerCheckDefault
 }
 
 // Bounds and default of the provider-event retention window, mirroring the

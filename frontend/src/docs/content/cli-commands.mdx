@@ -1753,7 +1753,7 @@ Flags:
 ### `tallpine orchestrator research`
 
 ```text
-Research mode (Claude Code orchestrators only) raises the compaction window, 250k by default, so material you read yourself is not compacted away mid-analysis. Plain coordination keeps the early window: switch it on only when you decide a task needs you to read broadly, and off when the analysis is done. It also ends on its own when you are idle-compacted or handed off, or after an hour without a turn. The owner can turn the feature off in Settings (Dynamic orchestrator context) or per project (`tallpine project set --orchestrator-research-window off`).
+Research mode (Claude Code orchestrators only) raises the compaction window, 250k by default, so material you read yourself is not compacted away mid-analysis. Claude Code applies the window only at launch, so switching it on restarts your agent once it is idle (your conversation is kept) and sends you a message to continue the reading. Plain coordination keeps the early window: switch it on only when you decide a task needs you to read broadly, and off when the analysis is done. It also ends on its own when you are idle-compacted or handed off, or after an hour without a turn. The owner can turn the feature off in Settings (Dynamic orchestrator context) or per project (`tallpine project set --orchestrator-research-window off`).
 
 Usage:
   tallpine orchestrator research [command]
@@ -2309,8 +2309,10 @@ read the daemon token or database that the installer needs.
 
 The daemon refuses unless the caller is an orchestrator session, the app
 resolves to ~/.tallpine/release-builds/<sha>/frontend/out/**, and codesign
---deep --strict passes with the release Team ID. The install runs detached and
-messages this session when it finishes; its log path is printed.
+--deep --strict passes with the release Team ID. The install runs detached; its
+log path and result file are printed. The daemon restarts during the install and
+nothing messages this session, so poll the result file: when it exists, line 1 is
+"ok" or "failed" and line 2 the outcome.
 
 Usage:
   tallpine release install <sha> [flags]

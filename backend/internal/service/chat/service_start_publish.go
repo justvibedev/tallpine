@@ -55,6 +55,7 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 			"tokens", l.controller.compactLive, "reattached", l.liveReconnect)
 	}
 	l.controller.kind = l.cfg.Kind
+	s.carryResearchToController(ctx, l.controller)
 	controller := l.controller
 	controller.prepareWorkerQueue = func(ctx context.Context, queued domain.QueuedTurn) (domain.QueuedTurn, error) {
 		return s.prepareWorkerQueue(ctx, controller, queued)

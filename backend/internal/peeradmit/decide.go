@@ -2,8 +2,9 @@
 // Tallpine itself started (B631). It answers from kernel-reported peer facts,
 // never from a request header.
 //
-// In this release the decision is only recorded: Checker runs beside the
-// request and nothing it finds can change a response.
+// On a signed macOS build the decision is enforced: Checker.Admit refuses a
+// request whose peer is not admitted. The owner can turn it off from the
+// desktop app (app_settings daemon.peerCheck); report mode records only.
 package peeradmit
 
 import (
@@ -16,8 +17,7 @@ import (
 // Mode is how the peer check acts on a decision.
 type Mode string
 
-// Mode values. ModeEnforce is declared for the next release and is never
-// returned by DefaultMode yet.
+// Mode values.
 const (
 	ModeOff     Mode = "off"
 	ModeReport  Mode = "report"
@@ -39,7 +39,7 @@ func DefaultMode(goos, teamID string, signatureCheck bool) (Mode, string) {
 	if !signatureCheck {
 		return ModeOff, "built without signature checking"
 	}
-	return ModeReport, "signed build, recording only"
+	return ModeEnforce, "signed build"
 }
 
 // NewRootSet builds a RootSet from a lookup's result. Only a root that leads

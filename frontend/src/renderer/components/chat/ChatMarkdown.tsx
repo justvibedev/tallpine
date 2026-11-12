@@ -73,6 +73,7 @@ import {
 import { HighlightedCode } from "./HighlightedCode";
 import { MermaidBlock } from "./MermaidBlock";
 import { CopyButton } from "./CopyButton";
+import { ChatTable } from "./ChatTable";
 import { ChatImage, ChatImageGallery, ChatImageLinkScope, isImageOnlyParagraph } from "./ChatImage";
 import "./code-theme.css";
 
@@ -636,11 +637,7 @@ const COMPONENTS: Components = {
 
 	// Wide tables scroll inside their own container so the conversation column
 	// never scrolls sideways.
-	table: ({ children }) => (
-		<div className="my-2.5 overflow-x-auto rounded-lg border border-border">
-			<table className="w-full border-collapse text-xs">{children}</table>
-		</div>
-	),
+	table: ChatTable,
 	thead: ({ children }) => <thead className="bg-raised/40">{children}</thead>,
 	th: ({ children }) => (
 		<th className="border-b border-border px-2.5 py-1.5 text-left font-medium text-muted-foreground">

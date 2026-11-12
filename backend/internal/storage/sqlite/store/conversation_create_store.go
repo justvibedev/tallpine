@@ -178,10 +178,17 @@ func (s *Store) createConversation(
 				if err := rebind(q); err != nil {
 					return err
 				}
+				latest, err := adoptForeignQueuedTurns(ctx, q, existing.ID, options.session, options.now)
+				if err != nil {
+					return err
+				}
+				if latest > 0 {
+					existing.LatestSequence = latest
+				}
 				if !options.adoptQueue {
 					return nil
 				}
-				latest, err := adoptProvisioningQueue(ctx, q, options.session, existing.ID, options.now)
+				latest, err = adoptProvisioningQueue(ctx, q, options.session, existing.ID, options.now)
 				if err != nil {
 					return err
 				}

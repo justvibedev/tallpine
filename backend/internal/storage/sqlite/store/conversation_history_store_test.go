@@ -840,11 +840,7 @@ func TestProjectConversationPageStartsAtCurrentContextReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project conversation: %v", err)
 	}
-	if _, err := s.AppendUserMessage(ctx, conversation.ID, first.ID, "gen-1", domain.ConversationMessage{
-		ID: "old-message", Text: "old orchestrator history", Origin: domain.MessageOriginHuman,
-	}, "old-turn", histClock.Add(time.Second)); err != nil {
-		t.Fatalf("append old message: %v", err)
-	}
+	seedSettledHistoryTurn(t, s, conversation.ID, first.ID, "gen-1", histClock.Add(time.Second))
 	if err := s.UpsertActivity(ctx, conversation.ID, "", domain.ConversationActivity{
 		ID: "old-activity", Kind: domain.ActivityKindSystem, Status: domain.ActivityStatusCompleted,
 		Summary: "old project activity", ProviderItemID: "old-project-history",
@@ -935,11 +931,7 @@ func TestProjectConversationFreshContextRebindWritesResetBoundaryAtomically(t *t
 	if err != nil {
 		t.Fatalf("create project conversation: %v", err)
 	}
-	if _, err := s.AppendUserMessage(ctx, conversation.ID, first.ID, "gen-1", domain.ConversationMessage{
-		ID: "old-message", Text: "old orchestrator history", Origin: domain.MessageOriginHuman,
-	}, "old-turn", histClock.Add(time.Second)); err != nil {
-		t.Fatalf("append old message: %v", err)
-	}
+	seedSettledHistoryTurn(t, s, conversation.ID, first.ID, "gen-1", histClock.Add(time.Second))
 
 	secondRecord := sampleRecord("project-atomic-reset")
 	secondRecord.Kind = domain.KindOrchestrator

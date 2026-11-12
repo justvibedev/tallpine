@@ -279,16 +279,18 @@ func (s *Store) ActivateConversationBranch(
 	})
 }
 
-// RebindUnansweredBranchProvider points a branch that never had a turn at the
-// provider conversation that replaced one its provider never saved.
+// RebindUnansweredBranchProvider points a branch whose agent never answered a
+// turn (see domain.TurnState.Answered) at the provider conversation that
+// replaced one its provider never saved.
 func (s *Store) RebindUnansweredBranchProvider(ctx context.Context, conversationID, branchID, previous, provider string) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	res, err := s.writeDB.ExecContext(ctx, `
 UPDATE conversation_branches SET provider_conversation_id = ?
 WHERE id = ? AND conversation_id = ? AND provider_conversation_id = ?
-  AND NOT EXISTS (SELECT 1 FROM conversation_turns WHERE conversation_id = ? AND branch_id = ?)`,
-		provider, branchID, conversationID, previous, conversationID, branchID)
+  AND NOT EXISTS (SELECT 1 FROM conversation_turns WHERE conversation_id = ? AND branch_id = ? AND state IN (?, ?))`,
+		provider, branchID, conversationID, previous, conversationID, branchID,
+		domain.TurnStateCompleted, domain.TurnStateRecovered)
 	if err != nil {
 		return fmt.Errorf("rebind branch %s provider: %w", branchID, err)
 	}

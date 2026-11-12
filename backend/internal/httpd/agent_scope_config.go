@@ -139,3 +139,14 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// configBodyViolation checks the config of a PUT /projects/{id}[/config] body.
+func configBodyViolation(raw []byte) string {
+	var body struct {
+		Config json.RawMessage `json:"config"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return ""
+	}
+	return agentConfigViolation(body.Config)
+}

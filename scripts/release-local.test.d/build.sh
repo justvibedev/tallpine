@@ -66,15 +66,21 @@ git -C "${RB}" init -q -b main; git -C "${RB}" -c user.email=t@t -c user.name=t 
 git -C "${RB}" remote add origin "${T}/rborigin.git"; git -C "${RB}" push -q origin main; git -C "${RB}" fetch -q origin
 RBSHA="$(git -C "${RB}" rev-parse origin/main)"
 printf '#!/bin/bash\necho "$@" >"%s/fakebuild.args"\necho "Built: /x/app"\n' "${T}" >"${T}/fakebuild"; chmod +x "${T}/fakebuild"
-export TALLPINE_RELEASE_BUILD_BIN="${T}/fakebuild" TALLPINE_RELEASE_NOTIFY_CLI=/nonexistent
+export TALLPINE_RELEASE_BUILD_BIN="${T}/fakebuild"
 rbq() { TALLPINE_RELEASE_CI_TSV="${T}/rb-ci.tsv" "${RB}/scripts/release-local" --state-dir "${T}/rbs" "$@"; }
 mkdir -p "${T}/rbs"; printf 'main\t%s\tfail\tx\n' "${RBSHA}" >"${T}/rb-ci.tsv"
 rbq request-build >"${T}/out" 2>&1
 check "request-build with a failed CI row leaves the marker, builds nothing" '[[ -f "${T}/rbs/release-builds/request-build" && ! -e "${T}/fakebuild.args" ]]'
 printf 'main\t%s\tpass\tok\n' "${RBSHA}" >"${T}/rb-ci.tsv"
-rbq request-build >"${T}/out" 2>&1
+printf '#!/bin/sh\nfor a; do last="$a"; done\necho "$last" >>"%s/notified"\n' "${T}" >"${T}/notifyrec"; chmod +x "${T}/notifyrec"
+TALLPINE_ALERT_DESKTOP_NOTIFY="${T}/notifyrec" rbq request-build >"${T}/out" 2>&1
 for i in $(seq 1 50); do [[ -f "${T}/fakebuild.args" ]] && break; sleep 0.2; done
 check "request-build builds a passed, unbuilt origin/main right away" 'grep -q "build ${RBSHA} --no-fetch" "${T}/fakebuild.args" && [[ ! -f "${T}/rbs/release-builds/request-build" ]]'
+# B631: the finished build records ONE alert next to local-ci.tsv instead of messaging the orchestrator.
+for i in $(seq 1 50); do grep -q "build ${RBSHA:0:10}" "${T}/alerts.tsv" 2>/dev/null && break; sleep 0.2; done
+check "the detached build records its alert in alerts.tsv" '[[ "$(grep -c "	\[local-ci\] build ${RBSHA:0:10} OK: /x/app. Log: ${T}/build-${RBSHA:0:8}.log$" "${T}/alerts.tsv")" -eq 1 ]] || { cat "${T}/alerts.tsv"; false; }'
+for i in $(seq 1 50); do grep -q "build ${RBSHA:0:10}" "${T}/notified" 2>/dev/null && break; sleep 0.2; done
+check "with no alerts reader the detached build also shows its alert on the desktop" 'grep -q "build ${RBSHA:0:10} OK" "${T}/notified" 2>/dev/null || { cat "${T}/build-${RBSHA:0:8}.log"; false; }'
 for i in $(seq 1 50); do [[ -d "${T}/rbs/release-builds/.building-${RBSHA}" ]] || break; sleep 0.2; done
 mkdir -p "${T}/rbs/releases"; printf '2026-01-01T00:00:00Z\t%s\tno-notarize\ttotal=1s\t\n' "${RBSHA:0:12}" >"${T}/rbs/releases/build-times.tsv"
 rm -f "${T}/fakebuild.args"; rbq request-build >"${T}/out" 2>&1
@@ -99,7 +105,7 @@ rm -rf "${T}/fakebuild.args" "${T}/rbs/release-builds/.building-${RBSHA}"; rm -r
 TALLPINE_RELEASE_CI_TSV="${T}/ro-ci/local-ci.tsv" "${RB}/scripts/release-local" --state-dir "${T}/rbs" request-build >"${T}/out" 2>&1 && ro_rc=0 || ro_rc=$?
 chmod 700 "${T}/ro-ci"
 check "request-build fails loudly when the build log is unwritable" '[[ "${ro_rc}" -ne 0 ]] && grep -q "cannot write the build log" "${T}/out" && ! grep -q "Building" "${T}/out"'
-unset TALLPINE_RELEASE_BUILD_BIN TALLPINE_RELEASE_NOTIFY_CLI
+unset TALLPINE_RELEASE_BUILD_BIN
 # Stale-lock takeover (bug 2): a takeover already claimed blocks, concurrent takeovers pick exactly one winner, and an EXIT trap set earlier still runs.
 BLS="${T}/bl"; BLB="${BLS}/release-builds"; BLSHA="abcdef1234567890"; mkdir -p "${BLB}"
 bl() { "${release}" --state-dir "${BLS}" "$@"; }

@@ -36,6 +36,12 @@ func projectCreators(store AgentScopeStore) controllers.ProjectCreatorStore {
 	return creators
 }
 
+// clearedNoter returns the Chat service's cleared-context notes, when it builds them.
+func clearedNoter(conversations controllers.ConversationService) controllers.ClearedContextNoter {
+	noter, _ := conversations.(controllers.ClearedContextNoter)
+	return noter
+}
+
 func newSessionsController(cfg config.Config, deps APIDeps) *controllers.SessionsController {
 	return &controllers.SessionsController{
 		Routes:                   routeNoticer(deps.Reports),
@@ -46,6 +52,7 @@ func newSessionsController(cfg config.Config, deps APIDeps) *controllers.Session
 		PlannerEnabled:           func() bool { return deps.BacklogPlans != nil && deps.BacklogPlans.Enabled() },
 		Projects:                 deps.Projects,
 		Activity:                 deps.Activity,
+		ClearedNotes:             clearedNoter(deps.Conversations),
 		DataDir:                  cfg.DataDir,
 		RunFilePath:              cfg.RunFilePath,
 		Usage:                    deps.UsageHooks,

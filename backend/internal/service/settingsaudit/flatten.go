@@ -71,6 +71,7 @@ func AppSettings(s settingssvc.Snapshot) Values {
 		"app.workflowDefaults.reviewerModel":          raw(s.WorkflowDefaults.ReviewerModel),
 		"app.storageCompaction":                       raw(s.StorageCompaction),
 		"app.providerEventRetentionDays":              raw(s.ProviderEventRetentionDays),
+		"app.daemon.peerCheck":                        raw(settingssvc.PeerCheckOrDefault(s.PeerCheck)),
 		// Mobile state lives in its own file; only the managed switch is visible
 		// here, and it reads "allowed" unless the managed file says otherwise.
 		"app.mobile.enabled": raw(true),

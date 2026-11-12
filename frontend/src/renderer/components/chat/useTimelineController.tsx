@@ -10,6 +10,7 @@ import { useChatScrollMemory } from "./useChatScrollMemory";
 import { useTimelineScroll } from "./useTimelineScroll";
 import { useAnnotationNavigation } from "./useAnnotationNavigation";
 import { useInlineEditState } from "./useInlineEditState";
+import { usePinnedPrompt } from "./usePinnedPrompt";
 import { useTranscriptSelection } from "./useTranscriptSelection";
 import { useTimelineMinimap } from "./useTimelineMinimap";
 import { useTurnEligibility } from "./useTurnEligibility";
@@ -302,6 +303,7 @@ export function useTimelineController(props: TimelineProps) {
 	});
 	const layoutKey = `${groups.length}:${virtualHeight}`;
 	const { unreadCount } = useUnreadReplies({ memoryKey: chatDraftScopeKey(draftScope), groups, pinned, setPinnedNow, markWritten, scroller, scrollContent, virtualized, virtualizer, layoutKey });
+	const pinnedPrompt = usePinnedPrompt({ groups, scroller, virtualizer, virtualScrollMargin, layoutKey });
 	useChatScrollMemory({ memoryKey: chatDraftScopeKey(draftScope), scroller, setPinnedNow, markWritten, layoutKey });
 	useAnnotationScroll({
 		annotationTarget,
@@ -437,6 +439,7 @@ export function useTimelineController(props: TimelineProps) {
 		openPlan,
 		openingTurnId,
 		pinned,
+		pinnedPrompt,
 		previews,
 		promptSpacer,
 		queued,

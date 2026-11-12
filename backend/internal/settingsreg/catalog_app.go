@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/config"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -53,6 +54,8 @@ func appSettings() []Setting {
 		{Key: "app.providerEventRetentionDays", Scope: ScopeApp, Kind: KindInt, Default: jsonOf(settingssvc.DefaultProviderEventRetentionDays),
 			Min: bound(settingssvc.MinProviderEventRetentionDays), Max: bound(settingssvc.MaxProviderEventRetentionDays),
 			Description: "Days provider events of a terminated session are kept while compaction is on.", Writers: user, MDMLockable: true},
+		{Key: "app.daemon.peerCheck", Scope: ScopeApp, Kind: KindEnum, Enum: []string{settingssvc.PeerCheckDefault, settingssvc.PeerCheckOff}, Default: jsonOf(settingssvc.PeerCheckDefault),
+			Description: "Whether the daemon refuses callers " + brand.ProductName + " did not start, on a signed macOS build. default refuses them; off lets any process holding a token in. Only the desktop app can change it.", Writers: user},
 	}
 }
 

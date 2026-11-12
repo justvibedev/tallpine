@@ -3472,6 +3472,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/{sessionId}/cleared-context-note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the note that re-briefs an agent after its context was cleared */
+        get: operations["getClearedContextNote"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/{sessionId}/commit": {
         parameters: {
             query?: never;
@@ -6925,6 +6942,9 @@ export interface components {
              */
             clearedCount: number;
         };
+        ClearedContextNoteResponse: {
+            note: string;
+        };
         CloneDestination: {
             canUseExisting: boolean;
             exists: boolean;
@@ -7245,6 +7265,8 @@ export interface components {
             available: boolean;
             /** @description The window research mode uses; empty when it is turned off for the project or globally. */
             researchWindow?: string;
+            /** @description Research mode is switched on but waits for the agent to be idle and restart before its window applies. */
+            restartPending: boolean;
             /** @description When research mode was switched on (RFC 3339); empty when it is off. */
             since?: string;
             /** @description The compaction window in effect, in tokens; 0 is the agent's own default. */
@@ -7265,6 +7287,7 @@ export interface components {
             app: string;
             log: string;
             pid: number;
+            result?: string;
             sha: string;
         };
         ControllersRequestRereviewRequest: {
@@ -9918,6 +9941,7 @@ export interface components {
             sessionId: string;
         };
         SilentFailuresPeerCheck: {
+            active: boolean;
             admitted: {
                 [key: string]: number;
             } | null;
@@ -24047,6 +24071,56 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getClearedContextNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session identifier, e.g. project-1. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearedContextNoteResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

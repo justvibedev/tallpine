@@ -8,7 +8,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getApiBaseUrl, subscribeApiBaseUrl } from "../../lib/api-client";
-import { buildWorkspaceBlobUrl, isAbsoluteMarkdownAssetSrc, resolveMarkdownImageSrc } from "../../lib/markdown-image-resolver";
+import { buildWorkspaceBlobUrl, buildWorkspaceStreamUrl, isAbsoluteMarkdownAssetSrc, resolveMarkdownImageSrc } from "../../lib/markdown-image-resolver";
 import { tallpineBridge } from "../../lib/bridge";
 import type { LocalImageSource } from "../../../shared/local-path";
 import type { SessionArtifact } from "../../types/workspace";
@@ -42,7 +42,7 @@ export function useChatImageSrc(src: string | undefined): string | undefined {
  * the confined route that serves it. `undefined` while that is pending, outside
  * a local session chat, and for a missing file or one under neither root.
  */
-export function useChatLocalImageUrl(path: string): string | undefined {
+export function useChatLocalImageUrl(path: string, streamed = false): string | undefined {
 	const source = useContext(ChatImageSourceContext);
 	const sessionId = source && !source.remoteHost && source.baseUrl ? source.sessionId : undefined;
 	const [image, setImage] = useState<{ key: string; source?: LocalImageSource }>();
@@ -58,6 +58,8 @@ export function useChatLocalImageUrl(path: string): string | undefined {
 	}, [key, path, sessionId]);
 	const found = image?.key === key ? image.source : undefined;
 	if (!sessionId || !source?.baseUrl || !found) return undefined;
+	// Video and audio need the streamed route (Range requests); the blob route buffers whole files.
+	if (found.kind === "workspace" && streamed) return buildWorkspaceStreamUrl(sessionId, found.path, source.version, source.baseUrl);
 	if (found.kind === "workspace") return buildWorkspaceBlobUrl(sessionId, found.path, source.version, source.baseUrl);
 	const asset = found.path.split("/").map(encodeURIComponent).join("/");
 	return `${source.baseUrl.replace(/\/+$/, "")}/api/v1/sessions/${encodeURIComponent(found.sessionId)}/artifact-files/${asset}`;

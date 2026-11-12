@@ -31,6 +31,8 @@ command -v python3 >/dev/null || { echo "python3 is required for the fake daemon
 
 # B187: the staleness guard must not depend on this checkout lagging origin/main.
 export TALLPINE_RELEASE_SKIP_STALE_CHECK=1
+# Alerts recorded by the detached build must not reach the real desktop.
+export TALLPINE_ALERT_DESKTOP_NOTIFY=""
 T="$(mktemp -d "${TMPDIR:-/tmp}/tallpine-release-test.XXXXXX")"
 T="$(cd "${T}" && pwd -P)"
 state="${T}/state"

@@ -9,12 +9,12 @@
 # $OUT/local-ci-main-<sha8>-failures.txt.  Start with ~/.tallpine/local-ci/start.sh (detached, pid file).
 # GitHub access: $H/github-user (one login) pins the gh account for this repo; without it the loop uses the
 # ambient login and falls back to any other signed-in gh account that can reach the repo. While origin is
-# unreachable, $H/fetch-failing holds the failure and the orchestrator is told (see note_fetch_failure).
+# unreachable, $H/fetch-failing holds the failure and an alert is recorded (see note_fetch_failure).
+# Alerts for the main-health orchestrator go to $OUT/alerts.tsv; scripts/local-ci/alerts prints the new ones.
 H="${TALLPINE_LOCAL_CI_DIR:-$HOME/.tallpine/local-ci}"
 OUT="${OUT:-$H/results}"
 REPO_URL="${REPO_URL:-https://github.com/justvibedev/tallpine-dev.git}"
-PROJECT_ID="${LOCAL_CI_PROJECT_ID:-agent-orchestrator}"
-WORK="$H/work/main"; POLL="${POLL:-120}"; TSV="$OUT/local-ci.tsv"
+WORK="$H/work/main"; POLL="${POLL:-120}"; TSV="$OUT/local-ci.tsv"; ALERTS="$OUT/alerts.tsv"
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 mkdir -p "$OUT" "$H/work" "$H/gocache" "$H/gomod" "$H/tmp"
 
@@ -209,16 +209,15 @@ build_on_green() {
   fi
   rm -f "$m"
   echo "[$(date)] build requested: building $sha detached (log $OUT/build-${sha:0:8}.log)"
-  # The detached child builds, then sends ONE line to the orchestrator (B215). It runs bash -c with
-  # the send_to_orchestrator/tallpine_cli definitions copied in via declare -f.
+  # The detached child builds, then records ONE alert (B215, B631). It runs bash -c with the
+  # record_alert definitions copied in via declare -f.
   local defs child
-  load_notify_lib
-  defs="$(declare -f tallpine_cli send_to_orchestrator load_notify_lib tp_notify_orchestrator); H='$H'; PROJECT_ID='$PROJECT_ID'"
+  defs="$(alert_child_defs)"
   child='"$3" build "$2" --no-fetch </dev/null; rc=$?
 if [ "$rc" -eq 0 ]; then
   app="$(grep "^Built: " "$1" | tail -1 | cut -c8-)"; msg="[local-ci] build ${2:0:10} OK: ${app:-unknown}. Log: $1"
 else msg="[local-ci] build ${2:0:10} FAILED (rc $rc). Log: $1"; fi
-send_to_orchestrator "$msg"'
+record_alert "$msg"'
   env -i HOME="$HOME" PATH="$PATH" USER="$USER" LOGNAME="${LOGNAME:-$USER}" TMPDIR="${TMPDIR:-/tmp}" \
     python3 -I -c 'import os,sys
 os.setsid()
@@ -259,14 +258,9 @@ housekeeping_daily() {
   touch "$stamp"
 }
 
-# Push main results to ONE orchestrator (the main-health owner): the live session named in
-# $H/notify-target (one line), else the oldest live orchestrator of the project; picked by
-# `tallpine orchestrator notify`. Fails: always. Pass: only when the previous main row was a fail (all-clear).
-tallpine_cli() {
-  local c="$HOME/Applications/Tallpine.app/Contents/Resources/daemon/tallpine"
-  [ -x "$c" ] && { echo "$c"; return; }
-  command -v tallpine
-}
+# Alerts for ONE orchestrator (the main-health owner), recorded in $ALERTS for the Tallpine automation
+# that runs scripts/local-ci/alerts to pass on (B631: the daemon refuses a message sent from here).
+# Fails: always. Pass: only when the previous main row was a fail (all-clear).
 notify_orchestrators() {
   local sha="$1" row prev msg
   row="$(grep "^main	$sha	" "$TSV" | tail -1)"; [ -n "$row" ] || return 0
@@ -276,29 +270,33 @@ notify_orchestrators() {
     pass) [ "$prev" = fail ] || return 0; msg="[local-ci] main ${sha:0:10} is green again (all jobs passed)." ;;
     *) return 0 ;;
   esac
-  send_to_orchestrator "$msg"
+  record_alert "$msg"
 }
+# alert_child_defs: the definitions a detached bash -c child needs to call record_alert (B631).
+alert_child_defs() {
+  declare -f record_alert load_notify_lib
+  load_notify_lib && tp_alert_defs
+  echo "ALERTS='$ALERTS'"
+}
+
 # Shared by notify_orchestrators and the detached build child (B215).
-# tp_notify_orchestrator lives in scripts/lib/notify.sh, shared with release-local. This file runs from an
+# tp_record_alert lives in scripts/lib/notify.sh, shared with release-local. This file runs from an
 # installed copy: the lib sits next to it, else in this repo tree or the main checkout.
 load_notify_lib() {
-  type tp_notify_orchestrator >/dev/null 2>&1 && return 0
+  type tp_alert_defs >/dev/null 2>&1 && return 0
   local f here; here="$(dirname "${BASH_SOURCE[0]}")"
   # scripts/local-ci/install copies the lib next to the installed loop.sh, so the alert for an unreachable
-  # origin does not depend on the checkout. A file without the function (an older checkout) does not count.
+  # origin does not depend on the checkout. A file without tp_alert_defs (an older checkout) does not count.
   for f in "$here/notify.sh" "$here/../lib/notify.sh" "$WORK/scripts/lib/notify.sh"; do
     # shellcheck disable=SC1090
     [ -f "$f" ] && . "$f" 2>/dev/null
-    type tp_notify_orchestrator >/dev/null 2>&1 && return 0
+    type tp_alert_defs >/dev/null 2>&1 && return 0
   done
   return 1
 }
-send_to_orchestrator() {
-  local msg="$1" cli target
-  load_notify_lib || { echo "[$(date)] notify: scripts/lib/notify.sh not found, skipping"; return 0; }
-  cli="$(tallpine_cli)"; [ -n "$cli" ] || { echo "[$(date)] notify: no CLI found"; return 0; }
-  target="$(head -1 "$H/notify-target" 2>/dev/null | tr -d '[:space:]')"
-  echo "[$(date)] $(tp_notify_orchestrator "$cli" "$PROJECT_ID" "$target" "$msg")"
+record_alert() {
+  load_notify_lib || { echo "[$(date)] alert: scripts/lib/notify.sh not found, skipping: $1"; return 0; }
+  echo "[$(date)] $(tp_record_alert "$ALERTS" "$1")"
 }
 
 # B590: the repo is private and the machine-wide gh login can be any account, so which account reaches it
@@ -338,7 +336,7 @@ note_fetch_failure() {
   echo "[$(date)] cannot reach origin (failure $count): $err"
   if [ "$count" -ge "${FETCH_FAIL_NOTIFY_AFTER:-3}" ] && [ $((now - notified)) -ge "${FETCH_RENOTIFY_EVERY:-21600}" ]; then
     mins=$(((now - first) / 60)); notified="$now"
-    send_to_orchestrator "[local-ci] cannot reach origin for ${mins}m ($count failed checks): $err. Main is not being tested and build requests are waiting. Check gh auth status, or pin an account that can reach the repo in $H/github-user."
+    record_alert "[local-ci] cannot reach origin for ${mins}m ($count failed checks): $err. Main is not being tested and build requests are waiting. Check gh auth status, or pin an account that can reach the repo in $H/github-user."
   fi
   printf '%s %s %s\n%s\n' "$count" "$first" "$notified" "$err" >"$FETCH_STATE"
 }
@@ -348,7 +346,7 @@ note_fetch_ok() {
   read -r count first notified <"$FETCH_STATE"
   rm -f "$FETCH_STATE"
   echo "[$(date)] origin reachable again after $count failed checks"
-  [ "${notified:-0}" = 0 ] || send_to_orchestrator "[local-ci] origin is reachable again after $count failed checks; main is being tested."
+  [ "${notified:-0}" = 0 ] || record_alert "[local-ci] origin is reachable again after $count failed checks; main is being tested."
 }
 # The tick for an unreachable origin: record it, keep the maintenance going, never evaluate a stale origin/main.
 fetch_failed_tick() {

@@ -1,47 +1,56 @@
-# Shared by scripts/local-ci/loop.sh and scripts/release-local.d/lock.sh: how a
-# script talks to the tallpine CLI as the owner, not as whichever session it
-# was started from. Source it; it defines functions only.
+# Shared by scripts/local-ci/loop.sh and release-local's detached build: how a script run by launchd
+# tells the main-health orchestrator something. Source it; it defines functions only.
+#
+# B631: a signed daemon refuses API calls from processes Tallpine did not start, and these scripts are
+# such processes, so they no longer message an orchestrator. They append the alert to alerts.tsv next
+# to local-ci.tsv instead. A Tallpine automation runs scripts/local-ci/alerts, which prints the alerts
+# not yet passed on, and its agent sends them to the orchestrator with its own scoped CLI.
+# Until that automation runs (or if it stops), each alert is also shown as a macOS notification, so
+# none is parked unseen.
 
-# tp_owner_cli <cli> <args...>: runs the CLI with TALLPINE_SESSION_* dropped so
-# a script started inside a worker session cannot send as that session. A
-# caller that needs a specific daemon exports TALLPINE_DATA_DIR / TALLPINE_RUN_FILE.
-tp_owner_cli() {
-  env -u TALLPINE_SESSION_ID -u TALLPINE_SESSION_TOKEN -u TALLPINE_SESSION_TOKEN_RUN_FILE -u TALLPINE_SESSION_AUTH -u TALLPINE_SESSION_AUTH_RUN_FILE \
-    -u TALLPINE_PROJECT_ID -u VO_SESSION_ID "$@"
-}
-
-# tp_retry_until <deadline-epoch> <interval-seconds> <cmd...>: runs cmd until it
-# succeeds or the deadline passes (one attempt always happens). Returns cmd's last status.
-tp_retry_until() {
-  local deadline="$1" interval="$2" rc
-  shift 2
-  while :; do
-    "$@" && return 0
-    rc=$?
-    [ "$(date +%s)" -ge "$deadline" ] && return "$rc"
-    sleep "$interval"
-  done
-}
-
-# tp_notify_orchestrator <cli> <project> <target> <message>: sends ONE line to the project's
-# orchestrator and prints one status line (callers add their own prefix); never fails. `orchestrator
-# notify` picks the live target (<target> if live, else the oldest live orchestrator) and acts as the
-# machine. Shared by loop.sh (send_to_orchestrator) and release-local's detached build (notify_build).
-tp_notify_orchestrator() {
-  local cli="$1" project="$2" target="$3" msg="$4" err sid
-  if "${cli}" orchestrator --help 2>&1 | grep -qw notify; then # the parent prints its help (rc 0) even without the subcommand
-    err="$("${cli}" orchestrator notify --project "${project}" --target "${target}" --message "${msg}" 2>&1 >/dev/null)" \
-      && echo "notified the orchestrator" || echo "notify failed: ${err:-no output}"
-    return 0
+# tp_record_alert <alerts-file> <message>: appends "<UTC time><TAB><message>" as one line (tabs and
+# newlines in the message become spaces) and prints one status line; never fails. When no reader has
+# passed alerts on lately (tp_alert_reader_stale), it also says so and shows the alert on the desktop,
+# so an alert is never silently parked while the automation is missing or broken.
+tp_record_alert() {
+  local file="$1" msg
+  msg="$(printf '%s' "$2" | tr '\t\n' '  ')"
+  if mkdir -p "$(dirname "${file}")" 2>/dev/null && printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${msg}" >>"${file}" 2>/dev/null; then
+    echo "alert recorded in ${file}"
+  else
+    echo "could not record the alert in ${file}"
   fi
-  # One-release fallback: an installed app older than `orchestrator notify`. Remove once it is installed.
-  sid="$("${cli}" orchestrator ls --json 2>/dev/null | python3 -I -c 'import json,sys
-p,t=sys.argv[1],sys.argv[2]
-d=json.load(sys.stdin); xs=d if isinstance(d,list) else next((v for v in d.values() if isinstance(v,list)),[])
-live=[x for x in xs if x.get("projectId")==p and not x.get("isTerminated")]
-if not live: sys.exit()
-print(t if any(x["id"]==t for x in live) else min(live,key=lambda x:x.get("createdAt",""))["id"])
-' "${project}" "${target}" 2>/dev/null || true)"
-  [[ -n "${sid}" ]] || { echo "notify: no live orchestrator, skipping"; return 0; }
-  err="$("${cli}" send --session "${sid}" --message "${msg}" 2>&1 >/dev/null)" && echo "notified ${sid}" || echo "notify ${sid} failed: ${err:-no output}"
+  if tp_alert_reader_stale "$(dirname "${file}")/alerts.cursor"; then
+    echo "WARNING: no reader has passed local-CI alerts on in the last ${TALLPINE_ALERT_READER_STALE:-3600}s; set up the Local CI alerts automation (scripts/local-ci/alerts --help). Showing this alert on the desktop instead."
+    tp_desktop_notify "${msg}"
+  fi
+  return 0
+}
+
+# tp_alert_defs: prints what a detached `bash -c` child (started under env -i) needs to call
+# tp_record_alert: every helper it uses and the TALLPINE_ALERT_* settings that are set. Callers append
+# it to their own declare -f output instead of listing these helpers themselves.
+tp_alert_defs() {
+  declare -f tp_alert_defs tp_record_alert tp_alert_reader_stale tp_desktop_notify
+  declare -p TALLPINE_ALERT_DESKTOP_NOTIFY TALLPINE_ALERT_READER_STALE 2>/dev/null
+  return 0
+}
+
+# tp_alert_reader_stale <cursor-file>: true when scripts/local-ci/alerts, which stamps the cursor on
+# every run, has never run or not within TALLPINE_ALERT_READER_STALE seconds (default 3600, two runs
+# of the suggested */30 schedule).
+tp_alert_reader_stale() {
+  local mtime
+  mtime="$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null)" || return 0
+  [ -n "${mtime}" ] || return 0
+  [ $(($(date +%s) - mtime)) -gt "${TALLPINE_ALERT_READER_STALE:-3600}" ]
+}
+
+# tp_desktop_notify <message>: shows a macOS notification as the owner, outside the daemon (which
+# refuses these launchd scripts); never fails. TALLPINE_ALERT_DESKTOP_NOTIFY replaces the command
+# (tests point it at a recorder; empty turns it off).
+tp_desktop_notify() {
+  local cmd="${TALLPINE_ALERT_DESKTOP_NOTIFY-osascript}"
+  [ -n "${cmd}" ] && command -v "${cmd}" >/dev/null 2>&1 || return 0
+  "${cmd}" -e 'on run argv' -e 'display notification (item 1 of argv) with title "Tallpine local CI"' -e 'end run' "$1" >/dev/null 2>&1 || true
 }

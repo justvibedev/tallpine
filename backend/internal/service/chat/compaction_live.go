@@ -41,7 +41,6 @@ func (s *Service) tryLiveCompaction(ctx context.Context, c *Controller) (out com
 		return compactAskFailed, live, desired, err
 	}
 	c.mu.Lock()
-	c.research.windowFixed = !applied
 	if applied {
 		c.compactLive = desired
 	}

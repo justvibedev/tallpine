@@ -16,15 +16,13 @@ import (
 )
 
 type fakeReleaseInstaller struct {
-	calls  []string
-	notify string
-	err    error
+	calls []string
+	err   error
 }
 
-func (f *fakeReleaseInstaller) Install(_ context.Context, sha, notify string) (releaseinstall.Result, error) {
+func (f *fakeReleaseInstaller) Install(_ context.Context, sha string) (releaseinstall.Result, error) {
 	f.calls = append(f.calls, sha)
-	f.notify = notify
-	return releaseinstall.Result{SHA: sha, App: "/app", Log: "/log", PID: 7}, f.err
+	return releaseinstall.Result{SHA: sha, App: "/app", Log: "/log", ResultFile: "/log.result", PID: 7}, f.err
 }
 
 func postRelease(t *testing.T, svc controllers.ReleaseInstaller, role requestscope.AgentRole, body string) *httptest.ResponseRecorder {
@@ -53,8 +51,9 @@ func TestReleaseInstallRoleGate(t *testing.T) {
 		}
 	}
 	f := &fakeReleaseInstaller{}
-	if rec := postRelease(t, f, requestscope.RoleOrchestrator, body); rec.Code != http.StatusAccepted || len(f.calls) != 1 || f.notify != "s-1" {
-		t.Fatalf("orchestrator: status %d, calls %v, notify %q", rec.Code, f.calls, f.notify)
+	rec := postRelease(t, f, requestscope.RoleOrchestrator, body)
+	if rec.Code != http.StatusAccepted || len(f.calls) != 1 || !strings.Contains(rec.Body.String(), `"result":"/log.result"`) {
+		t.Fatalf("orchestrator: status %d, calls %v, body %s", rec.Code, f.calls, rec.Body.String())
 	}
 }
 

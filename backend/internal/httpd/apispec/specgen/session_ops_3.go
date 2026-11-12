@@ -148,6 +148,17 @@ func sessionOperationsPart3() []operation {
 			},
 		},
 		{
+			method: http.MethodGet, path: "/api/v1/sessions/{sessionId}/cleared-context-note", id: "getClearedContextNote", tag: "sessions",
+			summary:    "Read the note that re-briefs an agent after its context was cleared",
+			pathParams: []any{controllers.SessionIDParam{}},
+			resps: []respUnit{
+				{http.StatusOK, controllers.ClearedContextNoteResponse{}},
+				{http.StatusNotFound, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
 			method: http.MethodPost, path: "/api/v1/reviews/{reviewSessionID}/activity", id: "setReviewActivity", tag: "reviews",
 			summary:    "Report a reviewer-owned hook signal",
 			pathParams: []any{controllers.ReviewSessionIDParam{}},

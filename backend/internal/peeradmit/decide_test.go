@@ -12,7 +12,7 @@ func TestDefaultMode(t *testing.T) {
 		noSignatureCheck bool
 		want             Mode
 	}{
-		{"signed macOS records", "darwin", "ABCDE12345", false, ModeReport},
+		{"signed macOS enforces", "darwin", "ABCDE12345", false, ModeEnforce},
 		{"signed macOS without signature checking is off", "darwin", "ABCDE12345", true, ModeOff},
 		{"unsigned macOS is off", "darwin", "", false, ModeOff},
 		{"malformed team is off", "darwin", `X" or anchor apple`, false, ModeOff},

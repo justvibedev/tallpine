@@ -5,7 +5,7 @@ import { useFileAttachments, type FileAttachment } from "../../../hooks/useFileA
 import { chatDraftScopeKey, chatQueuedAttachmentScopeKey, getChatComposerMutation, readChatSessionDraft, subscribeChatDraftRuntime, writeChatAttachments, type ChatComposerDelivery, type ChatDraftScope } from "../../../lib/chat-drafts";
 import { subscribeChatComposerReferences } from "../../../lib/chat-context-bus";
 import { ChatComposerProps } from "./ComposerProps";
-import { StoredComposerAttachment, restoredDeliveryNotice } from "./composer-model";
+import { StoredComposerAttachment, attachmentFromDraft, draftResize, restoredDeliveryNotice } from "./composer-model";
 
 /** Draft scope, editor refs and persisted draft state for the ChatComposer. */
 export function useComposerDraftState(props: ChatComposerProps) {
@@ -51,6 +51,8 @@ export function useComposerDraftState(props: ChatComposerProps) {
 	const highlightedRef = useRef(0);
 	const [isComposing, setIsComposing] = useState(false);
 	const [dragging, setDragging] = useState(false);
+	/** Filled by the input handlers each render so the imperative handle can attach files. */
+	const attachFilesRef = useRef<(files: File[]) => boolean>(() => false);
 	const [sendError, setSendError] = useState<string | null>(null);
 	const [steerOutcomeNotice, setSteerOutcomeNotice] = useState<string | null>(null);
 	const [deliveryRecoveryNotice, setDeliveryRecoveryNotice] = useState<string | null>(null);
@@ -144,19 +146,13 @@ export function useComposerDraftState(props: ChatComposerProps) {
 	const synchronouslyClearedDeliveryRevision = useRef<number | undefined>(undefined);
 	const restoredAttachments = useMemo<FileAttachment[]>(
 		() =>
-			(persistedDraft?.composer.delivery?.draft?.attachments ?? persistedDraft?.composer.attachments ?? draftSeed?.stagedAttachments)?.map((attachment) => ({
-				id: attachment.id,
-				name: attachment.name,
-				mimeType: attachment.mimeType,
-				bytes: attachment.bytes,
-				stagedPath: attachment.path,
-			})) ?? [],
+			(persistedDraft?.composer.delivery?.draft?.attachments ?? persistedDraft?.composer.attachments ?? draftSeed?.stagedAttachments)?.map(attachmentFromDraft) ?? [],
 		[persistedDraft, draftSeed?.stagedAttachments],
 	);
 	const persistAttachments = useCallback(
 		(attachments: FileAttachment[]) => {
 			const descriptors = attachments.flatMap((attachment) => attachment.stagedPath
-				? [{ id: attachment.id, path: attachment.stagedPath, name: attachment.name, mimeType: attachment.mimeType, bytes: attachment.bytes }]
+				? [{ id: attachment.id, path: attachment.stagedPath, name: attachment.name, mimeType: attachment.mimeType, bytes: attachment.bytes, ...draftResize(attachment) }]
 				: []);
 			if (!draftScope) {
 				onQueuedAttachmentsChange?.(descriptors);
@@ -177,18 +173,27 @@ export function useComposerDraftState(props: ChatComposerProps) {
 	const prepareAttachments = useCallback(
 		async (attachments: FileAttachment[]): Promise<FileAttachment[]> => {
 			if (!onStageAttachments) throw new Error("Attachment staging is unavailable");
-			const paths = await onStageAttachments(
-				attachments.flatMap(({ mimeType, data }) =>
-					data ? [{ mimeType, data }] : [],
-				),
-			);
-			if (paths.length !== attachments.length) {
+			// A downscaled image is staged twice: the copy that is sent, and the full
+			// original the message links to.
+			const files = attachments.flatMap(({ mimeType, data }) => (data ? [{ mimeType, data }] : []));
+			const originals = attachments.flatMap((attachment) =>
+				attachment.resize?.originalData
+					? [{ mimeType: attachment.resize.originalMimeType ?? attachment.mimeType, data: attachment.resize.originalData }]
+					: []);
+			const paths = await onStageAttachments([...files, ...originals]);
+			if (paths.length !== files.length + originals.length) {
 				throw new Error("Attachment staging returned an incomplete result");
 			}
-			return attachments.map((attachment, index) => ({
-				...attachment,
-				stagedPath: paths[index],
-			}));
+			let originalIndex = files.length;
+			return attachments.map((attachment, index) => {
+				const { resize } = attachment;
+				if (!resize?.originalData) return { ...attachment, stagedPath: paths[index] };
+				return {
+					...attachment,
+					stagedPath: paths[index],
+					resize: { note: resize.note, originalBytes: resize.originalBytes, originalPath: paths[originalIndex++] },
+				};
+			});
 		},
 		[onStageAttachments],
 	);
@@ -215,6 +220,7 @@ export function useComposerDraftState(props: ChatComposerProps) {
 		initialKey: attachmentScopeKey,
 		prepareAttachments: onStageAttachments ? prepareAttachments : undefined,
 		onAttachmentsChange: persistAttachments,
+		resizeImages: Boolean(onStageAttachments),
 	});
 	const canAttach = Boolean(onStageAttachments) && !queuedEditRecovery;
 
@@ -235,6 +241,7 @@ export function useComposerDraftState(props: ChatComposerProps) {
 		dismissedKeyRef,
 		draftScope,
 		draftScopeKey,
+		attachFilesRef,
 		dragging,
 		durableDelivery,
 		editor,

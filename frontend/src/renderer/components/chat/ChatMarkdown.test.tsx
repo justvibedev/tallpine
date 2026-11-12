@@ -900,3 +900,23 @@ describe("local paths", () => {
 		expect(screen.getByText("/Users/me/a.txt").closest("[role=button]")).toBeNull();
 	});
 });
+
+describe("ChatMarkdown table copy", () => {
+	it("copies Markdown and CSV", () => {
+		const writeText = vi.spyOn(tallpineBridge.clipboard, "writeText").mockResolvedValue(undefined);
+		render(<ChatMarkdown text={"| a | b |\n|---|---|\n| x,y | 2 |"} />);
+		fireEvent.click(screen.getByLabelText("Copy table as CSV"));
+		fireEvent.click(screen.getByLabelText("Copy table as Markdown"));
+		expect(writeText).toHaveBeenCalledWith('a,b\r\n"x,y",2');
+		expect(writeText).toHaveBeenCalledWith("| a | b |\n| --- | --- |\n| x,y | 2 |");
+	});
+
+	it("leaves screen-reader-only text out of copied cells", () => {
+		const writeText = vi.spyOn(tallpineBridge.clipboard, "writeText").mockResolvedValue(undefined);
+		const { container } = render(<ChatMarkdown text={"| a |\n|---|\n| x |"} />);
+		const td = container.querySelector("td")!;
+		td.insertAdjacentHTML("beforeend", '<span class="sr-only"> (hidden)</span><span aria-hidden="true">*</span>');
+		fireEvent.click(screen.getByLabelText("Copy table as CSV"));
+		expect(writeText).toHaveBeenLastCalledWith("a\r\nx");
+	});
+});

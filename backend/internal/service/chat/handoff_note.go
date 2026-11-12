@@ -132,6 +132,28 @@ func (s *Service) HandoffNote(ctx context.Context, record domain.SessionRecord, 
 	return domain.BuildHandoffNote(input), nil
 }
 
+// ClearedContextNote builds the note for an agent whose context was cleared
+// where Tallpine could not run the clear itself, such as a /clear typed in a
+// Terminal UI. It is the note a Chat /clear hands over with: the task, the
+// workspace state, the artifacts and a record of the conversation. The agent
+// keeps running, so it waits for the user instead of reporting back.
+func (s *Service) ClearedContextNote(ctx context.Context, id domain.SessionID) (string, error) {
+	record, found, err := s.sessions.GetSession(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("read session %s: %w", id, err)
+	}
+	if !found {
+		return "", ports.ErrSessionNotFound
+	}
+	input, err := s.handoffNoteInput(ctx, record, record.Harness, "")
+	if err != nil {
+		return "", err
+	}
+	input.ContextCleared, input.Terminal = true, false
+	input.ChangedFiles = handoffChangedFiles(ctx, record.Metadata.WorkspacePath, record.Metadata.DiffBaseSHA)
+	return domain.BuildHandoffNote(input), nil
+}
+
 // handoffNoteInput is the note's input without the changed files, which need
 // git and can run while the outgoing provider stops.
 func (s *Service) handoffNoteInput(ctx context.Context, record domain.SessionRecord, target domain.AgentHarness, switchID string) (domain.HandoffNoteInput, error) {

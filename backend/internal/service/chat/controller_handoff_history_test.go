@@ -471,12 +471,7 @@ func TestFreshProjectControllerStartFailureKeepsPreviousHistoryHidden(t *testing
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
-	if _, err := st.AppendUserMessage(ctx, conversation.ID, testSession, "old-generation",
-		domain.ConversationMessage{
-			ID: "old-message", Text: "old orchestrator history", Origin: domain.MessageOriginHuman,
-		}, "old-turn", now.Add(time.Second)); err != nil {
-		t.Fatalf("seed old history: %v", err)
-	}
+	seedSettledHistoryTurn(t, st, conversation.ID, testSession, "old-generation", now.Add(time.Second))
 
 	replacementRecord, err := st.CreateSession(ctx, domain.SessionRecord{
 		ProjectID: testProject,

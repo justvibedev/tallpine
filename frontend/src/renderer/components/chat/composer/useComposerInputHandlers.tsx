@@ -2,6 +2,7 @@ import { useCallback, useEffect, type ClipboardEvent, type DragEvent, type Keybo
 import { type ComposerEditorSnapshot } from "../ComposerEditor";
 import { moveHighlight } from "../composerSuggest";
 import { isInlineImagePath, proseBesideImages, removeInlineImagePath } from "@tallpine/shared/chat/attachments";
+import { firstDragEntryIsDirectory } from "../../../lib/dropClassify";
 import { useComposerDraftState } from "./useComposerDraftState";
 import { useComposerSuggestions } from "./useComposerSuggestions";
 import { useComposerDraftPersistence } from "./useComposerDraftPersistence";
@@ -192,6 +193,13 @@ export function useComposerInputHandlers(props: ChatComposerProps, draft: Return
 		});
 	}
 
+	const attachDropped = (files: File[]): boolean => {
+		if (!canAttach || fileAttachments.preparing || draftMutationPending || submitInFlight.current) return false;
+		attachFiles(files);
+		return true;
+	};
+	draft.attachFilesRef.current = attachDropped;
+
 	function onPaste(event: ClipboardEvent<HTMLDivElement>) {
 		if (!canAttach || fileAttachments.preparing || draftMutationPending || submitInFlight.current) return;
 		const clipboard = event.clipboardData;
@@ -206,6 +214,8 @@ export function useComposerInputHandlers(props: ChatComposerProps, draft: Return
 
 	function onDrop(event: DragEvent<HTMLFormElement>) {
 		setDragging(false);
+		// A folder is left to bubble to the app-wide drop that adds it as a project.
+		if (firstDragEntryIsDirectory(event.dataTransfer)) return;
 		if (!canAttach || fileAttachments.preparing || draftMutationPending || submitInFlight.current) return;
 		const files = Array.from(event.dataTransfer?.files ?? []);
 		if (files.length === 0) return;

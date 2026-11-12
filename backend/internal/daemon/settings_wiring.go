@@ -31,6 +31,7 @@ func (s settingsStore) GetAppSettings(ctx context.Context) (settingssvc.Snapshot
 		ProviderEventRetentionDays: row.ProviderEventRetentionDays,
 		ChatHibernation:            row.ChatHibernation,
 		WorkflowDefaults:           row.WorkflowDefaults,
+		PeerCheck:                  row.PeerCheck,
 		UpdatedAt:                  row.UpdatedAt,
 	}, nil
 }

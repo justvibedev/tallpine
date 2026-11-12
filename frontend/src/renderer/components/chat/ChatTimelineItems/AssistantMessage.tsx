@@ -5,6 +5,7 @@ import { cn } from "../../../lib/utils";
 import { ChatMarkdown } from "../ChatMarkdown";
 import { CopyButton } from "../CopyButton";
 import { ChatLocalImageStrip } from "../ChatLocalImageStrip";
+import { ChatLocalMedia } from "../ChatLocalMedia";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
 import { type ConversationMessage } from "../../../types/conversation";
 import { formatDuration, formatMessageTimestamp } from "./format";
@@ -52,6 +53,7 @@ export function AssistantMessage({
 	return (
 		<div
 			className="group/message relative"
+			data-chat-image-scope=""
 			data-chat-streaming-output={renderingStreaming ? "" : undefined}
 			data-chat-message-id={!live && !renderingStreaming ? message.id : undefined}
 			data-chat-message-revision={!live && !renderingStreaming ? message.revision : undefined}
@@ -60,6 +62,7 @@ export function AssistantMessage({
 			<div data-chat-message-body=""><ChatMarkdown text={visibleText} streaming={renderingStreaming} /></div>
 			{/* Once the reply has landed: a path half-streamed is not a file yet. */}
 			{renderingStreaming ? null : <ChatLocalImageStrip text={message.text} />}
+			{renderingStreaming ? null : <ChatLocalMedia text={message.text} />}
 			{showActions ? (
 				// One action row for the completed answer, not one after every prose
 				// fragment the provider emitted while working. Copy, rollback, and

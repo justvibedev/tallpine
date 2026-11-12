@@ -28,9 +28,11 @@ class H(BaseHTTPRequestHandler):
         body = json.dumps({"status": "ok", "service": service, "pid": os.getpid(), "build": {"commit": commit}}).encode()
         self.send_response(200); self.send_header("content-type", "application/json"); self.end_headers(); self.wfile.write(body)
     def do_POST(self):
-        if self.path != "/shutdown" or self.headers.get("X-VO-Token") != "tok":
-            self.send_response(401); self.end_headers(); return
-        self.send_response(202); self.end_headers(); self.wfile.flush(); stop()
+        # Like a signed daemon enforcing its peer check (B631): the installer is not a process
+        # Tallpine started, so its API calls are refused. It must stop the daemon with SIGTERM.
+        with open(os.path.join(state, "shutdown-refused"), "a") as f: f.write(self.path + "\n")
+        body = json.dumps({"code": "PEER_NOT_ADMITTED", "message": "refused"}).encode()
+        self.send_response(403); self.send_header("content-type", "application/json"); self.end_headers(); self.wfile.write(body)
 srv.RequestHandlerClass = H
 signal.signal(signal.SIGTERM, stop)
 with open(os.path.join(data, "daemon.lock"), "w") as f: f.write(str(os.getpid()))

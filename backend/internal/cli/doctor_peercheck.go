@@ -21,8 +21,9 @@ type silentPeerCheck struct {
 	Dropped  int64 `json:"dropped"`
 }
 
-// peerCheckDoctorCheck states the effective mode and what it recorded. Records
-// are expected while recording, so it never raises doctor's level.
+// peerCheckDoctorCheck states the effective mode and what it refused, or in
+// report mode would refuse. A refusal is the check working, so it never raises
+// doctor's level.
 func peerCheckDoctorCheck(pc silentPeerCheck) doctorCheck {
 	check := doctorCheck{Level: doctorPass, Section: doctorSectionSilent, Name: "peer-check"}
 	if pc.Mode == "off" {
@@ -35,8 +36,12 @@ func peerCheckDoctorCheck(pc silentPeerCheck) doctorCheck {
 		refused += rec.Count
 		parts = append(parts, fmt.Sprintf("%dx %s %s from %s (%s)", rec.Count, rec.TokenClass, rec.Route, rec.Executable, rec.Reason))
 	}
-	check.Message = fmt.Sprintf("peer check %s: %s; admitted desktop=%d agent=%d desktop_shell=%d; would refuse %d",
-		pc.Mode, pc.ModeReason, pc.Admitted["desktop"], pc.Admitted["agent"], pc.Admitted["desktop_shell"], refused)
+	verb := "would refuse"
+	if pc.Mode == "enforce" {
+		verb = "refused"
+	}
+	check.Message = fmt.Sprintf("peer check %s: %s; admitted desktop=%d agent=%d desktop_shell=%d; %s %d",
+		pc.Mode, pc.ModeReason, pc.Admitted["desktop"], pc.Admitted["agent"], pc.Admitted["desktop_shell"], verb, refused)
 	if len(parts) > 0 {
 		check.Message += ": " + strings.Join(parts, "; ")
 	}

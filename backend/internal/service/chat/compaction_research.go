@@ -8,14 +8,16 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
-	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 // Orchestrator research mode (B413). An orchestrator that must examine a large
 // body of code itself switches it on; its compaction window then rises to the
 // research window until it switches it off, an idle compaction or handoff
 // ends it, or it has no turn for domain.ResearchQuietExpiry. The state lives
-// in memory on the controller: a restart drops back to coordination.
+// in memory on the controller. Claude Code applies a window only at launch, so
+// switching on restarts the idle agent and the flag is carried across that
+// restart (compaction_research_restart.go); a daemon restart drops back to
+// coordination.
 
 var (
 	// ErrResearchUnsupported means the session is not an orchestrator whose
@@ -24,11 +26,6 @@ var (
 	// ErrResearchDisabled means the global Settings toggle or the project's
 	// orchestrator.researchCompactWindow turned research mode off.
 	ErrResearchDisabled = errors.New("orchestrator research mode is turned off")
-	// ErrResearchNotApplied means the running agent kept its compaction window
-	// (Claude Code applies a changed window only at launch), so research mode
-	// was not switched on and nothing is left pending: the session stays in
-	// coordination mode.
-	ErrResearchNotApplied = errors.New("the agent cannot change its compaction window while running")
 	// ErrResearchRequestFailed means the request to the agent failed (timeout,
 	// closed session, bad reply), so what it would do is unknown; a retry may work.
 	ErrResearchRequestFailed = errors.New("could not ask the agent to change its compaction window")
@@ -37,13 +34,13 @@ var (
 // researchState is a controller's research mode. on and since (when it was
 // switched on) are in memory only and guarded by Controller.mu; mu serializes
 // switches so a flag change and its live window change stay together.
-// windowFixed is set once the running agent answered that it keeps its
-// window: it then cannot offer research mode, which needs a live change.
+// restartPending is set while the flag waits for the agent's restart to apply
+// the research window.
 type researchState struct {
-	on          bool
-	since       time.Time
-	windowFixed bool
-	mu          sync.Mutex
+	on             bool
+	since          time.Time
+	restartPending bool
+	mu             sync.Mutex
 }
 
 // ResearchStatus is one orchestrator's research mode.
@@ -61,6 +58,9 @@ type ResearchStatus struct {
 	ResearchWindow string
 	// Since is when research mode was switched on; zero when it is off.
 	Since time.Time
+	// RestartPending reports research mode is switched on but waits for the
+	// agent to be idle and restart before the window applies.
+	RestartPending bool
 }
 
 func (s *Service) dynamicContextEnabled(ctx context.Context) bool {
@@ -143,18 +143,19 @@ func (s *Service) ResearchStatus(ctx context.Context, id domain.SessionID) (Rese
 
 func (s *Service) researchStatus(ctx context.Context, c *Controller) ResearchStatus {
 	choice, allowed := s.researchChoice(ctx, c)
-	_, setter := c.conv.(ports.ChatCompactionWindowSetter)
 	st := ResearchStatus{
 		ResearchWindow: choice,
 	}
 	c.mu.Lock()
-	st.Available = allowed && setter && c.harness == domain.HarnessClaudeCode && !c.research.windowFixed
+	st.Available = allowed && c.harness == domain.HarnessClaudeCode
+	st.RestartPending = c.research.restartPending
 	st.Window = c.compactLive
 	if c.research.on {
 		st.Since = c.research.since
 	}
 	c.mu.Unlock()
 	_, st.Active = s.researchInEffect(ctx, c)
+	st.Active = st.Active && !st.RestartPending
 	return st
 }
 
@@ -166,9 +167,6 @@ func (s *Service) SetResearchMode(ctx context.Context, id domain.SessionID, on b
 		return ResearchStatus{}, err
 	}
 	if c.kind != domain.KindOrchestrator || c.harness != domain.HarnessClaudeCode {
-		return ResearchStatus{}, ErrResearchUnsupported
-	}
-	if _, ok := c.conv.(ports.ChatCompactionWindowSetter); !ok {
 		return ResearchStatus{}, ErrResearchUnsupported
 	}
 	c.research.mu.Lock()
@@ -188,22 +186,31 @@ func (s *Service) SetResearchMode(ctx context.Context, id domain.SessionID, on b
 	s.setResearchFlag(c, on)
 	if !on {
 		s.reconcileCompaction(ctx, c)
-	} else if out, live, desired, err := s.tryLiveCompaction(ctx, c); out == compactKept || out == compactNoSetter || out == compactAskFailed {
-		// Nothing was asked for in the end: the flag goes back, so no window
-		// waits for a restart and the log says only what happened.
-		s.setResearchFlag(c, false)
-		if out == compactAskFailed {
-			s.log.Warn("research mode not enabled: the request to change the live compaction window failed", "session", c.sessionID, "live", live, "desired", desired, "error", err)
-			return ResearchStatus{}, ErrResearchRequestFailed
+		if effectiveBefore {
+			s.announceResearch(ctx, c, false, s.compactionPending(ctx, c))
 		}
-		s.log.Info("research mode not enabled: the running agent keeps its compaction window", "session", c.sessionID, "live", live, "desired", desired)
-		return ResearchStatus{}, ErrResearchNotApplied
-	} else if out == compactApplied {
+		return s.researchStatus(ctx, c), nil
+	}
+	out, live, desired, err := s.tryLiveCompaction(ctx, c)
+	switch out {
+	case compactAskFailed:
+		// Nothing was asked for in the end: the flag goes back, so the log says
+		// only what happened.
+		s.setResearchFlag(c, false)
+		s.log.Warn("research mode not enabled: the request to change the live compaction window failed", "session", c.sessionID, "live", live, "desired", desired, "error", err)
+		return ResearchStatus{}, ErrResearchRequestFailed
+	case compactKept, compactNoSetter:
+		// The agent reads its window only at launch: restart it when idle.
+		s.log.Info("research mode waits for an agent restart", "session", c.sessionID, "live", live, "desired", desired)
+		s.beginResearchRestart(c)
+		s.announceResearchPending(ctx, c)
+		return s.researchStatus(ctx, c), nil
+	case compactApplied:
 		s.log.Info("compaction window applied live", "session", c.sessionID, "previous", live, "tokens", desired)
 	}
 	// A chat with a window of its own is unchanged by the switch: no line.
 	if _, effectiveAfter := s.researchInEffect(ctx, c); effectiveBefore != effectiveAfter {
-		s.announceResearch(ctx, c, on)
+		s.announceResearch(ctx, c, true, false)
 	}
 	return s.researchStatus(ctx, c), nil
 }
@@ -212,6 +219,10 @@ func (s *Service) setResearchFlag(c *Controller, on bool) {
 	c.mu.Lock()
 	c.research.on = on
 	c.research.since = time.Time{}
+	c.research.restartPending = false
+	if !on {
+		s.researchCarried.take(c.sessionID)
+	}
 	if on {
 		c.research.since = time.Now()
 	}
@@ -241,7 +252,7 @@ func (s *Service) clearResearch(ctx context.Context, c *Controller) bool {
 	s.setResearchFlag(c, false)
 	s.reconcileCompaction(ctx, c)
 	if effective {
-		s.announceResearch(ctx, c, false)
+		s.announceResearch(ctx, c, false, s.compactionPending(ctx, c))
 	}
 	return true
 }
@@ -262,12 +273,24 @@ func (s *Service) ClearAllResearch(ctx context.Context) {
 	}
 }
 
-// announceResearch writes the one chat line a switch gets.
-func (s *Service) announceResearch(ctx context.Context, c *Controller, on bool) {
+// announceResearch writes the one chat line a switch gets. offPending says the
+// agent still compacts at the research window until its next restart.
+func (s *Service) announceResearch(ctx context.Context, c *Controller, on, offPending bool) {
 	summary := "Research mode off: compaction window back to the coordination window"
-	if on {
+	switch {
+	case on:
 		summary = fmt.Sprintf("Research mode on: compaction window raised to %s", s.researchWindowLabel(ctx, c))
+	case offPending:
+		summary = "Research mode off: the coordination window applies at the agent's next restart"
 	}
+	s.announceSummary(ctx, c, summary)
+}
+
+func (s *Service) announceResearchPending(ctx context.Context, c *Controller) {
+	s.announceSummary(ctx, c, fmt.Sprintf("Research mode on: the agent restarts when idle to raise its compaction window to %s", s.researchWindowLabel(ctx, c)))
+}
+
+func (s *Service) announceSummary(ctx context.Context, c *Controller, summary string) {
 	if s.announce != nil {
 		s.announce(c, summary)
 		return

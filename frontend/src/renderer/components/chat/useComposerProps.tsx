@@ -131,9 +131,11 @@ export function useComposerProps({
 
 	const running = useMemo(() => liveModel(snapshot.harness, configOptions), [snapshot.harness, configOptions]);
 
+	const stopped = snapshot.controller.state === "stopped" && !agentResuming && !controllerTransitioning && !newWorkDisabled &&
+		session?.provisionState !== "provisioning";
 	const composerSettings = useMemo(
 		() =>
-			settingsReady && (onChooseSettings || onChooseConfigOption) ? (
+			(settingsReady || stopped) && (onChooseSettings || onChooseConfigOption) ? (
 				<TurnSettingsBar
 					agentSwitch={agentSwitch}
 					beforePicker={agentSwitch ? <SessionContextMeter
@@ -151,6 +153,7 @@ export function useComposerProps({
 					/> : undefined}
 					// While the agent wakes or starts; a chat reads "hibernated" until ready.
 					modelsLoading={settingsLoading}
+					stopped={stopped}
 					lastModel={lastModel}
 					models={models ?? []}
 					settings={stableSettings}
@@ -173,7 +176,7 @@ export function useComposerProps({
 					disabled={
 							(!agentResuming && (
 								snapshot.controller.state === "connecting" ||
-								snapshot.controller.state === "stopped"
+								(snapshot.controller.state === "stopped" && !stopped)
 							)) ||
 							settingsLoading ||
 							session?.provisionState === "provisioning" ||
@@ -183,6 +186,7 @@ export function useComposerProps({
 			) : null,
 		[
 			settingsReady,
+			stopped,
 			settingsLoading,
 			lastModel,
 			configOptionError,

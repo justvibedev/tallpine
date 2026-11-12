@@ -107,3 +107,37 @@ describe("ActivityRun in a running turn", () => {
 		expect(screen.getByText("Search source files")).toBeInTheDocument();
 	});
 });
+
+describe("ActivityRun live cap", () => {
+	const many = (n: number) => Array.from({ length: n }, (_, i) => tool(`activity-${i + 1}`, `t${i + 1}`, `Call ${i + 1}`));
+
+	it("shows only the newest rows while live, with an earlier expander", async () => {
+		const user = userEvent.setup();
+		render(<ActivityRun activities={many(8)} live />);
+		expect(screen.queryByText("Call 1")).not.toBeInTheDocument();
+		expect(screen.queryByText("Call 3")).not.toBeInTheDocument();
+		expect(screen.getByText("Call 4")).toBeInTheDocument();
+		expect(screen.getByText("Call 8")).toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "3 earlier" }));
+		expect(await screen.findByText("Call 1")).toBeInTheDocument();
+	});
+
+	it("keeps failures and diffs visible among folded rows", () => {
+		const calls = many(8);
+		calls[0] = { ...calls[0]!, status: "failed" };
+		calls[1] = { ...calls[1]!, activityKind: "file_change" };
+		render(<ActivityRun activities={calls} live />);
+		expect(screen.getByText("Call 1")).toBeInTheDocument();
+		expect(screen.getByText("Call 2")).toBeInTheDocument();
+		expect(screen.queryByText("Call 3")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "1 earlier" })).toBeInTheDocument();
+	});
+
+	it("does not cap a settled run", async () => {
+		const user = userEvent.setup();
+		render(<ActivityRun activities={many(8)} live={false} />);
+		await user.click(screen.getByRole("button", { name: /tool calls/i }));
+		expect(await screen.findByText("Call 1")).toBeInTheDocument();
+		expect(screen.queryByText(/earlier/)).not.toBeInTheDocument();
+	});
+});

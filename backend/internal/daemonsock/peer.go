@@ -38,6 +38,12 @@ func ContextWithConn(ctx context.Context, conn net.Conn) context.Context {
 	return context.WithValue(ctx, peerContextKey{}, connPeer(conn))
 }
 
+// ContextWithPeer stores a known peer on ctx, as ContextWithConn does for an
+// accepted connection.
+func ContextWithPeer(ctx context.Context, peer Peer) context.Context {
+	return context.WithValue(ctx, peerContextKey{}, peer)
+}
+
 // PeerFrom returns the peer stored by ContextWithConn.
 func PeerFrom(ctx context.Context) (Peer, bool) {
 	peer, ok := ctx.Value(peerContextKey{}).(Peer)

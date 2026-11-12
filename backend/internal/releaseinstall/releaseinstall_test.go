@@ -59,7 +59,7 @@ func newFixture(t *testing.T) *fixture {
 
 func TestInstallStartsVerifiedBuild(t *testing.T) {
 	f := newFixture(t)
-	res, err := f.in.Install(context.Background(), testSHA, "sess-1")
+	res, err := f.in.Install(context.Background(), testSHA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,15 +80,19 @@ func TestInstallStartsVerifiedBuild(t *testing.T) {
 	if !strings.Contains(got, "--no-fetch") || !slices.Contains(f.env, "TALLPINE_RELEASE_SKIP_STALE_CHECK=1") {
 		t.Fatalf("pinned build must skip fetch and the stale check: argv %v env %v", f.argv, f.env)
 	}
-	if !strings.Contains(got, "install ") || !strings.Contains(got, "--yes") || !strings.HasSuffix(got, "--notify sess-1") {
+	// B631: nothing is sent when the install ends; the outcome goes to the result file next to the log.
+	if !strings.Contains(got, "install ") || !strings.Contains(got, "--yes") || strings.Contains(got, "--notify") || !strings.HasSuffix(got, "--log "+res.Log) {
 		t.Fatalf("argv = %v", f.argv)
+	}
+	if res.ResultFile != res.Log+".result" {
+		t.Fatalf("result file = %q, want next to the log %q", res.ResultFile, res.Log)
 	}
 }
 
 func TestInstallRefusesBadSHA(t *testing.T) {
 	f := newFixture(t)
 	for _, sha := range []string{"", "../x", testSHA[:39], strings.ToUpper(testSHA), testSHA + "/.."} {
-		if _, err := f.in.Install(context.Background(), sha, ""); !errors.Is(err, ErrRefused) {
+		if _, err := f.in.Install(context.Background(), sha); !errors.Is(err, ErrRefused) {
 			t.Errorf("sha %q: err = %v, want refusal", sha, err)
 		}
 	}
@@ -107,7 +111,7 @@ func TestInstallRefusesSymlinkEscape(t *testing.T) {
 	if err := os.Symlink(outside, out); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.in.Install(context.Background(), testSHA, ""); !errors.Is(err, ErrRefused) {
+	if _, err := f.in.Install(context.Background(), testSHA); !errors.Is(err, ErrRefused) {
 		t.Fatalf("err = %v, want refusal for an app that resolves outside the build", err)
 	}
 	if f.argv != nil {
@@ -117,7 +121,7 @@ func TestInstallRefusesSymlinkEscape(t *testing.T) {
 
 func TestInstallVerifiesWithAnchoredRequirement(t *testing.T) {
 	f := newFixture(t)
-	if _, err := f.in.Install(context.Background(), testSHA, ""); err != nil {
+	if _, err := f.in.Install(context.Background(), testSHA); err != nil {
 		t.Fatal(err)
 	}
 	args := strings.Join(f.verifyArgs, " ")
@@ -131,7 +135,7 @@ func TestInstallVerifiesWithAnchoredRequirement(t *testing.T) {
 func TestInstallRefusesBadSignature(t *testing.T) {
 	f := newFixture(t)
 	f.signedBy = "OTHER12345"
-	if _, err := f.in.Install(context.Background(), testSHA, ""); !errors.Is(err, ErrRefused) || f.argv != nil {
+	if _, err := f.in.Install(context.Background(), testSHA); !errors.Is(err, ErrRefused) || f.argv != nil {
 		t.Fatalf("wrong team: err = %v, started = %v", err, f.argv != nil)
 	}
 }
@@ -140,7 +144,7 @@ func TestInstallRefusesWithoutTeamID(t *testing.T) {
 	f := newFixture(t)
 	for _, team := range []string{"", "short"} {
 		f.in.TeamID, f.signedBy = team, team // the fake codesign would accept it
-		if _, err := f.in.Install(context.Background(), testSHA, ""); !errors.Is(err, ErrRefused) || f.argv != nil {
+		if _, err := f.in.Install(context.Background(), testSHA); !errors.Is(err, ErrRefused) || f.argv != nil {
 			t.Fatalf("team %q: err = %v, started = %v", team, err, f.argv != nil)
 		}
 	}
@@ -159,7 +163,7 @@ func TestInstallRefusesScriptSymlinkEscape(t *testing.T) {
 	if err := os.Symlink(outside, script); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.in.Install(context.Background(), testSHA, ""); !errors.Is(err, ErrRefused) || f.argv != nil {
+	if _, err := f.in.Install(context.Background(), testSHA); !errors.Is(err, ErrRefused) || f.argv != nil {
 		t.Fatalf("err = %v, started = %v", err, f.argv != nil)
 	}
 }
@@ -188,7 +192,7 @@ func TestInstallRefusesModifiedScript(t *testing.T) {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho pwned\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.in.Install(context.Background(), testSHA, ""); !errors.Is(err, ErrRefused) || f.argv != nil {
+	if _, err := f.in.Install(context.Background(), testSHA); !errors.Is(err, ErrRefused) || f.argv != nil {
 		t.Fatalf("modified installer must be refused, err=%v argv=%v", err, f.argv)
 	}
 }
@@ -202,7 +206,7 @@ func TestInstallRefusesExtraSourcedFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(lib, "evil.sh"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.in.Install(context.Background(), testSHA, ""); !errors.Is(err, ErrRefused) {
+	if _, err := f.in.Install(context.Background(), testSHA); !errors.Is(err, ErrRefused) {
 		t.Fatalf("unlisted file in a manifest dir must be refused, err=%v", err)
 	}
 }
@@ -213,7 +217,7 @@ func TestInstallRefusesMissingManifest(t *testing.T) {
 	if err := os.Remove(m); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.in.Install(context.Background(), testSHA, ""); !errors.Is(err, ErrRefused) {
+	if _, err := f.in.Install(context.Background(), testSHA); !errors.Is(err, ErrRefused) {
 		t.Fatalf("err=%v", err)
 	}
 }

@@ -2,6 +2,7 @@ import { TimelineGroupRow } from "./TimelineGroupRow";
 import { JustMeLiveLine } from "./JustMeRows";
 import { useTimelineController } from "./useTimelineController";
 import { TimelineTail } from "./TimelineTail";
+import { PinnedPrompt } from "./PinnedPrompt";
 import { TimelineMinimap } from "./TimelineMinimap";
 import type { TimelineProps } from "./TimelineProps";
 import { memo } from "react";
@@ -106,6 +107,7 @@ function TimelineImpl(props: TimelineProps) {
 		openPlan,
 		openingTurnId,
 		pinned,
+		pinnedPrompt,
 		previews,
 		promptSpacer,
 		queued,
@@ -303,6 +305,7 @@ function TimelineImpl(props: TimelineProps) {
 					/>
 				</div>
 			</div>
+			{pinnedPrompt.visible && pinnedPrompt.prompt ? <PinnedPrompt text={pinnedPrompt.prompt.text} onJump={pinnedPrompt.jump} /> : null}
 			<TimelineMinimap
 				scrollTrack={scrollTrack}
 				inspectorOpenRef={inspectorOpenRef}

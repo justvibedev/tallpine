@@ -26,7 +26,7 @@ done
 hash() { shasum -a 256 "$1" | cut -d' ' -f1; }
 dest="$dir/loop.sh" record="$dir/.loop.sh.installed"
 mkdir -p "$dir"
-cp "$lib" "$dir/notify.sh" # loop.sh sources it for orchestrator notices (always refreshed; it has no local-edit guard)
+cp "$lib" "$dir/notify.sh" # loop.sh sources it to record alerts (always refreshed; it has no local-edit guard)
 new="$(hash "$src")"
 if [ -f "$dest" ]; then
 	cur="$(hash "$dest")"

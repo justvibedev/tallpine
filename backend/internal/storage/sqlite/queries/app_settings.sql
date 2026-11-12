@@ -45,3 +45,6 @@ WHERE id = 1;
 
 -- name: SetWorkflowDefaults :exec
 UPDATE app_settings SET workflow_defaults = ?, updated_at = ? WHERE id = 1;
+
+-- name: SetPeerCheck :exec
+UPDATE app_settings SET peer_check = ?, updated_at = ? WHERE id = 1;

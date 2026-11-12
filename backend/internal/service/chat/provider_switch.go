@@ -211,6 +211,7 @@ func (s *Service) switchProvider(ctx context.Context, id domain.SessionID, reque
 	if err != nil {
 		return err
 	}
+	noteInput.ContextCleared = request.ClearContext
 	if err := source.BeginIdleBranchHandoff(ctx); err != nil {
 		return &domain.ProviderSwitchError{Kind: domain.ProviderSwitchRefusalBusy, Detail: err.Error(), Cause: err}
 	}
@@ -411,7 +412,7 @@ func (s *Service) switchableSource(id domain.SessionID, request domain.ProviderS
 	if err != nil {
 		return nil, &domain.ProviderSwitchError{Kind: domain.ProviderSwitchRefusalRecoveryRequired, Detail: "the source Chat controller is not ready", Cause: err}
 	}
-	if source.harness == request.TargetHarness {
+	if source.harness == request.TargetHarness && !request.ClearContext {
 		return nil, &domain.ProviderSwitchError{Kind: domain.ProviderSwitchRefusalUnsupported, Detail: "target provider is already active", Cause: domain.ErrProviderAlreadyActive}
 	}
 	if source.busy() {
@@ -477,6 +478,9 @@ func (s *Service) providerSwitchCommit(operationCtx context.Context, id domain.S
 			Summary: "Switched provider from " + string(source.harness) + " to " + string(request.TargetHarness),
 			Detail:  detail, RequestID: strings.TrimSpace(request.IdempotencyKey),
 			ProviderItemID: started.ProviderBoundary.ID + ":provider-switch",
+		}
+		if request.ClearContext {
+			switchActivity = contextClearedActivity(started.ProviderBoundary.ID, request.IdempotencyKey)
 		}
 		// The target's settings are saved with the switch, so the source never
 		// resumes with them, whether the target fails or the daemon dies first.

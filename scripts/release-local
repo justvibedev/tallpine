@@ -28,13 +28,14 @@
 #   --no-fetch          do not fetch origin first (build, status)
 #   --allow-in-session  allow install/rollback of the live app from inside an
 #                       agent session (that session's daemon will be stopped)
-#   --notify <session>  install: message that session when the install finishes (repeatable):
-#                       "[release] installed <sha10>; daemon healthy ..." or "... FAILED: <reason>".
-#                       Sent with the new CLI as the owner (no session env), retried ~60 s,
-#                       never fails the install. Needed because an idle orchestrator is
-#                       not woken by the restart.
-#   --log <path>        install: log path to name in the --notify message (the file the
-#                       caller redirects the installer's output to; contents never sent)
+#   --log <path>        install, rollback: the file the caller redirects the output to. The
+#                       outcome is written to <path>.result when the run ends: line 1 "ok" or
+#                       "failed", line 2 "[release] installed <sha10>; daemon healthy ..." or
+#                       "... FAILED: <reason>". Poll it from the requesting session: an idle
+#                       orchestrator is not woken by the restart, and the daemon refuses a
+#                       message sent from here (B631). A stale result is removed at the start.
+#   --notify <session>  removed (B631); with --log it is ignored with a warning, without
+#                       --log the run is refused, since nothing would report the outcome
 #   --yes               do not ask before quitting the app (install, rollback)
 #   --publish-github    publish: actually make the zip/dmg and create the release
 #                       (without it, publish only checks notarization, signing
@@ -223,7 +224,14 @@ done
 # keeps a checkout or edit during a long build from being read mid-run.
 {
   # B263: the stale-checkout guard runs before cmd_install/cmd_rollback arm their own failure notice, so arm it here.
-  case "${command_name}" in install | rollback) notify_armed=1 notify_what="${command_name}"; trap on_exit EXIT ;; esac
+  case "${command_name}" in install | rollback)
+    if [[ ${#opt_notify[@]} -gt 0 ]]; then
+      [[ -n "${opt_log}" ]] || die "--notify was removed: the daemon refuses a message sent from here (B631). Pass --log <path> and poll <path>.result instead"
+      warn "--notify is ignored (B631): poll $(result_path) for the outcome"
+    fi
+    clear_result
+    notify_armed=1 notify_what="${command_name}"; trap on_exit EXIT ;;
+  esac
   case "${command_name}" in build|install|rollback|publish) require_fresh_script "${command_name}" "${positional[@]:1}" ;; esac
   case "${command_name}" in
   request-build)

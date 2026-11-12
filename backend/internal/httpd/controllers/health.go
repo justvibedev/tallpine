@@ -77,7 +77,7 @@ func (c *HealthController) status(w http.ResponseWriter, r *http.Request) {
 
 func peerCheckDTO(report peeradmit.Report) *SilentFailuresPeerCheck {
 	dto := &SilentFailuresPeerCheck{
-		Mode: string(report.Mode), ModeReason: report.ModeReason, TeamID: report.TeamID,
+		Mode: string(report.Mode), ModeReason: report.ModeReason, TeamID: report.TeamID, Active: report.BuildMode != peeradmit.ModeOff,
 		Admitted:    make(map[string]int64, len(report.Admitted)),
 		WouldRefuse: make([]SilentFailuresPeerRefusal, 0, len(report.WouldRefuse)),
 		Overflow:    report.Overflow, Dropped: report.Dropped,

@@ -32,10 +32,8 @@ import {
 	type Spread,
 } from "lexical";
 import {
-	createContext,
 	forwardRef,
 	useCallback,
-	useContext,
 	useEffect,
 	useImperativeHandle,
 	useId,
@@ -46,12 +44,15 @@ import {
 	type JSX,
 	type KeyboardEvent,
 } from "react";
-import { Box, Image as ImageIcon } from "lucide-react";
+import { Box } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/utils";
 import { composerFileIcon } from "./composerFileIcon";
 import { findActiveTrigger, type TriggerKind } from "./composerSuggest";
 import { splitInlineImagePaths } from "@tallpine/shared/chat/attachments";
+import { ComposerImageChip, ComposerImages, type ComposerImage } from "./ComposerImageChip";
+import { ComposerPasteChip } from "./ComposerPasteChip";
+import { pasteLineCount, registerPasteCollapse } from "./composerPaste";
 
 export type ComposerTrigger = {
 	kind: TriggerKind;
@@ -61,6 +62,8 @@ export type ComposerTrigger = {
 	end: number;
 	query: string;
 };
+
+export type { ComposerImage };
 
 export type ComposerEditorSnapshot = {
 	text: string;
@@ -98,51 +101,8 @@ export type ComposerEditorHandle = {
 	getSnapshot(): ComposerEditorSnapshot;
 };
 
-/** What an inline image chip shows for a staged path; the path itself is the wire text. */
-export type ComposerImage = { path: string; name: string; src?: string };
-
-const ComposerImages = createContext<ComposerImage[]>([]);
-
-/** An empty path is a reservation whose image is still being staged. */
-function ComposerImageChip({ path }: { path: string }) {
-	const { t } = useTranslation();
-	const images = useContext(ComposerImages);
-	const index = images.findIndex((candidate) => candidate.path === path);
-	const image = images[index];
-	if (!path) {
-		return (
-			<span
-				data-composer-token="image-pending"
-				contentEditable={false}
-				className="mx-0.5 inline-flex items-center gap-1 rounded-md border border-dashed border-border-strong px-1.5 py-0.5 align-middle text-[0.9em] leading-none text-muted-foreground select-none"
-			>
-				<ImageIcon aria-hidden="true" className="size-3 shrink-0" />
-				…
-			</span>
-		);
-	}
-	return (
-		<span
-			data-composer-token="image"
-			data-value={path}
-			contentEditable={false}
-			title={image?.name}
-			className="mx-0.5 inline-flex max-w-48 items-center gap-1 rounded-md border border-border-strong bg-interactive-hover py-0.5 pl-0.5 pr-1.5 align-middle text-[0.9em] leading-none text-foreground select-none"
-		>
-			{image?.src ? (
-				<img src={image.src} alt="" className="size-4 shrink-0 rounded-sm object-cover" />
-			) : (
-				<ImageIcon aria-hidden="true" className="size-3 shrink-0" />
-			)}
-			{/* Numbered like the sent message will be; the file name stays in the tooltip. */}
-			<span className="truncate">
-				{image ? t("chat.image.numbered", { index: index + 1 }) : t("chat.image.untitled")}
-			</span>
-		</span>
-	);
-}
-
-type TokenKind = "skill" | "file" | "image";
+/** A "paste" chip keeps its number in `value`, its line count in `display` and the full text as `wire`. */
+type TokenKind = "skill" | "file" | "image" | "paste";
 
 const completionHandledEvents = new WeakSet<Event>();
 const PROGRAMMATIC_TEXT_UPDATE_TAG = "tallpine:composer-programmatic-text";
@@ -228,6 +188,9 @@ class ComposerTokenNode extends DecoratorNode<JSX.Element> {
 
 	decorate(): JSX.Element {
 		if (this.__kind === "image") return <ComposerImageChip path={this.__value} />;
+		if (this.__kind === "paste") {
+			return <ComposerPasteChip nodeKey={this.__key} seq={this.__value} lines={Number(this.__display)} content={this.__wire} />;
+		}
 		const Icon = this.__kind === "skill" ? Box : composerFileIcon(this.__value);
 		return (
 			<span
@@ -264,6 +227,28 @@ function $insertComposerReference(path: string, display: string, wire: string): 
 	}
 	if (!$isRangeSelection(selection)) return;
 	selection.insertNodes([new ComposerTokenNode("file", path, display, wire), $createTextNode(" ")]);
+}
+
+/** Collapse a large paste at the caret into a numbered chip that still sends the full text. */
+function $insertPasteChip(text: string): boolean {
+	let selection = $getSelection();
+	if (!$isRangeSelection(selection)) {
+		$getRoot().selectEnd();
+		selection = $getSelection();
+	}
+	if (!$isRangeSelection(selection)) return false;
+	let seq = 0;
+	for (const paragraph of $getRoot().getChildren()) {
+		if (!$isElementNode(paragraph)) continue;
+		for (const child of paragraph.getChildren()) {
+			if (child instanceof ComposerTokenNode && child.__kind === "paste") seq = Math.max(seq, Number(child.__value));
+		}
+	}
+	const chip = new ComposerTokenNode("paste", String(seq + 1), String(pasteLineCount(text)), text);
+	const nodes: LexicalNode[] = [chip, $createTextNode(" ")];
+	if ($joinsPreviousWord(selection)) nodes.unshift($createTextNode(" "));
+	selection.insertNodes(nodes);
+	return true;
 }
 
 function $serializeComposer(): string {
@@ -580,6 +565,7 @@ const EditorBridge = forwardRef<
 			(event) => complete(event, "Tab"),
 			COMMAND_PRIORITY_HIGH,
 		);
+		const removePaste = registerPasteCollapse(editor, $insertPasteChip);
 		const removeEscape = editor.registerCommand(KEY_ESCAPE_COMMAND, (event) => {
 			if (!promptSuggestion || $serializeComposer() || event.isComposing || editor.isComposing()) return false;
 			onDismissSuggestion();
@@ -592,6 +578,7 @@ const EditorBridge = forwardRef<
 			removeEnter();
 			removeTab();
 			removeEscape();
+			removePaste();
 		};
 	}, [editor, onComplete, onDismissSuggestion, onEnter, promptSuggestion]);
 

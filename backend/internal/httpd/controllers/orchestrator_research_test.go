@@ -77,7 +77,6 @@ func TestOrchestratorResearchRefusalsAreConflictsWithAClearMessage(t *testing.T)
 	}{
 		"unsupported": {chatsvc.ErrResearchUnsupported, "not supported for this agent"},
 		"disabled":    {chatsvc.ErrResearchDisabled, "Dynamic orchestrator context"},
-		"not applied": {chatsvc.ErrResearchNotApplied, "research mode was not enabled"},
 	} {
 		code, body := postResearch(t, researchHandler(&researchFake{fakeConversationService: &fakeConversationService{}, err: tc.err}), `{"enabled":true}`)
 		if code != http.StatusConflict || !strings.Contains(body, tc.want) {

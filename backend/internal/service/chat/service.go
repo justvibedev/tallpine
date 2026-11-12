@@ -94,9 +94,17 @@ type Service struct {
 	// (B413); nil counts as on.
 	dynamicContext func(ctx context.Context) bool
 	// announce replaces the research mode chat line; tests set it.
-	announce          func(c *Controller, summary string)
-	hibernationPolicy func(context.Context, domain.SessionRecord) (time.Duration, bool)
-	backgroundWork    func(context.Context, domain.SessionID) (bool, error)
+	announce func(c *Controller, summary string)
+	// researchCarried keeps research mode across the restart that applies it;
+	// the rest are test seams for that restart (B638).
+	researchCarried      researchCarry
+	researchPoll         time.Duration
+	researchWait         time.Duration
+	researchHibernatedFn func(context.Context, domain.SessionID) bool
+	researchRestartFn    func(context.Context, domain.SessionID) error
+	researchSendFn       func(context.Context, domain.SessionID, string) error
+	hibernationPolicy    func(context.Context, domain.SessionRecord) (time.Duration, bool)
+	backgroundWork       func(context.Context, domain.SessionID) (bool, error)
 	// versionRefresh reports whether open sessions move to a newly installed
 	// harness release, and how long they must be quiet first.
 	versionRefresh func() (time.Duration, bool)

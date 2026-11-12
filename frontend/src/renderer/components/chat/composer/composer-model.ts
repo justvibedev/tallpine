@@ -1,5 +1,6 @@
 /** Send-rejection codes, size limits and small pure helpers for the ChatComposer. */
-import { type ChatComposerDelivery, type ChatDraftRetainedAttachment } from "../../../lib/chat-drafts";
+import { type FileAttachment } from "../../../hooks/useFileAttachments";
+import { type ChatComposerDelivery, type ChatDraftAttachment, type ChatDraftAttachmentResize, type ChatDraftRetainedAttachment } from "../../../lib/chat-drafts";
 
 // These responses precede AppendUserMessage. Provider/transport errors can
 // follow durable acceptance and must keep the original delivery ID for recovery.
@@ -56,6 +57,38 @@ export function withAttachmentReferences(text: string, paths: string[]): string 
 	return `${lead}Attached files (read these files in the workspace):\n${paths.map((path) => `- ${path}`).join("\n")}`;
 }
 
+/** A saved draft descriptor back as an attachment, keeping its resize note and original link. */
+export function attachmentFromDraft(attachment: ChatDraftAttachment): FileAttachment {
+	return {
+		id: attachment.id,
+		name: attachment.name,
+		mimeType: attachment.mimeType,
+		bytes: attachment.bytes,
+		stagedPath: attachment.path,
+		...(attachment.resize ? { resize: attachment.resize } : {}),
+	};
+}
+
+/** The part of a downscaled image worth saving with the draft: its note and original link. */
+export function draftResize({ resize }: Pick<FileAttachment, "resize">): { resize?: ChatDraftAttachmentResize } {
+	return resize?.originalPath
+		? { resize: { note: resize.note, originalPath: resize.originalPath, originalBytes: resize.originalBytes } }
+		: {};
+}
+
+/** Tells the agent which images were downscaled and where the full original is. */
+export function withResizeNotes(
+	message: string,
+	attachments: ReadonlyArray<Partial<Pick<FileAttachment, "stagedPath" | "resize">>>,
+): string {
+	const lines = attachments.flatMap(({ stagedPath, resize }) =>
+		stagedPath && resize?.originalPath
+			? [`- ${stagedPath} was ${resize.note}; full original: ${resize.originalPath}`]
+			: []);
+	if (lines.length === 0) return message;
+	return `${message}\n\nDownscaled images (open the original only if the detail matters):\n${lines.join("\n")}`;
+}
+
 export function restoredDeliveryNotice(delivery: ChatComposerDelivery | undefined): string | null {
 	if (!delivery) return null;
 	if (delivery.state === "accepted") {
@@ -72,5 +105,7 @@ export type ChatComposerHandle = {
 	isEmpty(): boolean;
 	/** Replaces the draft with text, saved like typed input, and focuses the editor. */
 	setDraft(text: string): void;
+	/** Attaches dropped files; false when attaching is unavailable right now. */
+	attachFiles(files: File[]): boolean;
 };
 

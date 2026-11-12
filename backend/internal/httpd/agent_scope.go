@@ -2,7 +2,6 @@ package httpd
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -48,7 +47,7 @@ type agentScopes struct {
 	lanesEnabled func(ctx context.Context, project domain.ProjectID) bool
 	// devMode reads the owner-set devMode policy per request. Nil means off.
 	devMode func(ctx context.Context, project domain.ProjectID) bool
-	// peers records who is presenting each token. Nil records nothing.
+	// peers checks who is presenting each token. Nil admits everyone.
 	peers *peeradmit.Checker
 }
 
@@ -71,7 +70,9 @@ func (s *agentScopes) serve(w http.ResponseWriter, r *http.Request, token string
 			"This session token is no longer valid: the session was relaunched or terminated, or the install token rotated. Restart the session's agent to get a fresh token.", nil)
 		return
 	}
-	observePeer(s.peers, r, agentCredential(agent))
+	if !s.admitAgentPeer(w, r, agent) {
+		return
+	}
 	if agent.Role == requestscope.RoleOrchestrator && s.crossProject != nil {
 		// Decided from the live engine on every request, so a toggle in Settings
 		// or a managed-policy change applies without a relaunch.
@@ -395,6 +396,7 @@ var baseAgentRules = []agentRule{
 	{"POST", "/api/v1/reports", workerUp, targetNone},    // own session only
 	{"GET", "/api/v1/reports", orchestrator, targetNone}, // own project only
 	{"POST", "/api/v1/sessions/{sessionId}/activity", workerUp, targetSelf},
+	{"GET", "/api/v1/sessions/{sessionId}/cleared-context-note", workerUp, targetSelf},
 	// GitHub credentials for the helper mode of the agent policy, own session
 	// only (a reviewer's own session is the worker under review). The daemon
 	// re-decides the policy per request and audits every issue.
@@ -635,15 +637,4 @@ func routeSegments(r *http.Request) []string {
 		path = r.URL.RawPath
 	}
 	return strings.Split(strings.TrimPrefix(path, "/"), "/")
-}
-
-// configBodyViolation checks the config of a PUT /projects/{id}[/config] body.
-func configBodyViolation(raw []byte) string {
-	var body struct {
-		Config json.RawMessage `json:"config"`
-	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return ""
-	}
-	return agentConfigViolation(body.Config)
 }

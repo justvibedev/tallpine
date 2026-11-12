@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -99,11 +100,44 @@ func (s *Service) SetTurnSettings(
 		return domain.ConversationSettings{}, err
 	}
 	controller, release, err := s.workingController(ctx, id)
+	if errors.Is(err, ErrNoController) {
+		// A stopped or exited agent has no controller to apply the choice to, but the
+		// conversation keeps it: the next start restores the stored model.
+		return s.setStoppedTurnSettings(ctx, id, settings, err)
+	}
 	if err != nil {
 		return domain.ConversationSettings{}, err
 	}
 	defer release()
 	return s.setTurnSettings(ctx, controller, domain.SessionConversationOwner(id), settings)
+}
+
+// setStoppedTurnSettings saves a pick made while no controller runs. noController
+// is returned when the session has no conversation yet, so there is nothing to keep it on.
+func (s *Service) setStoppedTurnSettings(ctx context.Context, id domain.SessionID, settings domain.ConversationSettings, noController error) (domain.ConversationSettings, error) {
+	gate := s.controllerGate(domain.SessionConversationOwner(id))
+	if err := gate.lock(ctx); err != nil {
+		return domain.ConversationSettings{}, err
+	}
+	defer gate.unlock()
+	// Re-checked under the gate: a start may have raced in, and then it owns the settings.
+	if controller, err := s.Controller(id); err == nil && controller.State() != ports.ChatControllerStopped {
+		return domain.ConversationSettings{}, ErrControllerHandoff
+	}
+	conversation, err := s.store.ConversationForSession(ctx, id)
+	if errors.Is(err, domain.ErrNoConversation) {
+		return domain.ConversationSettings{}, noController
+	}
+	if err != nil {
+		return domain.ConversationSettings{}, fmt.Errorf("conversation for %s: %w", id, err)
+	}
+	previous := conversation.Settings
+	settings.OpenCodeMode = previous.OpenCodeMode
+	if err := s.store.SetConversationSettings(ctx, conversation.ID, settings, s.now()); err != nil {
+		return domain.ConversationSettings{}, fmt.Errorf("record conversation settings: %w", err)
+	}
+	s.persistPickedModel(id, previous, settings)
+	return settings, nil
 }
 
 // ErrReviewerPermissionsFixed rejects changes to unattended reviewer approval policy.

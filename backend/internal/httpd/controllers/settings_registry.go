@@ -101,7 +101,7 @@ func (c *SettingsRegistryController) update(w http.ResponseWriter, r *http.Reque
 		switch refused.Code {
 		case settingswrite.CodeLocked:
 			status, kind = http.StatusConflict, "conflict"
-		case settingswrite.CodeNotPermitted:
+		case settingswrite.CodeNotPermitted, settingswrite.CodeDesktopOnly:
 			status, kind = http.StatusForbidden, "forbidden"
 		}
 		var details map[string]any

@@ -46,11 +46,8 @@ type conversation struct {
 	proc *process
 	log  *slog.Logger
 
-	threadMu sync.RWMutex
-	threadID string
-	// freshThread is the thread/start request that opens a replacement thread
-	// with this conversation's launch settings (ClearContext).
-	freshThread     map[string]any
+	threadMu        sync.RWMutex
+	threadID        string
 	historyParentID string
 	providerScopeID string
 	readOnly        bool

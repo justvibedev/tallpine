@@ -30,13 +30,37 @@ function decodeHref(href: string): string | undefined {
 	}
 }
 
+/** Video and audio containers a browser can play; `fileMediaKind` in the renderer classifies by these too. */
+export const LOCAL_VIDEO_EXTENSION = /\.(?:m4v|mov|mp4|ogv|webm)$/i;
+export const LOCAL_AUDIO_EXTENSION = /\.(?:aac|flac|m4a|mp3|oga|ogg|opus|wav)$/i;
+/** Players are heavy; a reply naming more than this is a file listing. */
+export const MAX_LOCAL_MEDIA_PATHS = 4;
+
+function isConfinableLocalPath(path: string, extension: RegExp): boolean {
+	return isLocalPathCandidate(path) && path.startsWith("/") && extension.test(path) && !path.split("/").includes("..");
+}
+
 /** An absolute image path a thumbnail may be shown for: no `~`, no `..`, an image extension. */
 export function isLocalImagePath(path: string): boolean {
-	return isLocalPathCandidate(path) && path.startsWith("/") && LOCAL_IMAGE_EXTENSION.test(path) && !path.split("/").includes("..");
+	return isConfinableLocalPath(path, LOCAL_IMAGE_EXTENSION);
+}
+
+/** An absolute video or audio path an inline player may be shown for, under the same rules as an image. */
+export function isLocalMediaPath(path: string): boolean {
+	return isConfinableLocalPath(path, LOCAL_VIDEO_EXTENSION) || isConfinableLocalPath(path, LOCAL_AUDIO_EXTENSION);
 }
 
 /** Absolute local image paths in a markdown reply, in order of first mention, without duplicates. Fenced code is skipped. */
 export function findLocalImagePaths(markdown: string, max = MAX_LOCAL_IMAGE_PATHS): string[] {
+	return findLocalPathsWhere(markdown, isLocalImagePath, max);
+}
+
+/** Absolute local video and audio paths in a markdown reply, found the same way as images. */
+export function findLocalMediaPaths(markdown: string, max = MAX_LOCAL_MEDIA_PATHS): string[] {
+	return findLocalPathsWhere(markdown, isLocalMediaPath, max);
+}
+
+function findLocalPathsWhere(markdown: string, accept: (path: string) => boolean, max: number): string[] {
 	const prose = markdown.replace(FENCE, "");
 	const found: { index: number; path: string }[] = [];
 	// An inline code span is one token, so a name with lowercase words after a space still counts whole.
@@ -54,7 +78,7 @@ export function findLocalImagePaths(markdown: string, max = MAX_LOCAL_IMAGE_PATH
 	const paths: string[] = [];
 	for (const { path } of found) {
 		if (paths.length >= max) break;
-		if (isLocalImagePath(path) && !paths.includes(path)) paths.push(path);
+		if (accept(path) && !paths.includes(path)) paths.push(path);
 	}
 	return paths;
 }

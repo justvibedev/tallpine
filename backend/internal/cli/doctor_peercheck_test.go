@@ -53,3 +53,18 @@ func TestDoctorPeerCheckAbsentFromOlderDaemon(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorPeerCheckSaysRefusedWhenEnforcing(t *testing.T) {
+	pc := &silentPeerCheck{Mode: "enforce", ModeReason: "signed build", Admitted: map[string]int64{}}
+	pc.WouldRefuse = append(pc.WouldRefuse, struct {
+		Executable string `json:"executable"`
+		TokenClass string `json:"tokenClass"`
+		Route      string `json:"route"`
+		Reason     string `json:"reason"`
+		Count      int64  `json:"count"`
+	}{"/usr/bin/curl", "install", "GET /api/v1/sessions", "install_token_outside_desktop", 1})
+	check := peerCheckLine(t, silentFailuresResponse{PeerCheck: pc})
+	if check.Level != doctorPass || !strings.Contains(check.Message, "peer check enforce") || !strings.Contains(check.Message, "; refused 1") {
+		t.Fatalf("check = %+v", check)
+	}
+}

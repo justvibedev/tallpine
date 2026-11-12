@@ -445,7 +445,7 @@ if [ "$mode" != lint ]; then
 	touched '^scripts/.*\.sh$|^scripts/[^/.]+$' && step heredoc-guard bash scripts/heredoc-guard.test.sh
 	touched '^scripts/release-local' && step release-local-test bash scripts/release-local.test.sh
 	touched '^scripts/(verify|testdata/verify-all)' && step verify-test bash scripts/verify.test.sh
-	touched '^scripts/local-ci/' && step local-ci-test bash -c 'scripts/local-ci/install.test.sh && scripts/local-ci/loop.test.sh'
+	touched '^scripts/(local-ci/|lib/notify\.sh)' && step local-ci-test bash -c 'scripts/local-ci/install.test.sh && scripts/local-ci/loop.test.sh && scripts/local-ci/alerts.test.sh'
 	step size-ratchet bash scripts/size-ratchet
 	touched '^scripts/(test-slot|go$|verify\.d/)|package\.json$' && step test-slot-test bash scripts/test-slot.test.sh
 	touched '^scripts/size-ratchet' && step size-ratchet-test bash scripts/size-ratchet.test.sh

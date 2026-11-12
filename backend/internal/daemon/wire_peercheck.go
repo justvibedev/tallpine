@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"time"
 
 	"tallpine.eu/tallpine/backend/internal/adapters/runtime/runtimeselect"
 	"tallpine.eu/tallpine/backend/internal/brand"
@@ -17,8 +18,9 @@ import (
 	"tallpine.eu/tallpine/backend/internal/procmem"
 )
 
-// startPeerCheck builds the report-only daemon peer check (B631). On a build
-// that is not signed it observes nothing.
+// startPeerCheck builds the daemon peer check (B631): enforcing on a signed
+// macOS build unless the owner's switch is off, inactive otherwise. The
+// switch is applied before the server serves and owned by the settings writer.
 func (b *boot) startPeerCheck() *peeradmit.Checker {
 	mode, reason := peeradmit.DefaultMode(runtime.GOOS, buildinfo.TeamID, peeradmit.SignatureCheckBuilt)
 	checker := peeradmit.New(peeradmit.Options{
@@ -35,6 +37,13 @@ func (b *boot) startPeerCheck() *peeradmit.Checker {
 		},
 		Log: b.log,
 	})
+	applyStoredPeerCheck(b.ctx, checker, func(ctx context.Context) (string, error) {
+		row, err := b.store.GetAppSettings(ctx)
+		return row.PeerCheck, err
+	}, b.log)
+	if b.settingsWriter != nil {
+		b.settingsWriter.PeerCheck = peerCheckSwitch{checker: checker, store: b.store, now: time.Now}
+	}
 	go checker.Run(b.ctx)
 	return checker
 }

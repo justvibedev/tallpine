@@ -6,9 +6,11 @@ import { agentLabel } from "../lib/agent-options";
 import { apiErrorMessage } from "../lib/api-client";
 import { useUiStore } from "../stores/ui-store";
 import { isOrchestratorSession, type WorkspaceSession } from "../types/workspace";
-import { AgentModelPicker, DismissButton, switchEffort, type PendingAgentSwitch } from "./chat/AgentSwitchPicker";
+import { AgentModelPicker, switchEffort, type PendingAgentSwitch } from "./chat/AgentSwitchPicker";
+import { DismissButton } from "./chat/ComposerErrorNotice";
 import { ProviderMark } from "./chat/ProviderMark";
 import { SessionCopyDropdownItems } from "./SessionCopyMenuItems";
+import { useResetOrchestrator } from "./ResetOrchestrator";
 import { OrchestratorHandoffMenuItems } from "./OrchestratorHandoffMenuItems";
 import type { SessionInterfaceMode } from "../hooks/useSessionInterfaceTransition";
 import { RoundedInterfaceIcon } from "./SessionInterfaceSwitch";
@@ -43,6 +45,7 @@ export function SessionTabMenu({
 	const [open, setOpen] = useState(false);
 	const [pending, setPending] = useState<PendingAgentSwitch>();
 	const providerSwitch = useProviderSwitchCommand(session.id, hostId);
+	const resetOrchestrator = useResetOrchestrator(session.id, hostId);
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
 	// The agent picker belongs to a terminal; a chat switches agent from its composer.
 	const switching = switchTarget === "chat";
@@ -78,6 +81,7 @@ export function SessionTabMenu({
 		</div>
 	) : null;
 	return (
+		<>
 		<DropdownMenu open={open} onOpenChange={setOpen}>
 			<DropdownMenuTrigger asChild>
 				<TopbarButton
@@ -100,8 +104,10 @@ export function SessionTabMenu({
 					</DropdownMenuItem>
 				) : null}
 				<SessionCopyDropdownItems projectId={session.workspaceId} sessionId={session.id} />
-				{orchestrator ? <OrchestratorHandoffMenuItems sessionId={session.id} hostId={hostId} /> : null}
+				{orchestrator ? <OrchestratorHandoffMenuItems sessionId={session.id} hostId={hostId} onReset={resetOrchestrator.request} /> : null}
 			</DropdownMenuContent>
 		</DropdownMenu>
+		{orchestrator ? resetOrchestrator.dialog : null}
+		</>
 	);
 }

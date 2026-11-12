@@ -83,6 +83,16 @@ func (e apiResponseError) Error() string {
 	return e.ErrorBody.String()
 }
 
+// peerNotAdmittedCode is the daemon's 403 for a valid token presented by a
+// process Tallpine did not start (B631); its message says what to do instead.
+const peerNotAdmittedCode = "PEER_NOT_ADMITTED"
+
+// isPeerNotAdmitted reports whether err is that refusal.
+func isPeerNotAdmitted(err error) bool {
+	var refused apiResponseError
+	return errors.As(err, &refused) && refused.StatusCode == http.StatusForbidden && refused.ErrorBody.Code == peerNotAdmittedCode
+}
+
 // String renders the envelope for the user: "<message> (<code>) [request <id>]",
 // omitting whichever parts the daemon left empty.
 func (e apiError) String() string {

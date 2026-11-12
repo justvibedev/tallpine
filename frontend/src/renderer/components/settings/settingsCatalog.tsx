@@ -6,6 +6,7 @@ import type { GlobalSettingsSection, HarnessDiagnosticsRequest } from "../../sto
 import { AgentAccountsPanel } from "./AgentAccountsSection";
 import { AccountPoolSection } from "./AccountPoolSection";
 import { AgentPolicySection } from "./AgentPolicySection";
+import { DaemonPeerCheckSection } from "./DaemonPeerCheckSection";
 import { BrowserDownloadsSection } from "./BrowserDownloadsSection";
 import { BrowserProfilesSection } from "./BrowserProfilesSection";
 import { CodexAccountsSection } from "./CodexAccountsSection";
@@ -90,7 +91,12 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 		id: "security",
 		icon: ShieldCheck,
 		label: (t) => t("settings.security"),
-		render: () => <AgentPolicySection scope="security" />,
+		render: () => (
+			<>
+				<AgentPolicySection scope="security" />
+				<DaemonPeerCheckSection />
+			</>
+		),
 	},
 	{
 		id: "agents",

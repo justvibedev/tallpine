@@ -5,7 +5,8 @@ import { agentLabel } from "../../lib/agent-options";
 import { memo } from "react";
 import { conversationQueryKey, ProviderSwitchFailed } from "../../hooks/conversation";
 import { can } from "../../types/conversation";
-import { ComposerErrorNotice, switchEffort } from "./AgentSwitchPicker";
+import { switchEffort } from "./AgentSwitchPicker";
+import { ComposerErrorNotice } from "./ComposerErrorNotice";
 import { apiErrorMessage } from "../../lib/api-client";
 import { AGENT_SWITCH_FAILED } from "./composer/composer-model";
 import { CONTINUE_STOPPED_TURN_PROMPT, ChatWorkspace } from "./ChatWorkspace";
@@ -286,7 +287,7 @@ export const SessionChatSurface = memo(function SessionChatSurface(props: Sessio
 				configOptions={offeredConfigOptions}
 				onChooseConfigOption={configOptions.setOption}
 				configOptionPending={configOptions.pending || commands.choosingSettings}
-				configOptionError={controllerCatalogsEnabled ? configOptions.error : undefined}
+				configOptionError={(controllerCatalogsEnabled ? configOptions.error : undefined) ?? commands.settingsError}
 				onCompact={commands.compact}
 				compacting={commands.compacting}
 				compactUnavailable={commands.compactUnavailable}

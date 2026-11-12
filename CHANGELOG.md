@@ -4,6 +4,35 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.13]
+
+### Added
+- Image lightbox with paging, zoom, and thumbnails in tool rows (#1144).
+- Inline video and audio players in the chat timeline (#1146).
+- Copy Markdown and CSV buttons on chat tables (#1143).
+- A pinned banner shows your last prompt (#1145).
+- Large composer pastes collapse into chips (#1147).
+- Reset orchestrator from the tab menu (#1149).
+- Large composer images are downscaled, and a drop overlay covers the whole chat pane (#1151).
+
+### Security
+- On signed macOS builds, the daemon refuses local processes Tallpine did not start, including a token read from disk or stolen from another session. A desktop-only setting can turn the check off (#1140).
+
+### Changed
+- Live tool rows are capped while a turn runs (#1142).
+
+### Fixed
+- No false "Answered by X" banner after a model switch or `/clear` (#1141).
+- Model picks save on stopped agents, and refused picks are reported (#1148).
+- `/clear` in a Claude chat hands over to a fresh context (#1150), and keeps the brief in Codex chats and Terminal Claude (#1154).
+- A successor orchestrator adopts messages queued during a handoff (#1152).
+- Research mode survives an agent restart (#1157).
+- Reviewer session-end hooks no longer make noise after a review ends (#1156).
+- An orchestrator whose saved Claude conversation is gone after a restart no longer gets stuck. Reset starts it fresh from its Tallpine notes, and the project row's ⋮ menu offers Reset orchestrator when it has stopped (#1159).
+
+### Internal
+- Clearer handoff 409 text and a stop-pick-start restore test (#1153).
+
 ## [0.13.11]
 
 ### Added

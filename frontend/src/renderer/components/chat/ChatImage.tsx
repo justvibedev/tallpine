@@ -13,16 +13,18 @@
  */
 
 import { mediaCrossOrigin } from "../../lib/file-media";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type MouseEvent, type ReactNode } from "react";
 import type { ExtraProps } from "react-markdown";
 import { useTranslation } from "react-i18next";
 import { Copy, Download } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useUiStore } from "../../stores/ui-store";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "../ui/context-menu";
-import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { copyChatImage, saveChatImage } from "./chat-image-actions";
 import { useChatImageSrc } from "./chat-image-source";
+import { runImageAction } from "./chat-image-run";
+import { CHAT_IMAGE_LABEL_ATTRIBUTE, CHAT_IMAGE_URL_ATTRIBUTE, collectChatImageSet, type ChatImageItem } from "./chat-image-set";
+import { ChatImageViewer } from "./ChatImageLightbox";
 import { useRemoteImage } from "../../hooks/useRemoteImage";
 import { LoadRemoteImageButton } from "../LoadRemoteImageButton";
 
@@ -63,14 +65,7 @@ export function ChatImageLinkScope({ children }: { children: ReactNode }) {
 function ChatImageMenu({ url, label, children }: { url: string; label: string; children: ReactNode }) {
 	const { t } = useTranslation();
 	const showGlobalToast = useUiStore((state) => state.showGlobalToast);
-	const run = (action: () => Promise<unknown>, success: string | null, failure: string) => {
-		void action().then(
-			(done) => {
-				if (success && done !== false) showGlobalToast(success);
-			},
-			(error: unknown) => showGlobalToast(failure, error instanceof Error ? error.message : undefined, "error"),
-		);
-	};
+	const run = (action: () => Promise<unknown>, success: string | null, failure: string) => runImageAction(showGlobalToast, action, success, failure);
 	return (
 		<ContextMenu>
 			<ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
@@ -98,7 +93,7 @@ export function ChatImage({ src, alt, inline }: { src?: string | Blob; alt?: str
 	const { t } = useTranslation();
 	const inGallery = useContext(InGallery);
 	const inLink = useContext(InLink);
-	const [open, setOpen] = useState(false);
+	const [viewing, setViewing] = useState<{ items: ChatImageItem[]; index: number } | null>(null);
 	// The failed URL rather than a boolean: a new URL deserves its own attempt.
 	const [failedSrc, setFailedSrc] = useState<string | null>(null);
 	const rawUrl = typeof src === "string" ? src : undefined;
@@ -142,7 +137,8 @@ export function ChatImage({ src, alt, inline }: { src?: string | Blob; alt?: str
 			<ChatImageMenu url={url} label={label}>
 				<button
 					type="button"
-					onClick={() => setOpen(true)}
+					onClick={(event: MouseEvent<HTMLButtonElement>) => setViewing(collectChatImageSet(event.currentTarget, { url, src: remote.src ?? url, label }))}
+					{...{ [CHAT_IMAGE_URL_ATTRIBUTE]: url, [CHAT_IMAGE_LABEL_ATTRIBUTE]: label }}
 					aria-label={label ? t("chat.image.open", { name: label }) : t("chat.image.openUnnamed")}
 					className={cn(
 						"max-w-full cursor-zoom-in overflow-hidden rounded-md border border-border bg-background transition-opacity duration-150 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
@@ -178,30 +174,7 @@ export function ChatImage({ src, alt, inline }: { src?: string | Blob; alt?: str
 					)}
 				</button>
 			</ChatImageMenu>
-			<ChatImageViewer url={url} src={remote.src} label={label} open={open} onOpenChange={setOpen} />
+			<ChatImageViewer items={viewing?.items ?? []} index={viewing?.index} open={viewing !== null} onOpenChange={(next) => { if (!next) setViewing(null); }} />
 		</>
-	);
-}
-
-/** The full-size image dialog a chat image or thumbnail opens, with Copy / Save on right-click. */
-export function ChatImageViewer({ url, src = url, label, open, onOpenChange }: { url: string; src?: string; label: string; open: boolean; onOpenChange: (open: boolean) => void }) {
-	const { t } = useTranslation();
-	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent
-				aria-describedby={undefined}
-				className="z-overlay w-auto max-w-[calc(100vw-4rem)] gap-0 bg-popover p-2 pt-10"
-			>
-				<DialogTitle className="sr-only">{label || t("chat.image.untitled")}</DialogTitle>
-				<ChatImageMenu url={url} label={label}>
-					<img
-						crossOrigin={mediaCrossOrigin(url)}
-						src={src}
-						alt={label}
-						className="block max-h-[calc(100svh-8rem)] max-w-full rounded-md object-contain"
-					/>
-				</ChatImageMenu>
-			</DialogContent>
-		</Dialog>
 	);
 }

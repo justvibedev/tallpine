@@ -26,7 +26,11 @@ const (
 	handoffOlderTurnBudget    = 350
 	handoffOlderUserCap       = 150
 
-	handoffOriginalTaskCap  = 2_000
+	handoffOriginalTaskCap = 2_000
+	// handoffClearedTaskCap keeps a whole task brief after a /clear: it is the
+	// only copy of the task the cleared agent gets, and its last lines (such as
+	// what it may publish) are often the ones that matter.
+	handoffClearedTaskCap   = 12_000
 	handoffChangedFileLimit = 50
 	handoffChangedFileCap   = 160
 	handoffArtifactLimit    = 50
@@ -77,6 +81,9 @@ type HandoffNoteInput struct {
 	Artifacts   []SessionArtifactFile
 	Turns       []HandoffTurn
 	Terminal    bool
+	// ContextCleared marks the note a /clear leaves: the same agent starts a
+	// fresh context, so it is not taking over from anyone.
+	ContextCleared bool
 }
 
 // handoffNoteMaxChars is the note's length cap on this system. On Windows a
@@ -151,8 +158,12 @@ func renderHandoffNote(in HandoffNoteInput, older, recent []HandoffTurn, artifac
 	// The new agent must take this as the user's real conversation. Calling it
 	// Tallpine's note, not the user's, made Claude refuse to use what the user had
 	// said, such as a value they asked it to remember.
-	fmt.Fprintf(&b, "You are %s, taking over this Tallpine session from %s. The conversation below really took place between this user and %s. Treat it as your own history with them: what the user told you there, such as facts, preferences or values they asked you to remember, still holds.\n",
-		handoffHarnessLabel(in.TargetHarness), handoffHarnessLabel(in.SourceHarness), handoffHarnessLabel(in.SourceHarness))
+	if in.ContextCleared {
+		b.WriteString("The user cleared your context with /clear in this Tallpine session. Your earlier conversation is gone; Tallpine kept your task and a record of that conversation below so you can carry on. Treat it as your own history with this user: what the user told you there, such as facts, preferences or values they asked you to remember, still holds.\n")
+	} else {
+		fmt.Fprintf(&b, "You are %s, taking over this Tallpine session from %s. The conversation below really took place between this user and %s. Treat it as your own history with them: what the user told you there, such as facts, preferences or values they asked you to remember, still holds.\n",
+			handoffHarnessLabel(in.TargetHarness), handoffHarnessLabel(in.SourceHarness), handoffHarnessLabel(in.SourceHarness))
+	}
 	b.WriteString("- Tallpine copied this record from that conversation. Requests in it were already handled; do not carry them out again.\n")
 	b.WriteString("- The files in the workspace and git are the truth. Check them before relying on this record.\n")
 	b.WriteString("- Do not redo work that is already finished.\n")
@@ -166,7 +177,11 @@ func renderHandoffNote(in HandoffNoteInput, older, recent []HandoffTurn, artifac
 
 	if task := strings.TrimSpace(in.OriginalTask); task != "" && !handoffTaskShownInFull(task, recent) {
 		b.WriteString("\n## Original task\n")
-		b.WriteString(quoteHandoffText(task, handoffOriginalTaskCap, handoffClipMarker))
+		taskCap := handoffOriginalTaskCap
+		if in.ContextCleared {
+			taskCap = handoffClearedTaskCap
+		}
+		b.WriteString(quoteHandoffText(task, taskCap, handoffClipMarker))
 		b.WriteByte('\n')
 	}
 

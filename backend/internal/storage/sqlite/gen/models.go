@@ -220,6 +220,7 @@ type AppSetting struct {
 	ReviewDefaults                         string
 	DynamicOrchestratorContext             bool
 	WorkflowDefaults                       string
+	PeerCheck                              string
 }
 
 type Automation struct {

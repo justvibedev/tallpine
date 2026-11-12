@@ -303,10 +303,13 @@ scripts/release-local build               # build origin/main (or: build <ref>)
 scripts/release-local install "<app path printed by build>"
 scripts/release-local rollback            # back to the previous release and its data
 
-# Detached install (an orchestrator ends its turn right after starting it): add
-# --notify so the installer messages the session once the new daemon is healthy
-# (or the install failed). If the new daemon never comes up, nothing can deliver the message: the installer retries once for ~60 s across all sessions, logs a warning and exits with its own result. An idle session is not woken by the restart.
-scripts/release-local install "<app>" --yes --notify <orchestrator-session-id> --log <install log> > <install log> 2>&1 &
+# Detached install (an orchestrator ends its turn right after starting it): pass
+# --log, and the outcome is written to <install log>.result when the run ends
+# (line 1 "ok" or "failed", line 2 the message). Poll it from the session: nothing
+# is sent, because a signed daemon refuses API calls from this script (B631), and
+# an idle session is not woken by the restart. --notify is gone (ignored with a
+# warning when --log is given, refused without it).
+scripts/release-local install "<app>" --yes --log <install log> > <install log> 2>&1 &
 ```
 
 - **Build stamping.** Every build records its version, full commit, UTC build

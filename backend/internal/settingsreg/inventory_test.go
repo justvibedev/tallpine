@@ -102,6 +102,7 @@ var snapshotKeys = map[string][]Key{
 	"WorkflowDefaults":           {"app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel"},
 	"StorageCompaction":          {"app.storageCompaction"},
 	"ProviderEventRetentionDays": {"app.providerEventRetentionDays"},
+	"PeerCheck":                  {"app.daemon.peerCheck"},
 	"UpdatedAt":                  nil, // bookkeeping, not a setting
 }
 

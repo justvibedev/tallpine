@@ -55,6 +55,7 @@ export function ActivityRun({
 		else setLocalOverride(open);
 	};
 	const overrides = disclosureOverrides ?? {};
+	const [showEarlier, setShowEarlier] = useState(false);
 	const reducedMotion = useReducedMotion();
 	const running = activities.some((a) => a.status === "running");
 	const nonzeroExits = activities.filter(isNonzeroCommandExit).length;
@@ -79,7 +80,10 @@ export function ActivityRun({
 	const hierarchy = buildHierarchy(activities);
 	const nodesByActivityID = new Map(hierarchy.map((node) => [node.activity.id, node]));
 	const rootActivities = hierarchy.map((node) => node.activity);
-	const subgroups = groupSimilarActivities(rootActivities);
+	// While the turn runs, only the newest rows show; older quiet ones fold behind
+	// an "N earlier" expander. Failures and diffs never fold.
+	const hiddenEarlier = live && !showEarlier ? earlierToFold(rootActivities) : new Set<string>();
+	const subgroups = groupSimilarActivities(rootActivities.filter((a) => !hiddenEarlier.has(a.id)));
 	const summary = summarize(activities);
 	if (activities.length === 1 && hierarchy[0]?.children.length === 0) {
 		return <ActivityRow activity={activities[0]!} />;
@@ -156,6 +160,15 @@ export function ActivityRun({
 						className="overflow-hidden"
 					>
 						<div className="flex flex-col gap-1 pt-1">
+							{hiddenEarlier.size > 0 ? (
+								<button
+									type="button"
+									onClick={() => setShowEarlier(true)}
+									className="self-start text-xs text-muted-foreground hover:text-foreground"
+								>
+									{hiddenEarlier.size} earlier
+								</button>
+							) : null}
 							{subgroups.length === 1
 								? subgroups[0]!.activities.map((activity) => {
 										const node = nodesByActivityID.get(activity.id);
@@ -182,6 +195,20 @@ export function ActivityRun({
 			</AnimatePresence>
 		</motion.div>
 	);
+}
+
+/** Newest tool rows a running turn shows before older ones fold. */
+export const LIVE_VISIBLE_TOOL_ROWS = 5;
+
+function isPinnedActivity(a: ConversationActivity): boolean {
+	return a.activityKind === "file_change" || a.status === "failed" || isNonzeroCommandExit(a);
+}
+
+/** Ids of the older, uneventful rows to fold: everything before the newest
+ *  LIVE_VISIBLE_TOOL_ROWS except errors and diffs. */
+function earlierToFold(roots: ConversationActivity[]): Set<string> {
+	const older = roots.slice(0, Math.max(0, roots.length - LIVE_VISIBLE_TOOL_ROWS));
+	return new Set(older.filter((a) => !isPinnedActivity(a)).map((a) => a.id));
 }
 
 type ActivitySubgroupData = { key: string; activities: ConversationActivity[] };

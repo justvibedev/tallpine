@@ -307,7 +307,9 @@ export function useSessionChatSurface(props: SessionChatSurfaceProps) {
 		(renderShellFallback
 			? unavailableConversationSnapshot(session)
 			: undefined);
-	const settingsLoading = waking || Boolean(renderSnapshot && can(renderSnapshot, "config_options") && !configOptions.loaded && !configOptions.error);
+	// An agent that is not running has no settings to wait for; the bar shows the saved ones.
+	const idleStopped = snapshot?.controller?.state === "stopped" && !optimisticArrival;
+	const settingsLoading = waking || Boolean(renderSnapshot && can(renderSnapshot, "config_options") && !configOptions.loaded && !configOptions.error && !idleStopped);
 	// The model the running agent reports, kept so this chat names it at once the next time it loads.
 	const liveModel = settingsLoading || !targetChatControllerReady || controllerTransitioning ? undefined
 		: providerOptions.find((option) => option.category === "model" || option.id === "model")?.currentValue ?? snapshot?.settings?.model;

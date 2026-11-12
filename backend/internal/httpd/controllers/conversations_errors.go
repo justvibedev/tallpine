@@ -116,6 +116,11 @@ func decodeConversationBodyLimit(w http.ResponseWriter, r *http.Request, into an
 // writeConversationError maps the Chat service's typed failures onto stable
 // codes, so a client can tell a permanent answer from a retryable one.
 func writeConversationError(w http.ResponseWriter, r *http.Request, err error) {
+	// A Claude Code /clear runs as a handoff, so it can be refused as a switch is.
+	if refusal := (*domain.ProviderSwitchError)(nil); errors.As(err, &refusal) {
+		writeProviderSwitchError(w, r, err)
+		return
+	}
 	switch {
 	case errors.Is(err, ports.ErrSessionNotFound):
 		envelope.WriteAPIError(w, r, http.StatusNotFound, "not_found",
@@ -151,11 +156,11 @@ func writeConversationError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, chatsvc.ErrControllerHandoff):
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
 			"CHAT_INTERFACE_TRANSITION",
-			"the session is switching interfaces; send again after the handoff completes", nil)
+			"the session is switching interfaces (a handoff is in progress); wait for it to finish, then retry", nil)
 
-	case errors.Is(err, chatsvc.ErrClearUnsupported):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",
-			"CHAT_CLEAR_UNSUPPORTED", err.Error(), nil)
+	case errors.Is(err, chatsvc.ErrClearWithText):
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
+			"CHAT_CLEAR_WITH_TEXT", err.Error(), nil)
 
 	case errors.Is(err, chatsvc.ErrClearWhileBusy):
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict",

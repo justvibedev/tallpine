@@ -233,11 +233,12 @@ _stop_app_and_daemon() {
           die "pid ${pid} from ${run_file} is alive but is not a responding ${service_name} on port ${port}; stop it with 'tallpine stop' and retry"
       else
         say "Stopping the daemon (pid ${pid}, port ${port})..."
-        # A bare /shutdown: a daemon the app did not own (keep-alive or
+        # SIGTERM to the pid /healthz just confirmed, not POST /shutdown: a signed daemon refuses
+        # API calls from processes Tallpine did not start (B631), and this script is one. SIGTERM
+        # takes the same shutdown path, so a daemon the app did not own (keep-alive or
         # `tallpine start`) leaves its agents running for the next daemon to adopt.
-        daemon_curl -fsS --max-time 10 -X POST -H "X-VO-Token: $(cat "${token_file}" 2>/dev/null)" \
-          "http://127.0.0.1:${port}/shutdown" >/dev/null ||
-          die "the daemon refused /shutdown; stop it with 'tallpine stop' and retry"
+        kill -TERM "${pid}" 2>/dev/null ||
+          die "could not signal the daemon (pid ${pid}); stop it with 'tallpine stop' and retry"
         wait_for_exit "${pid}" || die "the daemon (pid ${pid}) did not exit within ${stop_timeout}s"
       fi
     fi

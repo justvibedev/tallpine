@@ -146,8 +146,12 @@ func withHandoffNote(systemPrompt, note string) string {
 }
 
 // switchBranchUnanswered reports a branch a switch opened whose agent never
-// had a turn, so its provider never saved the conversation. Resuming it would
-// fail forever; it can start fresh, since its handoff note holds the context.
+// finished a turn, so its provider may never have saved the conversation.
+// Resuming it would fail forever; it can start fresh, since its handoff note
+// holds the context. A turn the agent did not complete (a daemon restart that
+// cut off the first turn after a Claude /clear, B673) is not an answer. The
+// fresh start applies only when the provider itself reports the id missing,
+// so a provider that did save a partial turn still resumes it.
 func (s *Service) switchBranchUnanswered(ctx context.Context, conversationID string, branch domain.ConversationBranch) bool {
 	if s.reader == nil || branch.Strategy != domain.ConversationBranchStrategyApproximateContext || branch.HandoffNote == "" {
 		return false
@@ -157,7 +161,7 @@ func (s *Service) switchBranchUnanswered(ctx context.Context, conversationID str
 		return false
 	}
 	for _, turn := range rows.Turns {
-		if turn.BranchID == branch.ID {
+		if turn.BranchID == branch.ID && turn.State.Answered() {
 			return false
 		}
 	}

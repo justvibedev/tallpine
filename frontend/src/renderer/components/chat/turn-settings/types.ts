@@ -48,6 +48,8 @@ export interface TurnSettingsBarProps {
 	beforePicker?: ReactNode;
 	/** The agent is starting again; the picker names no model until it reports its own. */
 	modelsLoading?: boolean;
+	/** The agent is not running: the bar shows the saved model and a pick is kept for its next start. */
+	stopped?: boolean;
 	/** The model the chat's agent last reported running, when none is saved. */
 	lastModel?: string;
 	/** Inline controls on the right model row, before the mode/approval picker — queue vs steer. */

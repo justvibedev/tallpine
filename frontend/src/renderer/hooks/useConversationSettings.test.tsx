@@ -37,4 +37,15 @@ describe("confirmed conversation permissions", () => {
 		});
 		expect(client.getQueryData(conversationQueryKey("session-b"))).toBeUndefined();
 	});
+
+	it("reports a refused model pick instead of swallowing it", async () => {
+		patch.mockResolvedValue({ data: undefined, error: { code: "CHAT_CONTROLLER_HANDOFF" }, response: { status: 409 } });
+		const client = new QueryClient();
+		const wrapper = ({ children }: { children: ReactNode }) =>
+			<QueryClientProvider client={client}>{children}</QueryClientProvider>;
+		const { result } = renderHook(() => useConversationCommands("session-a"), { wrapper });
+		expect(result.current.settingsError).toBeUndefined();
+		act(() => result.current.chooseSettings({ model: "opus" }));
+		await waitFor(() => expect(result.current.settingsError).toBe("Failed"));
+	});
 });

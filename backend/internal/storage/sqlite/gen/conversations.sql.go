@@ -193,6 +193,25 @@ func (q *Queries) AdoptProviderConversationTurn(ctx context.Context, arg AdoptPr
 	return err
 }
 
+const adoptQueuedConversationTurns = `-- name: AdoptQueuedConversationTurns :exec
+UPDATE conversation_turns
+SET handled_by_session_id = ?1
+WHERE conversation_id = ?2
+  AND state = 'queued'
+  AND handled_by_review_id IS NULL
+  AND handled_by_session_id <> ?1
+`
+
+type AdoptQueuedConversationTurnsParams struct {
+	SessionID      domain.SessionID
+	ConversationID string
+}
+
+func (q *Queries) AdoptQueuedConversationTurns(ctx context.Context, arg AdoptQueuedConversationTurnsParams) error {
+	_, err := q.db.ExecContext(ctx, adoptQueuedConversationTurns, arg.SessionID, arg.ConversationID)
+	return err
+}
+
 const adoptReviewProviderConversationTurn = `-- name: AdoptReviewProviderConversationTurn :exec
 INSERT OR IGNORE INTO conversation_turns (
     id, conversation_id, handled_by_session_id, handled_by_review_id,
@@ -4229,6 +4248,65 @@ func (q *Queries) SelectFirstHumanTurnOnBranch(ctx context.Context, arg SelectFi
 	return id, err
 }
 
+const selectForeignQueuedTurnRows = `-- name: SelectForeignQueuedTurnRows :many
+SELECT CAST('message' AS TEXT) AS kind, conversation_messages.id, conversation_messages.sequence
+FROM conversation_messages
+JOIN conversation_turns ON conversation_turns.id = conversation_messages.turn_id
+WHERE conversation_turns.conversation_id = ?1
+  AND conversation_messages.conversation_id = ?1
+  AND conversation_turns.state = 'queued'
+  AND conversation_turns.handled_by_review_id IS NULL
+  AND conversation_turns.handled_by_session_id <> ?2
+UNION ALL
+SELECT CAST('activity' AS TEXT) AS kind, conversation_activities.id, conversation_activities.sequence
+FROM conversation_activities
+JOIN conversation_turns ON conversation_turns.id = conversation_activities.turn_id
+WHERE conversation_turns.conversation_id = ?1
+  AND conversation_activities.conversation_id = ?1
+  AND conversation_turns.state = 'queued'
+  AND conversation_turns.handled_by_review_id IS NULL
+  AND conversation_turns.handled_by_session_id <> ?2
+ORDER BY 3
+`
+
+type SelectForeignQueuedTurnRowsParams struct {
+	ConversationID string
+	SessionID      domain.SessionID
+}
+
+type SelectForeignQueuedTurnRowsRow struct {
+	Kind     string
+	ID       string
+	Sequence int64
+}
+
+// A project conversation's queue is drained only by its current owner, and a
+// primary Chat turn binds only under its handling session's generation. When
+// the conversation is rebound to a new orchestrator, turns still queued for an
+// earlier one move to it; otherwise the successor's drain cannot bind them.
+func (q *Queries) SelectForeignQueuedTurnRows(ctx context.Context, arg SelectForeignQueuedTurnRowsParams) ([]SelectForeignQueuedTurnRowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectForeignQueuedTurnRows, arg.ConversationID, arg.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelectForeignQueuedTurnRowsRow{}
+	for rows.Next() {
+		var i SelectForeignQueuedTurnRowsRow
+		if err := rows.Scan(&i.Kind, &i.ID, &i.Sequence); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectLatestAutoResumeConversationTurn = `-- name: SelectLatestAutoResumeConversationTurn :one
 WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     SELECT conversations.active_branch_id, CAST(NULL AS INTEGER)
@@ -4944,6 +5022,22 @@ func (q *Queries) SelectVerifiedAuthenticationTurn(ctx context.Context, arg Sele
 	return i, err
 }
 
+const setConversationActivitySequence = `-- name: SetConversationActivitySequence :exec
+UPDATE conversation_activities SET sequence = ?1
+WHERE id = ?2 AND conversation_id = ?3
+`
+
+type SetConversationActivitySequenceParams struct {
+	Sequence       int64
+	ID             string
+	ConversationID string
+}
+
+func (q *Queries) SetConversationActivitySequence(ctx context.Context, arg SetConversationActivitySequenceParams) error {
+	_, err := q.db.ExecContext(ctx, setConversationActivitySequence, arg.Sequence, arg.ID, arg.ConversationID)
+	return err
+}
+
 const setConversationMessageDeliveryContent = `-- name: SetConversationMessageDeliveryContent :exec
 UPDATE conversation_messages SET delivery_content_json = ? WHERE id = ?
 `
@@ -4955,6 +5049,22 @@ type SetConversationMessageDeliveryContentParams struct {
 
 func (q *Queries) SetConversationMessageDeliveryContent(ctx context.Context, arg SetConversationMessageDeliveryContentParams) error {
 	_, err := q.db.ExecContext(ctx, setConversationMessageDeliveryContent, arg.DeliveryContentJson, arg.ID)
+	return err
+}
+
+const setConversationMessageSequence = `-- name: SetConversationMessageSequence :exec
+UPDATE conversation_messages SET sequence = ?1
+WHERE id = ?2 AND conversation_id = ?3
+`
+
+type SetConversationMessageSequenceParams struct {
+	Sequence       int64
+	ID             string
+	ConversationID string
+}
+
+func (q *Queries) SetConversationMessageSequence(ctx context.Context, arg SetConversationMessageSequenceParams) error {
+	_, err := q.db.ExecContext(ctx, setConversationMessageSequence, arg.Sequence, arg.ID, arg.ConversationID)
 	return err
 }
 

@@ -348,14 +348,14 @@ func TestTurnHooksSeeTheModelTheTurnStartedWith(t *testing.T) {
 					failureModel = model
 					return nil
 				},
-				servedModel: func(_ context.Context, _, selected string) (string, string) {
+				servedModel: func(_ context.Context, _, selected string, _ time.Time) (string, string) {
 					servedCalled = true
 					servedSelected = selected
 					return "", ""
 				},
 			}
 			if tc.turnModel != "" {
-				conv.turnModelID, conv.turnModel = "turn-1", tc.turnModel
+				conv.turnModelID, conv.turnModel, conv.turnStart = "turn-1", tc.turnModel, time.Now()
 			}
 			conv.finishPrompt("turn-1", acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil)
 			if failureModel != tc.want {

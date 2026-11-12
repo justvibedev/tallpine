@@ -72,6 +72,11 @@ export function buildWorkspaceBlobUrl(sessionId: string, path: string, version: 
 	return `${apiBaseUrl.replace(/\/+$/, "")}/api/v1/sessions/${encodeURIComponent(sessionId)}/workspace/file/blob?${query}`;
 }
 
+/** The streamed (Range-capable) raw file route, for media the blob route's buffering cap would reject. */
+export function buildWorkspaceStreamUrl(sessionId: string, path: string, version: number | string, apiBaseUrl = getApiBaseUrl()): string {
+	return `${apiBaseUrl.replace(/\/+$/, "")}/api/v1/sessions/${encodeURIComponent(sessionId)}/preview/files/${path.split("/").map(encodeURIComponent).join("/")}?raw=true&v=${encodeURIComponent(version)}`;
+}
+
 /** `undefined` for an empty src or an absolute one that should pass through untouched. */
 /**
  * Resolves a markdown image against an artifact directory served from its own

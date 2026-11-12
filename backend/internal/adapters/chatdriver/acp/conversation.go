@@ -179,7 +179,7 @@ type conversation struct {
 	preambleSpent bool
 	// servedModel reports the model that answered a completed turn; nil when the
 	// binding cannot tell. lastServedModel suppresses repeating the same report.
-	servedModel     func(ctx context.Context, sessionID, selectedModel string) (string, string)
+	servedModel     func(ctx context.Context, sessionID, selectedModel string, since time.Time) (string, string)
 	lastServedModel string
 	// validateModel rejects a model the binding knows the agent cannot use;
 	// nil when the binding has no such knowledge.
@@ -189,6 +189,9 @@ type conversation struct {
 	// rejection, the model that answered) are attributed to this value instead.
 	turnModel   string
 	turnModelID string
+	// turnStart is when turn turnModelID began; the served-model lookup ignores
+	// transcript messages older than it.
+	turnStart time.Time
 
 	contextTokens     int64
 	contextWindow     int64

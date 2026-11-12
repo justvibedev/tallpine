@@ -6,7 +6,7 @@ import { useComposerDraftState } from "./useComposerDraftState";
 import { useComposerSuggestions } from "./useComposerSuggestions";
 import { useComposerDraftPersistence } from "./useComposerDraftPersistence";
 import { ChatComposerProps } from "./ComposerProps";
-import { withAttachmentReferences, MAX_NATIVE_IMAGE_BYTES, MAX_NATIVE_IMAGES_BYTES, DEFINITIVE_SEND_REJECTIONS, AGENT_SWITCH_FAILED } from "./composer-model";
+import { withAttachmentReferences, withResizeNotes, MAX_NATIVE_IMAGE_BYTES, MAX_NATIVE_IMAGES_BYTES, DEFINITIVE_SEND_REJECTIONS, AGENT_SWITCH_FAILED } from "./composer-model";
 
 
 export type SubmitEnv = {
@@ -107,7 +107,9 @@ export async function prepareSubmission(env: SubmitEnv, forceSteer: boolean | un
 		return;
 	}
 	const shouldSteer = Boolean(forceSteer && !savingQueuedEdit && contextReferences.length === 0);
-	const message = withAttachmentReferences(body, attachedPaths) || (contextReferences.length > 0 ? `Use the attached ${contextReferences.length} chat excerpt(s) as context` : "");
+	const referenced = withAttachmentReferences(body, attachedPaths);
+	const message = (referenced ? withResizeNotes(referenced, settledAttachments) : "") ||
+		(contextReferences.length > 0 ? `Use the attached ${contextReferences.length} chat excerpt(s) as context` : "");
 	// Ordinary delivery reserves its exact draft before these staged reads await.
 	// Queue editors use their existing owner/revision CAS before mutation.
 	const attachmentScope = queuedDraftScope ?? draftScope;

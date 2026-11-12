@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Repeat2 } from "lucide-react";
+import { Repeat2, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { workspaceQueryKey } from "../hooks/useWorkspaceQuery";
 import { askOrchestratorToHandOff, handoffOrchestratorWithLatestNote } from "../lib/handoff-orchestrator";
@@ -12,7 +12,7 @@ import { DropdownMenuItem } from "./ui/dropdown-menu";
  * The first asks the orchestrator to write its state note and hand off itself;
  * the second hands off now from its newest note. Workers keep running either way.
  */
-export function OrchestratorHandoffMenuItems({ sessionId, hostId, disabled }: { sessionId: string; hostId?: string; disabled?: boolean }) {
+export function OrchestratorHandoffMenuItems({ sessionId, hostId, disabled, onReset }: { sessionId: string; hostId?: string; disabled?: boolean; onReset?: () => void }) {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
@@ -40,6 +40,12 @@ export function OrchestratorHandoffMenuItems({ sessionId, hostId, disabled }: { 
 	};
 	return (
 		<>
+			{onReset ? (
+				<DropdownMenuItem disabled={disabled} onSelect={onReset}>
+					<RotateCcw aria-hidden="true" className="size-icon-lg" />
+					{t("orchestratorHandoff.reset")}
+				</DropdownMenuItem>
+			) : null}
 			<DropdownMenuItem disabled={disabled} onSelect={ask}>
 				<Repeat2 aria-hidden="true" className="size-icon-lg" />
 				{t("orchestratorHandoff.menu")}

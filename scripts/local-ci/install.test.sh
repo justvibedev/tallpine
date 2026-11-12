@@ -5,6 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/local-ci-install.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 fails=0
+export TALLPINE_ALERT_DESKTOP_NOTIFY="" # alerts here must not reach the real desktop
 check() { if ! "$@"; then fails=$((fails + 1)); echo "FAIL: $*"; fi; }
 inst() { TALLPINE_LOCAL_CI_DIR="$tmp/ci" "$here/install" "$@"; }
 
@@ -21,11 +22,10 @@ check test -n "$(ls "$tmp"/ci/loop.sh.bak-* 2>/dev/null)"   # and keeps a backup
 printf '# older\n' >"$tmp/ci/loop.sh"; shasum -a 256 "$tmp/ci/loop.sh" | cut -d' ' -f1 >"$tmp/ci/.loop.sh.installed"
 check inst >/dev/null
 check cmp -s "$here/loop.sh" "$tmp/ci/loop.sh"
-# The installed copy (no repo tree, no work checkout) still reaches the CLI: the lib is installed beside it.
+# The installed copy (no repo tree, no work checkout) still records alerts: the lib is installed beside it.
 check cmp -s "$here/../lib/notify.sh" "$tmp/ci/notify.sh"
-mkdir -p "$tmp/bin"; printf '#!/bin/sh\necho "$@" >>"$CALLS"\n[ "$1 $2" = "orchestrator --help" ] && echo "  notify  Notify"\nexit 0\n' >"$tmp/bin/tallpine"; chmod +x "$tmp/bin/tallpine"
-(export CALLS="$tmp/calls" PATH="$tmp/bin:$PATH" HOME="$tmp/home" TALLPINE_LOCAL_CI_DIR="$tmp/ci" LOOP_SOURCE_ONLY=1
- mkdir -p "$HOME"; cd "$tmp" || exit 1; . "$tmp/ci/loop.sh"; send_to_orchestrator "from installed") >/dev/null 2>&1
-check grep -q -- "--message from installed" "$tmp/calls"
+(export HOME="$tmp/home" TALLPINE_LOCAL_CI_DIR="$tmp/ci" LOOP_SOURCE_ONLY=1
+ mkdir -p "$HOME"; cd "$tmp" || exit 1; . "$tmp/ci/loop.sh"; record_alert "from installed") >/dev/null 2>&1
+check grep -q "	from installed$" "$tmp/ci/results/alerts.tsv"
 [ "$fails" = 0 ] && echo "local-ci install tests: ok"
 exit "$fails"

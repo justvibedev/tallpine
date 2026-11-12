@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findLocalImagePaths, isLocalImagePath, MAX_LOCAL_IMAGE_PATHS } from "./local-image-paths";
+import { findLocalImagePaths, findLocalMediaPaths, isLocalImagePath, isLocalMediaPath, MAX_LOCAL_IMAGE_PATHS } from "./local-image-paths";
 
 const SHOT = "/Users/me/.tallpine/data/artifacts/ranker-6/a-light-editorial.png";
 
@@ -38,5 +38,13 @@ describe("findLocalImagePaths", () => {
 	it("rejects parent traversal", () => {
 		expect(isLocalImagePath("/Users/me/.tallpine/data/artifacts/s/../../secret.png")).toBe(false);
 		expect(findLocalImagePaths("`/a/artifacts/s/../../b.png`")).toEqual([]);
+	});
+});
+
+describe("findLocalMediaPaths", () => {
+	it("finds video and audio paths but not images, URLs or traversal", () => {
+		const text = "Watch `/a/artifacts/s/run.mp4` and [clip](/a/b/c%20d.webm), listen /a/take.WAV; /a/x.png https://x.dev/y.mp4 /a/../b.mp3";
+		expect(findLocalMediaPaths(text)).toEqual(["/a/artifacts/s/run.mp4", "/a/b/c d.webm", "/a/take.WAV"]);
+		expect(isLocalMediaPath("/a/b.png")).toBe(false);
 	});
 });

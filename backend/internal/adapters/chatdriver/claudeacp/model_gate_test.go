@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 
@@ -55,17 +56,40 @@ func TestClaudeServedModelOnlyReportsAliases(t *testing.T) {
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	transcript := `{"type":"assistant","message":{"model":"claude-opus-4-8"}}` + "\n"
+	turnStart := time.Now().Add(-time.Minute)
+	transcript := `{"type":"assistant","timestamp":"` + time.Now().UTC().Format(time.RFC3339Nano) +
+		`","message":{"model":"claude-opus-4-8"}}` + "\n"
 	if err := os.WriteFile(filepath.Join(projectDir, sessionID+".jsonl"), []byte(transcript), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg := acpdriver.LaunchConfig{Env: map[string]string{"CLAUDE_CONFIG_DIR": configDir}}
 
-	served, reason := claudeServedModel(context.Background(), cfg, sessionID, "opus")
+	served, reason := claudeServedModel(context.Background(), cfg, sessionID, "opus", turnStart)
 	if served != "claude-opus-4-8" || !strings.Contains(reason, "opus") {
 		t.Fatalf("served = %q, reason = %q", served, reason)
 	}
-	if served, _ := claudeServedModel(context.Background(), cfg, sessionID, "claude-opus-4-8"); served != "" {
+	if served, _ := claudeServedModel(context.Background(), cfg, sessionID, "claude-opus-4-8", turnStart); served != "" {
 		t.Fatalf("concrete model reported as rerouted to %q", served)
+	}
+}
+
+// A turn that wrote no assistant message (native /clear, a local command) after
+// a switch from Opus to an alias must not report the previous turn's model as
+// what the alias resolves to.
+func TestClaudeServedModelIgnoresMessagesBeforeTheTurn(t *testing.T) {
+	configDir := t.TempDir()
+	sessionID := "8320947f-5806-4579-943f-b23a943bac1f"
+	projectDir := filepath.Join(configDir, "projects", "-work")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	earlier := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)
+	transcript := `{"type":"assistant","timestamp":"` + earlier + `","message":{"model":"claude-opus-5-5"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(projectDir, sessionID+".jsonl"), []byte(transcript), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := acpdriver.LaunchConfig{Env: map[string]string{"CLAUDE_CONFIG_DIR": configDir}}
+	if served, _ := claudeServedModel(context.Background(), cfg, sessionID, "fable", time.Now()); served != "" {
+		t.Fatalf("stale message reported as served model %q", served)
 	}
 }

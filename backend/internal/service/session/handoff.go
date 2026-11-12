@@ -43,10 +43,6 @@ func (s *Service) HandoffOrchestrator(ctx context.Context, id domain.SessionID, 
 		}
 		return domain.Session{}, apierr.Conflict("ORCHESTRATOR_NOT_ACTIVE", "This orchestrator has already ended", nil)
 	}
-	note, err := s.handoffNote(id, notePath)
-	if err != nil {
-		return domain.Session{}, err
-	}
 	project, err := s.requireProject(ctx, old.ProjectID)
 	if err != nil {
 		return domain.Session{}, err
@@ -56,6 +52,19 @@ func (s *Service) HandoffOrchestrator(ctx context.Context, id domain.SessionID, 
 	if project.Config.Orchestrator.Harness == "" {
 		return domain.Session{}, apierr.Conflict("ORCHESTRATOR_AGENT_NOT_CONFIGURED",
 			"This project has no orchestrator agent configured; set one in the project settings before handing off", nil)
+	}
+	if strings.TrimSpace(notePath) == "" && !agentRunning(old) && newestNote(sessionartifacts.Dir(s.dataDir, id)) == "" {
+		// Nobody can write the note: asking a stopped agent fails, and one whose
+		// saved conversation is gone never comes back to read it (B673). Seed
+		// the successor from the daemon's bootstrap note instead, as the idle
+		// handoff does.
+		if notePath, err = s.writeAutoHandoffNote(id); err != nil {
+			return domain.Session{}, err
+		}
+	}
+	note, err := s.handoffNote(id, notePath)
+	if err != nil {
+		return domain.Session{}, err
 	}
 	// The successor takes the old orchestrator's lane as recorded, without
 	// ResolveLane: that refuses a closed lane item, and a handoff for a lane
@@ -81,6 +90,13 @@ func (s *Service) HandoffOrchestrator(ctx context.Context, id domain.SessionID, 
 	}
 	s.handoffSuccessors[id] = sess.ID
 	return sess, nil
+}
+
+// agentRunning reports an orchestrator that can be asked to write its own state
+// note. A hibernated one counts: a send wakes it, and one whose wake fails is
+// left exited.
+func agentRunning(rec domain.SessionRecord) bool {
+	return rec.Activity.State != domain.ActivityExited
 }
 
 // handoffNote returns the cleaned absolute path of an existing regular file
