@@ -20,7 +20,7 @@ is passed.
 Exit code 0 means every check passed.
 
 .EXAMPLE
-pwsh scripts/windows/smoke.ps1 -Installer "frontend\out\windows-beta\Tallpine Setup 0.13.14-beta.1.exe"
+pwsh scripts/windows/smoke.ps1 -Installer "frontend\out\windows-beta\Tallpine-Setup-0.13.14-beta.1-win-x64-unsigned.exe"
 #>
 #Requires -Version 7
 [CmdletBinding()]

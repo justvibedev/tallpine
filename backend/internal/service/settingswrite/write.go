@@ -344,7 +344,7 @@ func (w *Writer) applyApp(ctx context.Context, plan []planned) error {
 			if err := w.setDynamicContext(ctx, raw); err != nil {
 				return err
 			}
-		case "app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel":
+		case "app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort", "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort":
 			if err := w.setWorkflowDefault(ctx, p.def.Key, raw, plan); err != nil {
 				return err
 			}

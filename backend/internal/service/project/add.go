@@ -129,6 +129,7 @@ func (m *Service) Add(ctx context.Context, in AddInput) (Project, error) {
 		}
 		projectConfig = *in.Config
 	}
+	projectConfig = m.withNewProjectRoleDefaults(ctx, projectConfig)
 
 	registeredAt := time.Now()
 	row := domain.ProjectRecord{
@@ -167,12 +168,13 @@ func (m *Service) Add(ctx context.Context, in AddInput) (Project, error) {
 		isRepo    bool
 		hasCommit bool
 		originURL string
+		repoErr   error
 	)
 	var probes sync.WaitGroup
 	probes.Add(3)
 	go func() {
 		defer probes.Done()
-		isRepo = isGitRepo(path)
+		isRepo, repoErr = probeGitRepo(path)
 	}()
 	go func() {
 		defer probes.Done()
@@ -184,7 +186,10 @@ func (m *Service) Add(ctx context.Context, in AddInput) (Project, error) {
 	}()
 	probes.Wait()
 	if !isRepo {
-		return Project{}, apierr.Invalid("NOT_A_GIT_REPO", "Tallpine needs a Git repository with an initial commit before it can create agent workspaces.", nil)
+		if repoErr != nil {
+			m.logger.Warn("project: git rejected repository", "path", path, "error", repoErr)
+		}
+		return Project{}, notAGitRepoError(path, repoErr)
 	}
 	if !hasCommit {
 		return Project{}, apierr.Invalid("PROJECT_UNBORN", "Tallpine needs a Git repository with an initial commit before it can create agent workspaces.", map[string]any{

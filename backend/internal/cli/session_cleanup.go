@@ -151,6 +151,9 @@ func confirmSessionCleanup(cmd *cobra.Command, count int, project string) (bool,
 
 // confirmTyped prints prompt and reports whether the user typed "yes".
 func confirmTyped(cmd *cobra.Command, prompt string) (bool, error) {
+	if err := requireInteractiveStdin(cmd); err != nil {
+		return false, err
+	}
 	if _, err := fmt.Fprint(cmd.OutOrStdout(), prompt); err != nil {
 		return false, err
 	}

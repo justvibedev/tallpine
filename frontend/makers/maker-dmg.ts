@@ -99,6 +99,8 @@ export default class MakerDMG extends MakerBase<MakerDMGConfig> {
 						// with notarization requirements." The dmg container is sealed
 						// afterwards by sealDmg() in forge.config.ts's postMake hook.
 						sign: false,
+						// Release asset scheme: Tallpine-<ver>-mac-<arch>.dmg.
+						artifactName: "${productName}-${version}-mac-${arch}.${ext}",
 						// dmg-builder defaults writeUpdateInfo ON: DmgTarget.build does
 						// `this.options.writeUpdateInfo === false ? null : createBlockmap(...)`.
 						// Two reasons that is wrong for us. It contradicts the permanent

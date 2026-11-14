@@ -12,7 +12,6 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/gitdefault"
 	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
-	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 type repositorySetupTarget int
@@ -263,10 +262,6 @@ func samePath(a, b string) bool {
 }
 
 func isGitRepo(path string) bool {
-	out, err := ports.DefaultGit().TopLevel(context.Background(), path)
-	if err != nil {
-		return false
-	}
-	top := normalizeGitReportedPath(path, out)
-	return samePath(top, comparablePath(path))
+	ok, _ := probeGitRepo(path)
+	return ok
 }

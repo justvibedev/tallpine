@@ -49,6 +49,18 @@ func appSettings() []Setting {
 			Description: "Reviewer harness for every project that sets no reviewer of its own. Empty keeps each project's worker-derived reviewer.", Writers: user},
 		{Key: "app.workflowDefaults.reviewerModel", Scope: ScopeApp, Kind: KindString, Default: jsonOf(""),
 			Description: "Reviewer model paired with the default reviewer harness; empty uses the harness's default model.", Writers: user},
+		{Key: "app.workflowDefaults.workerAgent", Scope: ScopeApp, Kind: KindString, Default: jsonOf(string(domain.BuiltinWorkerAgent)), Validate: validateAgentHarness,
+			Description: "Worker agent a NEW project starts with when its creator sets none. Applied once at creation; existing projects are untouched. Defaults to Claude Code when it is installed and signed in; set empty to keep the harness default.", Writers: user},
+		{Key: "app.workflowDefaults.workerModel", Scope: ScopeApp, Kind: KindString, Default: jsonOf(domain.BuiltinWorkerModel),
+			Description: "Worker model paired with the default worker agent for new projects; empty uses the agent's default model. Built-in default pairs with the built-in agent.", Writers: user},
+		{Key: "app.workflowDefaults.workerEffort", Scope: ScopeApp, Kind: KindString, Default: jsonOf(domain.BuiltinRoleEffort), Validate: validateEffort,
+			Description: "Worker reasoning effort paired with the default worker agent for new projects; empty uses the model's default.", Writers: user},
+		{Key: "app.workflowDefaults.orchestratorAgent", Scope: ScopeApp, Kind: KindString, Default: jsonOf(string(domain.BuiltinOrchestratorAgent)), Validate: validateAgentHarness,
+			Description: "Orchestrator agent a NEW project starts with when its creator sets none. Applied once at creation; existing projects are untouched. Defaults to Claude Code when it is installed and signed in; set empty to keep the harness default.", Writers: user},
+		{Key: "app.workflowDefaults.orchestratorModel", Scope: ScopeApp, Kind: KindString, Default: jsonOf(domain.BuiltinOrchestratorModel),
+			Description: "Orchestrator model paired with the default orchestrator agent for new projects; empty uses the agent's default model. Built-in default pairs with the built-in agent.", Writers: user},
+		{Key: "app.workflowDefaults.orchestratorEffort", Scope: ScopeApp, Kind: KindString, Default: jsonOf(domain.BuiltinRoleEffort), Validate: validateEffort,
+			Description: "Orchestrator reasoning effort paired with the default orchestrator agent for new projects; empty uses the model's default.", Writers: user},
 		{Key: "app.storageCompaction", Scope: ScopeApp, Kind: KindBool, Default: jsonOf(true),
 			Description: "Compact activity writes and expire the provider-event archive.", Writers: user},
 		{Key: "app.providerEventRetentionDays", Scope: ScopeApp, Kind: KindInt, Default: jsonOf(settingssvc.DefaultProviderEventRetentionDays),
@@ -64,6 +76,24 @@ func validateReviewerHarness(raw json.RawMessage) error {
 	var h domain.ReviewerHarness
 	if err := json.Unmarshal(raw, &h); err != nil || (h != "" && !h.IsKnown()) {
 		return errors.New("must be empty or a supported reviewer harness")
+	}
+	return nil
+}
+
+// validateAgentHarness accepts empty or a supported agent harness.
+func validateAgentHarness(raw json.RawMessage) error {
+	var h domain.AgentHarness
+	if err := json.Unmarshal(raw, &h); err != nil || (h != "" && !h.IsKnown()) {
+		return errors.New("must be empty or a supported agent harness")
+	}
+	return nil
+}
+
+// validateEffort accepts empty or a known effort level.
+func validateEffort(raw json.RawMessage) error {
+	var e string
+	if err := json.Unmarshal(raw, &e); err != nil || (e != "" && !domain.ValidEffort(e)) {
+		return errors.New("must be empty or a known effort level")
 	}
 	return nil
 }

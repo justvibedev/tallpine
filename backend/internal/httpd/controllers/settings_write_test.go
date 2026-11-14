@@ -16,6 +16,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/policytest"
 	"tallpine.eu/tallpine/backend/internal/agentpolicy/rules"
 	"tallpine.eu/tallpine/backend/internal/config"
+	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd"
 	"tallpine.eu/tallpine/backend/internal/httpd/controllers"
 	"tallpine.eu/tallpine/backend/internal/httpd/requestscope"
@@ -68,7 +69,7 @@ func newWriteServer(t *testing.T, managedJSON string, env map[string]string) wri
 		t.Fatal(err)
 	}
 	audit := settingsaudit.New(store, log)
-	projects := projectsvc.New(store)
+	projects := projectsvc.NewWithDeps(projectsvc.Deps{Store: store, AgentNotReady: func(context.Context, domain.AgentHarness) bool { return true }})
 	projects.SetSettingsAudit(audit)
 	app := settingssvc.New(newMemSettings(), nil, settingssvc.Offering{}, nil)
 	cleanup := &auditCleanup{policy: cleanupsvc.DefaultPolicy()}

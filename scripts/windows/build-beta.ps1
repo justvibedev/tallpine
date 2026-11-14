@@ -17,7 +17,7 @@ It never creates the repository: the owner creates it first.
 .EXAMPLE
 pwsh scripts/windows/build-beta.ps1 -Build 1
 pwsh scripts/windows/build-beta.ps1 -Build 2 -Publish
-pwsh scripts/windows/build-beta.ps1 -Build 2 -Publish -Installer "frontend\out\windows-beta\Tallpine Setup 0.13.14-beta.2.exe"
+pwsh scripts/windows/build-beta.ps1 -Build 2 -Publish -Installer "frontend\out\windows-beta\Tallpine-Setup-0.13.14-beta.2-win-x64-unsigned.exe"
 #>
 #Requires -Version 7
 [CmdletBinding()]
@@ -35,7 +35,7 @@ param(
 	# Build from a checkout with uncommitted changes (the build is marked dirty).
 	[switch]$AllowDirty,
 	# With -Publish: skip the build and publish this already built (and smoked)
-	# installer. It must be the "Tallpine Setup <version>-beta.<Build>.exe" of this checkout.
+	# installer. It must be the "Tallpine-Setup-<version>-beta.<Build>-win-x64-unsigned.exe" of this checkout.
 	[string]$Installer
 )
 
@@ -78,7 +78,7 @@ if ($Publish) {
 	if ($LASTEXITCODE -eq 0) { throw "$Repo already has release $tag; pass a higher -Build." }
 }
 
-$installerName = "Tallpine Setup $version.exe"
+$installerName = "Tallpine-Setup-$version-win-x64-unsigned.exe"
 if ($Installer) {
 	# Publish the exact installer that was smoked instead of building a new one.
 	if (-not $Publish) { throw "-Installer only publishes an existing build; add -Publish." }
@@ -87,7 +87,7 @@ if ($Installer) {
 } else {
 	Write-Host "Building Tallpine $version (commit $commit, dirty=$($dirty.ToString().ToLower()))"
 	$originalPackageJson = [System.IO.File]::ReadAllBytes($packageJson)
-	$envNames = @("TALLPINE_BUILD_VERSION", "TALLPINE_BUILD_COMMIT", "TALLPINE_BUILD_DIRTY")
+	$envNames = @("TALLPINE_BUILD_VERSION", "TALLPINE_BUILD_COMMIT", "TALLPINE_BUILD_DIRTY", "GOOS", "GOARCH", "npm_config_arch", "npm_config_platform", "npm_config_target_arch")
 	$savedEnv = @{}
 	foreach ($name in $envNames) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name) }
 	Push-Location $frontend
@@ -99,6 +99,14 @@ if ($Installer) {
 		$env:TALLPINE_BUILD_VERSION = $version
 		$env:TALLPINE_BUILD_COMMIT = $commit
 		$env:TALLPINE_BUILD_DIRTY = $dirty.ToString().ToLower()
+		# Force x64 for every toolchain instead of trusting the host: on Windows on
+		# ARM an ARM64 Go would build an ARM64 daemon, and npm would fetch ARM64
+		# native-module prebuilds (better-sqlite3), even though electron-forge gets --arch x64.
+		$env:GOOS = "windows"
+		$env:GOARCH = "amd64"
+		$env:npm_config_arch = "x64"
+		$env:npm_config_target_arch = "x64"
+		$env:npm_config_platform = "win32"
 		if (-not $SkipNpmCi) { Invoke-Native npm @("ci", "--no-audit", "--no-fund") }
 		Invoke-Native npm @("run", "make", "--", "--platform", "win32", "--arch", "x64")
 	} finally {

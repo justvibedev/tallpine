@@ -53,6 +53,9 @@ var (
 	// ErrMissingHarness means neither the spawn request nor the project's role
 	// config selected an agent. Worker/orchestrator spawns must be explicit.
 	ErrMissingHarness = errors.New("session: agent harness required")
+	// ErrAgentNotReady means the agent chosen by project config is not
+	// installed or not signed in, so the spawn cannot launch.
+	ErrAgentNotReady = errors.New("session: configured agent is not ready")
 	// ErrArtifactOutputUnavailable rejects an artifact-output spawn when the
 	// daemon has no data dir to hold the session's artifact directory.
 	ErrArtifactOutputUnavailable = errors.New("session: artifact output requires an artifact directory")

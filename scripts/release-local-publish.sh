@@ -32,7 +32,7 @@ publish_tag_free() {
 }
 
 cmd_publish() {
-  local app="${1:-}" version tag team frontend assets zip dmg seal_identity prerelease=()
+  local app="${1:-}" version tag team frontend assets zip dmg arch seal_identity prerelease=()
   [[ -n "${app}" && -d "${app}" ]] || die "usage: release-local publish <app> [--publish-github]"
   app="$(cd "${app}" && pwd -P)"
   [[ "$(plist_get "${app}" CFBundleIdentifier)" == "${bundle_id}" ]] || die "${app} is not a ${product_name} build (bundle id)"
@@ -78,14 +78,20 @@ cmd_publish() {
   dmg="$(find "${frontend}/out/make" -name "*.dmg" | head -n 1)"
   [[ -n "${zip}" && -n "${dmg}" ]] || die "make produced no zip/dmg under ${frontend}/out/make"
   assets="$(mktemp -d "${TMPDIR:-/tmp}/tallpine-publish.XXXXXX")"
-  cp "${zip}" "${dmg}" "${assets}/"
+  # One scheme for every asset: ${product_name}-<ver>-mac-<arch>.<ext>. Forge names the zip
+  # <Product>-darwin-<arch>-<ver>.zip; latest-mac.yml is generated from the renamed copy below,
+  # so its url, sha512, size and blockmap all describe the published name.
+  arch="${zip##*darwin-}"; arch="${arch%%-*}"
+  [[ -n "${arch}" && "${arch}" != "${zip}" ]] || die "cannot read the architecture from ${zip}"
+  cp "${zip}" "${assets}/${product_name}-${version}-mac-${arch}.zip"
+  cp "${dmg}" "${assets}/${product_name}-${version}-mac-${arch}.dmg"
   (cd "${frontend}" && node scripts/feed.mjs "${assets}" "${version}")
   # Admin assets for Jamf: the PPPC/login-items profile from this signed build and the custom schema.
   [[ -f "${frontend}/src/shared/jamf-schema.json" ]] || die "missing ${frontend}/src/shared/jamf-schema.json"
   cp "${frontend}/src/shared/jamf-schema.json" "${assets}/tallpine-jamf-schema.json"
   opt_out="${assets}/${product_name}-PPPC.mobileconfig" cmd_pppc "${app}"
   say "Building the signed, notarized .pkg..."
-  build_pkg "${app}" "${version}" "${assets}/${product_name}-${version}.pkg"
+  build_pkg "${app}" "${version}" "${assets}/${product_name}-${version}-mac-${arch}.pkg"
   say "Creating release ${tag} on ${publish_repo}:"
   ls -1 "${assets}"
   gh_cmd release create "${tag}" -R "${publish_repo}" --title "${product_name} ${version}" --generate-notes ${prerelease[@]+"${prerelease[@]}"} "${assets}"/*

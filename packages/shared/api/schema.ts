@@ -7430,6 +7430,12 @@ export interface components {
         ControllersUpdateWorkflowDefaultsRequest: {
             /** @description Auto-review for projects that set none of their own. */
             autoReview?: null | boolean;
+            /** @description Orchestrator agent a new project starts with; empty clears it and its model and effort. */
+            orchestratorAgent?: null | string;
+            /** @description Orchestrator reasoning effort a new project starts with, paired with orchestratorAgent. */
+            orchestratorEffort?: null | string;
+            /** @description Orchestrator model a new project starts with, paired with orchestratorAgent. */
+            orchestratorModel?: null | string;
             /** @description Plan auto-approval for projects that set none of their own. */
             planAutoApprove?: null | boolean;
             /** @description Planning mode (auto, always or off) for projects that set none of their own. */
@@ -7438,13 +7444,25 @@ export interface components {
             reviewerHarness?: null | string;
             /** @description Default reviewer model paired with the default reviewer harness. */
             reviewerModel?: null | string;
+            /** @description Worker agent a new project starts with; empty clears it and its model and effort. */
+            workerAgent?: null | string;
+            /** @description Worker reasoning effort a new project starts with, paired with workerAgent. */
+            workerEffort?: null | string;
+            /** @description Worker model a new project starts with, paired with workerAgent. */
+            workerModel?: null | string;
         };
         ControllersWorkflowDefaultsResponse: {
             autoReview: boolean;
+            orchestratorAgent?: string;
+            orchestratorEffort?: string;
+            orchestratorModel?: string;
             planAutoApprove: boolean;
             planningMode: string;
             reviewerHarness?: string;
             reviewerModel?: string;
+            workerAgent?: string;
+            workerEffort?: string;
+            workerModel?: string;
         };
         ConversationAccountPayload: {
             authFailureId?: string;

@@ -80,6 +80,11 @@ func (m *Manager) spawnResolveHarness(ctx context.Context, st *spawnState) *spaw
 	if cfg.Harness == "" {
 		return spawnFail(fmt.Errorf("spawn: %w: configure project %s.agent or pass --harness", ErrMissingHarness, roleConfigName(cfg.Kind)))
 	}
+	if configuredHarness {
+		if err := m.requireConfiguredAgentReady(ctx, cfg.ProjectID, cfg.Kind, cfg.Harness); err != nil {
+			return spawnFail(fmt.Errorf("spawn: %w", err))
+		}
+	}
 	releaseHarness, err := m.beginHarnessUse(cfg.Harness)
 	if err != nil {
 		return spawnFail(fmt.Errorf("spawn: %w", err))
@@ -197,4 +202,29 @@ func (m *Manager) spawnResolveModelAndMode(ctx context.Context, st *spawnState) 
 	st.adapterConfig = adapterConfig
 	st.mode = mode
 	return nil
+}
+
+// requireConfiguredAgentReady rejects a spawn whose agent came from project
+// config (no explicit --agent) when that agent is not installed, naming the fix
+// instead of failing later inside the launch. Unknown or errored readiness
+// never blocks.
+func (m *Manager) requireConfiguredAgentReady(ctx context.Context, project domain.ProjectID, kind domain.SessionKind, harness domain.AgentHarness) error {
+	if m.agentReadiness == nil {
+		return nil
+	}
+	snap, err := m.agentReadiness.EnsureAgentReadiness(ctx, string(harness), domain.AgentReadinessPurposeLaunch)
+	if err != nil {
+		return nil //nolint:nilerr // a failed readiness probe must not block a launch
+	}
+	// Only a definite not-installed result blocks. Sign-in state is left to the
+	// launch: a saved agent account can run without the computer's own login.
+	if snap.Installation.State != domain.AgentInstallationNotInstalled {
+		return nil
+	}
+	hint := ""
+	if ready := m.readyAgents(); len(ready) > 0 {
+		hint = fmt.Sprintf(" Ready agents: %s.", strings.Join(ready, ", "))
+	}
+	return fmt.Errorf("%w: project %s's %s agent %q is not installed.%s Pass --agent <id> or change the project's %s agent in Settings",
+		ErrAgentNotReady, project, roleConfigName(kind), harness, hint, roleConfigName(kind))
 }

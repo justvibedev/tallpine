@@ -278,6 +278,12 @@ describe("normalizeApiOperation", () => {
 });
 
 describe("apiErrorMessage", () => {
+	it("appends details.suggestedFix to the message", () => {
+		expect(apiErrorMessage({ code: "NOT_A_GIT_REPO", message: "Git refused.", details: { suggestedFix: "Run git config." } })).toBe(
+			"Git refused. Run git config.",
+		);
+	});
+
 	it("shows the human daemon message without technical error codes", () => {
 		expect(apiErrorMessage({ code: "AGENT_BINARY_NOT_FOUND", message: "agent binary not found on PATH" })).toBe(
 			"agent binary not found on PATH",

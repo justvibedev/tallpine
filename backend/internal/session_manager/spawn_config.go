@@ -67,7 +67,27 @@ func (m *Manager) resolveChatAgentConfig(ctx context.Context, decision agentpoli
 	return m.resolveAgentConfigFor(ctx, decision, cfg, project, true)
 }
 
+// resolveAgentConfigFor validates the launch config. A built-in role default
+// model (domain.Builtin*Model) is only a preference: when the catalog cannot
+// confirm it the launch retries without it, so the agent runs its own default
+// model instead of the spawn failing. A model the spawn request or the owner
+// set elsewhere keeps the strict behavior.
 func (m *Manager) resolveAgentConfigFor(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig, chat bool) (ports.AgentConfig, error) {
+	resolved, err := m.resolveAgentConfigStrict(ctx, decision, cfg, project, chat)
+	if err == nil || ctx.Err() != nil || cfg.Harness != domain.HarnessClaudeCode || cfg.AgentConfig.Model != "" ||
+		(!errors.Is(err, ports.ErrModelCapabilitiesUnavailable) && !errors.Is(err, ErrUnsupportedModel)) {
+		return resolved, err
+	}
+	stripped, changed := project.WithoutBuiltinRoleModels()
+	if !changed {
+		return resolved, err
+	}
+	m.logger.Warn("spawn: built-in default model could not be confirmed; using the agent's own default model",
+		"harness", cfg.Harness, "error", err)
+	return m.resolveAgentConfigStrict(ctx, decision, cfg, stripped, chat)
+}
+
+func (m *Manager) resolveAgentConfigStrict(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig, chat bool) (ports.AgentConfig, error) {
 	base := effectiveAgentConfigFor(cfg.Harness, cfg.Kind, cfg.Role, project)
 	requested := cfg.AgentConfig
 	resolved := applySpawnAgentConfigUnder(decision, cfg.Harness, base, requested)

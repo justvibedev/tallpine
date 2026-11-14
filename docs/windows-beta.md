@@ -10,7 +10,7 @@ not change.
 | Area | Windows beta |
 | --- | --- |
 | Architecture | x64 only. |
-| Installer | Per-user NSIS installer (`Tallpine Setup <version>.exe`), unsigned. |
+| Installer | Per-user NSIS installer (`Tallpine-Setup-<version>-win-x64-unsigned.exe`), unsigned. |
 | Updates | No in-app updater. Settings > Updates shows the running version and a **Download the latest Windows installer** link to the releases page. Install the new build over the old one. |
 | Terminal runtime | ConPTY (no tmux). |
 | Security mode | Not available. The Protected choice and the project **On** option are disabled, and the daemon refuses to turn it on. |
@@ -45,10 +45,10 @@ Known limitation: the Codex account store requires its private directories to be
 
 ## Install
 
-1. Download `Tallpine Setup <version>.exe` from the
+1. Download `Tallpine-Setup-<version>-win-x64-unsigned.exe` from the
    [releases page](https://github.com/justvibedev/tallpine-releases/releases).
 2. Optional: check the download against the `.sha256` file next to it:
-   `(Get-FileHash -Algorithm SHA256 '.\Tallpine Setup <version>.exe').Hash`
+   `(Get-FileHash -Algorithm SHA256 '.\Tallpine-Setup-<version>-win-x64-unsigned.exe').Hash`
 3. Run the installer. Windows SmartScreen shows **Windows protected your PC**
    because the installer is not signed. Choose **More info**, then
    **Run anyway**. If your browser blocks the download, keep it from the
@@ -64,8 +64,8 @@ uninstall first):
 
 ```powershell
 pwsh scripts/windows/build-beta.ps1 -Build 1
-pwsh scripts/windows/smoke.ps1 -Installer "frontend\out\windows-beta\Tallpine Setup <version>-beta.1.exe"
-pwsh scripts/windows/build-beta.ps1 -Build 1 -Publish -Installer "frontend\out\windows-beta\Tallpine Setup <version>-beta.1.exe"
+pwsh scripts/windows/smoke.ps1 -Installer "frontend\out\windows-beta\Tallpine-Setup-<version>-beta.1-win-x64-unsigned.exe"
+pwsh scripts/windows/build-beta.ps1 -Build 1 -Publish -Installer "frontend\out\windows-beta\Tallpine-Setup-<version>-beta.1-win-x64-unsigned.exe"
 ```
 
 - The version is `<frontend/package.json version>-beta.<Build>`. Use a new

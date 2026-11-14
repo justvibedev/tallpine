@@ -108,7 +108,7 @@ func (e env) environ(portOverride string) []string {
 		port = portOverride
 	}
 	// No TALLPINE_LOOPBACK_TCP: the suite runs against the default socket-only daemon (B176/B182).
-	return append(out, "TALLPINE_RUN_FILE="+e.runFile, "TALLPINE_DATA_DIR="+e.dataDir, "TALLPINE_PORT="+port, "GH_CONFIG_DIR="+filepath.Join(e.dataDir, "gh-config"), "TALLPINE_TELEMETRY_REMOTE=off")
+	return append(out, "TALLPINE_RUN_FILE="+e.runFile, "TALLPINE_DATA_DIR="+e.dataDir, "TALLPINE_PORT="+port, "GH_CONFIG_DIR="+filepath.Join(e.dataDir, "gh-config"), "TALLPINE_TELEMETRY_REMOTE=off", "TALLPINE_NO_BUILTIN_ROLE_DEFAULTS=1")
 }
 
 // authorize attaches the daemon's per-install loopback token, read from the

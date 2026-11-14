@@ -19,7 +19,8 @@ const standaloneSessionIDPrefix = "standalone"
 // with it through ON DELETE CASCADE. Callers decide whether the session's
 // workspace is released first; this only refuses live sessions and, with
 // domain.ErrSessionHistoryShared, shared conversation history, all in one
-// transaction so a concurrent restore cannot slip between the checks and the
+// transaction (conversations of an archived project no longer count as shared,
+// since nothing can read them again) so a concurrent restore cannot slip between the checks and the
 // delete.
 //
 // The session's number is recorded in session_num_floors so the next spawn
@@ -56,10 +57,12 @@ SELECT EXISTS (
     JOIN conversations c ON c.id = t.conversation_id
     WHERE t.handled_by_session_id = ?1
       AND (c.session_id IS NULL OR c.session_id <> ?1)
+      AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = c.project_id AND p.archived_at IS NOT NULL)
 ) OR EXISTS (
     SELECT 1 FROM conversations
     WHERE current_session_id = ?1
       AND (session_id IS NULL OR session_id <> ?1)
+      AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = conversations.project_id AND p.archived_at IS NOT NULL)
 )`, id).Scan(&shared); err != nil {
 		return false, fmt.Errorf("delete session %s: check shared history: %w", id, err)
 	}

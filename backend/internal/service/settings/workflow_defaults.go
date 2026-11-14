@@ -23,6 +23,14 @@ type WorkflowDefaultsUpdate struct {
 	// empty harness clears it (and its model).
 	ReviewerHarness *domain.ReviewerHarness
 	ReviewerModel   *string
+	// Worker* and Orchestrator* set the agent, model and effort a new project
+	// starts with for that role; an empty agent clears its model and effort.
+	WorkerAgent        *domain.AgentHarness
+	WorkerModel        *string
+	WorkerEffort       *string
+	OrchestratorAgent  *domain.AgentHarness
+	OrchestratorModel  *string
+	OrchestratorEffort *string
 }
 
 // WorkflowDefaults reports the app-wide workflow defaults. An unreadable store
@@ -70,8 +78,36 @@ func (s *Service) SetWorkflowDefaults(ctx context.Context, update WorkflowDefaul
 	if next.ReviewerHarness == "" {
 		next.ReviewerModel = ""
 	}
+	applyRoleDefault(&next.WorkerAgent, &next.WorkerModel, &next.WorkerEffort, update.WorkerAgent, update.WorkerModel, update.WorkerEffort)
+	applyRoleDefault(&next.OrchestratorAgent, &next.OrchestratorModel, &next.OrchestratorEffort, update.OrchestratorAgent, update.OrchestratorModel, update.OrchestratorEffort)
 	if err := st.SetWorkflowDefaults(ctx, next.Normalized(), s.now()); err != nil {
 		return Snapshot{}, err
 	}
 	return s.Get(ctx)
+}
+
+// applyRoleDefault merges one role's update. Like the reviewer, a model and
+// effort belong to their agent: a changed agent drops the old ones unless the
+// same update names new ones, and an empty agent clears both.
+func applyRoleDefault(agent *domain.AgentHarness, model, effort *string, ua *domain.AgentHarness, um, ue *string) {
+	if ua != nil {
+		if *ua != *agent {
+			if um == nil {
+				*model = ""
+			}
+			if ue == nil {
+				*effort = ""
+			}
+		}
+		*agent = *ua
+	}
+	if um != nil {
+		*model = *um
+	}
+	if ue != nil {
+		*effort = *ue
+	}
+	if *agent == "" {
+		*model, *effort = "", ""
+	}
 }

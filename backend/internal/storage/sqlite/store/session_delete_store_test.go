@@ -63,3 +63,24 @@ func TestDeleteTerminatedSessionRefusesSharedHistory(t *testing.T) {
 		t.Fatalf("err = %v, want ErrSessionHistoryShared", err)
 	}
 }
+
+// B728: once the conversation's project is archived nothing can read the shared
+// history again, so a removed project's sessions can be deleted.
+func TestDeleteTerminatedSessionAllowsSharedHistoryOfArchivedProject(t *testing.T) {
+	s, session, conversation := seededChatConversation(t)
+	ctx := context.Background()
+	other, err := s.CreateSession(ctx, sampleRecord(string(session.ProjectID)))
+	mustNoError(t, err)
+	seedTurn(t, s, conversation.ID, other.ID, "turn-other", "hello", time.Now().UTC())
+	other.IsTerminated = true
+	mustNoError(t, s.UpdateSession(ctx, other))
+	if _, err := s.DeleteTerminatedSession(ctx, other.ID); !errors.Is(err, domain.ErrSessionHistoryShared) {
+		t.Fatalf("live project: err = %v, want ErrSessionHistoryShared", err)
+	}
+	if ok, err := s.ArchiveProject(ctx, string(session.ProjectID), time.Now().UTC()); err != nil || !ok {
+		t.Fatalf("archive: ok=%v err=%v", ok, err)
+	}
+	if ok, err := s.DeleteTerminatedSession(ctx, other.ID); err != nil || !ok {
+		t.Fatalf("archived project: ok=%v err=%v, want deleted", ok, err)
+	}
+}

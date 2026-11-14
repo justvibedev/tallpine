@@ -176,6 +176,7 @@ var sessionErrorRules = []sessionErrorRule{
 	{sessionmanager.ErrUnknownHarness, kindInvalid, "UNKNOWN_HARNESS", "", nil},
 	{sessionmanager.ErrUnsupportedHarness, kindConflict, "HARNESS_UNSUPPORTED", "", nil},
 	{sessionmanager.ErrMissingHarness, kindInvalid, "AGENT_REQUIRED", "", nil},
+	{sessionmanager.ErrAgentNotReady, kindInvalid, "AGENT_NOT_READY", "", nil},
 	{sessionmanager.ErrArtifactOutputUnavailable, kindInvalid, "ARTIFACT_OUTPUT_UNAVAILABLE", "Artifact output needs a daemon data directory to hold the session's artifacts", nil},
 	{sessionmanager.ErrHarnessInstallActive, kindConflict, "HARNESS_INSTALL_ACTIVE", "The selected harness is currently being installed", nil},
 	{sessionmanager.ErrUnsupportedModel, kindInvalid, "UNSUPPORTED_MODEL", "", nil},

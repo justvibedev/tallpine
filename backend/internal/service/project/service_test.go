@@ -37,7 +37,7 @@ func newManager(t *testing.T) project.Manager {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	return project.New(store)
+	return newManagerWithoutClaude(store)
 }
 
 type failingProjectUpsertStore struct {

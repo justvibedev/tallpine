@@ -420,7 +420,7 @@ plus a `com.apple.servicemanagement` Team ID rule) from the signed app's
 `codesign` designated requirements. It refuses ad hoc, unsigned and Team-ID-less
 builds, and the Team ID is never committed. `publish --publish-github` attaches
 the profile as `Tallpine-PPPC.mobileconfig` and the generated Jamf Custom Schema
-as `tallpine-jamf-schema.json`. It also builds `Tallpine-<version>.pkg`
+as `tallpine-jamf-schema.json`. It also builds `Tallpine-<version>-mac-arm64.pkg`
 (`release-local.d/pkg.sh`: `pkgbuild` component package installing to
 `/Applications`, no scripts, `productsign` with `TALLPINE_INSTALLER_IDENTITY`,
 notarized and stapled via `notarize_artifact`, verified with `pkgutil`); publish

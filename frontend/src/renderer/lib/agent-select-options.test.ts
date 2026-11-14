@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "../../api/schema";
-import { buildRankedAgentOptions, defaultAuthorizedAgentForRole, isLaunchableAgent, type RoleSession } from "./agent-select-options";
+import { buildRankedAgentOptions, defaultAuthorizedAgentForRole, isLaunchableAgent, preferredRoleAgent, type RoleSession } from "./agent-select-options";
 
 type Agent = components["schemas"]["AgentReadinessSnapshot"];
 
@@ -249,5 +249,25 @@ describe("defaultAuthorizedAgentForRole", () => {
 	it("stays usable when Claude Code is unavailable", () => {
 		expect(defaultAuthorizedAgentForRole([agent("codex")], [], "worker")).toBe("codex");
 		expect(defaultAuthorizedAgentForRole([], [], "worker")).toBe("");
+	});
+});
+
+describe("preferredRoleAgent", () => {
+	const agents = [agent("claude-code"), agent("codex")];
+	const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+	const history: RoleSession[] = [{ id: "s1", provider: "codex", kind: "worker", createdAt: recent } as RoleSession];
+
+	it("preselects the app default when this computer can launch it, over history", () => {
+		expect(preferredRoleAgent("claude-code", agents, history, "worker")).toBe("claude-code");
+	});
+
+	it("falls back to the history pick when the app default is not authorized here", () => {
+		expect(preferredRoleAgent("kiro", agents, history, "worker")).toBe(defaultAuthorizedAgentForRole(agents, history, "worker"));
+		expect(preferredRoleAgent("kiro", agents, history, "worker")).toBe("codex");
+	});
+
+	it("uses the history pick when no app default is set", () => {
+		expect(preferredRoleAgent(undefined, agents, history, "worker")).toBe("codex");
+		expect(preferredRoleAgent("", agents, history, "worker")).toBe("codex");
 	});
 });

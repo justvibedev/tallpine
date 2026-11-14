@@ -199,8 +199,7 @@ func (s *Store) WorkflowDefaults(ctx context.Context) (domain.WorkflowDefaults, 
 
 // SetWorkflowDefaults persists the app-wide workflow defaults.
 func (s *Store) SetWorkflowDefaults(ctx context.Context, d domain.WorkflowDefaults, now time.Time) error {
-	d = d.Normalized()
-	data, err := json.Marshal(d)
+	data, err := d.Normalized().EncodeStored()
 	if err != nil {
 		return err
 	}

@@ -17,7 +17,7 @@ import {
 	buildRankedAgentOptions,
 	isLaunchableAgent,
 	DEFAULT_AGENT_PRIORITY_RANK,
-	defaultAuthorizedAgentForRole,
+	preferredRoleAgent,
 	type AgentInfo,
 	unknownAgentReadiness,
 } from "../lib/agent-select-options";
@@ -218,12 +218,12 @@ export function CreateProjectAgentSheet({
 	useEffect(() => {
 		if (!open) return;
 		if (!workerAgentTouched) {
-			setWorkerAgent(defaultAuthorizedAgentForRole(authorizedAgents, sessionHistory, "worker"));
+			setWorkerAgent(preferredRoleAgent(settings?.workflowDefaults?.workerAgent, authorizedAgents, sessionHistory, "worker"));
 		}
 		if (!orchestratorAgentTouched) {
-			setOrchestratorAgent(defaultAuthorizedAgentForRole(authorizedAgents, sessionHistory, "orchestrator"));
+			setOrchestratorAgent(preferredRoleAgent(settings?.workflowDefaults?.orchestratorAgent, authorizedAgents, sessionHistory, "orchestrator"));
 		}
-	}, [authorizedAgents, open, orchestratorAgentTouched, sessionHistory, workerAgentTouched]);
+	}, [settings?.workflowDefaults?.orchestratorAgent, settings?.workflowDefaults?.workerAgent, authorizedAgents, open, orchestratorAgentTouched, sessionHistory, workerAgentTouched]);
 
 	if (isBusy) return null;
 

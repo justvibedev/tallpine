@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 // Capture buildForge's args without pulling in electron-builder's real machinery.
 const buildForge = vi.fn<(forge: { dir: string }, options: any) => Promise<string[]>>(async () => [
-	"/out/make/Tallpine-0.10.3-arm64.dmg",
+	"/out/make/Tallpine-0.10.3-mac-arm64.dmg",
 ]);
 vi.mock("app-builder-lib", () => ({ buildForge }));
 
@@ -70,7 +70,7 @@ describe("MakerDMG", () => {
 		await maker.prepareConfig(makeOptions.targetArch);
 		const artifacts = await maker.make(makeOptions);
 
-		expect(artifacts).toEqual(["/out/make/Tallpine-0.10.3-arm64.dmg"]);
+		expect(artifacts).toEqual(["/out/make/Tallpine-0.10.3-mac-arm64.dmg"]);
 		const [, options] = buildForge.mock.calls[0];
 		expect(options.mac).toEqual(["dmg:arm64"]);
 		// electron-builder must not try to publish; the workflow does that.
@@ -120,6 +120,12 @@ describe("MakerDMG", () => {
 		expect(options.config.dmg.sign).toBe(false);
 	});
 
+	it("names the dmg with the arch: <product>-<ver>-mac-<arch>", async () => {
+		await new MakerDMG().make(makeOptions);
+		const [, options] = buildForge.mock.calls.at(-1)!;
+		expect(options.config.dmg.artifactName).toBe("${productName}-${version}-mac-${arch}.${ext}");
+	});
+
 	// dmg-builder 26.15.3 defaults writeUpdateInfo ON, and DmgTarget.build then
 	// calls createBlockmap BEFORE postMake's sealDmg rewrites the dmg bytes. macOS
 	// ships full-download-only permanently (#3151, #3267 decision 4), so the
@@ -132,12 +138,12 @@ describe("MakerDMG", () => {
 
 	it("never returns a dmg blockmap among the artifacts", async () => {
 		buildForge.mockResolvedValueOnce([
-			"/out/make/Tallpine-0.10.3-arm64.dmg",
-			"/out/make/Tallpine-0.10.3-arm64.dmg.blockmap",
+			"/out/make/Tallpine-0.10.3-mac-arm64.dmg",
+			"/out/make/Tallpine-0.10.3-mac-arm64.dmg.blockmap",
 		]);
 		// This array is exactly what Forge hands its publisher, so filtering here is
 		// what keeps a sidecar off the release regardless of how it got generated.
-		expect(await new MakerDMG().make(makeOptions)).toEqual(["/out/make/Tallpine-0.10.3-arm64.dmg"]);
+		expect(await new MakerDMG().make(makeOptions)).toEqual(["/out/make/Tallpine-0.10.3-mac-arm64.dmg"]);
 	});
 });
 

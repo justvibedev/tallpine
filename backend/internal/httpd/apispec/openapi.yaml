@@ -22318,6 +22318,23 @@ components:
           type:
           - "null"
           - boolean
+        orchestratorAgent:
+          description: Orchestrator agent a new project starts with; empty clears
+            it and its model and effort.
+          type:
+          - "null"
+          - string
+        orchestratorEffort:
+          description: Orchestrator reasoning effort a new project starts with, paired
+            with orchestratorAgent.
+          type:
+          - "null"
+          - string
+        orchestratorModel:
+          description: Orchestrator model a new project starts with, paired with orchestratorAgent.
+          type:
+          - "null"
+          - string
         planAutoApprove:
           description: Plan auto-approval for projects that set none of their own.
           type:
@@ -22340,11 +22357,34 @@ components:
           type:
           - "null"
           - string
+        workerAgent:
+          description: Worker agent a new project starts with; empty clears it and
+            its model and effort.
+          type:
+          - "null"
+          - string
+        workerEffort:
+          description: Worker reasoning effort a new project starts with, paired with
+            workerAgent.
+          type:
+          - "null"
+          - string
+        workerModel:
+          description: Worker model a new project starts with, paired with workerAgent.
+          type:
+          - "null"
+          - string
       type: object
     ControllersWorkflowDefaultsResponse:
       properties:
         autoReview:
           type: boolean
+        orchestratorAgent:
+          type: string
+        orchestratorEffort:
+          type: string
+        orchestratorModel:
+          type: string
         planAutoApprove:
           type: boolean
         planningMode:
@@ -22352,6 +22392,12 @@ components:
         reviewerHarness:
           type: string
         reviewerModel:
+          type: string
+        workerAgent:
+          type: string
+        workerEffort:
+          type: string
+        workerModel:
           type: string
       required:
       - autoReview

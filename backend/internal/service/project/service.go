@@ -80,6 +80,7 @@ type Service struct {
 	// protectedDirs are directories (the daemon data dir) an agent-created
 	// project may not live in.
 	protectedDirs []string
+	agentNotReady func(ctx context.Context, agent domain.AgentHarness) bool
 	// addMu serialises the whole body of Add. Workspace registration performs
 	// filesystem mutations (git init, .gitignore writes, commits) that are not
 	// covered by the store's own writeMu, so path/id conflict checks plus the
@@ -115,6 +116,9 @@ type Deps struct {
 	// Policy decides the agent policy; optional (nil restricts nothing).
 	Policy PolicyEngine
 	Clock  func() time.Time
+	// AgentNotReady reports that an agent is known not to be installed or
+	// signed in; optional (nil never skips a built-in role default).
+	AgentNotReady func(ctx context.Context, agent domain.AgentHarness) bool
 	// ProtectedDirs are directories no agent-created project may be in or under
 	// (the daemon data dir: worktrees, artifacts).
 	ProtectedDirs []string
@@ -152,6 +156,7 @@ func NewWithDeps(d Deps) *Service {
 		logger:         d.Logger,
 		ghAccounts:     d.GitHubAccounts,
 		protectedDirs:  d.ProtectedDirs,
+		agentNotReady:  d.AgentNotReady,
 	}
 	if s.clock == nil {
 		s.clock = time.Now

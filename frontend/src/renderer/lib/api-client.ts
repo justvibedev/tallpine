@@ -325,7 +325,10 @@ export function apiErrorMessage(error: unknown, fallback = "Request failed"): st
 			return apiErrorMessage(body.error, fallback);
 		}
 		if (typeof body.message === "string" && body.message !== "") {
-			return body.message;
+			// The daemon's recovery hint (details.suggestedFix) is part of what the
+			// user needs to act on the error, so every surface shows it (B729).
+			const fix = apiErrorDetails(error)?.suggestedFix;
+			return typeof fix === "string" && fix.trim() !== "" ? `${body.message} ${fix.trim()}` : body.message;
 		}
 		if (typeof body.error === "string" && body.error !== "") return body.error;
 	}

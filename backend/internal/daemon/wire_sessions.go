@@ -103,7 +103,7 @@ func (b *boot) wireSessions() error {
 	b.lcStack.LCM.SetSessionInputLease(b.sessMgr)
 	b.lcStack.LCM.SetSessionOperationGate(b.sessMgr)
 	b.termMgr.SetSessionInputLease(b.sessMgr)
-	b.projectSvc = projectsvc.NewWithDeps(projectsvc.Deps{Policy: b.agentPolicySvc, Store: b.store, Sessions: b.sessionSvc, GitHubAccounts: b.ghAccounts, DefaultHarness: domain.AgentHarness(b.cfg.Agent), ProtectedDirs: []string{b.cfg.DataDir}, Logger: b.log})
+	b.projectSvc = projectsvc.NewWithDeps(projectsvc.Deps{Policy: b.agentPolicySvc, Store: b.store, Sessions: b.sessionSvc, GitHubAccounts: b.ghAccounts, DefaultHarness: domain.AgentHarness(b.cfg.Agent), ProtectedDirs: []string{b.cfg.DataDir}, Logger: b.log, AgentNotReady: b.agentNotReady})
 	b.projectSvc.SetManaged(b.managedLocks)
 	// A changed orchestrator compaction window reaches running orchestrators (B398).
 	b.projectSvc.SetConfigChangedHook(b.chatSvc.ApplyProjectCompaction)
@@ -244,4 +244,25 @@ func (b *boot) wireSessionManagerHooks() {
 	}); ok {
 		tunable.SetModelCatalog(b.agentSvc)
 	}
+}
+
+// noBuiltinRoleDefaultsEnv makes the built-in role defaults behave as if the
+// agent were not ready (test harnesses only).
+const noBuiltinRoleDefaultsEnv = "TALLPINE_NO_BUILTIN_ROLE_DEFAULTS"
+
+// agentNotReady reports that an agent is known not to be installed or signed
+// in. An unknown or failed check is not "not ready": it never blocks a default.
+func (b *boot) agentNotReady(ctx context.Context, agent domain.AgentHarness) bool {
+	// Hermetic test daemons set this so a project's role defaults never depend
+	// on whether the host has Claude Code installed or signed in.
+	if os.Getenv(noBuiltinRoleDefaultsEnv) == "1" {
+		return true
+	}
+	if b.agentSvc == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	snap, err := b.agentSvc.EnsureAgentReadiness(ctx, string(agent), domain.AgentReadinessPurposeDisplay)
+	return err == nil && snap.EffectiveReadiness == domain.AgentReadinessNotReady
 }

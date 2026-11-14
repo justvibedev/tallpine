@@ -228,6 +228,9 @@ func codexProviderFailure(turnErr codexproto.TurnError) error {
 	if strings.TrimSpace(turnErr.Message) == "" && strings.TrimSpace(detail) == "" && errors.Is(cause, errCodexUsageLimitExceeded) {
 		return ports.NewChatProviderFailure("Usage limit exceeded", "", cause)
 	}
+	if cause == nil && isCodexModelUnavailable(turnErr.Message+"\n"+detail) {
+		return codexModelUnavailableFailure(turnErr.Message, detail, cause)
+	}
 	failure := ports.NewChatProviderFailure(turnErr.Message, detail, cause)
 	if errors.Is(cause, errCodexUsageLimitExceeded) && domain.ParseConversationUsageLimit(failure.Error(), nil) == nil {
 		return ports.NewChatProviderFailure("Usage limit exceeded", failure.Error(), cause)

@@ -13,10 +13,10 @@ import { writeBlockmap } from "./blockmap.mjs";
 // os.release(), so it is the Darwin kernel version, not the marketing version.
 export const MAC_MINIMUM_DARWIN_VERSION = "22.0.0";
 
-// selectMacZips picks the versioned darwin zips, arm64 first (the updater's
+// selectMacZips picks the versioned Tallpine-<ver>-mac-<arch>.zip files, arm64 first (the updater's
 // MacUpdater.filterFilesForArch keys on the literal "arm64").
 export function selectMacZips(filenames, version) {
-	const zips = filenames.filter((f) => f.endsWith(".zip") && f.includes("darwin") && f.includes(version));
+	const zips = filenames.filter((f) => f.endsWith(".zip") && f.includes("-mac-") && f.includes(version));
 	return [...zips.filter((f) => f.includes("arm64")), ...zips.filter((f) => !f.includes("arm64"))];
 }
 

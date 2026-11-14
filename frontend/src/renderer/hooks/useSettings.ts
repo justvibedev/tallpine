@@ -12,6 +12,16 @@ import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { clientForHost } from "../lib/host-clients";
 import type { SessionMode } from "../types/workspace";
 
+/** The agent, model and effort a new project starts with for its worker and orchestrator (empty: no app default). */
+export type RoleDefaults = {
+	workerAgent?: string;
+	workerModel?: string;
+	workerEffort?: string;
+	orchestratorAgent?: string;
+	orchestratorModel?: string;
+	orchestratorEffort?: string;
+};
+
 /** `disabledModels` lists the models pickers leave out; empty or unset means every catalog model. */
 export type HarnessDefault = Pick<components["schemas"]["HarnessDefault"], "disabledModels" | "autoCompactWindow">;
 
@@ -34,7 +44,7 @@ export interface Settings {
 	/** Idle open sessions move to a harness release installed while they ran. */
 	versionRefresh?: boolean;
 	/** App-wide workflow defaults projects inherit when they set none of their own. */
-	workflowDefaults?: { autoReview: boolean; planningMode: "auto" | "always" | "off"; planAutoApprove: boolean; reviewerHarness?: string; reviewerModel?: string };
+	workflowDefaults?: { autoReview: boolean; planningMode: "auto" | "always" | "off"; planAutoApprove: boolean; reviewerHarness?: string; reviewerModel?: string } & RoleDefaults;
 	/** Orchestrators may raise their compaction window while they research. */
 	dynamicOrchestratorContext?: boolean;
 	/** Coalesce repeated activity writes and compact the provider-event archive. */
@@ -82,6 +92,12 @@ export function useSettings(hostId?: string, enabled = true) {
 					planAutoApprove: data?.workflowDefaults?.planAutoApprove ?? false,
 					reviewerHarness: data?.workflowDefaults?.reviewerHarness ?? "",
 					reviewerModel: data?.workflowDefaults?.reviewerModel ?? "",
+					workerAgent: data?.workflowDefaults?.workerAgent ?? "",
+					workerModel: data?.workflowDefaults?.workerModel ?? "",
+					workerEffort: data?.workflowDefaults?.workerEffort ?? "",
+					orchestratorAgent: data?.workflowDefaults?.orchestratorAgent ?? "",
+					orchestratorModel: data?.workflowDefaults?.orchestratorModel ?? "",
+					orchestratorEffort: data?.workflowDefaults?.orchestratorEffort ?? "",
 				},
 				// A daemon that predates the setting has no research mode.
 				dynamicOrchestratorContext: data?.dynamicOrchestratorContext ?? false,

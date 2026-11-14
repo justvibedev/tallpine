@@ -244,9 +244,12 @@ func (c *SettingsController) setWorkflowDefaults(w http.ResponseWriter, r *http.
 		update.ReviewerHarness = &harness
 	}
 	update.ReviewerModel = req.ReviewerModel
-	if req.AutoReview == nil && req.PlanningMode == nil && req.PlanAutoApprove == nil && req.ReviewerHarness == nil && req.ReviewerModel == nil {
+	if !c.setRoleDefaults(w, r, req, &update) {
+		return
+	}
+	if req.AutoReview == nil && req.PlanningMode == nil && req.PlanAutoApprove == nil && req.ReviewerHarness == nil && req.ReviewerModel == nil && !hasRoleDefaults(req) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation",
-			"WORKFLOW_DEFAULTS_INVALID", "provide autoReview, planningMode, planAutoApprove, reviewerHarness or reviewerModel", nil)
+			"WORKFLOW_DEFAULTS_INVALID", "provide autoReview, planningMode, planAutoApprove, a reviewer or a worker/orchestrator default", nil)
 		return
 	}
 	prev, prevOK := c.appSnapshotForAudit(r.Context())
@@ -302,12 +305,14 @@ func (c *SettingsController) response(snapshot settingssvc.Snapshot) SettingsRes
 		ChatHibernationWorkerIdleSeconds:       int64(snapshot.ChatHibernation.WorkerIdle / time.Second),
 		ChatHibernationOrchestratorIdleSeconds: int64(snapshot.ChatHibernation.OrchestratorIdle / time.Second),
 		VersionRefresh:                         snapshot.VersionRefresh,
-		WorkflowDefaults:                       WorkflowDefaultsResponse{AutoReview: snapshot.WorkflowDefaults.AutoReview, PlanningMode: string(snapshot.WorkflowDefaults.PlanningMode), PlanAutoApprove: snapshot.WorkflowDefaults.PlanAutoApprove, ReviewerHarness: string(snapshot.WorkflowDefaults.ReviewerHarness), ReviewerModel: snapshot.WorkflowDefaults.ReviewerModel},
-		DynamicOrchestratorContext:             snapshot.DynamicOrchestratorContext,
-		StorageCompaction:                      snapshot.StorageCompaction,
-		ProviderEventRetentionDays:             snapshot.ProviderEventRetentionDays,
-		TrackerIntakeEnabled:                   offering.TrackerIntakeEnabled,
-		BacklogRunEnabled:                      offering.BacklogRunEnabled,
+		WorkflowDefaults: WorkflowDefaultsResponse{AutoReview: snapshot.WorkflowDefaults.AutoReview, PlanningMode: string(snapshot.WorkflowDefaults.PlanningMode), PlanAutoApprove: snapshot.WorkflowDefaults.PlanAutoApprove, ReviewerHarness: string(snapshot.WorkflowDefaults.ReviewerHarness), ReviewerModel: snapshot.WorkflowDefaults.ReviewerModel,
+			WorkerAgent: string(snapshot.WorkflowDefaults.WorkerAgent), WorkerModel: snapshot.WorkflowDefaults.WorkerModel, WorkerEffort: snapshot.WorkflowDefaults.WorkerEffort,
+			OrchestratorAgent: string(snapshot.WorkflowDefaults.OrchestratorAgent), OrchestratorModel: snapshot.WorkflowDefaults.OrchestratorModel, OrchestratorEffort: snapshot.WorkflowDefaults.OrchestratorEffort},
+		DynamicOrchestratorContext: snapshot.DynamicOrchestratorContext,
+		StorageCompaction:          snapshot.StorageCompaction,
+		ProviderEventRetentionDays: snapshot.ProviderEventRetentionDays,
+		TrackerIntakeEnabled:       offering.TrackerIntakeEnabled,
+		BacklogRunEnabled:          offering.BacklogRunEnabled,
 	}
 }
 

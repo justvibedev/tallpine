@@ -4,6 +4,22 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.17]
+
+### Added
+- New projects start with Claude Code defaults for the worker and orchestrator (agent, model, effort), set in Settings (#1203, #1207).
+- Release downloads use consistent file names with the CPU architecture in every name (#1202).
+
+### Fixed
+- Windows beta: the x64 build no longer depends on the host's architecture (#1201).
+- If a built-in default model isn't available, spawning falls back to the agent's own model (#1210).
+- Spawning says clearly when the project's configured agent is not ready (#1213).
+- "Not a git repository" errors now name dubious git ownership when that is the cause (#1204).
+- The CLI fails fast instead of hanging when a confirmation prompt has no terminal (#1205, #1209).
+- Codex model errors name the rejected model and point to your account or `config.toml` (#1206, #1208).
+- Removing a project now deletes its sessions, even when they share history (#1211).
+- API errors show their suggested fix in the CLI and the app (#1212).
+
 ## [0.13.16]
 
 ### Fixed

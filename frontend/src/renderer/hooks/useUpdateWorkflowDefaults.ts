@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient, apiErrorMessage } from "../lib/api-client";
-import { settingsQueryKey } from "./useSettings";
+import { settingsQueryKey, type RoleDefaults } from "./useSettings";
 
 /** Changes the app-wide workflow defaults projects inherit (Settings, Reviews). */
-export type WorkflowDefaultsPatch = { autoReview?: boolean; planningMode?: "auto" | "always" | "off"; planAutoApprove?: boolean; reviewerHarness?: string; reviewerModel?: string };
+export type WorkflowDefaultsPatch = { autoReview?: boolean; planningMode?: "auto" | "always" | "off"; planAutoApprove?: boolean; reviewerHarness?: string; reviewerModel?: string } & RoleDefaults;
 
 export function useUpdateWorkflowDefaults() {
 	const queryClient = useQueryClient();

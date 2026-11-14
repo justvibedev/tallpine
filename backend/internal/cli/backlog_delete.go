@@ -14,6 +14,9 @@ import (
 
 // confirmBacklogDelete asks a y/N question; anything but y/yes aborts.
 func confirmBacklogDelete(cmd *cobra.Command, question string) (bool, error) {
+	if err := requireInteractiveStdin(cmd); err != nil {
+		return false, err
+	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s [y/N] ", question)
 	line, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 	if err != nil && line == "" {

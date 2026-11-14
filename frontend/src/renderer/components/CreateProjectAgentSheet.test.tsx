@@ -16,14 +16,15 @@ vi.mock("../lib/host-clients", async (importOriginal) => ({
 	clientForHost: () => ({ GET: remote.get, POST: remote.post }),
 }));
 
-const { trackerIntakeGate } = vi.hoisted(() => ({ trackerIntakeGate: { enabled: true } }));
+const { trackerIntakeGate } = vi.hoisted(() => ({ trackerIntakeGate: { enabled: true, workflowDefaults: undefined as Record<string, string> | undefined } }));
 
 vi.mock("../hooks/useSettings", () => ({
-	useSettings: () => ({ settings: { trackerIntakeEnabled: trackerIntakeGate.enabled }, isLoading: false, error: undefined }),
+	useSettings: () => ({ settings: { trackerIntakeEnabled: trackerIntakeGate.enabled, workflowDefaults: trackerIntakeGate.workflowDefaults }, isLoading: false, error: undefined }),
 }));
 
 beforeEach(() => {
 	trackerIntakeGate.enabled = true;
+	trackerIntakeGate.workflowDefaults = undefined;
 	useUiStore.setState({ settingsModal: null });
 });
 
@@ -343,6 +344,25 @@ describe("CreateProjectAgentSheet", () => {
 			orchestratorAgent: "claude-code",
 			trackerIntake: undefined,
 		});
+	});
+
+	it("preselects the app default agent of each role over history while the pickers are untouched", async () => {
+		trackerIntakeGate.workflowDefaults = { workerAgent: "claude-code", orchestratorAgent: "codex" };
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+		queryClient.setQueryData(workspaceQueryKey, [
+			{
+				sessions: [
+					{ id: "w1", kind: "worker", provider: "codex", createdAt: hoursAgo(5) },
+					{ id: "o1", kind: "orchestrator", provider: "claude-code", createdAt: hoursAgo(3) },
+				],
+			},
+		]);
+		const onSubmit = renderSheet(vi.fn().mockResolvedValue(undefined), queryClient);
+
+		await userEvent.click(screen.getByRole("button", { name: "Create and start" }));
+
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit).toHaveBeenCalledWith({ workerAgent: "claude-code", orchestratorAgent: "codex", trackerIntake: undefined });
 	});
 
 	it("does not replace a manually selected role when history refreshes", async () => {

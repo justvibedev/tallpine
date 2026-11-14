@@ -187,3 +187,8 @@ export function buildRankedAgentOptions({
 				agentLabelCompare(a, b),
 		);
 }
+
+/** The app default agent for a role (Settings, Reviews) when this computer can launch it, else the history-based pick. */
+export function preferredRoleAgent(appDefault: string | undefined, authorizedAgents: AgentInfo[], sessions: RoleSession[], role: "worker" | "orchestrator"): string {
+	return appDefault && authorizedAgents.some((agent) => agent.id === appDefault) ? appDefault : defaultAuthorizedAgentForRole(authorizedAgents, sessions, role);
+}

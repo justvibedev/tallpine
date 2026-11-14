@@ -343,9 +343,9 @@ const config: ForgeConfig = {
 				// the real "tallpine.exe" (not "Tallpine.exe").
 				executableName: EXECUTABLE_NAME,
 				icon: "assets/icon.ico",
-				// Keep the installer filename unchanged. electron-builder names it
-				// after productName by default.
-				nsis: { artifactName: "Tallpine Setup ${version}.${ext}" },
+				// Release asset scheme: Tallpine-Setup-<ver>-win-<arch>-unsigned.exe
+				// (the arch is always in the name; "unsigned" until Windows signing).
+				nsis: { artifactName: "Tallpine-Setup-${version}-win-${arch}-unsigned.${ext}" },
 			},
 			["win32"],
 		),

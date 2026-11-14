@@ -132,6 +132,7 @@ export async function startScratchDaemon(options: ScratchDaemonOptions = {}): Pr
 			TALLPINE_DATA_DIR: data,
 			TALLPINE_RUN_FILE: runFile,
 			TALLPINE_PORT: String(await freePort()),
+			TALLPINE_NO_BUILTIN_ROLE_DEFAULTS: "1", // role defaults must not depend on the host's Claude install
 			TALLPINE_CLAUDE_ACP_COMMAND: join(fixtures, "fake-claude-acp.mjs"),
 		}),
 		stdio: ["ignore", "pipe", "pipe"],

@@ -193,12 +193,11 @@ func newAutomationDeleteCommand(ctx *commandContext) *cobra.Command {
 	cmd := &cobra.Command{Use: "delete <id>", Aliases: []string{"rm"}, Short: "Delete an automation and run history", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 		if !yes {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Delete automation %q and its run history? Type the automation id to confirm: ", id)
-			var answer string
-			if _, err := fmt.Fscanln(cmd.InOrStdin(), &answer); err != nil {
+			confirmed, err := confirmAutomationDelete(cmd, id)
+			if err != nil {
 				return err
 			}
-			if answer != id {
+			if !confirmed {
 				_, err := fmt.Fprintln(cmd.OutOrStdout(), "aborted")
 				return err
 			}
@@ -254,4 +253,18 @@ func formatAutomationTime(value time.Time) string {
 		return "-"
 	}
 	return value.Local().Format(time.RFC3339)
+}
+
+// confirmAutomationDelete asks the user to type the automation id; it fails
+// fast instead of prompting when stdin is not a terminal.
+func confirmAutomationDelete(cmd *cobra.Command, id string) (bool, error) {
+	if err := requireInteractiveStdin(cmd); err != nil {
+		return false, err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Delete automation %q and its run history? Type the automation id to confirm: ", id)
+	var answer string
+	if _, err := fmt.Fscanln(cmd.InOrStdin(), &answer); err != nil {
+		return false, err
+	}
+	return answer == id, nil
 }

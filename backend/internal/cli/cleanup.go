@@ -129,6 +129,9 @@ func cleanupWouldFree(r apitypes.CleanupRunReport) int64 {
 }
 
 func confirmCleanup(cmd *cobra.Command, preview apitypes.CleanupRunReport) (bool, error) {
+	if err := requireInteractiveStdin(cmd); err != nil {
+		return false, err
+	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "\nRemove %s now? Type yes to confirm: ", humanBytes(cleanupWouldFree(preview))); err != nil {
 		return false, err
 	}

@@ -99,6 +99,9 @@ func formatProjectConfig(config *projectConfig) string {
 }
 
 func confirmProjectRemoval(cmd *cobra.Command, id string) (bool, error) {
+	if err := requireInteractiveStdin(cmd); err != nil {
+		return false, err
+	}
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Remove project %q? Type the project id to confirm: ", id); err != nil {
 		return false, err
 	}

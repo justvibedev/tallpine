@@ -10,7 +10,7 @@ Each GitHub release on `justvibedev/tallpine` carries four admin files next to t
 |---|---|
 | `Tallpine-PPPC.mobileconfig` | Privacy (PPPC) and background-item profile, generated from the signed build |
 | `tallpine-jamf-schema.json` | Jamf Custom Schema for the `ee.justdev.tallpine` preference domain |
-| `Tallpine-<version>.pkg` | Developer ID Installer-signed, notarized, stapled package that installs `Tallpine.app` into `/Applications` (no scripts) |
+| `Tallpine-<version>-mac-arm64.pkg` | Developer ID Installer-signed, notarized, stapled package that installs `Tallpine.app` into `/Applications` (no scripts) |
 | the notarized `.zip` / `.dmg` | The app for manual installs and the updater |
 
 The app is signed with a Developer ID and notarized, so Gatekeeper accepts it without a prompt. Notarization needs no MDM setting.
@@ -38,7 +38,7 @@ What each key does, and the sample profile, is in [`agent-policy.md`](agent-poli
 
 ## 3. Deploy the app
 
-Upload `Tallpine-<version>.pkg` to Jamf (Settings, Computer Management, Packages), then create a policy (Computers, Policies) that installs it, scoped to the same computers as the profiles. The package has no pre/postinstall scripts; Tallpine registers its daemon on first launch, as with a dmg install. Deploy the profiles before the package so no prompt appears on first launch.
+Upload `Tallpine-<version>-mac-arm64.pkg` to Jamf (Settings, Computer Management, Packages), then create a policy (Computers, Policies) that installs it, scoped to the same computers as the profiles. The package has no pre/postinstall scripts; Tallpine registers its daemon on first launch, as with a dmg install. Deploy the profiles before the package so no prompt appears on first launch.
 
 ## 4. Check it worked
 

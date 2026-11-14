@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/brand"
@@ -94,7 +95,8 @@ func isPeerNotAdmitted(err error) bool {
 }
 
 // String renders the envelope for the user: "<message> (<code>) [request <id>]",
-// omitting whichever parts the daemon left empty.
+// omitting whichever parts the daemon left empty, then a details.suggestedFix
+// line when the daemon supplied one (B729).
 func (e apiError) String() string {
 	msg := e.Message
 	if e.Code != "" {
@@ -102,6 +104,9 @@ func (e apiError) String() string {
 	}
 	if e.RequestID != "" {
 		msg = fmt.Sprintf("%s [request %s]", msg, e.RequestID)
+	}
+	if fix, _ := e.Details["suggestedFix"].(string); strings.TrimSpace(fix) != "" {
+		msg += "\nSuggested fix: " + strings.TrimSpace(fix)
 	}
 	return msg
 }

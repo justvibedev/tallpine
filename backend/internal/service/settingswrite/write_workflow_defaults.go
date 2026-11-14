@@ -45,6 +45,10 @@ func (w *Writer) setWorkflowDefault(ctx context.Context, key settingsreg.Key, ra
 		var m string
 		_ = json.Unmarshal(raw, &m)
 		update.ReviewerModel = &m
+	case "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort":
+		fillRoleUpdate(&update.WorkerAgent, &update.WorkerModel, &update.WorkerEffort, "worker", key, raw, plan)
+	case "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort":
+		fillRoleUpdate(&update.OrchestratorAgent, &update.OrchestratorModel, &update.OrchestratorEffort, "orchestrator", key, raw, plan)
 	default:
 		var on bool
 		_ = json.Unmarshal(raw, &on)
@@ -70,4 +74,34 @@ func (w *Writer) setDynamicContext(ctx context.Context, raw json.RawMessage) err
 		return appError(err)
 	}
 	return nil
+}
+
+// fillRoleUpdate sets one role's update from key. Writing the agent also takes
+// the model and effort of the same batch, so the outcome does not depend on
+// which key comes first (a changed agent would otherwise drop them).
+func fillRoleUpdate(agent **domain.AgentHarness, model, effort **string, role string, key settingsreg.Key, raw json.RawMessage, plan []planned) {
+	prefix := "app.workflowDefaults." + role
+	setString := func(dst **string, v json.RawMessage) {
+		var s string
+		_ = json.Unmarshal(v, &s)
+		*dst = &s
+	}
+	switch string(key) {
+	case prefix + "Agent":
+		var h domain.AgentHarness
+		_ = json.Unmarshal(raw, &h)
+		*agent = &h
+		for _, p := range plan {
+			switch string(p.def.Key) {
+			case prefix + "Model":
+				setString(model, p.value)
+			case prefix + "Effort":
+				setString(effort, p.value)
+			}
+		}
+	case prefix + "Model":
+		setString(model, raw)
+	case prefix + "Effort":
+		setString(effort, raw)
+	}
 }
