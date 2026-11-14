@@ -19,7 +19,7 @@
 // with an agent page's opaque "null" or any other origin.
 
 import { existsSync } from "node:fs";
-import { socketFetch } from "./daemon-socket-fetch";
+import { loopbackFetch, socketFetch } from "./daemon-socket-fetch";
 import { DAEMON_TOKEN_HEADER, isDaemonUrl } from "./daemon-auth";
 
 export type DaemonProtocolOptions = {
@@ -91,8 +91,20 @@ export async function handleDaemonRequest(request: Request, options: DaemonProto
 			});
 		}
 	}
-	// No socket: a daemon still on loopback TCP (Windows, an older daemon, or
-	// TALLPINE_LOOPBACK_TCP without a socket).
+	// Windows has no socket. session.fetch would drop the renderer's Origin and
+	// add Sec-Fetch-Site: none, so send it over loopback TCP with Node's http.
+	if (process.platform === "win32" && port) {
+		try {
+			return await loopbackFetch(port, request.url, init);
+		} catch (error) {
+			return new Response(`daemon unavailable: ${error instanceof Error ? error.message : String(error)}`, {
+				status: 502,
+				headers: { "content-type": "text/plain; charset=utf-8" },
+			});
+		}
+	}
+	// No socket: an older daemon on loopback TCP, or TALLPINE_LOOPBACK_TCP
+	// without a socket.
 	return options.passthrough(new Request(request.url, init));
 }
 

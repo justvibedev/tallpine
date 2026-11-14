@@ -149,3 +149,35 @@ describe.skipIf(process.platform === "win32")("daemon protocol over the socket (
 		expect(opts.passthrough).not.toHaveBeenCalled();
 	});
 });
+
+// Windows has no daemon socket. Chromium's session.fetch (the passthrough)
+// would drop the renderer's Origin and send Sec-Fetch-Site: none, which the
+// daemon refuses, so the handler must send over loopback TCP with Node's http.
+describe("daemon protocol on Windows (no socket)", () => {
+	it("sends the renderer's Origin and the token over loopback TCP, never through the network passthrough", async () => {
+		const seen: Array<{ origin?: string; token?: string; host?: string }> = [];
+		const server = createServer((req, res) => {
+			seen.push({ origin: req.headers.origin, token: req.headers[DAEMON_TOKEN_HEADER.toLowerCase()] as string | undefined, host: req.headers.host });
+			res.writeHead(200, { "content-type": "text/plain" });
+			res.end("ok");
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		cleanups.push(() => {
+			server.closeAllConnections();
+			server.close();
+		});
+		const port = (server.address() as { port: number }).port;
+		const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+		Object.defineProperty(process, "platform", { value: "win32" });
+		cleanups.push(() => Object.defineProperty(process, "platform", platform));
+		const opts = options(null, { port: () => port });
+		const res = await handleDaemonRequest(
+			new Request(`http://127.0.0.1:${port}/api/v1/projects`, { headers: { origin: "app://renderer" } }),
+			opts,
+		);
+		expect(res.status).toBe(200);
+		expect(await res.text()).toBe("ok");
+		expect(opts.passthrough).not.toHaveBeenCalled();
+		expect(seen).toEqual([{ origin: "app://renderer", token: "secret-token", host: `127.0.0.1:${port}` }]);
+	});
+});

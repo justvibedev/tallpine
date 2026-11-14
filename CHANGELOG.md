@@ -4,6 +4,12 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.16]
+
+### Fixed
+- Windows beta: daemon requests go over loopback TCP with Node `http`, so the `Origin` header survives (#1198).
+- Windows beta: the daemon callers setting says "this computer" instead of "this Mac" (#1199).
+
 ## [0.13.15]
 
 ### Added

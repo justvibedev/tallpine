@@ -27,13 +27,36 @@ function renderSection() {
 
 const label = "Refuse other apps on this Mac";
 
+const macLabel = label;
+const computerLabel = "Refuse other apps on this computer";
+
+// "this Mac" vs "this computer" follows the user agent (lib/this-computer.ts).
+function setPlatform(platform: string) {
+	vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+}
+
 beforeEach(() => {
+	vi.restoreAllMocks();
+	setPlatform("MacIntel");
 	patchMock.mockReset();
 	patchMock.mockResolvedValue({ data: {}, error: undefined });
 	state.peerCheck = { active: true, mode: "enforce", modeReason: "signed build" };
 });
 
 describe("DaemonPeerCheckSection", () => {
+	it("says this computer, not this Mac, on Windows", () => {
+		setPlatform("Win32");
+		renderSection();
+		expect(screen.getByRole("switch", { name: computerLabel })).toBeChecked();
+		expect(screen.getByTestId("peer-check-status")).toHaveTextContent("On: other apps on this computer are refused.");
+		expect(screen.queryByText(/this Mac/)).toBeNull();
+	});
+
+	it("keeps this Mac on macOS", () => {
+		renderSection();
+		expect(screen.getByRole("switch", { name: macLabel })).toBeChecked();
+	});
+
 	it("shows the check on and turns it off through the settings registry", async () => {
 		renderSection();
 		expect(screen.getByRole("switch", { name: label })).toBeChecked();

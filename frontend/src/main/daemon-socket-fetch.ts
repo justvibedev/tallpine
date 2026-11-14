@@ -29,7 +29,22 @@ class SocketUnavailable extends Error {}
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
 
 /** fetch() for one request over a Unix socket. */
-export async function socketFetch(socketPath: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+export function socketFetch(socketPath: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+	return nodeHttpFetch({ socketPath }, input, init);
+}
+
+/**
+ * fetch() over loopback TCP with Node's http, for a daemon with no socket
+ * (Windows). Chromium's session.fetch would re-issue the request as a
+ * browser-initiated one: it drops Origin and adds Sec-Fetch-Site: none, which
+ * the daemon's browser-origin guard refuses. Node's http sends the headers as
+ * given, and never consults a proxy.
+ */
+export function loopbackFetch(port: number, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+	return nodeHttpFetch({ host: "127.0.0.1", port }, input, init);
+}
+
+async function nodeHttpFetch(target: { socketPath: string } | { host: string; port: number }, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
 	const req = new Request(input, init);
 	const url = new URL(req.url);
 	const body = req.method === "GET" || req.method === "HEAD" ? null : Buffer.from(await req.arrayBuffer());
@@ -41,7 +56,7 @@ export async function socketFetch(socketPath: string, input: RequestInfo | URL, 
 	return new Promise<Response>((resolve, reject) => {
 		let connected = false;
 		const out = httpRequest(
-			{ socketPath, method: req.method, path: url.pathname + url.search, headers: { ...headers, host: url.host }, agent: false },
+			{ ...target, method: req.method, path: url.pathname + url.search, headers: { ...headers, host: url.host }, agent: false },
 			(res: IncomingMessage) => {
 				const resHeaders = new Headers();
 				for (const [name, value] of Object.entries(res.headers)) {
