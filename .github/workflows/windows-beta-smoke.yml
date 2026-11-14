@@ -1,0 +1,62 @@
+name: Windows beta smoke
+
+# Builds the Windows beta installer with the same script the owner runs on the
+# Windows VM, then runs the silent-install smoke against it. Windows runners
+# are costly on a private repo: manual runs only, never on push. It never
+# publishes; publishing is done by hand with build-beta.ps1 -Publish.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-beta-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            packages/product-ui/package-lock.json
+
+      - name: Windows Security mode guard
+        working-directory: backend
+        run: go test -count=1 -run 'TestSecurityMode_' ./internal/agentpolicy/
+
+      - name: Install shared UI dependencies
+        working-directory: packages/product-ui
+        run: npm ci --no-audit --no-fund
+
+      - name: Build the beta installer
+        run: |
+          $installer = & ./scripts/windows/build-beta.ps1 -Build ${{ github.run_number }} -OutDir "$env:RUNNER_TEMP\windows-beta"
+          "INSTALLER=$installer" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Silent-install smoke
+        run: ./scripts/windows/smoke.ps1 -Installer "$env:INSTALLER"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-beta-installer
+          path: ${{ runner.temp }}/windows-beta/
+          retention-days: 7
+          if-no-files-found: ignore

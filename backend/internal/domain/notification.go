@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -144,6 +145,33 @@ type NotificationRecord struct {
 	// SourceKey identifies the durable transition that produced a terminal
 	// notification. It is internal dedupe metadata and is not exposed over HTTP.
 	SourceKey string
+}
+
+// PlanLaneSourcePrefix marks a plan_waiting notification filed under the lane
+// orchestrator that started the plan (SourceKey is stored, so this needs no column).
+const PlanLaneSourcePrefix = "plan-waiting-lane:"
+
+// Owner asks (B698) reuse the plan_waiting kind: a tracked ask waits on the
+// owner the same way, with the same critical urgency. Their source keys carry
+// these prefixes (then the ask id), so no new notification type is needed.
+const (
+	// AskSourcePrefix marks an ask raised in the project's main chat.
+	AskSourcePrefix = "ask-waiting:"
+	// AskLaneSourcePrefix marks an ask raised in a lane orchestrator's chat.
+	AskLaneSourcePrefix = "ask-waiting-lane:"
+)
+
+// IsAsk reports whether the notification is a tracked owner ask.
+func (r NotificationRecord) IsAsk() bool {
+	return r.Type == NotificationPlanWaiting &&
+		(strings.HasPrefix(r.SourceKey, AskSourcePrefix) || strings.HasPrefix(r.SourceKey, AskLaneSourcePrefix))
+}
+
+// LaneChat reports whether the notification's session is the lane orchestrator
+// whose chat holds the plan or ask card, so a client opens that session.
+func (r NotificationRecord) LaneChat() bool {
+	return r.Type == NotificationPlanWaiting &&
+		(strings.HasPrefix(r.SourceKey, PlanLaneSourcePrefix) || strings.HasPrefix(r.SourceKey, AskLaneSourcePrefix))
 }
 
 // Resolved reports whether the issue behind this notification is closed.

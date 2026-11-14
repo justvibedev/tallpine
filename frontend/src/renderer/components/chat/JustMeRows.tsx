@@ -8,8 +8,10 @@ import { spawnedSessionIds } from "./SpawnedAgents";
 import { Spinner } from "../ui/spinner";
 
 /** One quiet line standing for a folded run of orchestration turns. */
-export function JustMeRunRow({ count, open, live, onToggle }: {
+export function JustMeRunRow({ count, open, live, workers, headline, onToggle }: {
 	count: number;
+	workers?: boolean;
+	headline?: string;
 	open: boolean;
 	live: boolean;
 	onToggle: () => void;
@@ -24,7 +26,8 @@ export function JustMeRunRow({ count, open, live, onToggle }: {
 				className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
 			>
 				<ChevronRight aria-hidden="true" className={cn("size-3 transition-transform motion-reduce:transition-none", open && "rotate-90")} />
-				{t("chat.justMe.hiddenUpdates", { count })}
+				{workers ? t("chat.workerRun.updates", { count }) : t("chat.justMe.hiddenUpdates", { count })}
+				{workers && headline ? <span className="min-w-0 truncate text-muted-foreground/70">· {headline}</span> : null}
 				{live ? (
 					<span className="inline-flex items-center gap-1 text-status-working">
 						<Spinner icon={LoaderCircle} className="size-3" />

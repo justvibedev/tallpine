@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appI18n } from "../../i18n";
 import { AgentPolicySection } from "./AgentPolicySection";
 import { ProjectSecurityModeSwitch } from "./ProjectSecurityModeSwitch";
 
-const { get, patch } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn() }));
+const { get, patch, windows } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), windows: vi.fn(() => false) }));
+vi.mock("../../lib/platform", async (importOriginal) => ({ ...(await importOriginal<object>()), isWindowsPlatform: windows }));
 vi.mock("../../lib/api-client", () => ({
 	apiClient: { GET: get, PATCH: patch },
 	apiErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "request failed"),
@@ -49,6 +50,42 @@ beforeEach(async () => {
 	get.mockReset();
 	patch.mockReset();
 	patch.mockResolvedValue({ data: {} });
+});
+
+afterEach(() => windows.mockReturnValue(false));
+
+describe("Security mode on Windows", () => {
+	it("disables Protected with a note on Windows and keeps the other modes", async () => {
+		windows.mockReturnValue(true);
+		get.mockResolvedValue({ data: view() });
+		wrap(<AgentPolicySection scope="security" />);
+		const unrestricted = await radio(/^Unrestricted/);
+		await waitFor(() => expect(unrestricted).toBeEnabled());
+		expect(await radio(/^Protected/)).toBeDisabled();
+		expect(screen.getByTestId("security-mode-unavailable")).toHaveTextContent("Not available on Windows");
+	});
+
+	it("keeps Protected selectable on macOS", async () => {
+		get.mockResolvedValue({ data: view() });
+		wrap(<AgentPolicySection scope="security" />);
+		const target = await radio(/^Protected/);
+		await waitFor(() => expect(target).toBeEnabled());
+		expect(screen.queryByTestId("security-mode-unavailable")).toBeNull();
+	});
+
+	it.each([
+		[true, true],
+		[false, false],
+	])("project switch: windows=%s disables On=%s", async (onWindows, disabled) => {
+		windows.mockReturnValue(onWindows);
+		get.mockResolvedValue({ data: view() });
+		wrap(<ProjectSecurityModeSwitch projectId="p1" />);
+		await userEvent.click(await screen.findByRole("button", { name: "Security mode" }));
+		const on = await screen.findByRole("menuitem", { name: "On" });
+		if (disabled) expect(on).toHaveAttribute("aria-disabled", "true");
+		else expect(on).not.toHaveAttribute("aria-disabled", "true");
+		expect(screen.queryByTestId("project-security-unavailable") !== null).toBe(onWindows);
+	});
 });
 
 describe("Security tab mode choice", () => {

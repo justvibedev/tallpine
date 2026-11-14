@@ -45,6 +45,8 @@ type ProjectPlanDTO struct {
 	ItemRef   string   `json:"itemRef"`
 	ItemTitle string   `json:"itemTitle"`
 	Plan      PlanView `json:"plan"`
+	// Lane is the lane whose orchestrator started the plan; empty for the main orchestrator or the owner.
+	Lane string `json:"lane,omitempty"`
 }
 
 // ProjectPlansResponse lists the project's plans that wait on someone.
@@ -54,7 +56,7 @@ type ProjectPlansResponse struct {
 
 func planView(p domain.BacklogPlan) PlanView {
 	v := PlanView{
-		ID: p.ID, ItemID: p.ItemID, Status: string(p.Status), PlannerSessionID: string(p.PlannerSessionID),
+		ID: p.ID, ItemID: p.ItemID, Status: string(p.Status), PlannerSessionID: string(p.PlannerSessionID), StarterSessionID: string(p.NotifySessionID),
 		BaseCommit: p.BaseCommit, BaseBranch: p.BaseBranch, PlanMarkdown: p.PlanMarkdown, DecisionsMarkdown: p.DecisionsMD,
 		ApprovedBy: p.ApprovedBy, BuildAnyway: p.BuildAnyway, StartedAt: p.StartedAt, UpdatedAt: p.UpdatedAt, Failure: p.Failure, ItemChanged: !p.ItemChangedAt.IsZero(),
 		Questions: []PlanQuestionDTO{}, Assumptions: []PlanAssumptionDTO{}, PRSplit: []PlanPRDTO{}, ReviewFocus: append([]string{}, p.ReviewFocus...),

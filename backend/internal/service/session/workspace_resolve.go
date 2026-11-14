@@ -67,7 +67,7 @@ func (s *Service) ResolveWorkspacePath(ctx context.Context, id domain.SessionID,
 	}
 	artifactDir := rec.Metadata.ArtifactDir
 	if artifactDir == "" {
-		artifactDir = sessionartifacts.Dir(s.dataDir, rec.ID)
+		artifactDir = sessionartifacts.Resolve(s.dataDir, rec.ID, "")
 	}
 	if rel, ok := relativeWithinRoot(artifactDir, target); ok {
 		return WorkspacePathResolution{SessionID: id, Kind: WorkspacePathKindArtifact, Path: rel}, nil

@@ -78,6 +78,7 @@ func (b *boot) wireHTTP() error {
 		BacklogSpawner:       b.backlogSvc,
 		BacklogRuns:          newBacklogRunService(b.cfg, b.store, b.sessionSvc, b.planSvc),
 		BacklogPlans:         b.planSvc,
+		OwnerAsks:            b.askSvc,
 		ReleaseInstall:       releaseinstall.New(filepath.Dir(b.cfg.RunFilePath)),
 		ReleaseBuild:         releaseinstall.NewBuildRequester(filepath.Dir(b.cfg.RunFilePath), b.releaseProjectPath),
 		Merges:               newMergesService(b.store),

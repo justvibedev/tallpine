@@ -250,8 +250,7 @@ This quits ${product_name}: every running agent (orchestrator and workers) stops
   phase=install-stopped
   as_prev stop_app_and_daemon
   [[ "${migrate_pending}" -eq 1 ]] && kill_legacy_tmux
-  say "Snapshotting ${data_dir} into ${point}..."
-  snapshot_data "${point}.partial" || die "the data snapshot failed; nothing was changed"
+  snapshot_with_retry "${point}.partial" || die "the data snapshot failed; nothing was changed"
   interrupt_point snapshot
   {
     printf 'created=%s\n' "${stamp}"

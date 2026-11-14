@@ -25,24 +25,33 @@ func (s *Service) Delete(ctx context.Context, id domain.SessionID, cleanup bool)
 	if !ok {
 		return apierr.NotImplemented("SESSION_DELETE_UNSUPPORTED", "Session deletion is not supported by this daemon")
 	}
+	// Read before the record goes: a session created before the per-project
+	// layout keeps its artifacts at the flat path its row names.
+	dir := sessionartifacts.ResolveForID(ctx, s.dataDir, s.store, id, true)
 	if err := deleter.DeleteSession(ctx, id, cleanup); err != nil {
 		return toAPIError(err)
 	}
 	s.cancelTitleRefinement(id)
-	s.deleteArtifactDir(ctx, id)
+	s.deleteArtifactDir(ctx, id, dir)
 	return nil
 }
 
 // deleteArtifactDir removes a deleted session's artifact directory. Failures
 // are logged, not returned: the record is already gone.
-func (s *Service) deleteArtifactDir(ctx context.Context, id domain.SessionID) {
-	dir := sessionartifacts.Dir(s.dataDir, id)
+func (s *Service) deleteArtifactDir(ctx context.Context, id domain.SessionID, dir string) {
 	if s.artifactDeleter == nil || dir == "" {
 		return
 	}
 	// The deleter leaves an empty directory for a restore that cannot happen
 	// now, so remove that too.
-	err := s.artifactDeleter.DeleteSession(ctx, id)
+	var err error
+	if d, ok := s.artifactDeleter.(interface {
+		DeleteDir(ctx context.Context, id domain.SessionID, dir string) error
+	}); ok {
+		err = d.DeleteDir(ctx, id, dir)
+	} else {
+		err = s.artifactDeleter.DeleteSession(ctx, id)
+	}
 	if err == nil {
 		err = os.Remove(dir)
 	}

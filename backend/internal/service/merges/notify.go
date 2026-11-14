@@ -25,7 +25,11 @@ type Notifier struct {
 	// Orchestrator returns the live orchestrator receiving a lane's messages
 	// ("" = the project's main orchestrator), falling back like report routing.
 	Orchestrator func(ctx context.Context, project domain.ProjectID, lane string) (domain.SessionID, bool)
-	Send         func(ctx context.Context, to domain.SessionID, message string) error
+	// Owner returns the live orchestrator that owns a worker (the one that
+	// spawned it). The merge FYI goes there and to the main-health owner
+	// (Orchestrator("")), never to other orchestrators.
+	Owner func(ctx context.Context, project domain.ProjectID, worker domain.SessionID) (domain.SessionID, bool)
+	Send  func(ctx context.Context, to domain.SessionID, message string) error
 
 	mu   sync.Mutex
 	seen map[string]bool
@@ -53,6 +57,11 @@ func (n *Notifier) NotifyMerge(ctx context.Context, project domain.ProjectID, pr
 	}
 	for _, t := range n.Service.notices(ctx, project, prs, prURL, func(lane string) (domain.SessionID, bool) {
 		return n.Orchestrator(ctx, project, lane)
+	}, func(w domain.SessionID) (domain.SessionID, bool) {
+		if n.Owner == nil {
+			return "", false
+		}
+		return n.Owner(ctx, project, w)
 	}) {
 		if err := n.Send(ctx, t.To, t.Text); err != nil {
 			slog.Warn("merge notice: send", "to", t.To, "err", err)
@@ -67,7 +76,7 @@ type Notice struct {
 }
 
 // notices computes who is told what about the merged PR prURL.
-func (s *Service) notices(ctx context.Context, project domain.ProjectID, prs []domain.MergeDigestPR, prURL string, orch func(lane string) (domain.SessionID, bool)) []Notice {
+func (s *Service) notices(ctx context.Context, project domain.ProjectID, prs []domain.MergeDigestPR, prURL string, orch func(lane string) (domain.SessionID, bool), owner func(domain.SessionID) (domain.SessionID, bool)) []Notice {
 	var m *domain.MergeDigestPR
 	for i := range prs {
 		if prs[i].URL == prURL && prs[i].State == domain.PRStateMerged {
@@ -98,7 +107,23 @@ func (s *Service) notices(ctx context.Context, project domain.ProjectID, prs []d
 	// the title is dropped and paths are framed as untrusted data.
 	head := fmt.Sprintf("[auto] merge: #%d merged on main (%s).", m.Number, label(m.LaneItemID))
 	if m.LaneItemID != "" {
-		add("", head+" FYI, no action needed.")
+		fyi := head + " FYI, no action needed."
+		// The merged PR's owning orchestrator and the main-health owner (the
+		// default orchestrator, which checks main and rebases overlaps) hear it;
+		// one session that is both hears it once. No other orchestrator does.
+		own, hasOwner := owner(m.SessionID)
+		if hasOwner {
+			lines[own] = append(lines[own], fyi)
+		}
+		if to, ok := orch(""); ok {
+			if _, dup := lines[to]; !dup {
+				text := fyi
+				if hasOwner {
+					text = fmt.Sprintf("%s This PR belongs to orchestrator %s, which handles it; no action needed unless main breaks or your own open PRs overlap.", head, own)
+				}
+				lines[to] = append(lines[to], text)
+			}
+		}
 	}
 	for _, f := range prs {
 		if f.State == domain.PRStateMerged || f.URL == prURL {

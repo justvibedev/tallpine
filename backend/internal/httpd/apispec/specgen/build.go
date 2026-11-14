@@ -257,6 +257,7 @@ func operations() []operation {
 	ops = append(ops, backlogOperations()...)
 	ops = append(ops, backlogRunOperations()...)
 	ops = append(ops, backlogPlanOperations()...)
+	ops = append(ops, ownerAskOperations()...)
 	ops = append(ops, systemOperations()...)
 	ops = append(ops, identityOperations()...)
 	ops = append(ops, endpointsOperations()...)

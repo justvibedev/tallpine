@@ -224,11 +224,11 @@ func TestCorruptPolicyRunsNoScheduledPass(t *testing.T) {
 
 func TestApplyPatch(t *testing.T) {
 	base := DefaultPolicy()
-	next, err := ApplyPatch(base, []byte(`{"artifacts":{"autoDeliverables":true}}`))
+	next, err := ApplyPatch(base, []byte(`{"artifacts":{"autoDeliverables":false}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !next.Artifacts.AutoDeliverables || next.Artifacts.RetentionDays != base.Artifacts.RetentionDays || next.Artifacts.AutoPrune {
+	if next.Artifacts.AutoDeliverables || next.Artifacts.RetentionDays != base.Artifacts.RetentionDays || !next.Artifacts.AutoPrune {
 		t.Fatalf("patch = %+v, want only autoDeliverables changed", next.Artifacts)
 	}
 	for _, patch := range []string{``, `{"artifact":{}}`, `{"worktrees":{"retentionDays":-1}}`, `{"artifacts":{"retentionDays":99999}}`, `[]`} {

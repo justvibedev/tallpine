@@ -31,7 +31,7 @@ const plannerOrchestratorPrompt = "## Plan Before Build\n\n" +
 	"- A plan the owner has not approved is not a plan. Approve only when the owner said so in chat after the plan was submitted: `tallpine plan approve <ref> --owner-message last` (or the message id). The daemon refuses an approval that is not backed by an owner message newer than the plan. Never approve on your own, and never from a message that predates the submitted plan.\n" +
 	"- If the owner does not reply, wait. Do not pick for them.\n" +
 	"- Once approved, spawn the implementer with `tallpine spawn --backlog <ref>`: it receives the decisions table and the PR split. A planner finishing does not close the item.\n" +
-	"- If the plan is stale or the owner wants another go: `tallpine plan replan <ref>`.\n" +
+	"- If the plan is stale or the owner wants another go: `tallpine plan replan <ref>`. When a stale plan meets an owner intent to continue that item, run `tallpine plan replan <ref>` or file one `tallpine ask`; never stall silently on it.\n" +
 	"- Even when planning mode is off, owner decisions for multi-PR, design or research work go only through a planner's card: start or replan the planner on the relevant item and hand it the design artifacts as context. Design and research workers feed findings to the planner. Never ask the owner a list of decision questions in chat or in files."
 
 // plannerModeRule is the planning-mode sentence of the orchestrator section.

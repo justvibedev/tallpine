@@ -49,6 +49,74 @@ Flags:
       --project string   Also show this project's default model
 ```
 
+## `tallpine ask`
+
+```text
+Files a tracked question for the owner: 2 to 6 options (`--option a="Use Postgres"`), one of them recommended, text up to 500 characters. It shows in the owner's chat until answered; the owner's tap comes back to you as `Re Q3: <answer>`. Run `tallpine ask ls --all` first: the daemon refuses a question that matches an open one (same --about key or text) or an answered one, and tells you the earlier answer. Add --reask "<why>" to ask an answered question again because things changed. Only orchestrators ask; a worker reports to its orchestrator.
+
+Usage:
+  tallpine ask "<question>" --option <id>=<label> ... --recommended <id> [flags]
+  tallpine ask [command]
+
+Available Commands:
+  answer      Record the owner's answer to an ask, given in chat
+  ls          List the project's asks (open ones; --all adds answered and withdrawn)
+  withdraw    Withdraw an open ask that no longer needs an answer
+
+Flags:
+      --about string         Dedupe key for what this is about, such as a backlog ref (B62)
+      --json                 Print JSON
+      --option stringArray   Answer choice as id=label; repeat 2 to 6 times
+      --project string       Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+      --reask string         Why you ask again: allows repeating an answered question
+      --reason string        Why the owner is asked (shown under the question)
+      --recommended string   Id of the option you recommend
+```
+
+### `tallpine ask answer`
+
+```text
+The owner normally answers with a tap on the ask card. When they answered in chat instead, record it here: name the option or give their words with --text, and name their message with --owner-message <chat message id>, or `last` for their newest message in the project chat. The daemon checks it is the owner's and newer than the ask. Never answer for the owner.
+
+Usage:
+  tallpine ask answer <ref> (--option <id> | --text <answer>) --owner-message <id>|last [flags]
+
+Flags:
+      --json                   Print JSON
+      --option string          Id of the option the owner chose
+      --owner-message string   The owner's chat message that answers (id, or last)
+      --project string         Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+      --text string            The owner's own words, when no option fits
+```
+
+### `tallpine ask ls`
+
+```text
+Run this before asking: every orchestrator of the project shares these asks, and an answered question must not be asked again.
+
+Usage:
+  tallpine ask ls [flags]
+
+Flags:
+      --all              Include answered and withdrawn asks
+      --json             Print JSON
+      --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+```
+
+### `tallpine ask withdraw`
+
+```text
+Withdraw an open ask that no longer needs an answer
+
+Usage:
+  tallpine ask withdraw <ref> [--reason <why>] [flags]
+
+Flags:
+      --json             Print JSON
+      --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+      --reason string    Why the question is no longer needed
+```
+
 ## `tallpine automation`
 
 ```text
@@ -1060,6 +1128,7 @@ Global Flags:
 
 ```text
 Capture the current page to a PNG file. JSON output writes the file and returns compact metadata.
+Without a path, the PNG is written to the system temp directory, not the current directory.
 To return inline base64 image data instead, omit the path and use --base64 with --json.
 With --annotate, interactive elements are numbered in the image and the matching
 snapshot refs are listed alongside it.
@@ -1842,28 +1911,28 @@ Flags:
 ### `tallpine plan approve`
 
 ```text
-Approve the submitted plan. The owner approves on the plan card. An orchestrator may only approve after the owner said so in chat, and must name that message with --owner-message <chat message id>, or `last` for the owner's newest message in the project chat. The daemon checks that it is the owner's and newer than the plan's last change. Never approve on your own.
+Approve the submitted plan. The owner approves on the plan card. An orchestrator may only approve after the owner said so in chat, and must name that message with --owner-message <chat message id>, or `last` for the owner's newest message in the project chat. The daemon checks that it is the owner's and newer than the plan's last change. An ask the owner answered themselves (a tap on the card or strip) also counts: name its ref and the option the owner picked, e.g. --owner-message Q2:build-anyway, or `last:<option id>` for the newest such ask about this item; the recorded answer must be that option, and the ask must be about this item (or have no item). Never approve on your own.
 
 Usage:
   tallpine plan approve <ref> [--owner-message <id>|last] [flags]
 
 Flags:
       --json                   Print JSON
-      --owner-message string   The owner's chat message that approves (id, or last); required for an agent
+      --owner-message string   The owner's chat message that approves (id, or last), or an owner-answered ask as <ref>:<option id> (Q2:build-anyway); required for an agent
       --project string         Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
 ```
 
 ### `tallpine plan build-anyway`
 
 ```text
-Build from the approved plan although the base moved. The owner approves on the plan card. An orchestrator may only approve after the owner said so in chat, and must name that message with --owner-message <chat message id>, or `last` for the owner's newest message in the project chat. The daemon checks that it is the owner's and newer than the plan's last change. Never approve on your own.
+Build from the approved plan although the base moved. The owner approves on the plan card. An orchestrator may only approve after the owner said so in chat, and must name that message with --owner-message <chat message id>, or `last` for the owner's newest message in the project chat. The daemon checks that it is the owner's and newer than the plan's last change. An ask the owner answered themselves (a tap on the card or strip) also counts: name its ref and the option the owner picked, e.g. --owner-message Q2:build-anyway, or `last:<option id>` for the newest such ask about this item; the recorded answer must be that option, and the ask must be about this item (or have no item). Never approve on your own.
 
 Usage:
   tallpine plan build-anyway <ref> [--owner-message <id>|last] [flags]
 
 Flags:
       --json                   Print JSON
-      --owner-message string   The owner's chat message that approves (id, or last); required for an agent
+      --owner-message string   The owner's chat message that approves (id, or last), or an owner-answered ask as <ref>:<option id> (Q2:build-anyway); required for an agent
       --project string         Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
 ```
 

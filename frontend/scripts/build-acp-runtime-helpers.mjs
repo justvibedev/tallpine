@@ -286,6 +286,50 @@ export function patchClaudeContextBreakdown(adapterPath) {
 	return true;
 }
 
+/**
+ * Do not fail a turn over Claude Code's own `confirm_*` prompts.
+ *
+ * Claude Code asks some questions itself, not through the model: for example
+ * the refusal-fallback prompt ("Switch to <model> and keep going?") after a
+ * safeguard refusal. It sends that question through canUseTool as an
+ * AskUserQuestion whose id starts with `confirm_` (the CLI's synthetic-prompt
+ * prefix) and never sends a tool_result for it. claude-agent-acp 0.99 records
+ * every permission-routed call as a dispatched foreground tool, so at end_turn
+ * it treats the prompt as stuck and fails a turn whose replies all arrived
+ * ("Claude ended the turn without returning results for tool calls:
+ * confirm_..."). The patch closes those prompts as completed and lets the turn
+ * end normally. Real tool calls are still checked.
+ */
+export function patchClaudeSyntheticPromptTurnEnd(adapterPath) {
+	const source = readFileSync(adapterPath, "utf8");
+	const marker = "// Tallpine: Claude Code's own confirm_ prompts get no tool_result.";
+	if (source.includes(marker)) return false;
+	const original = [
+		"const abandoned = unfinished.filter((id) => !session.dispatchedToolCalls?.has(id));",
+		"                const stuck = unfinished.filter((id) => session.dispatchedToolCalls?.has(id));",
+	].join("\n");
+	if (source.split(original).length !== 2 || !source.includes("const closeToolCall = async (toolCallId, report) => {")) {
+		throw new Error("claude-agent-acp end-of-turn tool check no longer matches Tallpine's synthetic prompt patch");
+	}
+	const patched = [
+		marker,
+		'                const synthetic = unfinished.filter((id) => id.startsWith("confirm_"));',
+		"                for (const toolCallId of synthetic) {",
+		'                    await closeToolCall(toolCallId, { sessionUpdate: "tool_call_update", toolCallId, status: "completed" });',
+		"                    if (turn.settled || session.activeTurn !== turn)",
+		"                        return;",
+		"                    if (session.cancelled) {",
+		'                        await settleActive({ ...result, stopReason: "cancelled" });',
+		"                        return;",
+		"                    }",
+		"                }",
+		'                const abandoned = unfinished.filter((id) => !id.startsWith("confirm_") && !session.dispatchedToolCalls?.has(id));',
+		'                const stuck = unfinished.filter((id) => !id.startsWith("confirm_") && session.dispatchedToolCalls?.has(id));',
+	].join("\n");
+	writeFileSync(adapterPath, source.replace(original, patched));
+	return true;
+}
+
 export function pruneNodeDistribution(nodeRoot) {
 	// The Unix archives expose npm/corepack as bin/ symlinks into lib/. Remove
 	// the entry points before their targets so packagers never see dangling

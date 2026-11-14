@@ -182,7 +182,7 @@ func (s *Service) handoffNoteInput(ctx context.Context, record domain.SessionRec
 // handoffArtifacts returns the session's artifact directory and its files,
 // most recently updated first. A directory that cannot be read lists none.
 func (s *Service) handoffArtifacts(ctx context.Context, record domain.SessionRecord) (string, []domain.SessionArtifactFile) {
-	dir := cmp.Or(record.Metadata.ArtifactDir, sessionartifacts.Dir(s.dataDir, record.ID))
+	dir := sessionartifacts.Resolve(s.dataDir, record.ID, record.Metadata.ArtifactDir)
 	files, err := sessionartifacts.List(ctx, dir)
 	if err != nil {
 		s.log.Debug("list artifacts for handoff note", "session", record.ID, "error", err)

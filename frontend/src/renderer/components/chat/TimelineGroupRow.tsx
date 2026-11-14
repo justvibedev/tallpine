@@ -169,6 +169,8 @@ export function TimelineGroupRow({ item: { group, row, index }, ctx }: { item: {
 					<JustMeRunRow
 						count={group.collapsedRun.count}
 						open={group.collapsedRun.open}
+						workers={group.collapsedRun.workers}
+						headline={group.collapsedRun.headline}
 						live={Boolean(group.live)}
 						onToggle={() => toggleJustMeRun(group.key)}
 					/>

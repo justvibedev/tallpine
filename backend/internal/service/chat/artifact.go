@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,7 +35,7 @@ func (s *Service) recordReportedArtifact(ctx context.Context, id domain.SessionI
 	if err != nil {
 		return err
 	}
-	dir := cmp.Or(record.Metadata.ArtifactDir, sessionartifacts.Dir(s.dataDir, id))
+	dir := sessionartifacts.Resolve(s.dataDir, id, record.Metadata.ArtifactDir)
 	rel, ok := artifactRelPath(dir, reference)
 	if !ok {
 		return errors.New("not in the session's artifact directory")

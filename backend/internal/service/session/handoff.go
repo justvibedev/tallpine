@@ -53,16 +53,16 @@ func (s *Service) HandoffOrchestrator(ctx context.Context, id domain.SessionID, 
 		return domain.Session{}, apierr.Conflict("ORCHESTRATOR_AGENT_NOT_CONFIGURED",
 			"This project has no orchestrator agent configured; set one in the project settings before handing off", nil)
 	}
-	if strings.TrimSpace(notePath) == "" && !agentRunning(old) && newestNote(sessionartifacts.Dir(s.dataDir, id)) == "" {
+	if strings.TrimSpace(notePath) == "" && !agentRunning(old) && newestNote(sessionartifacts.Resolve(s.dataDir, id, old.Metadata.ArtifactDir)) == "" {
 		// Nobody can write the note: asking a stopped agent fails, and one whose
 		// saved conversation is gone never comes back to read it (B673). Seed
 		// the successor from the daemon's bootstrap note instead, as the idle
 		// handoff does.
-		if notePath, err = s.writeAutoHandoffNote(id); err != nil {
+		if notePath, err = s.writeAutoHandoffNote(id, sessionartifacts.Resolve(s.dataDir, id, old.Metadata.ArtifactDir)); err != nil {
 			return domain.Session{}, err
 		}
 	}
-	note, err := s.handoffNote(id, notePath)
+	note, err := s.handoffNote(id, notePath, old.Metadata.ArtifactDir)
 	if err != nil {
 		return domain.Session{}, err
 	}
@@ -102,12 +102,12 @@ func agentRunning(rec domain.SessionRecord) bool {
 // handoffNote returns the cleaned absolute path of an existing regular file
 // inside the session's artifact directory, symlinks resolved so a link cannot
 // point the new orchestrator outside it.
-func (s *Service) handoffNote(id domain.SessionID, notePath string) (string, error) {
+func (s *Service) handoffNote(id domain.SessionID, notePath, storedDir string) (string, error) {
 	invalid := func(msg string) error {
 		return apierr.Invalid("HANDOFF_NOTE_INVALID", msg, nil)
 	}
 	notePath = strings.TrimSpace(notePath)
-	dir := sessionartifacts.Dir(s.dataDir, id)
+	dir := sessionartifacts.Resolve(s.dataDir, id, storedDir)
 	if notePath == "" {
 		latest := newestNote(dir)
 		if latest == "" {

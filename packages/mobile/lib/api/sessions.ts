@@ -118,6 +118,8 @@ export type DashboardSession = {
 	autoInjectCI?: boolean;
 	/** Backlog ref of the lane a worker was spawned in; unset for workers outside any lane. */
 	workerLane?: string;
+	/** Backlog ref of the lane this orchestrator owns; unset for workers and the main orchestrator. */
+	lane?: string;
 };
 
 export type OrchestratorLink = {

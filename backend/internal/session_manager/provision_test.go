@@ -1087,7 +1087,7 @@ func TestResolveClaudeFamilyAliasesAcceptedWhenCatalogListsConcreteModels(t *tes
 			{ID: "claude-haiku-5-5", Label: "Haiku 5.5", Efforts: efforts},
 		},
 	}}}
-	for _, alias := range claudeFamilyAliases {
+	for _, alias := range domain.ClaudeFamilyAliases {
 		resolved, err := m.resolveAgentConfig(context.Background(), agentpolicy.Decision{}, ports.SpawnConfig{
 			ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode,
 			AgentConfig: ports.AgentConfig{Model: alias},
@@ -1112,7 +1112,7 @@ func TestResolveClaudeFamilyAliasesAcceptedWhenFamilyModelsHaveNoEfforts(t *test
 			{ID: "claude-haiku-5-5", Label: "Haiku 5.5"},
 		},
 	}}}
-	aliases := append(append([]string{}, claudeFamilyAliases...), "sonnet[1m]")
+	aliases := append(append([]string{}, domain.ClaudeFamilyAliases...), "sonnet[1m]")
 	for _, alias := range aliases {
 		resolved, err := m.resolveAgentConfig(context.Background(), agentpolicy.Decision{}, ports.SpawnConfig{
 			ProjectID: "p", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode,

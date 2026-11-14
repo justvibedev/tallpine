@@ -41,14 +41,18 @@ type ArtifactPathWorkspace = { id: string; sessions: Array<{ id: string; artifac
 
 /**
  * The artifact route for text naming a listed session artifact, either as
- * `{session}/{path}` or as a path containing `/artifacts/{session}/{path}`.
+ * `{session}/{path}` or as a path containing `/artifacts/{project}/{session}/{path}`
+ * (or the older flat `/artifacts/{session}/{path}`, still used by live sessions).
  */
 export function artifactLinkForPath(value: string, workspaces: ArtifactPathWorkspace[]): string | undefined {
 	const normalized = value.trim().replace(/\\/g, "/");
 	const candidates = normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) ? [] : [normalized];
 	const marker = `/${ARTIFACT_SEGMENT}/`;
 	for (let index = normalized.indexOf(marker); index >= 0; index = normalized.indexOf(marker, index + 1)) {
-		candidates.push(normalized.slice(index + marker.length));
+		const tail = normalized.slice(index + marker.length);
+		candidates.push(tail);
+		const projectSlash = tail.indexOf("/");
+		if (projectSlash > 0) candidates.push(tail.slice(projectSlash + 1));
 	}
 	for (const candidate of candidates) {
 		const slash = candidate.indexOf("/");

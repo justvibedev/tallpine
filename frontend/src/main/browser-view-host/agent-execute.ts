@@ -53,7 +53,7 @@ export function createAgentExecute(ctx: HostContext) {
               session.nativeActiveTabId = undefined;
               session.snapshotDeltaBaseline = undefined;
             });
-            return agentTabResult(activeEntry(session), true);
+            return agentTabResult(activeEntry(session), true, session);
           }
           await openTab(session, undefined, true, "opened", false, true);
         }

@@ -233,6 +233,9 @@ describe("opening a report's links and artifacts", () => {
 	it("finds an artifact's entry in its session's artifact folder", () => {
 		expect(artifactEntry("/Users/x/.tallpine/data/artifacts/tallpine-230/review/audit.md", "tallpine-230")).toBe("review/audit.md");
 		expect(artifactEntry("audit.md", "tallpine-230")).toBe("audit.md");
+		// The per-project layout, next to the older flat one.
+		expect(artifactEntry("/Users/x/.tallpine/data/artifacts/tallpine/tallpine-230/review/audit.md", "tallpine-230")).toBe("review/audit.md");
+		expect(artifactEntry("/Users/x/.tallpine/data/artifacts/tallpine/tallpine-231/audit.md", "tallpine-230")).toBeUndefined();
 		expect(artifactEntry("./shots/a.png", "tallpine-230")).toBe("shots/a.png");
 		expect(artifactEntry("/Users/x/.tallpine/data/artifacts/tallpine-999/audit.md", "tallpine-230")).toBeUndefined();
 		expect(artifactEntry("/tmp/audit.md", "tallpine-230")).toBeUndefined();

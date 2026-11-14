@@ -27,6 +27,7 @@ type PushData = {
 	projectId?: string;
 	prUrl?: string;
 	notificationId?: string;
+	laneChat?: boolean;
 };
 
 export function PushManager(): null {
@@ -114,7 +115,7 @@ export function PushManager(): null {
 		// saved pairing is the authority for whether this host may be opened.
 		const paired = data.hostId ? await findHost(data.hostId).catch(() => null) : null;
 		const hosts = hostsRef.current;
-		const destination = notificationTarget({ type: data.type ?? "", sessionId: data.sessionId, prUrl: data.prUrl, hostId: data.hostId, projectId: data.projectId }, paired?.id);
+		const destination = notificationTarget({ type: data.type ?? "", sessionId: data.sessionId, prUrl: data.prUrl, hostId: data.hostId, projectId: data.projectId, laneChat: data.laneChat }, paired?.id);
 		if (destination === "/") {
 			// Legacy or forgotten-machine push has no safe destination here.
 			router.navigate("/");

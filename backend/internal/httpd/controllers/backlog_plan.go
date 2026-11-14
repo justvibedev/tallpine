@@ -104,7 +104,7 @@ func (c *BacklogPlanController) list(w http.ResponseWriter, r *http.Request) {
 	}
 	out := ProjectPlansResponse{Plans: []ProjectPlanDTO{}}
 	for _, p := range plans {
-		out.Plans = append(out.Plans, ProjectPlanDTO{ItemRef: p.ItemRef, ItemTitle: p.ItemTitle, Plan: c.view(r.Context(), p.Plan)})
+		out.Plans = append(out.Plans, ProjectPlanDTO{ItemRef: p.ItemRef, ItemTitle: p.ItemTitle, Plan: c.view(r.Context(), p.Plan), Lane: p.Lane})
 	}
 	envelope.WriteJSON(w, http.StatusOK, out)
 }

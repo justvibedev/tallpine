@@ -682,6 +682,30 @@ type OrchestratorIntent struct {
 	DoneAt    sql.NullTime
 }
 
+type OwnerAsk struct {
+	ID               string
+	ProjectID        string
+	Seq              int64
+	Lane             string
+	LaneRef          string
+	SessionID        string
+	Text             string
+	Reason           string
+	OptionsJson      string
+	Recommended      string
+	About            string
+	State            string
+	AnswerJson       string
+	ReaskOf          string
+	ReaskReason      string
+	WithdrawReason   string
+	AnchorTurnID     string
+	AnchorActivityID string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	AnsweredAt       sql.NullTime
+}
+
 type PR struct {
 	URL                      string
 	SessionID                domain.SessionID

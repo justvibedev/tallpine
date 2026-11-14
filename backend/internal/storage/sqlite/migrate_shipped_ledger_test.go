@@ -265,4 +265,5 @@ var shippedMigrations = map[int64]string{
 	20261108120000000: "20261108120000000_worktree_kept_notifications.sql",
 	20261108130000000: "20261108130000000_review_trigger_queue.sql",
 	20261110100000000: "20261110100000000_app_settings_peer_check.sql",
+	20261113100000000: "20261113100000000_owner_asks.sql",
 }

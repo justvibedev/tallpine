@@ -347,6 +347,19 @@ func messageFor(rec domain.NotificationRecord, token, hostID, hostName, sessionN
 	if rec.Type == domain.NotificationPlanWaiting {
 		// The planner session is usually gone; say what waits, never the item text.
 		title = fmt.Sprintf("%s · a plan is waiting on you", label)
+		if rec.IsAsk() {
+			title = fmt.Sprintf("%s · a question is waiting on you", label)
+		}
+	}
+	data := map[string]any{
+		"type":           string(rec.Type),
+		"hostId":         hostID,
+		"sessionId":      string(rec.SessionID),
+		"projectId":      string(rec.ProjectID),
+		"notificationId": rec.ID,
+	}
+	if rec.LaneChat() {
+		data["laneChat"] = true // open the session: it is the lane orchestrator holding the plan card
 	}
 	return Message{
 		To:        token,
@@ -355,12 +368,6 @@ func messageFor(rec domain.NotificationRecord, token, hostID, hostName, sessionN
 		Sound:     "default",
 		Priority:  "high",
 		ChannelID: androidChannelID,
-		Data: map[string]any{
-			"type":           string(rec.Type),
-			"hostId":         hostID,
-			"sessionId":      string(rec.SessionID),
-			"projectId":      string(rec.ProjectID),
-			"notificationId": rec.ID,
-		},
+		Data:      data,
 	}
 }

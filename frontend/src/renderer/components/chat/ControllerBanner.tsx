@@ -1,4 +1,4 @@
-import { Loader2, TriangleAlert } from "lucide-react";
+import { CircleCheck, Loader2, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/utils";
 import { type WorkspaceSession } from "../../types/workspace";
@@ -23,6 +23,7 @@ export function ControllerBanner({
 	onOpenShell,
 	openingShell,
 	shellError,
+	finishedLabel,
 }: {
 	controller: { state: ControllerState; error?: string };
 	provisionState?: WorkspaceSession["provisionState"];
@@ -36,10 +37,20 @@ export function ControllerBanner({
 	onOpenShell?: () => void;
 	openingShell?: boolean;
 	shellError?: string;
+	/** The session was ended on purpose (killed, or landed with its worker); a stopped controller is expected, not a crash. */
+	finishedLabel?: string;
 }) {
 	const { t } = useTranslation();
 	// Startup failures use the checklist's Retry action.
 	if (provisionState === "provisioning" || provisionState === "failed") return null;
+	if (finishedLabel && controller.state === "stopped") {
+		return (
+			<div role="status" aria-atomic="true" className="flex shrink-0 items-center gap-2.5 border-b border-border bg-surface px-4 py-2.5">
+				<CircleCheck aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+				<strong className="text-xs font-medium text-muted-foreground">{finishedLabel}</strong>
+			</div>
+		);
+	}
 	const waking = Boolean(resuming && controller.state === "stopped");
 	// Nothing to act on yet: offering Resume here invites a click the daemon is
 	// about to make unnecessary.

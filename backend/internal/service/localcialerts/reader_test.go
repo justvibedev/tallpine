@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
@@ -215,5 +216,49 @@ func TestTickWithoutLocalCIDirDoesNothing(t *testing.T) {
 	f.tick()
 	if _, err := os.Stat(f.reader.Dir); !errors.Is(err, os.ErrNotExist) || len(f.sent) != 0 {
 		t.Fatalf("missing dir touched: %v %+v", err, f.sent)
+	}
+}
+
+// B688: the first start with no cursor must not replay the old alerts.tsv
+// history; only alerts recorded after Start are delivered.
+func TestStartWithoutCursorSkipsHistory(t *testing.T) {
+	f := newFixture(t)
+	f.appendAlert("t1\told build alert\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.reader.Interval = time.Hour
+	done := f.reader.Start(ctx)
+	cancel()
+	<-done
+	if len(f.sent) != 0 {
+		t.Fatalf("history replayed: %v", f.sent)
+	}
+	f.appendAlert("t2\tnew build alert\n")
+	f.tick()
+	if len(f.sent) != 1 || !strings.Contains(f.sent[0].msg, "new build alert") || strings.Contains(f.sent[0].msg, "old build alert") {
+		t.Fatalf("sent = %v", f.sent)
+	}
+}
+
+// B688: with no target, the first start must not create the cursor (it would
+// hide the "no reader" warning); once a target exists the history is still skipped.
+func TestStartWithoutTargetLeavesNoCursorThenSkipsHistory(t *testing.T) {
+	f := newFixture(t)
+	f.write("notify-target", "")
+	f.appendAlert("t1\told build alert\n")
+	f.reader.Interval = time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	done := f.reader.Start(ctx)
+	cancel()
+	<-done
+	if _, ok := f.cursor(); ok {
+		t.Fatal("cursor stamped without a target")
+	}
+	f.write("notify-target", "orch-9\n")
+	f.tick()
+	f.appendAlert("t2\tnew build alert\n")
+	f.tick()
+	if len(f.sent) != 1 || strings.Contains(f.sent[0].msg, "old build alert") {
+		t.Fatalf("sent = %v", f.sent)
 	}
 }

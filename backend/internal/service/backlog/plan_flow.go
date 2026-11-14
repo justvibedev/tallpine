@@ -9,6 +9,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
+	"tallpine.eu/tallpine/backend/internal/service/ownermsg"
 )
 
 // PlanQuestionsInput is what a planner submits first: at most 5 questions with
@@ -275,7 +276,7 @@ func (p *PlanService) deliverAnswers(ctx context.Context, plan domain.BacklogPla
 	}
 	spawn := PlannerSpawn{
 		ProjectID: plan.ProjectID, ItemID: item.ID, ItemRef: item.Ref(), PlanID: plan.ID,
-		DisplayName: "Plan " + item.Ref(), Prompt: plannerTask(item, record, p.supersededBrief(ctx, item, plan.ID, maxPlanContextRunes)),
+		DisplayName: "Plan " + item.Ref(), StarterSessionID: plan.NotifySessionID, Prompt: plannerTask(item, record, p.supersededBrief(ctx, item, plan.ID, maxPlanContextRunes)),
 	}
 	spawnFn := p.sessions.SpawnPlanner
 	if inPlace {
@@ -345,33 +346,25 @@ func (p *PlanService) verifyOwnerMessage(ctx context.Context, plan domain.Backlo
 	if p.eval != nil && p.eval(ctx, plan.ProjectID) {
 		return "", nil
 	}
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return "", apierr.Forbidden("PLAN_OWNER_MESSAGE_REQUIRED", "An orchestrator needs --owner-message: the owner's chat message that approves; never approve on your own")
-	}
-	if id == "last" {
-		mid, at, ok, err := p.store.LatestHumanProjectMessage(ctx, plan.ProjectID)
-		if err != nil {
-			return "", err
-		}
-		if !ok || !at.After(plan.UpdatedAt) {
-			return "", apierr.Forbidden("PLAN_OWNER_MESSAGE_STALE", "The owner has not written since the plan last changed: ask them first")
-		}
+	chatID, _, _ := strings.Cut(id, ":") // "last:go" names an ask option; the chat check takes "last"
+	mid, err := ownermsg.Verify(ctx, p.store, ownermsg.Check{
+		ProjectID: plan.ProjectID, Since: plan.UpdatedAt, ID: chatID, CodePrefix: "PLAN",
+		Verb: "approves", Changed: "the plan last changed", Older: "the plan's last change",
+		Hint: "an ask the owner answered themselves about this item counts too: name its ref and the approving option (--owner-message Q2:<option id>, or last:<option id>)",
+	})
+	if err == nil {
 		return mid, nil
 	}
-	src, ok, err := p.store.BacklogPlanMessageSource(ctx, id)
-	if err != nil {
-		return "", err
+	// The owner may have answered a tracked ask (a "Build anyway" tap) instead
+	// of typing: an ask they answered after the plan changed backs the call too.
+	ref, ok, lerr := p.ownerAnsweredAsk(ctx, plan, id)
+	if lerr != nil {
+		return "", lerr
 	}
-	switch {
-	case !ok:
-		return "", apierr.Forbidden("PLAN_OWNER_MESSAGE_INVALID", "That message does not exist")
-	case !src.Human || src.ProjectID != plan.ProjectID:
-		return "", apierr.Forbidden("PLAN_OWNER_MESSAGE_INVALID", "That message is not the owner's message in this project")
-	case !src.At.After(plan.UpdatedAt):
-		return "", apierr.Forbidden("PLAN_OWNER_MESSAGE_STALE", "That message is older than the plan's last change: ask the owner again")
+	if ok {
+		return ref, nil
 	}
-	return id, nil
+	return "", err
 }
 
 // Approve approves a submitted plan. The owner approves directly; an

@@ -1,4 +1,6 @@
 import { Feather } from "../icons";
+import { AskStrip } from "../ask/AskStrip";
+import { askLaneOf } from "../orchestratorView";
 import { PlanCards } from "../plan/PlanCards";
 import { isOrchestratorChat } from "./chatSessionKind";
 import { useNavigation, useRouter } from "expo-router";
@@ -370,6 +372,7 @@ export function ChatSessionScreen({ session: boardSession }: { session: MobileCh
 				/>
 				</FilesNavigationContext.Provider>
 			</ChatLinkProvider>
+			{isOrchestratorChat(session) && session.projectId ? <AskStrip cfg={config} projectId={session.projectId} lane={askLaneOf(session)} /> : null}
 			{isOrchestratorChat(session) && session.projectId ? <PlanCards cfg={config} projectId={session.projectId} /> : null}
 			{editingMessage ? <View style={{ height: chatKeyboard.restingInset }} /> : null}
 			<View style={editingMessage ? styles.composerHidden : undefined}>

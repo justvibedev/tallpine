@@ -4,18 +4,34 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
-## [Unreleased]
+## [0.13.15]
 
 ### Added
-- Pasting or attaching an image puts an inline `[IMG1]` placeholder at the cursor on desktop and phone; the agent gets a compact mapping to the staged images, and your message bubble shows only your text and thumbnails (#1162).
-- Chat attachments of ended sessions are swept up by the cleanup service (#1161).
-- A turn that fails on a transient network or API-availability error is retried automatically with backoff, and waits for connectivity instead of failing; the chat shows "Reconnecting..." rather than an error (#1166).
+- Inline `[IMGn]` image placeholders in chat, with attachment system text hidden (#1162).
+- A pinned "Waiting on you" strip tracks owner asks in chat (#1180) and on mobile (#1182).
+- Runs of worker updates fold in the default chat view (#1181).
+- The sidebar shows why an idle worker is idle (#1179).
+- Artifact directories are grouped by project (#1177).
+- A turn that failed on a transient network error is retried automatically (#1166).
+
+### Changed
+- `spawn` and `review --model` accept the aliases haiku, sonnet, opus, and fable (#1169).
+- Agent prompts keep plans, specs, and screenshots out of repositories (#1170).
 
 ### Fixed
-- An orchestrator whose saved conversation is gone starts fresh instead of failing to resume (#1163).
+- Old chat attachments of ended sessions are swept (#1161).
 - Orphaned agent-browser daemons are reaped (#1164).
-- Pending plan questions reach the owner on the phone and clear once answered (#1167).
-- Local CI build alerts reach the main-health orchestrator (#1165, #1168).
+- Pending plan questions reach the owner on phone and clear once answered (#1167).
+- Lane plans show in the lane chat, and the alert opens it (#1172).
+- An agent selecting a person-owned browser tab needs a login grant (#1173).
+- A killed worker shows a finished state instead of a crash banner (#1174).
+- Artifact retention is enforced and empty directories are dropped (#1175).
+- Claude's refusal-fallback prompt no longer fails the turn (#1176).
+- Plan events reach only the orchestrator that started the plan (#1178).
+- Windows beta: the bundled pricing catalog is pinned to LF line endings, and VM prerequisites are handled (#1193).
+- Windows beta: Administrators-owned Codex directories are accepted when Tallpine runs elevated (#1194).
+- Windows beta: `doctor` runs the Codex canary against the native executable behind the npm shim (#1195).
+- The installer re-quits a relaunched app and retakes the install snapshot before retrying (#1196).
 
 ## [0.13.13]
 

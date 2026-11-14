@@ -18,7 +18,10 @@ function setup(entries: Record<string, Entry>, platform: NodeJS.Platform = "darw
 		copyText: vi.fn(),
 		resolveArtifactDir: vi.fn(async (sessionId: string) => {
 			if (sessionId === "gone") throw new Error("no artifacts");
-			return sessionId === "moved" ? "/elsewhere/moved-artifacts" : `/data/artifacts/${sessionId}`;
+			if (sessionId === "moved") return "/elsewhere/moved-artifacts";
+			if (sessionId.length < 2) throw new Error("not a session"); // a project folder name
+			// `p-*` sessions use the per-project layout, the rest the older flat one.
+			return sessionId.startsWith("p-") ? `/data/artifacts/p/${sessionId}` : `/data/artifacts/${sessionId}`;
 		}),
 		resolveWorkspace: vi.fn(async (sessionId: string) => `/data/worktrees/proj/${sessionId}`),
 	};
@@ -164,6 +167,14 @@ describe("inspect image source for a chat session", () => {
 		expect(await image("/data/artifacts/s-2/shots/one.webp")).toEqual({ kind: "artifact", sessionId: "s-2", path: "shots/one.webp" });
 		expect(await image("/data/artifacts/moved/one.png")).toBeUndefined();
 		expect(await image("/data/artifacts/gone/one.png")).toBeUndefined();
+	});
+
+	it("maps another session's artifact across both layouts", async () => {
+		// A flat session's chat showing a per-project session's image, and the reverse.
+		expect(await image("/data/artifacts/p/p-2/shot.png")).toEqual({ kind: "artifact", sessionId: "p-2", path: "shot.png" });
+		expect(await image("/data/artifacts/s-2/shot.png", "p-1")).toEqual({ kind: "artifact", sessionId: "s-2", path: "shot.png" });
+		expect(await image("/data/artifacts/p/p-1/a/b.png", "p-1")).toEqual({ kind: "artifact", sessionId: "p-1", path: "a/b.png" });
+		expect(await image("/data/artifacts/p/gone/shot.png", "p-1")).toBeUndefined();
 	});
 
 	it("maps nothing for a same-named segment outside the real roots", async () => {

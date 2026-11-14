@@ -159,6 +159,23 @@ describe("session presentation", () => {
 		expect(getSessionStatusDotView(sessionWith({ status: "idle" }))).toMatchObject({ sleeping: false });
 	});
 
+	it("names why a quiet worker is idle: owner, timer, or plain idle", () => {
+		const hibernatedAt = "2026-10-25T20:00:00Z";
+		// Approved local stack (no PR) waiting to land: owner, not the moon.
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", kanbanColumn: "ready", hibernatedAt }))).toMatchObject({ idleReason: "owner", sleeping: false });
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", backgroundTasks: [{ id: "t", name: "wait" }], hibernatedAt }))).toMatchObject({ idleReason: "timer", sleeping: false });
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", pausedUntil: "2999-01-01T00:00:00Z" }))).toMatchObject({ idleReason: "timer" });
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", pausedUntil: "2000-01-01T00:00:00Z" })).idleReason).toBeUndefined();
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", hibernatedAt }))).toMatchObject({ idleReason: undefined, sleeping: true });
+		// Approved branch (local stack, no PR) that has not landed: waiting on the owner.
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", reviewVerdict: "approved", hibernatedAt }))).toMatchObject({ idleReason: "owner", sleeping: false });
+		// Once landed, or when the review asked for changes, it is not the owner's move.
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", reviewVerdict: "approved", landed: true, hibernatedAt })).idleReason).toBeUndefined();
+		expect(getSessionStatusDotView(sessionWith({ status: "idle", reviewVerdict: "changes_requested", hibernatedAt })).idleReason).toBeUndefined();
+		// Working agents never carry an idle reason.
+		expect(getSessionStatusDotView(sessionWith({ status: "working", kanbanColumn: "ready", activity: { state: "active", lastActivityAt: "" } })).idleReason).toBeUndefined();
+	});
+
 	it("prefers SCM state over runtime status for the dot tone", () => {
 		// A running agent drives status to `working`, which would erase every PR
 		// tone in the sidebar. SCM state wins so the row keeps saying "merged".

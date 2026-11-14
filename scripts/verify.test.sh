@@ -31,7 +31,7 @@ printf 'ok\ttallpine.eu/tallpine/backend/a\t0.1s\nFAIL\ttallpine.eu/tallpine/bac
 [ "$(failing_go_packages "$vf")" = "tallpine.eu/tallpine/backend/b" ] || { echo "FAIL: failing_go_packages missed the module's FAIL line"; rc=1; }
 rm -f "$vf"
 # A flaky vitest file's first-run assertion message and stack must be extracted (ANSI stripped) before the log dir is deleted.
-eval "$(sed -n '/^vitest_failure_details()/,/^}/p' "$here/verify")"
+eval "$(sed -n '/^vitest_failure_details()/,/^}/p' "$here/verify.d/vitest.sh")"
 vj="$(mktemp)"
 printf '%s' '{"testResults":[{"name":"/r/frontend/src/a.test.tsx","status":"failed","assertionResults":[{"status":"passed","fullName":"ok one","failureMessages":[]},{"status":"failed","fullName":"A > breaks","failureMessages":["\u001b[31mAssertionError: expected 1 to be 2\u001b[39m\n    at src/a.test.tsx:9:3"]}]},{"name":"/r/frontend/src/b.test.tsx","status":"failed","assertionResults":[{"status":"failed","fullName":"B > other","failureMessages":["nope"]}]}]}' >"$vj"
 det="$(vitest_failure_details "$vj" /r/frontend src/a.test.tsx)"
@@ -54,7 +54,7 @@ grep -q 'rc=0' "$gt/out" && grep -q 'killed by signal 15 at ' "$gt/out" || { ech
 rm -rf "$gt"
 # B625: a vitest file that fails once and passes on the one retry is reported flaky and the step passes;
 # a file that fails both attempts still fails it. Fake npx: the first run fails a.test.ts, the retry's result is $RETRY.
-eval "$(sed -n '/^vitest_failed_files()/,/^}/p;/^vitest_failure_details()/,/^}/p;/^vitest_retry()/,/^}/p' "$here/verify")"
+eval "$(sed -n '/^vitest_failed_files()/,/^}/p;/^vitest_failure_details()/,/^}/p;/^vitest_retry()/,/^}/p' "$here/verify.d/vitest.sh")"
 vr="$(mktemp -d)"; mkdir -p "$vr/bin" "$vr/pkg"
 printf '%s\n' '#!/bin/bash' \
 	'for a in "$@"; do case "$a" in --outputFile.json=*) out="${a#*=}" ;; esac; done' \
@@ -75,6 +75,25 @@ grep -q 'Test timed out in 5000ms' "$vr/flaky-detail.txt" || { echo "FAIL: vites
 vr_fail="$(vr_run fail)"
 case "$vr_fail" in "rc=1"*) ;; *) echo "FAIL: vitest_retry must fail a file that fails both attempts: $vr_fail"; rc=1 ;; esac
 case "$vr_fail" in *flaky*|*"retry)"*) echo "FAIL: vitest_retry reported a twice-failing file as flaky: $vr_fail"; rc=1 ;; esac
+# B717: vitest killed by a signal before any file failed is an external kill: re-run everything once. Fake npx: run 1 is
+# killed (no json); run 2 passes, or fails a.test.ts (then the per-file retry, run 3, passes).
+printf '%s\n' '#!/bin/bash' \
+	'for a in "$@"; do case "$a" in --outputFile.json=*) out="${a#*=}" ;; esac; done' \
+	'n=$(cat "$VR/n" 2>/dev/null || echo 0); echo $((n+1)) >"$VR/n"' \
+	'[ "$n" = 0 ] && kill -TERM $$' \
+	'st=passed; code=0; [ "$n" = 1 ] && [ "$SECOND" = fail ] && st=failed && code=1' \
+	'printf "{\"testResults\":[{\"name\":\"%s/pkg/a.test.ts\",\"status\":\"%s\",\"assertionResults\":[{\"status\":\"%s\",\"fullName\":\"A\",\"failureMessages\":[\"boom\"]}]}]}" "$VR" "$st" "$st" >"$out"' \
+	'exit $code' >"$vr/bin/npx"
+vs_run() { # vs_run <pass|fail>: the second run's result; prints the output, "rc=<n>", the flaky lines and the run count
+	rm -f "$vr/n" "$vr/flaky-detail.txt" "$vr"/mobile-*.json
+	(export VR="$vr" SECOND="$1" PATH="$vr/bin:$PATH"; cd "$vr"; with_slot() { "$@"; }
+		repo="$vr" log_dir="$vr" NICE=0 VITEST_CAP=1 retry=1 flaky=()
+		vitest_retry mobile pkg vitest.config.ts 2>&1; echo "rc=$?"; printf '%s\n' ${flaky[@]+"${flaky[@]}"}; echo "runs=$(cat "$vr/n")")
+}
+vs_pass="$(vs_run pass)"
+case "$vs_pass" in *"killed by signal 15 at "*"rc=0"*"mobile: killed by signal 15 at "*"runs=2"*) ;; *) echo "FAIL: signal-killed vitest not re-run once: $vs_pass"; rc=1 ;; esac
+vs_fail="$(vs_run fail)"
+case "$vs_fail" in *"killed by signal 15 at "*"re-running once"*"retrying failed files once: a.test.ts"*"rc=0"*"mobile: a.test.ts (failed, then passed on retry)"*"runs=3"*) ;; *) echo "FAIL: killed-then-failing vitest did not fall through to the per-file retry: $vs_fail"; rc=1 ;; esac
 rm -rf "$vr"
 # --since planning (B350): which jobs `--all --tsv --since <sha>` plans for a change set. Runs in a scratch git repo
 # with copies of the scripts so the commits are synthetic.

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/agentpolicy"
@@ -35,6 +34,7 @@ func newPlanService(cfg config.Config, store *sqlite.Store, backlog *backlogsvc.
 		Enabled:     cfg.Planner,
 		NotifyOwner: planOwnerAlert(owner, sessions, store),
 		ClearOwner:  planOwnerClear(owner),
+		LaneOf:      planLaneOf(sessions),
 	})
 }
 
@@ -125,6 +125,7 @@ func (p plannerSessions) SpawnPlanner(ctx context.Context, in backlogsvc.Planner
 	cfg := ports.SpawnConfig{
 		ProjectID: in.ProjectID, Kind: domain.KindWorker, Role: domain.SessionRolePlanner,
 		RequestedOutput: domain.RequestedOutputArtifact, Prompt: in.Prompt, DisplayName: in.DisplayName,
+		ParentSessionID: in.StarterSessionID,
 	}
 	sess, _, _, err := p.sessions.Spawn(ctx, cfg)
 	if errors.Is(err, sessionmanager.ErrMissingHarness) {
@@ -149,7 +150,7 @@ func (p plannerSessions) SpawnPlanner(ctx context.Context, in backlogsvc.Planner
 // plan itself; the record is in its brief when the first one ended (B335).
 func (p plannerSessions) SpawnInPlace(ctx context.Context, in backlogsvc.PlannerSpawn) (domain.SessionID, error) {
 	sess, _, _, err := p.sessions.Spawn(ctx, ports.SpawnConfig{
-		ProjectID: in.ProjectID, Kind: domain.KindWorker, LaneItemID: in.LaneItemID, Prompt: "Continue backlog item " + in.ItemRef + ".", BacklogContext: in.Prompt, DisplayName: in.DisplayName,
+		ProjectID: in.ProjectID, Kind: domain.KindWorker, LaneItemID: in.LaneItemID, ParentSessionID: in.StarterSessionID, Prompt: "Continue backlog item " + in.ItemRef + ".", BacklogContext: in.Prompt, DisplayName: in.DisplayName,
 	})
 	if err != nil {
 		return "", err
@@ -368,8 +369,12 @@ func planOwnerClear(owner planOwner) func(ctx context.Context, plan domain.Backl
 		return nil
 	}
 	return func(ctx context.Context, plan domain.BacklogPlan) {
-		if err := owner.Resolve(ctx, ports.NotificationResolution{Type: domain.NotificationPlanWaiting, SessionID: plan.PlannerSessionID}); err != nil {
-			slog.Warn("could not clear a plan's owner notification", "plan", plan.ID, "error", err)
+		// Scope the clear to this plan's alerts: a lane orchestrator's other waiting
+		// plans share its session. The key is "plan-waiting[-lane]:<plan id>:<state>:...".
+		for _, prefix := range []string{"plan-waiting:", domain.PlanLaneSourcePrefix} {
+			if err := owner.Resolve(ctx, ports.NotificationResolution{Type: domain.NotificationPlanWaiting, SourceKeyPrefix: prefix + plan.ID + ":"}); err != nil {
+				slog.Warn("could not clear a plan's owner notification", "plan", plan.ID, "error", err)
+			}
 		}
 	}
 }
@@ -395,9 +400,13 @@ func planOwnerAlert(owner ownerNotifier, sessions planLeadSessions, items planLe
 		if itemTitle != "" {
 			body = itemTitle + "\n" + body
 		}
+		session, prefix := planAlertSession(ctx, sessions, plan), "plan-waiting:"
+		if session != plan.PlannerSessionID {
+			prefix = domain.PlanLaneSourcePrefix
+		}
 		if err := owner.Notify(ctx, ports.NotificationIntent{
-			Type: domain.NotificationPlanWaiting, SessionID: plan.PlannerSessionID, ProjectID: plan.ProjectID,
-			SourceKey: "plan-waiting:" + plan.ID + ":" + string(plan.Status) + ":" + plan.UpdatedAt.Format(time.RFC3339Nano),
+			Type: domain.NotificationPlanWaiting, SessionID: session, ProjectID: plan.ProjectID,
+			SourceKey: prefix + plan.ID + ":" + string(plan.Status) + ":" + plan.UpdatedAt.Format(time.RFC3339Nano),
 			Title:     title, Body: body,
 		}); err != nil {
 			slog.Warn("could not notify the owner of a waiting plan", "plan", plan.ID, "error", err)
@@ -405,77 +414,35 @@ func planOwnerAlert(owner ownerNotifier, sessions planLeadSessions, items planLe
 	}
 }
 
-// planLeadSessions is the session access the lane notice needs.
-type planLeadSessions = backlogRunSessions
-
-// planLeadNotice tells the project's default (un-laned) orchestrator when a
-// plan from a lane waits on the owner, so the main chat knows the lane is
-// blocked. It sends once per plan and state; plans of the default orchestrator
-// or without a lane send nothing. Failures are logged only.
-type planLeadNotice struct {
-	sessions planLeadSessions
-	items    planLeadItems
-	mu       sync.Mutex
-	sent     map[string]bool
+// planLaneOf names the lane a live lane orchestrator owns ("" for any other
+// session), so a plan's card shows only in the chat of the lane that started it.
+func planLaneOf(sessions planLeadSessions) func(ctx context.Context, id domain.SessionID) string {
+	if sessions == nil {
+		return nil
+	}
+	return func(ctx context.Context, id domain.SessionID) string {
+		active := true
+		found, err := sessions.List(ctx, sessionsvc.ListFilter{Active: &active, OrchestratorOnly: true})
+		if err != nil {
+			return ""
+		}
+		for _, s := range found {
+			if s.ID == id {
+				return s.Lane
+			}
+		}
+		return ""
+	}
 }
 
-func (n *planLeadNotice) notify(ctx context.Context, plan domain.BacklogPlan, itemRef string) {
-	if n == nil || n.sessions == nil {
-		return
-	}
-	key := plan.ID + ":" + string(plan.Status)
-	n.mu.Lock()
-	done := n.sent[key]
-	n.mu.Unlock()
-	if done {
-		return
-	}
-	// Planners carry no lane of their own: a plan is in a lane when its
-	// item's parent is the lane a live lane orchestrator owns.
-	if n.items == nil {
-		return
-	}
-	item, ok, err := n.items.GetBacklogItem(ctx, plan.ItemID)
-	if err != nil || !ok {
-		return
-	}
-	// A lane may be a top-level item the lane orchestrator plans itself.
-	lane := item.Ref()
-	if item.ParentID != "" {
-		parent, ok, err := n.items.GetBacklogItem(ctx, item.ParentID)
-		if err != nil || !ok {
-			return
-		}
-		lane = parent.Ref()
-	}
-	active := true
-	found, err := n.sessions.List(ctx, sessionsvc.ListFilter{ProjectID: plan.ProjectID, Active: &active, OrchestratorOnly: true})
-	if err != nil {
-		slog.Warn("could not list orchestrators for a waiting lane plan", "plan", plan.ID, "error", err)
-		return
-	}
-	inLane := false
-	for _, s := range found {
-		inLane = inLane || s.Lane == lane
-	}
-	if !inLane {
-		return
-	}
-	var lead domain.Session
-	for _, s := range found {
-		if s.Lane == "" && (lead.ID == "" || s.CreatedAt.After(lead.CreatedAt)) {
-			lead = s
+// planAlertSession is the session a plan_waiting alert opens: the lane
+// orchestrator that started the plan, else the planner (the project's main
+// chat opens from the project). Alert and clear use the same session.
+func planAlertSession(ctx context.Context, sessions planLeadSessions, plan domain.BacklogPlan) domain.SessionID {
+	if sessions != nil && plan.NotifySessionID != "" {
+		if lane := planLaneOf(sessions); lane != nil && lane(ctx, plan.NotifySessionID) != "" {
+			return plan.NotifySessionID
 		}
 	}
-	if lead.ID == "" {
-		return
-	}
-	msg := fmt.Sprintf("[auto] plan_waiting: %s in lane %s is awaiting the owner (%s)", itemRef, lane, plan.Status)
-	if err := n.sessions.SendWithOptions(ctx, lead.ID, msg, nil, ports.MessageDeliveryOptions{}); err != nil {
-		slog.Warn("could not tell the default orchestrator about a waiting lane plan", "plan", plan.ID, "error", err)
-		return
-	}
-	n.mu.Lock()
-	n.sent[key] = true
-	n.mu.Unlock()
+	return plan.PlannerSessionID
 }

@@ -172,9 +172,11 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 					return err
 				}
 			}
-			if err := ctx.validateModel(cmd.Context(), opts.harness, opts.model, project.ID); err != nil {
+			resolvedModel, err := ctx.validateModel(cmd.Context(), opts.harness, opts.model, project.ID)
+			if err != nil {
 				return err
 			}
+			opts.model = resolvedModel
 			claimRef := ""
 			if opts.claimPR != "" {
 				claimRef, err = ctx.resolvePRRef(cmd.Context(), opts.claimPR, project)

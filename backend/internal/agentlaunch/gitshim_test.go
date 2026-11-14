@@ -134,7 +134,7 @@ exit 127`)
 		wrapDir := filepath.Join(root, "wrap-"+name)
 		writeFakeTool(t, wrapDir, "git", body)
 		run := func(path string, args ...string) (string, int) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute) // the twice fan-out spawns ~2^cap shells; a real loop never ends
 			defer cancel()
 			cmd := exec.CommandContext(ctx, shimGit, args...)
 			cmd.Env = []string{"PATH=" + path}

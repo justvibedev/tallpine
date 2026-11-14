@@ -5,6 +5,35 @@ description: Read current Tallpine product updates and release notes.
 
 Release notes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and are sourced from Tallpine's merged pull requests. Tallpine is a fork of Agent Orchestrator; notes from before the fork are upstream's.
 
+## [0.13.15]
+
+### Added
+- Inline `[IMGn]` image placeholders in chat, with attachment system text hidden (#1162).
+- A pinned "Waiting on you" strip tracks owner asks in chat (#1180) and on mobile (#1182).
+- Runs of worker updates fold in the default chat view (#1181).
+- The sidebar shows why an idle worker is idle (#1179).
+- Artifact directories are grouped by project (#1177).
+- A turn that failed on a transient network error is retried automatically (#1166).
+
+### Changed
+- `spawn` and `review --model` accept the aliases haiku, sonnet, opus, and fable (#1169).
+- Agent prompts keep plans, specs, and screenshots out of repositories (#1170).
+
+### Fixed
+- Old chat attachments of ended sessions are swept (#1161).
+- Orphaned agent-browser daemons are reaped (#1164).
+- Pending plan questions reach the owner on phone and clear once answered (#1167).
+- Lane plans show in the lane chat, and the alert opens it (#1172).
+- An agent selecting a person-owned browser tab needs a login grant (#1173).
+- A killed worker shows a finished state instead of a crash banner (#1174).
+- Artifact retention is enforced and empty directories are dropped (#1175).
+- Claude's refusal-fallback prompt no longer fails the turn (#1176).
+- Plan events reach only the orchestrator that started the plan (#1178).
+- Windows beta: the bundled pricing catalog is pinned to LF line endings, and VM prerequisites are handled (#1193).
+- Windows beta: Administrators-owned Codex directories are accepted when Tallpine runs elevated (#1194).
+- Windows beta: `doctor` runs the Codex canary against the native executable behind the npm shim (#1195).
+- The installer re-quits a relaunched app and retakes the install snapshot before retrying (#1196).
+
 ## [0.13.13]
 
 ### Added

@@ -43,6 +43,7 @@ func (m *Manager) recordTermination(ctx context.Context, id domain.SessionID, dr
 		return fmt.Errorf("kill %s: %w", id, errors.Join(err, markerErr))
 	}
 	m.cleanupSystemPromptDir(id)
+	m.removeEmptyArtifactDir(id)
 	if markerErr != nil {
 		return fmt.Errorf("kill %s: clear restore marker: %w", id, markerErr)
 	}

@@ -47,7 +47,7 @@ func (m *Manager) ReconcileSessionOutputType(ctx context.Context, id domain.Sess
 	artifactDir := rec.Metadata.ArtifactDir
 	backfilled := false
 	if artifactDir == "" {
-		if dir := sessionartifacts.Dir(m.dataDir, id); dir != "" {
+		if dir := sessionartifacts.Resolve(m.dataDir, id, ""); dir != "" {
 			artifactDir = dir
 			backfilled = true
 		}

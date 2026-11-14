@@ -30,7 +30,7 @@ import { useSettings } from "../../hooks/useSettings";
 import { AgentAccountLoginDialog } from "../settings/AgentAccountsSection";
 import { versionLabel } from "../../hooks/useHarnessUpdates";
 import { cn, truncateMiddle } from "../../lib/utils";
-import type { SessionStaleBinary } from "../../types/workspace";
+import type { SessionStaleBinary } from "../../types/session-facts";
 import { Button } from "../ui/button";
 import type { ConversationAccount, ConversationThreadState, McpServer } from "../../types/conversation";
 import { Spinner } from "../ui/spinner";

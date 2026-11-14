@@ -27,9 +27,14 @@ type fakeArtifacts struct {
 	refuse      bool
 	protected   map[domain.SessionID]bool
 	endedBefore time.Time
+	// onProtected runs after the run took its session snapshot, like a restore landing mid-pass.
+	onProtected func()
 }
 
 func (f *fakeArtifacts) Protected(context.Context) (map[domain.SessionID]bool, error) {
+	if f.onProtected != nil {
+		f.onProtected()
+	}
 	return f.protected, nil
 }
 
@@ -116,7 +121,7 @@ func itemsByWhat(report Report, id domain.SessionID) map[string]Item {
 const month = 30 * 24 * time.Hour
 
 func TestArtifactRuleLeavesLiveAndRecentSessionsAlone(t *testing.T) {
-	f := newArtifactFixture(t, `{"artifacts":{"autoDeliverables":true}}`)
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoDeliverables":true,"deliverableAction":"archive"}}`)
 	live := f.session("live", false, 2*month)
 	recent := f.session("recent", true, 24*time.Hour)
 	report := f.run(RunRequest{ConfirmArtifacts: true})
@@ -137,7 +142,7 @@ func TestArtifactRuleLeavesLiveAndRecentSessionsAlone(t *testing.T) {
 }
 
 func TestArtifactRuleAsksBeforeHistoryAndDeliverables(t *testing.T) {
-	f := newArtifactFixture(t, "{}")
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoPrune":false,"autoDeliverables":false,"deliverableAction":"archive"}}`)
 	dir := f.session("old", true, 2*month)
 	report := f.run(RunRequest{Trigger: TriggerSchedule})
 	items := itemsByWhat(report, "old")
@@ -161,7 +166,7 @@ func TestArtifactRuleAsksBeforeHistoryAndDeliverables(t *testing.T) {
 }
 
 func TestArtifactRuleConfirmationRemovesHistoryAndArchivesDeliverables(t *testing.T) {
-	f := newArtifactFixture(t, "{}")
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoPrune":false,"autoDeliverables":false,"deliverableAction":"archive"}}`)
 	f.session("old", true, 2*month)
 	report := f.run(RunRequest{ConfirmArtifacts: true})
 	items := itemsByWhat(report, "old")
@@ -174,7 +179,7 @@ func TestArtifactRuleConfirmationRemovesHistoryAndArchivesDeliverables(t *testin
 }
 
 func TestArtifactRuleAutoPruneRemovesHistoryOnly(t *testing.T) {
-	f := newArtifactFixture(t, `{"artifacts":{"autoPrune":true}}`)
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoPrune":true,"autoDeliverables":false,"deliverableAction":"archive"}}`)
 	f.session("old", true, 2*month)
 	report := f.run(RunRequest{Trigger: TriggerSchedule})
 	items := itemsByWhat(report, "old")
@@ -187,7 +192,7 @@ func TestArtifactRuleAutoPruneRemovesHistoryOnly(t *testing.T) {
 }
 
 func TestArtifactRuleReportsARefusedPruneAsKept(t *testing.T) {
-	f := newArtifactFixture(t, `{"artifacts":{"autoPrune":true}}`)
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoPrune":true,"autoDeliverables":false,"deliverableAction":"archive"}}`)
 	dir := f.session("old", true, 2*month)
 	f.fake.refuse = true
 	report := f.run(RunRequest{})
@@ -204,7 +209,7 @@ func TestArtifactRuleReportsARefusedPruneAsKept(t *testing.T) {
 }
 
 func TestArtifactRuleAppliesDeliverableActionOnceConfirmed(t *testing.T) {
-	f := newArtifactFixture(t, `{"artifacts":{"deliverableAction":"delete","retentionDays":14}}`)
+	f := newArtifactFixture(t, `{"artifacts":{"deliverableAction":"delete","retentionDays":14,"autoDeliverables":false}}`)
 	f.session("old", true, 2*month)
 	report := f.run(RunRequest{ConfirmArtifacts: true})
 	if len(f.fake.retained) != 1 || f.fake.action != artifactstorage.ActionDelete || f.fake.days != 14 {
@@ -216,7 +221,7 @@ func TestArtifactRuleAppliesDeliverableActionOnceConfirmed(t *testing.T) {
 }
 
 func TestArtifactRuleAutoDeliverablesNeedsNoConfirmation(t *testing.T) {
-	f := newArtifactFixture(t, `{"artifacts":{"autoDeliverables":true}}`)
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoDeliverables":true,"deliverableAction":"archive"}}`)
 	f.session("old", true, 2*month)
 	f.run(RunRequest{Trigger: TriggerSchedule})
 	if len(f.fake.retained) != 1 || f.fake.action != artifactstorage.ActionArchive {
@@ -225,7 +230,7 @@ func TestArtifactRuleAutoDeliverablesNeedsNoConfirmation(t *testing.T) {
 }
 
 func TestArtifactRuleDryRunTouchesNothing(t *testing.T) {
-	f := newArtifactFixture(t, "{}")
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoPrune":false,"autoDeliverables":false,"deliverableAction":"archive"}}`)
 	dir := f.session("old", true, 2*month)
 	report := f.run(RunRequest{DryRun: true, ConfirmArtifacts: true})
 	if len(f.fake.pruned) != 0 || len(f.fake.retained) != 0 {
@@ -241,7 +246,7 @@ func TestArtifactRuleDryRunTouchesNothing(t *testing.T) {
 }
 
 func TestArtifactRuleSkipsCustomArtifactDirs(t *testing.T) {
-	f := newArtifactFixture(t, `{"artifacts":{"autoDeliverables":true}}`)
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoDeliverables":true,"deliverableAction":"archive"}}`)
 	f.session("old", true, 2*month)
 	f.store.sessions[0].Metadata.ArtifactDir = filepath.Join(t.TempDir(), "elsewhere")
 	f.run(RunRequest{})
@@ -251,7 +256,7 @@ func TestArtifactRuleSkipsCustomArtifactDirs(t *testing.T) {
 }
 
 func TestArtifactRuleKeepsSessionsALiveBacklogItemReferences(t *testing.T) {
-	f := newArtifactFixture(t, `{"artifacts":{"autoPrune":true}}`)
+	f := newArtifactFixture(t, `{"artifacts":{"retentionDays":30,"autoPrune":true,"autoDeliverables":false,"deliverableAction":"archive"}}`)
 	dir := f.session("old", true, 2*month)
 	f.fake.protected = map[domain.SessionID]bool{"old": true}
 	for _, req := range []RunRequest{{DryRun: true, ConfirmArtifacts: true}, {ConfirmArtifacts: true}} {
@@ -263,5 +268,84 @@ func TestArtifactRuleKeepsSessionsALiveBacklogItemReferences(t *testing.T) {
 	}
 	if len(f.fake.pruned) != 0 || len(f.fake.retained) != 0 || !exists(filepath.Join(dir, ".versions")) {
 		t.Fatalf("pruned=%v retained=%v: protected session touched", f.fake.pruned, f.fake.retained)
+	}
+}
+
+const week = 7 * 24 * time.Hour
+
+func TestArtifactRuleDefaultDeletesAfterSevenDaysWithoutConfirmation(t *testing.T) {
+	f := newArtifactFixture(t, "{}")
+	f.session("old", true, 8*24*time.Hour)
+	f.session("fresh", true, 6*24*time.Hour)
+	report := f.run(RunRequest{Trigger: TriggerSchedule})
+	if got := itemsByWhat(report, "old")["deliverables (delete)"]; got.Status != StatusFreed {
+		t.Fatalf("old deliverables item = %+v, want freed", got)
+	}
+	if len(f.fake.retained) != 1 || f.fake.retained[0] != "old" || f.fake.action != artifactstorage.ActionDelete || f.fake.days != 7 {
+		t.Fatalf("retained=%v action=%s days=%d", f.fake.retained, f.fake.action, f.fake.days)
+	}
+	if len(f.fake.pruned) != 1 || f.fake.pruned[0] != "old" {
+		t.Fatalf("pruned=%v, want only old", f.fake.pruned)
+	}
+}
+
+func TestArtifactRuleRemovesEmptyDirsOfEndedSessionsAtOnce(t *testing.T) {
+	f := newArtifactFixture(t, "{}")
+	mk := func(id domain.SessionID, terminated bool, ended time.Duration) string {
+		dir := sessionartifacts.Dir(f.data, id)
+		if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		f.store.sessions = append(f.store.sessions, domain.SessionRecord{ID: id, ProjectID: "mer", IsTerminated: terminated, UpdatedAt: f.now.Add(-ended)})
+		return dir
+	}
+	endedEmpty := mk("ended", true, time.Hour)
+	liveEmpty := mk("live", false, time.Hour)
+	refEmpty := mk("ref", true, time.Hour)
+	f.fake.protected = map[domain.SessionID]bool{"ref": true}
+	dry := f.run(RunRequest{DryRun: true})
+	if !exists(endedEmpty) {
+		t.Fatal("dry run removed an empty dir")
+	}
+	if got := itemsByWhat(dry, "ended")["empty artifact directory"]; got.Status != StatusWouldFree {
+		t.Fatalf("dry run item = %+v, want would-free", got)
+	}
+	f.run(RunRequest{})
+	if exists(endedEmpty) {
+		t.Fatal("empty dir of an ended session was kept")
+	}
+	if !exists(liveEmpty) || !exists(refEmpty) {
+		t.Fatal("live or backlog-referenced empty dir was removed")
+	}
+}
+
+func TestArtifactRuleDefaultKeepsBacklogReferencedDirs(t *testing.T) {
+	f := newArtifactFixture(t, "{}")
+	dir := f.session("old", true, 2*week)
+	f.fake.protected = map[domain.SessionID]bool{"old": true}
+	f.run(RunRequest{})
+	if len(f.fake.pruned) != 0 || len(f.fake.retained) != 0 || !exists(filepath.Join(dir, "report.md")) {
+		t.Fatal("backlog-referenced session was cleaned")
+	}
+}
+
+func TestArtifactRuleKeepsEmptyDirOfSessionRestoredAfterTheScan(t *testing.T) {
+	f := newArtifactFixture(t, "{}")
+	dir := sessionartifacts.Dir(f.data, "back")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.store.sessions = append(f.store.sessions, domain.SessionRecord{ID: "back", ProjectID: "mer", IsTerminated: true, UpdatedAt: f.now.Add(-time.Hour)})
+	f.fake.onProtected = func() {
+		f.store.mu.Lock()
+		f.store.sessions[0].IsTerminated = false
+		f.store.mu.Unlock()
+	}
+	report := f.run(RunRequest{})
+	if !exists(dir) {
+		t.Fatal("empty dir of a session restored mid-pass was removed")
+	}
+	if got := itemsByWhat(report, "back")["empty artifact directory"]; got.Status != StatusKept {
+		t.Fatalf("item = %+v, want kept", got)
 	}
 }

@@ -176,6 +176,21 @@ describe("PlanCards", () => {
 		expect(await screen.findByTestId("plan-card")).toHaveTextContent("B7 · Seat sharing");
 	});
 
+	it("shows a lane plan only in the lane's chat and points to it from the main chat", async () => {
+		const laneStarted = { itemRef: "B58", itemTitle: "t", lane: "B1", plan: planFixture({ id: "plan_B58", starterSessionId: "lane-1" }) };
+		const mainStarted = { itemRef: "B7", itemTitle: "t", plan: planFixture({ id: "plan_B7", starterSessionId: "main-1" }) };
+		api.listProjectPlans.mockResolvedValue([laneStarted, mainStarted]);
+		const lane = renderWithClient(<PlanCards projectId="p1" sessionId="lane-1" lane="B1" />);
+		expect(await screen.findByTestId("plan-card")).toHaveTextContent("B58");
+		expect(screen.getAllByTestId("plan-card")).toHaveLength(1);
+		expect(screen.queryByTestId("plan-lane-pointer")).toBeNull();
+		lane.unmount();
+		renderWithClient(<PlanCards projectId="p1" sessionId="main-1" />);
+		expect(await screen.findByTestId("plan-card")).toHaveTextContent("B7");
+		expect(screen.getAllByTestId("plan-card")).toHaveLength(1);
+		expect(screen.getByTestId("plan-lane-pointer")).toHaveTextContent("B58 waits in lane B1");
+	});
+
 	it("keeps only one card open and opens the next one after answering", async () => {
 		const mk = (r: string) => ({ itemRef: r, itemTitle: "t", plan: planFixture({ id: `plan_${r}` }) });
 		api.listProjectPlans.mockResolvedValue([mk("B1"), mk("B2"), mk("B3")]);

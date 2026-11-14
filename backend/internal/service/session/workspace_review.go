@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -23,7 +22,6 @@ const (
 	maxWorkspaceDiffGroupBytes = 2 * 1024 * 1024
 	maxWorkspaceRevisionBytes  = 2 * 1024 * 1024
 	maxWorkspaceSearchResults  = 100
-	workspaceReviewTimeout     = 15 * time.Second
 )
 
 // WorkspaceDiffScope selects the two revisions used by the review APIs.

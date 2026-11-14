@@ -44,6 +44,86 @@ func commitFile(t *testing.T, repo, name string) {
 	runGit(t, repo, "commit", "-m", "add "+name)
 }
 
+func headOf(t *testing.T, dir string) string {
+	t.Helper()
+	return strings.TrimSpace(runGit(t, dir, "rev-parse", "HEAD"))
+}
+
+// A branch whose commits all reached the base reads as landed; an untouched one
+// (tip still on the commit it was created from) does not.
+func TestReconcileSessionBranchStateMarksLandedBranch(t *testing.T) {
+	t.Parallel()
+
+	repo := newPushableRepo(t)
+	created := headOf(t, repo)
+	worktree := filepath.Join(t.TempDir(), "wt")
+	runGit(t, repo, "worktree", "add", "-b", "tp/s1", worktree)
+	st := &branchStateStore{fakeStore: newFakeStore()}
+	st.sessions["s1"] = domain.SessionRecord{ID: "s1", Metadata: domain.SessionMetadata{
+		WorkspacePath: worktree, DiffBaseRef: "refs/heads/main", DiffBaseSHA: created,
+	}}
+	svc := &Service{store: st}
+	landed := func() bool {
+		t.Helper()
+		if err := svc.ReconcileSessionBranchState(context.Background(), "s1"); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		return st.sessions["s1"].BranchState.Landed
+	}
+	if landed() {
+		t.Fatal("untouched branch read as landed")
+	}
+	commitFile(t, worktree, "a.go")
+	if landed() {
+		t.Fatal("branch with unlanded commits read as landed")
+	}
+	runGit(t, repo, "merge", "--ff-only", "tp/s1")
+	if !landed() {
+		t.Fatal("branch merged into its base did not read as landed")
+	}
+}
+
+// `tallpine land` squashes: the branch keeps its commits and the base gains one
+// commit carrying the branch tip's Tallpine-Head trailer. That must read as landed.
+func TestReconcileSessionBranchStateMarksSquashLandedBranch(t *testing.T) {
+	t.Parallel()
+
+	repo := newPushableRepo(t)
+	created := headOf(t, repo)
+	worktree := filepath.Join(t.TempDir(), "wt")
+	runGit(t, repo, "worktree", "add", "-b", "tp/s1", worktree)
+	commitFile(t, worktree, "a.go")
+	commitFile(t, worktree, "b.go")
+	tip := headOf(t, worktree)
+	st := &branchStateStore{fakeStore: newFakeStore()}
+	st.sessions["s1"] = domain.SessionRecord{ID: "s1", Metadata: domain.SessionMetadata{
+		WorkspacePath: worktree, DiffBaseRef: "refs/heads/main", DiffBaseSHA: created,
+	}}
+	svc := &Service{store: st}
+	landed := func() bool {
+		t.Helper()
+		if err := svc.ReconcileSessionBranchState(context.Background(), "s1"); err != nil {
+			t.Fatalf("reconcile: %v", err)
+		}
+		return st.sessions["s1"].BranchState.Landed
+	}
+	if landed() {
+		t.Fatal("unlanded branch read as landed")
+	}
+	// Squash onto main the way localland does: a new commit with the trailer.
+	runGit(t, repo, "merge", "--squash", "tp/s1")
+	runGit(t, repo, "commit", "-m", "Land s1\n\nTallpine-Session: s1\nTallpine-Head: "+tip)
+	if st.sessions["s1"].BranchState.Commits == 0 {
+		t.Fatal("setup: squash should leave commits above the base")
+	}
+	if !landed() {
+		t.Fatal("squash-landed branch did not read as landed")
+	}
+	if got := st.sessions["s1"].BranchState.Commits; got == 0 {
+		t.Fatalf("commits = %d: branch must stay ahead of a squashed base", got)
+	}
+}
+
 func TestReconcileSessionBranchStateTracksCommitsAndPushes(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +142,7 @@ func TestReconcileSessionBranchStateTracksCommitsAndPushes(t *testing.T) {
 		if err := svc.ReconcileSessionBranchState(context.Background(), "tp-1"); err != nil {
 			t.Fatalf("reconcile: %v", err)
 		}
+		want.Head = headOf(t, repo)
 		if got := st.sessions["tp-1"].BranchState; got == nil || *got != want {
 			t.Fatalf("branch state = %+v, want %+v", got, want)
 		}
@@ -101,7 +182,7 @@ func TestReconcileBranchStatesFollowsTheWorktreeBranch(t *testing.T) {
 	if err := (&Service{store: st}).ReconcileBranchStates(context.Background()); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
-	want := domain.SessionBranchState{Commits: 1, Unpushed: 1}
+	want := domain.SessionBranchState{Commits: 1, Unpushed: 1, Head: headOf(t, worktree)}
 	if got := st.sessions["s1"].BranchState; got == nil || *got != want {
 		t.Fatalf("branch state = %+v, want %+v", got, want)
 	}
@@ -146,7 +227,7 @@ func TestReconcileBranchStatesRunsGitOnlyWhenTipsMove(t *testing.T) {
 	if got := pass(); got != 2 {
 		t.Fatalf("pass after one commit ran %d git processes, want 2", got)
 	}
-	want := domain.SessionBranchState{Commits: 2, Unpushed: 2}
+	want := domain.SessionBranchState{Commits: 2, Unpushed: 2, Head: headOf(t, worktrees["s1"])}
 	if got := st.sessions["s1"].BranchState; got == nil || *got != want {
 		t.Fatalf("s1 branch state = %+v, want %+v", got, want)
 	}

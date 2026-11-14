@@ -215,7 +215,10 @@ response bodies, credentials, cookies, or query values. `network status` and
 `network list` never enable capture. Use `network stop` as soon as the relevant
 failure is reproduced, and `network clear` to discard retained entries.
 
-`screenshot` writes a PNG and refuses to overwrite an existing file. With
+`screenshot` writes a PNG and refuses to overwrite an existing file. Without a
+path it writes a generated name in the system temp directory, never the current
+directory; pass a path under the session artifact directory when the screenshot
+is a deliverable, and never save screenshots in the repository. With
 `--json`, it still writes the requested (or generated default) path and returns
 only compact metadata: the resolved path, byte size, width, and height, plus
 `annotations` when `--annotate` succeeded, or `annotationsUnavailable` when it

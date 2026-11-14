@@ -17,7 +17,7 @@ import (
 // `tallpine orchestrator handoff --note`. The note carries no chat summary: the
 // successor rebuilds its state from the daemon, the record of state.
 func (s *Service) AutoHandoffOrchestrator(ctx context.Context, id domain.SessionID) error {
-	path, err := s.writeAutoHandoffNote(id)
+	path, err := s.writeAutoHandoffNote(id, sessionartifacts.ResolveForID(ctx, s.dataDir, s.store, id, false))
 	if err != nil {
 		return err
 	}
@@ -27,8 +27,7 @@ func (s *Service) AutoHandoffOrchestrator(ctx context.Context, id domain.Session
 
 // writeAutoHandoffNote writes domain.AutoHandoffNote into the orchestrator's
 // artifact directory and returns its path.
-func (s *Service) writeAutoHandoffNote(id domain.SessionID) (string, error) {
-	dir := sessionartifacts.Dir(s.dataDir, id)
+func (s *Service) writeAutoHandoffNote(id domain.SessionID, dir string) (string, error) {
 	if dir == "" {
 		return "", fmt.Errorf("auto handoff %s: no artifact directory", id)
 	}

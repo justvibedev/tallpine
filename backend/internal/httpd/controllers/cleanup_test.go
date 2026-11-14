@@ -69,7 +69,7 @@ func TestCleanup_Status(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !out.Policy.Automatic || out.Policy.Artifacts.DeliverableAction != "archive" || out.LastRun == nil ||
+	if !out.Policy.Automatic || out.Policy.Artifacts.DeliverableAction != "delete" || out.LastRun == nil ||
 		out.LastRun.FreedBytes != 42 || len(out.LastRun.Categories[0].Items) != 1 || out.LastDryRun != nil || out.NextLightRunAt == "" || out.NextFullRunAt != "" {
 		t.Fatalf("status = %s", rec.Body)
 	}

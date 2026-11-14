@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"tallpine.eu/tallpine/backend/internal/config"
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
 
@@ -40,5 +41,24 @@ func TestLocalCIAlertTarget(t *testing.T) {
 	}
 	if len(picked) != 3 {
 		t.Errorf("picker called %d times, want 3", len(picked))
+	}
+}
+
+// B688: the app's daemon runs with TALLPINE_DATA_DIR=~/.tallpine/data, so its
+// StateDir is the data dir; alerts still live in ~/.tallpine/local-ci.
+func TestLocalCIDir(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  config.Config
+		want string
+	}{
+		{"app daemon", config.Config{DataDir: "/h/.tallpine/data", StateDir: "/h/.tallpine/data", RunFilePath: "/h/.tallpine/running.json"}, "/h/.tallpine/local-ci"},
+		{"bare daemon", config.Config{DataDir: "/h/.tallpine/data", StateDir: "/h/.tallpine", RunFilePath: "/h/.tallpine/running.json"}, "/h/.tallpine/local-ci"},
+		{"isolated daemon", config.Config{DataDir: "/tmp/iso", StateDir: "/tmp/iso", RunFilePath: "/tmp/run.json"}, "/tmp/iso/local-ci"},
+	}
+	for _, c := range cases {
+		if got := localCIDir(c.cfg); got != c.want {
+			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
+		}
 	}
 }

@@ -13,6 +13,13 @@ slow_app() {
   perl -pi -e "s#exit 0. TERM#sleep 3; while [[ -e ${b}/hold-quit ]]; do sleep 0.05; done; exit 0\x27 TERM#" "${b}/$1/${product}.app/Contents/MacOS/fake"
   fake_cli "${b}/$1/${product}.app" "${bnrc}" 0
 }
+# hold_until_gave_up: keep the slow app alive until the install/rollback has logged that it gave up waiting for it, then let it
+# exit, so the undo's wait-and-relaunch is exercised without depending on how long the give-up took (a fixed 3s sleep
+# raced the 1s stop timeout: on a loaded machine the app was gone before the install gave up and the install succeeded).
+hold_until_gave_up() {
+  : >"${b}/hold-quit"; : >"${T}/out"; : >"${T}/b.log" # truncate first: the watcher must not see the previous run's message
+  ( for _ in $(seq 1 2400); do grep -qs "did not quit within" "${T}/out" "${T}/b.log" && break; sleep 0.05; done; rm -f "${b}/hold-quit" ) &
+}
 bwait() { local i; for i in $(seq 1 100); do [[ -f "${bst}/running.json" ]] && kill -0 "$(plutil -extract pid raw -o - "${bst}/running.json" 2>/dev/null)" 2>/dev/null && return 0; sleep 0.2; done; return 1; }
 binst() { /usr/libexec/PlistBuddy -c 'Print :VOBuildCommit' "${bapps}/${product}.app/Contents/Info.plist"; }
 echo tok >"${bst}/daemon.token"
@@ -41,7 +48,9 @@ bwait || bad "b327: new app did not come up"
 
 # The app is still quitting when the install gives up: the undo waits for the exit and relaunches it.
 : >"${bnrc}"; : >"${b}/chain.out"; before="$(plutil -extract pid raw -o - "${bst}/running.json")"
+hold_until_gave_up
 TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl install "${b}/newer/${product}.app" --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
+rm -f "${b}/hold-quit"; wait
 check "b327: slow quit fails the install" '[[ ${rc} -ne 0 ]] && grep -q "did not quit within 1s" "${T}/out"'
 check "b327: the undo relaunched the app" 'grep -q "launch chain:" "${b}/chain.out" && bwait && [[ "$(plutil -extract pid raw -o - "${bst}/running.json")" != "${before}" ]] && [[ "$(binst)" == "${D}" ]]'
 check "b327: the failed install was reported" 'sed -n 2p "${bres}" | grep -q "^\[release\] install of ${C:0:10} FAILED: .*did not quit.*; log ${T}/b.log$" && [[ "$(sed -n 1p "${bres}")" == failed && ! -s "${bnrc}" ]]'
@@ -51,10 +60,12 @@ check "b327: the failed install was reported" 'sed -n 2p "${bres}" | grep -q "^\
 # install returns, so a slow python startup cannot let the old process exit before the new daemon answers.
 : >"${bnrc}"; : >"${b}/chain.out"; before="$(plutil -extract pid raw -o - "${bst}/running.json")"; : >"${b}/hold-quit"
 (
-  for i in $(seq 1 50); do [[ -f "${bst}/running.json" ]] || break; sleep 0.05; done
+  # Wait for the install to stop the old daemon (running.json gone), however slow a loaded machine makes that; the
+  # cap is only a hang guard. Starting the stand-in early would let the install stop it instead.
+  for i in $(seq 1 2400); do [[ -f "${bst}/running.json" ]] || break; sleep 0.05; done
   python3 "${T}/fake_daemon.py" "${bst}" "${D}" "${service}" >/dev/null 2>&1 &
 ) &
-TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl install "${b}/newer/${product}.app" --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
+TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=180 brl install "${b}/newer/${product}.app" --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
 rm -f "${b}/hold-quit"
 wait
 check "b585: the undo sees the app is already running again" '[[ ${rc} -ne 0 ]] && grep -q "is already running again; not relaunching it" "${T}/out" && ! grep -q "Launching" "${T}/out"'
@@ -65,7 +76,9 @@ bwait && kill -TERM "$(plutil -extract pid raw -o - "${bst}/running.json")"; sle
 
 # Same for rollback.
 : >"${bnrc}"; : >"${b}/chain.out"; before="$(plutil -extract pid raw -o - "${bst}/running.json")"
+hold_until_gave_up
 TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl rollback --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
+rm -f "${b}/hold-quit"; wait
 check "b327: slow quit fails the rollback" '[[ ${rc} -ne 0 ]] && grep -q "did not quit within 1s" "${T}/out"'
 check "b327: the rollback undo relaunched the app" 'grep -q "launch chain:" "${b}/chain.out" && bwait && [[ "$(plutil -extract pid raw -o - "${bst}/running.json")" != "${before}" ]] && [[ "$(binst)" == "${D}" ]]'
 check "b327: the failed rollback was reported" 'sed -n 2p "${bres}" | grep -q "^\[release\] rollback FAILED: .*did not quit.*; log ${T}/b.log$" && [[ "$(sed -n 1p "${bres}")" == failed && ! -s "${bnrc}" ]]'

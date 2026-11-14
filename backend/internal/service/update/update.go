@@ -16,12 +16,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/ports"
-	"tallpine.eu/tallpine/backend/internal/process"
 )
 
 //go:embed job.sh
@@ -179,7 +177,7 @@ func (s *Service) running() bool {
 		return false
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	return err == nil && pid > 0 && syscall.Kill(pid, 0) == nil
+	return err == nil && pid > 0 && pidAlive(pid)
 }
 
 func (s *Service) built(sha string) bool {
@@ -296,24 +294,4 @@ func (s *Service) Start(ctx context.Context, commit string, allowDowngrade bool)
 		return Result{}, fmt.Errorf("start update job: %w", err)
 	}
 	return res, nil
-}
-
-// launchDetached runs the job in its own session, so quitting the daemon or
-// the app does not signal it.
-func launchDetached(script string, env []string, logPath string) (int, error) {
-	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = logf.Close() }()
-	cmd := process.Command("/bin/bash", script)
-	cmd.Env = env
-	cmd.Stdout, cmd.Stderr = logf, logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Start(); err != nil {
-		return 0, err
-	}
-	pid := cmd.Process.Pid
-	_ = cmd.Process.Release()
-	return pid, nil
 }

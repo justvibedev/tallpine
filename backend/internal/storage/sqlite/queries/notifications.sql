@@ -94,6 +94,15 @@ WHERE session_id = sqlc.arg(session_id)
   AND resolved_at IS NULL
   AND dismissed_at IS NOT NULL;
 
+-- name: ResolveSourceKeyNotificationsByType :many
+UPDATE notifications
+SET resolved_at = sqlc.arg(resolved_at)
+WHERE substr(source_key, 1, length(sqlc.arg(source_prefix))) = sqlc.arg(source_prefix)
+  AND type = sqlc.arg(type)
+  AND resolved_at IS NULL
+  AND dismissed_at IS NULL
+RETURNING *;
+
 -- name: ResolvePRNotificationsByType :many
 UPDATE notifications
 SET resolved_at = sqlc.arg(resolved_at)

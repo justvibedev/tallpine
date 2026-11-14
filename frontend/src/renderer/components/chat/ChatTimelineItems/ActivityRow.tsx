@@ -6,6 +6,7 @@ import { cn } from "../../../lib/utils";
 import { readArtifactRef, readRenderRef } from "../../../lib/render-frame";
 import { ActivityTitle, SessionLabelLink } from "../ChatMarkdown";
 import { RenderFrame } from "../RenderFrame";
+import { AskInlineRow } from "../../ask/AskInlineRow";
 import { ACTIVITY_SUMMARY_BUTTON_CLASS, commandCategory, exploredFileCount, isNonzeroCommandExit } from "../activity-command";
 import { actionDetailLines, describeConversationActivity } from "../activity-action";
 import { fileChangeFiles, type ActivityKind, type ConversationActivity } from "../../../types/conversation";
@@ -69,6 +70,7 @@ export function ActivityRow({ activity }: { activity: ConversationActivity }) {
 	else if (activity.detail?.event === "auth.reauth_required") content = <ReauthRow activity={activity} />;
 	else if (activity.detail?.event === "workspace.setup") content = <ProjectSetupRow activity={activity} />;
 	else if (activity.detail?.event === "account.switched") content = <AccountSwitchedRow accountId={activity.detail.accountId} />;
+	else if (activity.activityKind === "system" && activity.detail?.event === "ask" && activity.detail.ask) content = <AskInlineRow ask={activity.detail.ask} summary={activity.summary} />;
 	else if (renderRef) content = <RenderFrame render={renderRef} />;
 	else if (artifactRef) content = <RenderFrame artifact={artifactRef} />;
 	else content = <GenericActivityRow activity={activity} />;

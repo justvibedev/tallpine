@@ -51,6 +51,14 @@ func codexWindowsPathMetadataIsSafe(metadata codexWindowsPathMetadata, directory
 	return !requireSingleLink || metadata.HardLinks == 1
 }
 
+// codexWindowsOwnerIsCurrent reports whether a path owner counts as the current
+// user. An elevated token (UAC off, or an admin session) creates objects owned
+// by BUILTIN\Administrators rather than the user SID, so that owner is accepted
+// only when the process itself is elevated; the ACL checks still apply.
+func codexWindowsOwnerIsCurrent(ownerIsUser, ownerIsAdministrators, elevated bool) bool {
+	return ownerIsUser || (ownerIsAdministrators && elevated)
+}
+
 func codexWindowsSameStableIdentity(left, right codexWindowsPathMetadata) bool {
 	return left.VolumeSerial == right.VolumeSerial && left.FileIndexHigh == right.FileIndexHigh && left.FileIndexLow == right.FileIndexLow
 }

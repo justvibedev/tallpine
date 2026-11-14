@@ -119,6 +119,7 @@ export function mapSession(s: WireSession): DashboardSession {
 		autoInjectReview: s.autoInjectReview ?? true,
 		autoInjectCI: s.autoInjectCI ?? true,
 		...(s.workerLane ? { workerLane: s.workerLane } : {}),
+		...(s.kind === "orchestrator" && s.lane ? { lane: s.lane } : {}),
 	};
 }
 

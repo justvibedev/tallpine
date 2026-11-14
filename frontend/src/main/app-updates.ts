@@ -20,7 +20,10 @@ let controller: AutoUpdaterController | null = null;
 /** Wire the updater and its IPC. Safe to call on any build: dev runs report "disabled". */
 export function initAppUpdates(options: { ipcMain: Pick<IpcMain, "handle">; stateDir: string | null; shell: () => WebContents | null; onUpdateRestart: () => void; onUpdateRestartFailed: () => void; daemonPort: () => number | null }): void {
 	const { ipcMain, stateDir } = options;
-	ipcMain.handle("appUpdates:getStatus", (): UpdateStatus => controller?.getStatus() ?? { state: "disabled", reason: "unpackaged" });
+	// The Windows beta has no in-app updater: Settings links to the releases page
+	// instead (UpdateRow), so the Mac updater is never built there.
+	const windows = process.platform === "win32";
+	ipcMain.handle("appUpdates:getStatus", (): UpdateStatus => controller?.getStatus() ?? { state: "disabled", reason: windows ? "unsupported-platform" : "unpackaged" });
 	ipcMain.handle("appUpdates:getPreferences", async (): Promise<UpdatePreferences | null> => controller?.getPreferences() ?? null);
 	ipcMain.handle("appUpdates:setSettings", async (_event, raw: unknown) => {
 		await controller?.setSettings(coerceUpdateSettings(raw));
@@ -29,7 +32,7 @@ export function initAppUpdates(options: { ipcMain: Pick<IpcMain, "handle">; stat
 	ipcMain.handle("appUpdates:install", () => controller?.install() ?? false);
 	ipcMain.handle("appUpdates:installWhenIdle", () => controller?.installWhenIdle() ?? false);
 	ipcMain.handle("appUpdates:cancelInstallWhenIdle", () => controller?.cancelInstallWhenIdle());
-	if (!stateDir) return;
+	if (!stateDir || windows) return;
 	const updaterLog = createUpdaterLog(stateDir, (line) => console.warn(`updater: ${line.trimEnd()}`));
 	controller = createAutoUpdater({
 		stateDir,

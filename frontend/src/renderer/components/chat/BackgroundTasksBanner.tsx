@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Square } from "lucide-react";
 import { formatDurationStatus } from "@tallpine/shared/format/duration";
 import { useStopBackgroundTask } from "../../hooks/useStopBackgroundTask";
-import type { SessionBackgroundTask } from "../../types/workspace";
+import type { SessionBackgroundTask } from "../../types/session-facts";
 import { Button } from "../ui/button";
 
 /**

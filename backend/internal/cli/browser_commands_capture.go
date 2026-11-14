@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -178,6 +180,7 @@ func addBrowserCaptureCommands(cmd *cobra.Command, ctx *commandContext, jsonOutp
 		Use:   "screenshot [path]",
 		Short: "Capture the current page to a PNG file",
 		Long: "Capture the current page to a PNG file. JSON output writes the file and returns compact metadata.\n" +
+			"Without a path, the PNG is written to the system temp directory, not the current directory.\n" +
 			"To return inline base64 image data instead, omit the path and use --base64 with --json.\n" +
 			"With --annotate, interactive elements are numbered in the image and the matching\n" +
 			"snapshot refs are listed alongside it.",
@@ -200,7 +203,9 @@ func addBrowserCaptureCommands(cmd *cobra.Command, ctx *commandContext, jsonOutp
 			if screenshotBase64 {
 				return writeJSON(cmd.OutOrStdout(), resp)
 			}
-			path := "tallpine-browser-" + ctx.deps.Now().Format("20060102-150405.000") + ".png"
+			// An unnamed screenshot is scratch: write it to the temp dir (the
+			// session TMPDIR), never the cwd, which is usually the repo (B686).
+			path := filepath.Join(os.TempDir(), "tallpine-browser-"+ctx.deps.Now().Format("20060102-150405.000")+".png")
 			if len(args) == 1 {
 				path = args[0]
 			}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/sessionartifacts"
 	"tallpine.eu/tallpine/backend/internal/sessionscratch"
 )
 
@@ -124,12 +125,22 @@ func scan(r roots, ix sessionIndex) []Entry {
 		ix.ownedBySession(add(CategorySessionTemp, "session scratch", p), domain.SessionID(se.Name()), "")
 	})
 	// Artifacts and attachments per session, where the name is one.
-	each(filepath.Join(r.data, "artifacts"), func(se os.DirEntry, p string) {
+	// Layout: <data>/artifacts/<project>/<session>, plus flat <session> dirs of
+	// sessions created before the per-project layout.
+	session := func(se os.DirEntry, p string) {
 		e := add(CategoryArtifacts, "session artifacts", p)
 		if _, ok := ix[domain.SessionID(se.Name())]; ok {
 			ix.ownedBySession(e, domain.SessionID(se.Name()), "")
 		}
 		e.Protected = "managed by artifact retention (use Clean up)"
+	}
+	each(filepath.Join(r.data, "artifacts"), func(pe os.DirEntry, pdir string) {
+		_, isSession := ix[domain.SessionID(pe.Name())]
+		if !pe.IsDir() || isSession || (sessionDirLike(pe.Name()) && !sessionartifacts.IsProjectFolder(pdir, pe.Name())) {
+			session(pe, pdir) // a flat session dir (live, ended or without a row)
+			return
+		}
+		each(pdir, session)
 	})
 	each(filepath.Join(r.data, "artifacts-trash"), func(_ os.DirEntry, p string) {
 		add(CategoryArtifacts, "discarded artifacts", p)
@@ -223,4 +234,11 @@ func scan(r roots, ix sessionIndex) []Entry {
 	each(filepath.Join(r.state, "build-cache"), func(_ os.DirEntry, p string) { add(CategoryBuildCache, "build cache", p) })
 	each(filepath.Join(r.state, "local-ci"), func(_ os.DirEntry, p string) { add(CategoryLocalCI, "local CI cache", p) })
 	return out
+}
+
+// sessionDirLike reports whether a top-level artifacts name looks like a flat
+// "<project>-<n>" session directory rather than a project folder.
+func sessionDirLike(name string) bool {
+	i := strings.LastIndexByte(name, '-')
+	return i > 0 && i < len(name)-1 && strings.Trim(name[i+1:], "0123456789") == ""
 }

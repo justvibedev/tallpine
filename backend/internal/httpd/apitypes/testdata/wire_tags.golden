@@ -81,7 +81,7 @@ PlanAssumptionDTO: id scopeCut,omitempty text
 PlanOptionDTO: id label
 PlanPRDTO: consumes,omitempty files,omitempty produces,omitempty summary,omitempty tests,omitempty title
 PlanQuestionDTO: id options reason,omitempty recommended text
-PlanView: answers,omitempty approvedAt,omitempty approvedBy,omitempty assumptions baseBranch,omitempty baseCommit,omitempty buildAnyway,omitempty decisionsMarkdown,omitempty failure,omitempty id itemChanged,omitempty itemId pausedUntil,omitempty planMarkdown,omitempty plannerSessionId,omitempty prSplit questions reviewFocus stale,omitempty startedAt status updatedAt
+PlanView: answers,omitempty approvedAt,omitempty approvedBy,omitempty assumptions baseBranch,omitempty baseCommit,omitempty buildAnyway,omitempty decisionsMarkdown,omitempty failure,omitempty id itemChanged,omitempty itemId pausedUntil,omitempty planMarkdown,omitempty plannerSessionId,omitempty prSplit questions reviewFocus stale,omitempty startedAt starterSessionId,omitempty status updatedAt
 PreviewServerStatusResponse: configuration,omitempty error,omitempty logs port,omitempty sessionId startedAt,omitempty state targetKind,omitempty url,omitempty
 PublishRenderRequest: artifact,omitempty height,omitempty html title
 PublishRenderResponse: activityId artifactError,omitempty artifactPath,omitempty path renderId

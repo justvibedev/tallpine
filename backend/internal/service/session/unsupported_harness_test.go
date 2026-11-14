@@ -28,7 +28,7 @@ func TestToSessionMarksRemovedHarnessReadOnly(t *testing.T) {
 	} {
 		session, err := svc.toSessionWithFacts(context.Background(), domain.SessionRecord{
 			ID: "s", Harness: tc.harness, Mode: domain.SessionModeTUI,
-		}, nil, nil, false, "", true, nil, nil)
+		}, nil, nil, false, "", true, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("%q: %v", tc.harness, err)
 		}

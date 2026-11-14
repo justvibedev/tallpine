@@ -13,6 +13,7 @@ import {
 
 import type { ReviewerHarnessId } from "../lib/reviewer-harnesses";
 import type { ArtifactKind, SessionArtifact } from "./session-artifact";
+import type { SessionBackgroundTask, SessionBranchState, SessionStaleBinary } from "./session-facts";
 
 export { toKanbanColumn, toSessionActivity, toSessionStatus };
 
@@ -70,14 +71,6 @@ export type SessionProvisionStep = {
 	startedAt?: string;
 	endedAt?: string;
 };
-
-/** The daemon's observed branch facts. `unpushed` equals `commits` until the branch reaches its remote. */
-export type SessionBranchState = { commits: number; remoteBranch?: string; unpushed: number };
-
-/** The session's current launch still runs a harness release an update has replaced. */
-/** A running background task of a session's agent. */
-export type SessionBackgroundTask = { id: string; name: string; kind?: string; model?: string; startedAt?: string };
-export type SessionStaleBinary = { version: string; since: string; switchFailedAt?: string };
 
 export type WorkspaceSession = {
 	workspaceCleanup?: "pending" | "removed" | "preserved_dirty" | "failed" | "not_applicable";
@@ -155,6 +148,10 @@ export type WorkspaceSession = {
 	provisionSteps?: SessionProvisionStep[];
 	/** The daemon's observed branch facts: commits on top of the base and whether they reached the remote. */
 	branchState?: SessionBranchState;
+	/** Verdict of Tallpine's review of the current head (PR head or branch tip); absent while undecided. */
+	reviewVerdict?: "approved" | "changes_requested";
+	/** The session's work reached its base: PR merged or local branch landed. */
+	landed?: boolean;
 	/** Set while the task's generated branch name is on the way; keep `branch` private meanwhile. */
 	branchNaming?: boolean;
 	/** Set while this launch runs a harness release an update replaced; it moves to `version` when idle. */

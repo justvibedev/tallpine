@@ -54,6 +54,8 @@ type Reader struct {
 	Send     func(ctx context.Context, to domain.SessionID, message string) error
 	Interval time.Duration
 	Log      *slog.Logger
+
+	fresh bool // set by Start: the next Tick with a target runs baseline
 }
 
 func (r *Reader) alertsPath() string { return filepath.Join(r.Dir, "results", "alerts.tsv") }
@@ -70,6 +72,7 @@ func (r *Reader) Start(ctx context.Context) <-chan struct{} {
 	}
 	go func() {
 		defer close(done)
+		r.fresh = true
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
@@ -97,6 +100,11 @@ func (r *Reader) Tick(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
+	if r.fresh {
+		if stamped, err := r.baseline(); stamped || err != nil {
+			return err
+		}
+	}
 	start := r.readCursor()
 	data, start, err := r.readFrom(start)
 	if err != nil {
@@ -113,6 +121,24 @@ func (r *Reader) Tick(ctx context.Context) error {
 		}
 	}
 	return r.writeCursor(end) // also with nothing new: the stamp says a reader runs
+}
+
+// baseline runs on the first Tick that has a target after Start. With no
+// cursor file yet (the first start of a build that has this reader) the whole
+// alerts.tsv history would read as new, so the cursor starts at the end of the
+// file: only alerts recorded from now on are delivered (B688). It reports
+// whether it stamped the cursor. It runs after the target check, so a missing
+// target leaves no cursor and the scripts keep showing alerts on the desktop.
+func (r *Reader) baseline() (bool, error) {
+	r.fresh = false
+	if _, err := os.Stat(r.cursorPath()); !errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	var end int
+	if info, err := os.Stat(r.alertsPath()); err == nil {
+		end = int(info.Size())
+	}
+	return true, r.writeCursor(end)
 }
 
 func (r *Reader) target(ctx context.Context) (domain.SessionID, bool) {

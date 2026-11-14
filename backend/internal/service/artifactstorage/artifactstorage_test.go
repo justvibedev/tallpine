@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/sessionartifacts"
 )
 
 type fakeSessions []domain.SessionRecord
@@ -34,7 +35,7 @@ func (r *removeAll) DeleteSession(_ context.Context, id domain.SessionID) error 
 	if r.err != nil {
 		return r.err
 	}
-	dir := filepath.Join(r.dataDir, "artifacts", string(id))
+	dir := sessionartifacts.Dir(r.dataDir, id)
 	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
@@ -43,7 +44,7 @@ func (r *removeAll) DeleteSession(_ context.Context, id domain.SessionID) error 
 
 func put(t *testing.T, dataDir, id, rel, body string) {
 	t.Helper()
-	p := filepath.Join(dataDir, "artifacts", id, filepath.FromSlash(rel))
+	p := filepath.Join(sessionartifacts.Dir(dataDir, domain.SessionID(id)), filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestRetain_ArchiveKeepsDeliverablesOnly(t *testing.T) {
 	if got := tarNames(t, r.ArchivePath); strings.Join(got, ",") != "report.html" {
 		t.Fatalf("archive holds %v, want only report.html", got)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(f.dataDir, "artifacts", "old-done")); len(entries) != 0 {
+	if entries, _ := os.ReadDir(sessionartifacts.Dir(f.dataDir, "old-done")); len(entries) != 0 {
 		t.Fatalf("live artifact dir still has %d entries", len(entries))
 	}
 }
@@ -162,7 +163,7 @@ func TestRetain_SkipsIneligibleSessions(t *testing.T) {
 	if len(f.del.calls) != 0 {
 		t.Fatalf("deleter called for %v", f.del.calls)
 	}
-	if _, err := os.Stat(filepath.Join(f.dataDir, "artifacts", "recent-done", "notes.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(sessionartifacts.Dir(f.dataDir, "recent-done"), "notes.md")); err != nil {
 		t.Fatalf("recent session's file was touched: %v", err)
 	}
 }
@@ -311,5 +312,35 @@ func TestProtection_ReadFailureBlocksRetention(t *testing.T) {
 	}
 	if len(f.del.calls) != 0 {
 		t.Fatalf("deleter called: %v", f.del.calls)
+	}
+}
+
+// A session that was live at the boot migration (stored dir = flat path, the
+// canonical path a symlink to it) and ended afterwards is still retained.
+func TestManagedAcceptsALinkedSessionsFlatDir(t *testing.T) {
+	f := newFixture(t, 0)
+	rec := domain.SessionRecord{ID: "linked-1", IsTerminated: true, UpdatedAt: f.now.AddDate(0, 0, -60)}
+	rec.Metadata.ArtifactDir = sessionartifacts.LegacyDir(f.dataDir, rec.ID)
+	if !f.svc.eligible(rec, f.now.AddDate(0, 0, -30)) {
+		t.Fatal("a linked session's flat stored dir must count as managed")
+	}
+	rec.Metadata.ArtifactDir = "/elsewhere/artifacts/linked-1"
+	if f.svc.eligible(rec, f.now.AddDate(0, 0, -30)) {
+		t.Fatal("a custom dir must stay unmanaged")
+	}
+}
+
+// A session created before the per-project layout stores its flat path and is
+// still managed (retained, deletable); a custom dir is not.
+func TestManagedAcceptsALegacyFlatDir(t *testing.T) {
+	f := newFixture(t, 0)
+	rec := domain.SessionRecord{ID: "legacy-1", IsTerminated: true, UpdatedAt: f.now.AddDate(0, 0, -60)}
+	rec.Metadata.ArtifactDir = sessionartifacts.LegacyDir(f.dataDir, rec.ID)
+	if !f.svc.eligible(rec, f.now.AddDate(0, 0, -30)) {
+		t.Fatal("a legacy flat stored dir must count as managed")
+	}
+	rec.Metadata.ArtifactDir = "/elsewhere/artifacts/legacy-1"
+	if f.svc.eligible(rec, f.now.AddDate(0, 0, -30)) {
+		t.Fatal("a custom dir must stay unmanaged")
 	}
 }

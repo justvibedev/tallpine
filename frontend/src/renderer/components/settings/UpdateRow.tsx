@@ -13,7 +13,9 @@ import {
 	settingsDialogFooterClass,
 	settingsDialogHeaderClass,
 } from "../ui/dialog";
+import { isWindowsPlatform } from "../../lib/platform";
 import { SettingsRow } from "./SettingsRow";
+import { WindowsUpdateRow } from "./WindowsUpdateRow";
 
 const shortSha = (sha: string) => sha.slice(0, 7);
 
@@ -23,6 +25,12 @@ const shortSha = (sha: string) => sha.slice(0, 7);
  * detached job, so the status survives the app and daemon restarting.
  */
 export function UpdateRow() {
+	// Windows has no daemon update service (it reports unavailable): link to the
+	// installer releases instead.
+	return isWindowsPlatform() ? <WindowsUpdateRow /> : <DaemonUpdateRow />;
+}
+
+function DaemonUpdateRow() {
 	const { t } = useTranslation();
 	const { data, isError } = useUpdateStatus();
 	const { start, starting, error } = useStartUpdate();

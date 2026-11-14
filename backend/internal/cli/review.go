@@ -337,9 +337,11 @@ func (c *commandContext) triggerReview(cmd *cobra.Command, args []string, opts r
 	}
 	if strings.TrimSpace(opts.model) != "" {
 		h, proj := c.reviewModelHarness(cmd.Context(), session, opts.harness)
-		if err := c.validateModel(cmd.Context(), h, opts.model, proj); err != nil {
+		resolved, err := c.validateModel(cmd.Context(), h, opts.model, proj)
+		if err != nil {
 			return err
 		}
+		opts.model = resolved
 	}
 	if model, effort := strings.TrimSpace(opts.model), strings.TrimSpace(opts.effort); model != "" || effort != "" {
 		req.AgentConfig = domain.AgentConfig{Model: model, Effort: effort}

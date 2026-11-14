@@ -325,7 +325,7 @@ func TestSpawn_AfterStartPromptWaitsForReadinessHint(t *testing.T) {
 			hints: ports.PromptReadinessHints{
 				Patterns:     []string{"Ready..."},
 				PollInterval: time.Millisecond,
-				Timeout:      50 * time.Millisecond,
+				Timeout:      time.Minute, // hang guard only: returns as soon as the hint shows (50ms was starved by a loaded CPU)
 			},
 		}},
 		Workspace: ws,
@@ -1113,7 +1113,7 @@ func TestSystemPrompt_AppendsArtifactGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildSystemPrompt: %v", err)
 	}
-	wantDir := filepath.ToSlash(filepath.Join(m.dataDir, "artifacts", "mer-7"))
+	wantDir := filepath.ToSlash(filepath.Join(m.dataDir, "artifacts", "mer", "mer-7"))
 	if !strings.Contains(sp, "## Session Artifacts") {
 		t.Fatalf("system prompt missing artifacts section:\n%s", sp)
 	}
@@ -1318,7 +1318,7 @@ func TestSpawn_ArtifactDirWriteFailureRollsBackSeedRowAndDir(t *testing.T) {
 	if _, ok := st.sessions["mer-1"]; ok {
 		t.Fatal("seed row survived a failed artifact dir write")
 	}
-	if _, statErr := os.Stat(filepath.Join(dataDir, "artifacts", "mer-1")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(dataDir, "artifacts", "mer", "mer-1")); !os.IsNotExist(statErr) {
 		t.Fatalf("artifact dir not cleaned up: stat err = %v", statErr)
 	}
 }
@@ -1338,7 +1338,7 @@ func TestSpawn_WorkspaceCreateFailureRemovesReservedArtifactDir(t *testing.T) {
 	if _, ok := st.sessions["mer-1"]; ok {
 		t.Fatal("seed row survived a failed workspace create")
 	}
-	if _, statErr := os.Stat(filepath.Join(dataDir, "artifacts", "mer-1")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(dataDir, "artifacts", "mer", "mer-1")); !os.IsNotExist(statErr) {
 		t.Fatalf("artifact dir orphaned after workspace create failure: stat err = %v", statErr)
 	}
 }
@@ -1354,7 +1354,7 @@ func TestSpawn_PersistsArtifactDirOnSessionRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	want := filepath.Join(dataDir, "artifacts", string(rec.ID))
+	want := filepath.Join(dataDir, "artifacts", "mer", string(rec.ID))
 	if got := st.sessions[rec.ID].Metadata.ArtifactDir; got != want {
 		t.Fatalf("persisted ArtifactDir = %q, want %q", got, want)
 	}
@@ -1375,7 +1375,7 @@ func TestSpawn_PreparedSessionPersistsArtifactDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	want := filepath.Join(dataDir, "artifacts", string(rec.ID))
+	want := filepath.Join(dataDir, "artifacts", "mer", string(rec.ID))
 	if got := st.sessions[rec.ID].Metadata.ArtifactDir; got != want {
 		t.Fatalf("persisted ArtifactDir = %q, want %q", got, want)
 	}

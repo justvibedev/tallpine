@@ -1,4 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { listProjectAsks, projectAsksKey } from "../../lib/ask-api";
+import { listProjectPlans, projectPlansKey } from "../../lib/plan-api";
+import { waitingCount } from "../ask/askModel";
 import { fetchConversationPage } from "../../hooks/conversation/useConversationQuery";
 import type { ConversationItem } from "../../types/conversation";
 import type { WorkspaceSession } from "../../types/workspace";
@@ -36,4 +39,16 @@ export function useOrchestratorNeedsYou(session: WorkspaceSession | undefined, e
 	});
 	// `enabled: false` keeps cached data, so gate the result too.
 	return enabled && (query.data ?? false);
+}
+
+/**
+ * Open asks plus plans waiting on the owner in one chat (a project's main chat,
+ * or a lane's), for the sidebar badge. Shares its queries, and so its refetches
+ * on backlog events, with the strip and the plan cards. 0 while disabled.
+ */
+export function useWaitingOnYouCount(projectId: string, chat: { lane?: string; sessionId?: string }, enabled: boolean): number {
+	const asks = useQuery({ queryKey: projectAsksKey(projectId), queryFn: () => listProjectAsks(projectId), enabled, retry: false });
+	const plans = useQuery({ queryKey: projectPlansKey(projectId), queryFn: () => listProjectPlans(projectId), enabled, retry: false });
+	if (!enabled) return 0;
+	return waitingCount(asks.data ?? [], plans.data ?? [], chat);
 }

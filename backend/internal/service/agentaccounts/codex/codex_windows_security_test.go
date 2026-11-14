@@ -203,3 +203,23 @@ func TestWindowsVaultPolicyRejectsUnmappedPrincipals(t *testing.T) {
 		t.Fatal("Tallpine-owned vault accepted an unavailable principal")
 	}
 }
+
+func TestWindowsOwnerIsCurrentAcceptsAdministratorsOnlyWhenElevated(t *testing.T) {
+	tests := []struct {
+		name                       string
+		user, administrators, elev bool
+		want                       bool
+	}{
+		{name: "user owner", user: true, want: true},
+		{name: "administrators owner, elevated", administrators: true, elev: true, want: true},
+		{name: "administrators owner, not elevated", administrators: true},
+		{name: "other owner, elevated", elev: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := codexWindowsOwnerIsCurrent(tt.user, tt.administrators, tt.elev); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

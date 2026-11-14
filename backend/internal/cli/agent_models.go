@@ -150,18 +150,34 @@ func modelCatalogError(cat agentModelsResponse, harness, model string) error {
 	return usageError{fmt.Errorf("unknown model %q for %s; valid model IDs: %s (see `tallpine agent models %s`)%s", model, harness, strings.Join(ids, ", "), harness, hintSuffix(claudeIDHint(harness, cat.Models)))}
 }
 
-// validateModel fails fast on a model name outside the harness catalog. An
+// validateModel fails fast on a model name outside the harness catalog and
+// returns the model to send (a claude-code family alias resolved to its ID). An
 // unreachable catalog never blocks the command.
-func (c *commandContext) validateModel(ctx context.Context, harness, model, project string) error {
+func (c *commandContext) validateModel(ctx context.Context, harness, model, project string) (string, error) {
 	model, harness = strings.TrimSpace(model), strings.TrimSpace(harness)
 	if model == "" || harness == "" {
-		return nil
+		return model, nil
 	}
 	var cat agentModelsResponse
 	if err := c.getJSON(ctx, agentModelsPath(harness, project), &cat); err != nil {
-		return nil //nolint:nilerr // an unreachable catalog must not block the command
+		return model, nil //nolint:nilerr // an unreachable catalog must not block the command
 	}
-	return modelCatalogError(cat, harness, model)
+	suffix := ""
+	if harness == "claude-code" {
+		// A short family alias ("haiku") becomes the catalog's newest exact ID.
+		candidates := make([]domain.ClaudeFamilyCandidate, len(cat.Models))
+		for i, m := range cat.Models {
+			candidates[i] = domain.ClaudeFamilyCandidate{ID: m.ID, Label: m.Label}
+		}
+		if i := domain.NewestClaudeFamilyModel(candidates, model); i >= 0 {
+			// The 1M-context request rides along on the resolved ID.
+			if strings.HasSuffix(strings.ToLower(model), "[1m]") {
+				suffix = "[1m]"
+			}
+			model = cat.Models[i].ID
+		}
+	}
+	return model + suffix, modelCatalogError(cat, harness, model)
 }
 
 // reviewModelHarness returns the harness and project id a review --model applies to; it is the harness a review --model applies to: --harness, or

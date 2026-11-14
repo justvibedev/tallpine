@@ -1,13 +1,18 @@
 package artifactversions
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/sessionartifacts"
 )
 
 func (h *harness) dataDir() string {
-	return filepath.Dir(filepath.Dir(h.dir))
+	return filepath.Dir(filepath.Dir(filepath.Dir(h.dir)))
 }
 
 func TestDeleteSessionRemovesFilesAndVersionsAndKeepsAnEmptyDir(t *testing.T) {
@@ -120,5 +125,28 @@ func TestDeleteVersionsRemovesOnePathAndKeepsSharedBlobs(t *testing.T) {
 	h.tick()
 	if vs := h.versions("report.html"); len(vs) != 0 {
 		t.Fatalf("versions after a later capture = %+v, want none", vs)
+	}
+}
+
+// A session created before the per-project layout keeps its artifacts at the
+// flat path its row names; deleting must remove those files, not look at the
+// canonical path (H3).
+func TestDeleteSessionRemovesALegacyFlatDir(t *testing.T) {
+	h := newHarness(t)
+	flat := sessionartifacts.LegacyDir(h.dataDir(), h.sess.ID)
+	if err := os.MkdirAll(flat, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(flat, "report.html"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.UpdateSessionArtifactOutput(h.ctx, h.sess.ID, flat, domain.SessionOutputArtifact); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.cap.DeleteSession(h.ctx, h.sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(flat, "report.html")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("legacy files left behind: %v", err)
 	}
 }

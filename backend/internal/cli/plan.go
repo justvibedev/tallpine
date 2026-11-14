@@ -354,7 +354,7 @@ func newPlanApproveCommand(ctx *commandContext, name, short string) *cobra.Comma
 	cmd := &cobra.Command{
 		Use: name + " <ref> [--owner-message <id>|last]", Short: short,
 		Long: short + ". The owner approves on the plan card. An orchestrator may only approve after the owner said so in chat, and must name that message " +
-			"with --owner-message <chat message id>, or `last` for the owner's newest message in the project chat. The daemon checks that it is the owner's and newer than the plan's last change. Never approve on your own.",
+			"with --owner-message <chat message id>, or `last` for the owner's newest message in the project chat. The daemon checks that it is the owner's and newer than the plan's last change. An ask the owner answered themselves (a tap on the card or strip) also counts: name its ref and the option the owner picked, e.g. --owner-message Q2:build-anyway, or `last:<option id>` for the newest such ask about this item; the recorded answer must be that option, and the ask must be about this item (or have no item). Never approve on your own.",
 		Args: usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := ctx.planPath(cmd.Context(), project, args[0], name)
@@ -369,7 +369,7 @@ func newPlanApproveCommand(ctx *commandContext, name, short string) *cobra.Comma
 		},
 	}
 	addBacklogProjectFlag(cmd, &project, &asJSON)
-	cmd.Flags().StringVar(&ownerMessage, "owner-message", "", "The owner's chat message that approves (id, or last); required for an agent")
+	cmd.Flags().StringVar(&ownerMessage, "owner-message", "", "The owner's chat message that approves (id, or last), or an owner-answered ask as <ref>:<option id> (Q2:build-anyway); required for an agent")
 	return cmd
 }
 

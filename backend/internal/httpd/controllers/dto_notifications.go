@@ -39,6 +39,7 @@ type NotificationResponse struct {
 	Urgency   string    `json:"urgency,omitempty" enum:"critical,attention,info" description:"How insistently clients should signal: critical = blocked on the human, attention = actionable, info = settled fact."`
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
+	LaneChat  bool      `json:"laneChat,omitempty" description:"plan_waiting only: sessionId is the lane orchestrator whose chat holds the plan card, so open that session."`
 	Status    string    `json:"status" enum:"unread,read" description:"Seen state. unread means the user has not opened the notification panel since it arrived."`
 	CreatedAt time.Time `json:"createdAt"`
 	// ResolvedAt is set by Tallpine when the underlying issue goes away (the session

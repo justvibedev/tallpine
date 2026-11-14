@@ -189,7 +189,8 @@ func (e env) startDaemon(t *testing.T) {
 		t.Fatalf("spawn tallpine daemon: %v", err)
 	}
 	waitDone := make(chan error, 1)
-	go func() { waitDone <- cmd.Wait() }()
+	exited := make(chan struct{})
+	go func() { waitDone <- cmd.Wait(); close(exited) }()
 	ready := false
 	t.Cleanup(func() {
 		defer killLeftovers(e.dataDir)
@@ -219,15 +220,23 @@ func (e env) startDaemon(t *testing.T) {
 		<-waitDone
 	})
 
-	deadline := time.Now().Add(10 * time.Second)
+	// Readiness is event-driven: wait until the daemon reports ready or its process dies. The deadline is only a
+	// hang guard far above any load-induced slowness (each status poll is itself a process spawn that can take
+	// seconds at load average 100); a tight deadline here made five E2E tests fail on a loaded machine.
+	deadline := time.Now().Add(3 * time.Minute)
 	for {
 		out, _ := e.run(t, "status", "--json")
 		if strings.Contains(out, `"state": "ready"`) {
 			ready = true
 			return
 		}
+		select {
+		case <-exited:
+			t.Fatalf("daemon exited before becoming ready; last status:\n%s", out)
+		default:
+		}
 		if time.Now().After(deadline) {
-			t.Fatalf("daemon startup starved: not ready within 10s; last status:\n%s", out)
+			t.Fatalf("daemon not ready within 3m; last status:\n%s", out)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

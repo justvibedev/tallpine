@@ -103,10 +103,16 @@ func mergeTree(ctx context.Context, dir, base, head string) (string, []string, e
 	return "", files, nil
 }
 
-// findLanded returns the commit on tip's history that carries the
-// Tallpine-Head trailer for head.
-func findLanded(ctx context.Context, dir, tip, head string) (string, error) {
-	return git(ctx, dir, "", "log", "-1", "--format=%H", "--fixed-strings", "--grep="+headTrailer+" "+head, tip)
+// FindLanded returns the commit on tip's history that carries the
+// Tallpine-Head trailer for head: the squash commit `tallpine land` made. A
+// non-empty since limits the search to since..tip, so a caller that knows where
+// the branch forked need not walk the whole history.
+func FindLanded(ctx context.Context, dir, since, tip, head string) (string, error) {
+	rev := tip
+	if since != "" {
+		rev = since + ".." + tip
+	}
+	return git(ctx, dir, "", "log", "-1", "--format=%H", "--fixed-strings", "--grep="+headTrailer+" "+head, rev)
 }
 
 // squashMessage: subject, the branch's commit subjects, then the trailers.

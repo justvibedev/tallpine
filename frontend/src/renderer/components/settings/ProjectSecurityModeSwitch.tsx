@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAgentPolicy, useUpdateAgentPolicy } from "../../hooks/useAgentPolicy";
+import { isWindowsPlatform } from "../../lib/platform";
 import { securityModeOf } from "./securityModes";
 import { Switch } from "../ui/switch";
 import { AgentPolicyLock } from "./AgentPolicyLock";
@@ -29,6 +30,7 @@ export function ProjectSecurityModeSwitch({ projectId }: { projectId: string }) 
 	if (!enabled) return null;
 	const choice: Choice = enabled.source === "project" ? (enabled.value === true ? "on" : "off") : "inherit";
 	const busy = isLoading || saving;
+	const unavailable = isWindowsPlatform();
 	const set = (value: Choice) => update({ rule: SECURITY_MODE_RULE, field: "enabled", value: value === "inherit" ? null : value === "on" });
 	return (
 		<div data-testid="project-security-mode">
@@ -42,12 +44,17 @@ export function ProjectSecurityModeSwitch({ projectId }: { projectId: string }) 
 						onChange={set}
 						options={[
 							{ value: "inherit", label: t("settings.agentPolicy.securityMode.inherit") },
-							{ value: "on", label: t("settings.agentPolicy.securityMode.on") },
+							{ value: "on", label: t("settings.agentPolicy.securityMode.on"), disabled: unavailable },
 							{ value: "off", label: t("settings.agentPolicy.securityMode.off") },
 						]}
 					/>
 				</div>
 			</SettingsRow>
+			{unavailable ? (
+				<p data-testid="project-security-unavailable" role="status" className="px-3 pb-2 text-caption leading-4 text-settings-muted">
+					{t("settings.security.mode.unavailableWindows", "Not available on Windows")}
+				</p>
+			) : null}
 			{unrestricted ? (
 				<p data-testid="project-security-unrestricted" role="status" className="px-3 pb-2 text-caption leading-4 text-settings-muted">
 					{t("settings.security.project.unrestricted")}

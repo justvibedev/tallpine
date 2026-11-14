@@ -140,7 +140,7 @@ func (s *Service) EndLane(ctx context.Context, id domain.SessionID, dryRun bool)
 			return EndLaneOutcome{}, err
 		}
 	}
-	if dir := sessionartifacts.Dir(s.dataDir, id); dir != "" {
+	if dir := sessionartifacts.ResolveManaged(s.dataDir, id, rec.Metadata.ArtifactDir); dir != "" {
 		if err := os.RemoveAll(dir); err != nil {
 			return EndLaneOutcome{}, fmt.Errorf("end lane: remove artifacts of %s: %w", id, err)
 		}
@@ -149,6 +149,9 @@ func (s *Service) EndLane(ctx context.Context, id domain.SessionID, dryRun bool)
 		return EndLaneOutcome{}, toAPIError(err)
 	}
 
+	if s.laneEnded != nil {
+		s.laneEnded(ctx, rec.ProjectID, lane.LaneItemID)
+	}
 	out := EndLaneOutcome{Removed: id, Orchestrator: def.ID, Workers: workers}
 	notice := fmt.Sprintf("Your lane orchestrator %s was removed and its lane ended. Your orchestrator is now %s: send reports and questions there (tallpine send --session %s), not to %s.", id, def.ID, def.ID, id)
 	for _, w := range workers {

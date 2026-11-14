@@ -1,6 +1,7 @@
 go-version	all
 lockfile-sync	all
 go-fmt	all
+go-windows	all
 go-build	all
 go-vet	all
 go-test	all

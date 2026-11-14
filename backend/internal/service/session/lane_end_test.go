@@ -256,3 +256,23 @@ func TestAgentEndLaneRefusedWhileAWorkerHasAnOpenPR(t *testing.T) {
 		t.Errorf("owner end blocked by an open PR: %v", err)
 	}
 }
+
+// Ending a lane tells the ask service which project and lane ended, so that
+// lane's open owner asks are withdrawn (B698); a refused end does not.
+func TestEndLaneRunsTheLaneEndedHook(t *testing.T) {
+	t.Parallel()
+	f := newEndFixture(t)
+	var got []string
+	f.svc.SetLaneEndedHook(func(_ context.Context, project domain.ProjectID, lane string) {
+		got = append(got, string(project)+"/"+lane)
+	})
+	if _, err := f.svc.EndLane(context.Background(), "mer-2", true); err != nil || len(got) != 0 {
+		t.Fatalf("dry run: err %v hook %v; want no hook", err, got)
+	}
+	if _, err := f.svc.EndLane(context.Background(), "mer-2", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !strings.HasSuffix(got[0], "/lane-a") {
+		t.Fatalf("hook calls = %v; want one for lane-a", got)
+	}
+}

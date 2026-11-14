@@ -142,10 +142,34 @@ func (r *recordingOwnerNotifier) Resolve(_ context.Context, res ports.Notificati
 func TestPlanOwnerClear_ResolvesPlannerPlanWaiting(t *testing.T) {
 	rec := &recordingOwnerNotifier{}
 	planOwnerClear(rec)(context.Background(), domain.BacklogPlan{ID: "plan_1", PlannerSessionID: "s-planner", Status: domain.PlanWriting})
-	if len(rec.resolved) != 1 || rec.resolved[0].Type != domain.NotificationPlanWaiting || rec.resolved[0].SessionID != "s-planner" {
+	if len(rec.resolved) != 2 || rec.resolved[0].Type != domain.NotificationPlanWaiting || rec.resolved[0].SourceKeyPrefix != "plan-waiting:plan_1:" {
 		t.Fatalf("resolved = %+v", rec.resolved)
 	}
 	if planOwnerClear(nil) != nil {
 		t.Fatal("nil notifier must disable the clear")
+	}
+}
+
+func TestPlanOwnerAlert_LanePlanAlertOpensStartingLaneOrchestrator(t *testing.T) {
+	ls := &leadSessions{orchs: []domain.Session{leadOrch("lane1", "B9"), leadOrch("main", "")}}
+	rec := &recordingOwnerNotifier{}
+	alert := planOwnerAlert(rec, ls, nil)
+	laneStarted := domain.BacklogPlan{ID: "p1", ProjectID: "pr", PlannerSessionID: "pl", NotifySessionID: "lane1", Status: domain.PlanAwaitingApproval}
+	mainStarted := domain.BacklogPlan{ID: "p2", ProjectID: "pr", PlannerSessionID: "pl2", NotifySessionID: "main", Status: domain.PlanAwaitingApproval}
+	alert(context.Background(), laneStarted, "B58", "t")
+	alert(context.Background(), mainStarted, "B59", "t")
+	if len(rec.got) != 2 || rec.got[0].SessionID != "lane1" || rec.got[1].SessionID != "pl2" {
+		t.Fatalf("alert sessions = %+v", rec.got)
+	}
+	if !(domain.NotificationRecord{Type: rec.got[0].Type, SourceKey: rec.got[0].SourceKey}).LaneChat() || (domain.NotificationRecord{Type: rec.got[1].Type, SourceKey: rec.got[1].SourceKey}).LaneChat() {
+		t.Fatalf("lane alert must be flagged lane chat: %+v", rec.got[0])
+	}
+}
+
+func TestPlanLaneOf(t *testing.T) {
+	ls := &leadSessions{orchs: []domain.Session{leadOrch("lane1", "B9"), leadOrch("main", "")}}
+	laneOf := planLaneOf(ls)
+	if laneOf(context.Background(), "lane1") != "B9" || laneOf(context.Background(), "main") != "" || laneOf(context.Background(), "gone") != "" {
+		t.Fatal("lane lookup wrong")
 	}
 }

@@ -18,6 +18,7 @@ import { NavRowHighlight } from "../NavRowHighlight";
 import { useTerminateSession } from "../../hooks/useTerminateSession";
 import { SessionArchiveDialog, type SessionArchiveChoice } from "../SessionArchiveDialog";
 import { EndLaneDialog } from "./EndLaneDialog";
+import { useWaitingOnYouCount } from "./orchestratorNeedsYou";
 import { SessionCopyContextItems } from "../SessionCopyMenuItems";
 import { SessionActions } from "./SessionActions";
 import { SessionMessageAge } from "./SessionMessageAge";
@@ -64,6 +65,8 @@ export const SessionRow = memo(function SessionRow({
 	const queryClient = useQueryClient();
 	const [archiveOpen, setArchiveOpen] = useState(false);
 	const [endLaneOpen, setEndLaneOpen] = useState(false);
+	// Asks and plans waiting on the owner in this lane's chat (lane orchestrator rows only).
+	const waiting = useWaitingOnYouCount(session.workspaceId, { lane: session.lane, sessionId: session.id }, Boolean(session.lane) && !session.hostId);
 	const onKilledRef = useRef(onKilled);
 	onKilledRef.current = onKilled;
 	const { mutate: terminateSession } = useTerminateSession({
@@ -238,6 +241,16 @@ export const SessionRow = memo(function SessionRow({
 								>
 									{session.title}
 								</span>
+								{waiting > 0 ? (
+									<span
+										className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-status-needs-you-dot px-1 text-2xs font-medium text-background"
+										data-lane-waiting=""
+										title={t("ask.waitingCount", { count: waiting })}
+									>
+										{waiting}
+										<span className="sr-only">{t("ask.waitingCount", { count: waiting })}</span>
+									</span>
+								) : null}
 								{hostLabel ? <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-2xs">{hostLabel}</Badge> : null}
 							</span>
 						</button>

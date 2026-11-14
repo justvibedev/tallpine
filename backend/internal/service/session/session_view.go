@@ -14,7 +14,7 @@ import (
 // every request cost O(all sessions x artifact files) and dominated the
 // payload. A list row still reports hasArtifacts from the persisted output
 // type, and GET /sessions/{id} (withArtifacts) serves the files.
-func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionRecord, prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun, interrupted bool, cleanup domain.WorkspaceDisposition, withArtifacts bool, needsInput *needsInputBatch, lanes *laneLabelBatch) (domain.Session, error) {
+func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionRecord, prs []domain.PRFacts, runs []domain.CurrentHeadReviewRun, interrupted bool, cleanup domain.WorkspaceDisposition, withArtifacts bool, needsInput *needsInputBatch, lanes *laneLabelBatch, branchRuns []domain.ReviewRun) (domain.Session, error) {
 	// A row created before artifact_dir existed carries it as '' (the
 	// migration's default) even though session_manager always prompts the
 	// agent to write into the deterministic dataDir/artifacts/<id> path.
@@ -34,7 +34,7 @@ func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionReco
 	// self-healing writes, not a recurring per-read cost.
 	backfilledArtifactDir := false
 	if rec.Metadata.ArtifactDir == "" {
-		if dir := sessionartifacts.Dir(s.dataDir, rec.ID); dir != "" {
+		if dir := sessionartifacts.Resolve(s.dataDir, rec.ID, ""); dir != "" {
 			rec.Metadata.ArtifactDir = dir
 			backfilledArtifactDir = true
 		}
@@ -86,7 +86,10 @@ func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionReco
 	if rec.Harness.IsUnsupported() {
 		unsupportedMessage = domain.UnsupportedHarnessMessage(rec.Harness)
 	}
+	reviewVerdict, landed := reviewAndLand(rec, prs, runs, branchRuns)
 	return domain.Session{
+		ReviewVerdict:             reviewVerdict,
+		Landed:                    landed,
 		SessionRecord:             rec,
 		Lane:                      lanes.label(rec.ID),
 		WorkerLane:                lanes.workerLabel(rec.ID),
@@ -127,7 +130,7 @@ func (s *Service) toSession(ctx context.Context, rec domain.SessionRecord) (doma
 	if err != nil {
 		return domain.Session{}, fmt.Errorf("interrupted turn %s: %w", rec.ID, err)
 	}
-	return s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup, true, s.loadNeedsInput(ctx, []domain.SessionRecord{rec}), s.loadLaneLabels(ctx, []domain.SessionRecord{rec}))
+	return s.toSessionWithFacts(ctx, rec, prs, runs, interrupted[rec.ID], cleanup, true, s.loadNeedsInput(ctx, []domain.SessionRecord{rec}), s.loadLaneLabels(ctx, []domain.SessionRecord{rec}), s.loadBranchReviewRuns(ctx, []domain.SessionRecord{rec})[rec.ID])
 }
 
 // currentWorkspaceCleanup is the teardown disposition recorded for an archived

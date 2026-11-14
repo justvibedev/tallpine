@@ -28,6 +28,7 @@ type PlanStore interface {
 	UpdateBacklogPlan(ctx context.Context, id string, mutate func(*domain.BacklogPlan) error) (domain.BacklogPlan, error)
 	BacklogPlanMessageSource(ctx context.Context, messageID string) (store.PlanMessageSource, bool, error)
 	LatestHumanProjectMessage(ctx context.Context, projectID domain.ProjectID) (string, time.Time, bool, error)
+	ListOwnerAsks(ctx context.Context, project domain.ProjectID) ([]domain.OwnerAsk, error)
 	GetSession(ctx context.Context, id domain.SessionID) (domain.SessionRecord, bool, error)
 }
 
@@ -41,6 +42,9 @@ type PlannerSpawn struct {
 	// LaneItemID is the item's parent: an in-place implementer joins its lane,
 	// as a worker started with `spawn --backlog` does.
 	LaneItemID string
+	// StarterSessionID is the orchestrator that started the plan ("" when the
+	// owner did): the planner is its child, so its reports reach that lane only.
+	StarterSessionID domain.SessionID
 	// Prompt is the planner's task: the item and, on a respawn, the record so far.
 	Prompt string
 }
@@ -79,7 +83,10 @@ type PlanDeps struct {
 	// ClearOwner closes that notification once the plan no longer waits on
 	// the owner (answered, approved, superseded, failed). nil skips it.
 	ClearOwner func(ctx context.Context, plan domain.BacklogPlan)
-	Base       PlanBase
+	// LaneOf names the lane a live lane orchestrator owns, "" for any other
+	// session. It tells which chat a plan's card belongs in. nil: no lanes.
+	LaneOf func(ctx context.Context, id domain.SessionID) string
+	Base   PlanBase
 	// Diff powers the stale check; nil turns it off.
 	Diff PlanDiff
 	// Mode reads the project's planning mode; nil means auto. Always makes a
@@ -114,6 +121,7 @@ type PlanService struct {
 	// notifyOwner: see PlanDeps.NotifyOwner.
 	notifyOwner func(ctx context.Context, plan domain.BacklogPlan, itemRef, itemTitle string)
 	clearOwner  func(ctx context.Context, plan domain.BacklogPlan)
+	laneOf      func(ctx context.Context, id domain.SessionID) string
 	base        PlanBase
 	diff        PlanDiff
 	mode        func(ctx context.Context, projectID domain.ProjectID) domain.PlanningMode
@@ -145,7 +153,7 @@ func NewPlanService(d PlanDeps) *PlanService {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	p := &PlanService{bl: d.Backlog, store: d.Store, sessions: d.Sessions, notify: d.Notify, notifyOwner: d.NotifyOwner, clearOwner: d.ClearOwner, base: d.Base, diff: d.Diff, mode: d.Mode, autoApprove: d.AutoApprove, inPlace: d.InPlace, eval: d.Eval, enabled: d.Enabled, newID: d.NewID, now: d.Now, log: d.Log}
+	p := &PlanService{bl: d.Backlog, store: d.Store, sessions: d.Sessions, notify: d.Notify, notifyOwner: d.NotifyOwner, clearOwner: d.ClearOwner, laneOf: d.LaneOf, base: d.Base, diff: d.Diff, mode: d.Mode, autoApprove: d.AutoApprove, inPlace: d.InPlace, eval: d.Eval, enabled: d.Enabled, newID: d.NewID, now: d.Now, log: d.Log}
 	if d.Backlog != nil {
 		d.Backlog.plans = p
 	}
@@ -262,6 +270,9 @@ type ProjectPlan struct {
 	ItemRef   string
 	ItemTitle string
 	Plan      domain.BacklogPlan
+	// Lane is the lane whose live orchestrator started the plan; "" for the
+	// main orchestrator or the owner. The plan card belongs in that lane's chat.
+	Lane string
 }
 
 // ListOpen returns the project's plans that wait on someone (open, or failed
@@ -290,7 +301,11 @@ func (p *PlanService) ListOpen(ctx context.Context, projectID domain.ProjectID) 
 		if !ok || cur.ID != plan.ID {
 			continue // a failed plan the owner already planned again
 		}
-		out = append(out, ProjectPlan{ItemRef: item.Ref(), ItemTitle: item.Title, Plan: plan})
+		lane := ""
+		if p.laneOf != nil && plan.NotifySessionID != "" {
+			lane = p.laneOf(ctx, plan.NotifySessionID)
+		}
+		out = append(out, ProjectPlan{ItemRef: item.Ref(), ItemTitle: item.Title, Plan: plan, Lane: lane})
 	}
 	return out, nil
 }
@@ -345,7 +360,7 @@ func (p *PlanService) startFor(ctx context.Context, item domain.BacklogItem, act
 	}
 	sid, err := p.sessions.SpawnPlanner(ctx, PlannerSpawn{
 		ProjectID: item.ProjectID, ItemID: item.ID, ItemRef: item.Ref(), PlanID: plan.ID,
-		DisplayName: "Plan " + item.Ref(), Prompt: plannerTask(item, record, extra...),
+		DisplayName: "Plan " + item.Ref(), StarterSessionID: plan.NotifySessionID, Prompt: plannerTask(item, record, extra...),
 	})
 	if err != nil {
 		p.failPlan(ctx, plan.ID, "planner session did not start: "+err.Error())

@@ -19,17 +19,40 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
 
-// Dir returns the canonical artifact directory for a session under dataDir.
-// It is a pure, deterministic path computation (dataDir + "artifacts" + id),
-// so callers can derive the correct directory even for a session row whose
-// stored ArtifactDir is empty — notably rows created before that column
-// existed, which migration 0155 backfilled with ” rather than a real path.
+// Dir returns the canonical artifact directory for a session under dataDir:
+// <dataDir>/artifacts/<project>/<session>. It is a pure, deterministic path
+// computation, so callers can derive the correct directory even for a session
+// row whose stored ArtifactDir is empty — notably rows created before that
+// column existed, which migration 0155 backfilled with ” rather than a real
+// path. The project folder is the session id minus its trailing "-<n>".
 func Dir(dataDir string, id domain.SessionID) string {
 	dataDir = strings.TrimSpace(dataDir)
 	if dataDir == "" {
 		return ""
 	}
+	return filepath.Join(dataDir, "artifacts", ProjectFolder(id), string(id))
+}
+
+// LegacyDir is the flat <dataDir>/artifacts/<session> path sessions used before
+// artifacts were grouped by project. Those sessions keep it (see Resolve).
+func LegacyDir(dataDir string, id domain.SessionID) string {
+	dataDir = strings.TrimSpace(dataDir)
+	if dataDir == "" {
+		return ""
+	}
 	return filepath.Join(dataDir, "artifacts", string(id))
+}
+
+// ProjectFolder is the project folder a session's artifacts live under: the
+// session id without its trailing "-<number>" (ids are "<project>-<n>"). An id
+// without such a suffix goes under "_".
+func ProjectFolder(id domain.SessionID) string {
+	s := string(id)
+	i := strings.LastIndexByte(s, '-')
+	if i <= 0 || i == len(s)-1 || strings.Trim(s[i+1:], "0123456789") != "" {
+		return "_"
+	}
+	return s[:i]
 }
 
 // VersionsDir is the directory inside a session's artifact directory that

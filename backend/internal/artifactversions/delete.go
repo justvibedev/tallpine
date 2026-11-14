@@ -1,7 +1,6 @@
 package artifactversions
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -32,9 +31,14 @@ const trashDir = "artifacts-trash"
 // through. Removing the trash afterwards is best effort; whatever stays is
 // retried on the next delete.
 func (c *Capturer) DeleteSession(ctx context.Context, id domain.SessionID) error {
+	return c.DeleteDir(ctx, id, sessionartifacts.ResolveForID(ctx, c.dataDir, c.store, id, true))
+}
+
+// DeleteDir is DeleteSession for a caller that already knows the session's
+// directory, such as one whose record is gone.
+func (c *Capturer) DeleteDir(ctx context.Context, id domain.SessionID, dir string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	dir := sessionartifacts.Dir(c.dataDir, id)
 	if dir == "" {
 		return errors.New("delete artifacts: no data directory")
 	}
@@ -81,7 +85,7 @@ func (c *Capturer) DeleteVersions(ctx context.Context, sess domain.SessionRecord
 	if err != nil || len(sums) == 0 {
 		return err
 	}
-	root, err := os.OpenRoot(cmp.Or(sess.Metadata.ArtifactDir, sessionartifacts.Dir(c.dataDir, sess.ID)))
+	root, err := os.OpenRoot(sessionartifacts.Resolve(c.dataDir, sess.ID, sess.Metadata.ArtifactDir))
 	if err != nil {
 		return fmt.Errorf("delete artifact versions %s %q: %w", sess.ID, relPath, err)
 	}

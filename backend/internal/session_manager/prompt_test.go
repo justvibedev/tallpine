@@ -119,7 +119,7 @@ func TestBuildSystemPrompt_OrchestratorRequiresConfirmationAndTallpineOnlyDelega
 		"Never answer with git or `gh` commands for the human to run",
 		"ask for explicit confirmation before making any code changes",
 		"prefer spawning or redirecting a worker unless the human explicitly confirms",
-		"Do not use the agent runtime's built-in subagent or task-delegation tools for implementation work",
+		"Do not use the agent runtime's built-in Agent, Task or Workflow subagent tools for any work",
 		"You may coordinate multiple workers, but Tallpine workers only",
 		"tallpine session claim-pr <worker-session-id> <pr-ref>",
 		"must pass the target worker session explicitly",
@@ -476,5 +476,21 @@ func TestBuildSystemPrompt_OrchestratorKillsFinishedWorkers(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("orchestrator prompt missing %q", want)
 		}
+	}
+}
+
+// B710: end-of-turn intent check and subagent ban covering all work.
+func TestBuildSystemPrompt_OrchestratorEndOfTurnIntentCheckAndSubagentBan(t *testing.T) {
+	got := buildSystemPromptText(systemPromptConfig{
+		Role:    sessionPromptRoleOrchestrator,
+		Project: promptProject{ID: "mer", Name: "Mercury"},
+	})
+	for _, want := range []string{"Agent, Task or Workflow subagent tools for any work", "Before ending a turn with no worker or review in flight, run `tallpine orchestrator intent ls`", "Start every next step the owner has already authorized, or file one `tallpine ask`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("orchestrator prompt missing %q", want)
+		}
+	}
+	if strings.Contains(got, "tools for implementation work") {
+		t.Error("subagent ban must not be limited to implementation work")
 	}
 }

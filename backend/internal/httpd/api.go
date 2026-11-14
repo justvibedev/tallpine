@@ -84,8 +84,10 @@ type APIDeps struct {
 	TerminalUsage controllers.TerminalUsageService
 	// BacklogPlans serves item plans (B205); nil serves 501.
 	BacklogPlans controllers.BacklogPlanService
-	Merges       controllers.MergesService
-	Intents      controllers.IntentStore
+	// OwnerAsks serves tracked owner asks (B698); nil serves 501.
+	OwnerAsks controllers.OwnerAskService
+	Merges    controllers.MergesService
+	Intents   controllers.IntentStore
 	// Conversations is nil until a Chat driver is wired; the controller then
 	// answers 501 rather than panicking, matching the other optional surfaces.
 	Conversations controllers.ConversationService
@@ -226,6 +228,7 @@ type API struct {
 	releaseInstall *controllers.ReleaseInstallController
 	backlogRuns    *controllers.BacklogRunController
 	backlogPlans   *controllers.BacklogPlanController
+	ownerAsks      *controllers.OwnerAskController
 	merges         *controllers.MergesController
 	intents        *controllers.IntentsController
 	conversations  *controllers.ConversationsController
@@ -297,6 +300,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		releaseInstall: &controllers.ReleaseInstallController{Svc: deps.ReleaseInstall, Build: deps.ReleaseBuild},
 		backlogRuns:    &controllers.BacklogRunController{Svc: deps.BacklogRuns},
 		backlogPlans:   &controllers.BacklogPlanController{Svc: deps.BacklogPlans, UsageLimits: deps.UsageLimits},
+		ownerAsks:      &controllers.OwnerAskController{Svc: deps.OwnerAsks},
 		merges:         &controllers.MergesController{Svc: deps.Merges},
 		intents:        &controllers.IntentsController{Store: deps.Intents},
 		conversations: &controllers.ConversationsController{Svc: deps.Conversations, SessionKind: func(ctx context.Context, id domain.SessionID) (domain.SessionKind, error) {
@@ -444,6 +448,7 @@ func (a *API) Register(root chi.Router) {
 			a.releaseInstall.Register(r)
 			a.backlogRuns.Register(r)
 			a.backlogPlans.Register(r)
+			a.ownerAsks.Register(r)
 			a.merges.Register(r)
 			a.intents.Register(r)
 			a.conversations.Register(r)

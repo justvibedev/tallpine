@@ -242,10 +242,17 @@ function timeOf(value: string): number {
 	return Number.isNaN(time) ? 0 : time;
 }
 
+/** The `/artifacts/<project>/<session>/` markers present in an absolute path, one per candidate project folder. */
+function projectFolderMarkers(absolute: string, sessionId: string): string[] {
+	const markers: string[] = [];
+	for (const match of absolute.matchAll(/\/artifacts\/([^/]+)\//g)) markers.push(`/artifacts/${match[1]}/${sessionId}/`);
+	return markers;
+}
+
 /**
  * Where a reported artifact sits in its session's artifact folder, the path the
  * daemon's artifact route serves. Reports name artifacts absolutely
- * (`…/artifacts/<session>/report.md`) or relative to that folder; a path outside
+ * (`…/artifacts/<project>/<session>/report.md`, or the older flat `…/artifacts/<session>/report.md`) or relative to that folder; a path outside
  * it has no entry and is not opened.
  */
 export function artifactEntry(path: string, sessionId: string | undefined): string | undefined {
@@ -254,10 +261,11 @@ export function artifactEntry(path: string, sessionId: string | undefined): stri
 	let entry = trimmed;
 	if (trimmed.startsWith("//")) return undefined;
 	if (trimmed.startsWith("/") || /^[A-Za-z]:\//.test(trimmed)) {
-		const marker = `/artifacts/${sessionId}/`;
-		const at = trimmed.lastIndexOf(marker);
-		if (at < 0) return undefined;
-		entry = trimmed.slice(at + marker.length);
+		// Both layouts: `/artifacts/<project>/<session>/` and the older flat `/artifacts/<session>/`.
+		const markers = [`/artifacts/${sessionId}/`, ...projectFolderMarkers(trimmed, sessionId)];
+		const hit = markers.map((marker) => ({ marker, at: trimmed.lastIndexOf(marker) })).filter((m) => m.at >= 0).sort((a, b) => b.at - a.at)[0];
+		if (!hit) return undefined;
+		entry = trimmed.slice(hit.at + hit.marker.length);
 	}
 	// The entry is joined into an authenticated daemon URL, so it may only name
 	// something inside the folder: no parent steps, whichever form the path took.

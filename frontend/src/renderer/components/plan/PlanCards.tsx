@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { listProjectPlans, projectPlansKey } from "../../lib/plan-api";
 import { PlanCard } from "./PlanCard";
@@ -10,9 +11,14 @@ import { planPhase } from "./planDockModel";
  * switch is off. The backlog event stream refetches them (keys sit under the
  * project's backlog key).
  */
-export function PlanCards({ projectId }: { projectId: string }) {
+export function PlanCards({ projectId, sessionId, lane }: { projectId: string; sessionId?: string; lane?: string }) {
+	const { t } = useTranslation();
 	const query = useQuery({ queryKey: projectPlansKey(projectId), queryFn: () => listProjectPlans(projectId), retry: false });
-	const plans = query.data ?? [];
+	// A plan started in a lane shows only in that lane's chat; the main chat keeps
+	// every other plan and gets a one-line pointer to each lane plan.
+	const all = query.data ?? [];
+	const plans = all.filter((p) => (lane ? p.plan.starterSessionId === sessionId : !p.lane));
+	const elsewhere = lane ? [] : all.filter((p) => p.lane);
 	// One card open at a time: the owner's explicit pick, else the first card that needs them.
 	// `answered` only bridges the gap until the refetch moves a just-answered plan on.
 	const [picked, setPicked] = useState<string | false | null>(null); // false: the owner collapsed the open card
@@ -23,9 +29,14 @@ export function PlanCards({ projectId }: { projectId: string }) {
 	};
 	const pickedLive = typeof picked === "string" && plans.some((p) => p.plan.id === picked);
 	const openId = picked === false ? null : pickedLive ? picked : plans.find(needsOwner)?.plan.id ?? null; // answered cards fold to their header
-	if (plans.length === 0) return null;
+	if (plans.length === 0 && elsewhere.length === 0) return null;
 	return (
 		<div data-testid="plan-cards" className="flex max-h-[min(55vh,36rem)] min-h-0 shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain">
+			{elsewhere.map((p) => (
+				<p key={p.plan.id} data-testid="plan-lane-pointer" className="px-1 text-xs text-muted-foreground">
+					{t("plan.laneWaiting", { ref: p.itemRef, lane: p.lane })}
+				</p>
+			))}
 			{plans.map((p) => (
 				<PlanCard
 					key={p.plan.id}

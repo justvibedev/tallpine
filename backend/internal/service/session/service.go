@@ -245,6 +245,15 @@ type Service struct {
 	// runsOnComputerLogin reports whether a new session would launch on the
 	// computer's own CLI login rather than a saved account. Nil means always.
 	runsOnComputerLogin func(context.Context, domain.AgentHarness, string) bool
+	// laneEnded runs after EndLane removed a lane, so the owner asks of that
+	// lane's chat are withdrawn. Nil means nothing to tell.
+	laneEnded func(ctx context.Context, project domain.ProjectID, lane string)
+}
+
+// SetLaneEndedHook late-binds what runs after a lane has been ended (B698:
+// the lane's open owner asks are withdrawn).
+func (s *Service) SetLaneEndedHook(hook func(ctx context.Context, project domain.ProjectID, lane string)) {
+	s.laneEnded = hook
 }
 
 // SetComputerLoginCheck late-binds the account check the launch gate needs: the

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/brand"
@@ -140,7 +139,7 @@ func blockedByProcessesError(blocking []string, orphans []Orphan) error {
 func (e *Env) stopOrphans(orphans []Orphan) {
 	kill := e.Kill
 	if kill == nil {
-		kill = func(pid int) error { return syscall.Kill(pid, syscall.SIGTERM) }
+		kill = sigterm
 	}
 	for _, o := range orphans {
 		if err := kill(o.PID); err == nil {
@@ -193,28 +192,19 @@ func (e *Env) liveRunFilePID() int {
 	if json.Unmarshal(data, &rec) != nil || rec.PID <= 0 || rec.PID == e.SelfPID {
 		return 0
 	}
-	if syscall.Kill(rec.PID, 0) != nil {
+	if !pidAlive(rec.PID) {
 		return 0
 	}
 	return rec.PID
-}
-
-// sameVolume reports whether a and b are on one filesystem (rename(2) needs it).
-func sameVolume(a, b string) (bool, error) {
-	var sa, sb syscall.Stat_t
-	if err := syscall.Stat(a, &sa); err != nil {
-		return false, err
-	}
-	if err := syscall.Stat(b, &sb); err != nil {
-		return false, err
-	}
-	return sa.Dev == sb.Dev, nil
 }
 
 // CheckPreconditions refuses to migrate while the old install is alive, when
 // the target would be clobbered, or when the rename would cross volumes.
 // resuming relaxes only the "target exists" rule.
 func (e *Env) CheckPreconditions(ctx context.Context, resuming bool) error {
+	if err := migrationSupported(); err != nil {
+		return err
+	}
 	// After StepRename the old root is gone (no stub is left). A resume then
 	// skips only what needs the source tree; every liveness check still runs.
 	sourceGone := false

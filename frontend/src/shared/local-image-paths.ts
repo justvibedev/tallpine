@@ -1,7 +1,7 @@
 /**
  * Local image paths in an agent reply, for the thumbnail strip under it.
  *
- * Agents often answer "screenshot saved to `/…/artifacts/<session>/shot.png`"
+ * Agents often answer "screenshot saved to `/…/artifacts/<project>/<session>/shot.png`"
  * instead of rendering it. This finds such paths (inline code, a markdown link,
  * or bare prose). Pure and DOM-free so mobile chat can reuse it.
  *

@@ -134,8 +134,8 @@ func (r *ArtifactRule) Run(ctx context.Context, run *Run) error {
 		if !rec.IsTerminated || rec.IsTaskPreparation {
 			continue
 		}
-		dir := sessionartifacts.Dir(r.dataDir, rec.ID)
-		if custom := rec.Metadata.ArtifactDir; custom != "" && !samePath(custom, dir) {
+		dir := sessionartifacts.ResolveManaged(r.dataDir, rec.ID, rec.Metadata.ArtifactDir)
+		if !sessionartifacts.IsManaged(r.dataDir, rec.ID, rec.Metadata.ArtifactDir) {
 			// Measured by Settings > Storage, but never archived or deleted:
 			// the retention service only manages the canonical directory.
 			continue
@@ -148,6 +148,13 @@ func (r *ArtifactRule) Run(ctx context.Context, run *Run) error {
 			continue
 		}
 		if usage.regenerable+usage.deliverables == 0 {
+			// Nothing was ever written: the empty directory is not worth
+			// keeping for the retention window.
+			if !protected[rec.ID] {
+				if item := r.removeEmpty(ctx, run, rec, dir); item.Status != "" {
+					run.Add(item)
+				}
+			}
 			continue
 		}
 		base := Item{SessionID: rec.ID, ProjectID: rec.ProjectID, Path: dir}
@@ -178,6 +185,36 @@ func (r *ArtifactRule) Run(ctx context.Context, run *Run) error {
 		}
 	}
 	return nil
+}
+
+// removeEmpty drops the empty artifact directory of an ended session. Right
+// before removing it re-reads the session (a restored one keeps its directory)
+// and RemoveIfEmpty re-checks the tree; any doubt leaves the directory alone.
+// A missing directory yields a zero Item.
+func (r *ArtifactRule) removeEmpty(ctx context.Context, run *Run, rec domain.SessionRecord, dir string) Item {
+	item := Item{SessionID: rec.ID, ProjectID: rec.ProjectID, Path: dir, What: "empty artifact directory"}
+	empty, err := sessionartifacts.IsEmpty(dir)
+	if err != nil {
+		item.Status, item.Reason = StatusFailed, err.Error()
+		return item
+	}
+	if !empty {
+		return Item{}
+	}
+	if run.DryRun {
+		item.Status = StatusWouldFree
+		return item
+	}
+	if cur, found, live := run.Current(ctx, rec.ID); !found || live || !cur.IsTerminated {
+		item.Status, item.Reason = StatusKept, "session was restored"
+		return item
+	}
+	if _, err := sessionartifacts.RemoveIfEmpty(dir); err != nil {
+		item.Status, item.Reason = StatusFailed, err.Error()
+		return item
+	}
+	item.Status = StatusFreed
+	return item
 }
 
 func (r *ArtifactRule) prune(ctx context.Context, run *Run, item Item, bytes int64, endedBefore time.Time) Item {

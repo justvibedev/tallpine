@@ -65,3 +65,52 @@ func TestMergeNoticesTwoLanes(t *testing.T) {
 		t.Errorf("repeat or stale merge sent again: %q", sent["orch-B"])
 	}
 }
+
+func fyiRecipients(t *testing.T, owner func(domain.SessionID) (domain.SessionID, bool)) map[domain.SessionID]string {
+	t.Helper()
+	now := time.Now().UTC()
+	prs := stubPRs{{URL: "u1", Number: 1, State: domain.PRStateMerged, SessionID: "w95", LaneItemID: "A", MergedAt: now, UpdatedAt: now}}
+	sent := map[domain.SessionID]string{}
+	n := &merges.Notifier{
+		Service: merges.New(merges.Deps{Store: prs}),
+		Orchestrator: func(_ context.Context, _ domain.ProjectID, lane string) (domain.SessionID, bool) {
+			return domain.SessionID("orch-" + lane), true // "orch-" is the main-health owner
+		},
+		Owner: func(_ context.Context, _ domain.ProjectID, w domain.SessionID) (domain.SessionID, bool) {
+			return owner(w)
+		},
+		Send: func(_ context.Context, to domain.SessionID, msg string) error { sent[to] += msg; return nil },
+	}
+	n.NotifyMerge(context.Background(), "p", "u1")
+	return sent
+}
+
+// The FYI reaches the owning orchestrator and the main-health owner, nobody else.
+func TestMergeFYIOwnerAndMainHealth(t *testing.T) {
+	sent := fyiRecipients(t, func(w domain.SessionID) (domain.SessionID, bool) { return "orch-95", w == "w95" })
+	if len(sent) != 2 || !strings.Contains(sent["orch-95"], "#1") || !strings.Contains(sent["orch-"], "#1") {
+		t.Errorf("recipients = %v, want exactly orch-95 and main-health orch-", sent)
+	}
+	if strings.Contains(sent["orch-95"], "belongs to") {
+		t.Errorf("owner got the third-party wording: %q", sent["orch-95"])
+	}
+	if !strings.Contains(sent["orch-"], "orch-95") || !strings.Contains(sent["orch-"], "no action needed unless main breaks") {
+		t.Errorf("main-health FYI must name the owner and say no action: %q", sent["orch-"])
+	}
+}
+
+// When the owner is the main-health owner it hears the FYI once.
+func TestMergeFYISameSessionOnce(t *testing.T) {
+	sent := fyiRecipients(t, func(domain.SessionID) (domain.SessionID, bool) { return "orch-", true })
+	if len(sent) != 1 || strings.Count(sent["orch-"], "FYI") != 1 {
+		t.Errorf("recipients = %v, want one FYI to orch-", sent)
+	}
+}
+
+// An unknown owner still informs the main-health owner, and no one else.
+func TestMergeFYIUnknownOwner(t *testing.T) {
+	sent := fyiRecipients(t, func(domain.SessionID) (domain.SessionID, bool) { return "", false })
+	if len(sent) != 1 || sent["orch-"] == "" {
+		t.Errorf("recipients = %v, want only orch-", sent)
+	}
+}

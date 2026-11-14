@@ -214,7 +214,7 @@ func (p *PlanService) replanInPlace(ctx context.Context, cur domain.BacklogPlan,
 		var err error
 		if sid, err = p.sessions.SpawnInPlace(ctx, PlannerSpawn{
 			ProjectID: item.ProjectID, ItemID: item.ID, ItemRef: item.Ref(), PlanID: plan.ID,
-			DisplayName: item.Ref(), LaneItemID: item.ParentID, Prompt: p.inPlaceTask(ctx, item, "") + "\n\n" + brief,
+			DisplayName: item.Ref(), LaneItemID: item.ParentID, StarterSessionID: plan.NotifySessionID, Prompt: p.inPlaceTask(ctx, item, "") + "\n\n" + brief,
 		}); err != nil {
 			p.failPlan(ctx, plan.ID, "implementer session did not start: "+err.Error())
 			return domain.BacklogPlan{}, err

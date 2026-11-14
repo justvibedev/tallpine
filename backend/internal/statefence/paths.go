@@ -145,6 +145,13 @@ func WritePaths(env map[string]string, devTooling bool) []string {
 		// every other session's deliverables. Without a session id none is granted.
 		if id := strings.TrimSpace(env[brand.Env("SESSION_ID")]); id != "" {
 			paths = append(paths, sessionartifacts.Dir(dataDir, domain.SessionID(id)))
+			// A session created before the per-project layout keeps its flat dir;
+			// the seatbelt checks resolved paths, so grant it while it exists.
+			if legacy := sessionartifacts.LegacyDir(dataDir, domain.SessionID(id)); legacy != "" {
+				if fi, err := os.Stat(legacy); err == nil && fi.IsDir() && !sessionartifacts.IsProjectFolder(legacy, filepath.Base(legacy)) {
+					paths = append(paths, legacy)
+				}
+			}
 		}
 		paths = append(paths, filepath.Join(dataDir, "verify-slots"))
 	}

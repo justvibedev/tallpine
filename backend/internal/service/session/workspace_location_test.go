@@ -136,7 +136,7 @@ func TestArtifactLocationFallsBackToTheDataDirLayout(t *testing.T) {
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "tp-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "tp", "tp-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

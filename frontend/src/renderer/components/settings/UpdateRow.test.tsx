@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WINDOWS_RELEASES_URL } from "../../../shared/brand";
 import type { UpdateStatus } from "../../hooks/useUpdate";
 import { UpdateRow } from "./UpdateRow";
 
-const test = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const test = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), windows: vi.fn(() => false), open: vi.fn(async () => undefined) }));
+vi.mock("../../lib/platform", async (importOriginal) => ({ ...(await importOriginal<object>()), isWindowsPlatform: test.windows }));
+vi.mock("../../lib/bridge", () => ({ tallpineBridge: { app: { getVersion: async () => "0.13.14-beta.2", openExternal: test.open } } }));
 vi.mock("../../lib/api-client", () => ({
 	apiClient: { GET: test.get, POST: test.post },
 	apiErrorMessage: (e: unknown) => String((e as { message?: string })?.message ?? e),
@@ -30,6 +33,26 @@ function renderRow(status: UpdateStatus) {
 beforeEach(() => {
 	test.get.mockReset();
 	test.post.mockReset();
+	test.open.mockClear();
+});
+afterEach(() => test.windows.mockReturnValue(false));
+
+describe("UpdateRow on Windows", () => {
+	it("shows the app version and links to the installer releases instead of the daemon update", async () => {
+		test.windows.mockReturnValue(true);
+		renderRow(base);
+		expect(await screen.findByText("Tallpine 0.13.14-beta.2. Install a newer build to update.")).toBeTruthy();
+		expect(screen.queryByTestId("update-restart")).toBeNull();
+		expect(test.get).not.toHaveBeenCalled();
+		await userEvent.click(screen.getByTestId("update-windows-download"));
+		expect(test.open).toHaveBeenCalledWith(WINDOWS_RELEASES_URL);
+	});
+
+	it("keeps the daemon update row on macOS", async () => {
+		renderRow(base);
+		expect(await screen.findByTestId("update-restart")).toBeTruthy();
+		expect(screen.queryByTestId("update-windows-download")).toBeNull();
+	});
 });
 
 describe("UpdateRow", () => {

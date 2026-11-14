@@ -170,7 +170,7 @@ describe_holders() {
       cmd="$(ps -o command= -p "${pid}" 2>/dev/null)"
       printf '  pid %s: ppid %s, started %s, command: %s\n' "${pid}" "${ppid}" "${started}" "${cmd}"
       if [[ "${ppid}" == 1 && "${apps}" == *" ${pid} "* ]]; then
-        printf '    launchd started this app (not this script): a Dock/Finder/open launch, a login item, macOS window restoration or the updater\n'
+        printf '    launchd started this app (not this script): a Dock click, Spotlight, a Finder/open launch, a login item or macOS window restoration\n'
       fi
       pid="${ppid}"
       depth=$((depth + 1))

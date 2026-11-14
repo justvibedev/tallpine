@@ -37,14 +37,14 @@ var ErrPruneRefused = errors.New("prune refused")
 func (c *Capturer) PruneRegenerable(ctx context.Context, id domain.SessionID, endedBefore time.Time) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	dir := sessionartifacts.Dir(c.dataDir, id)
-	if dir == "" {
+	if sessionartifacts.Dir(c.dataDir, id) == "" {
 		return 0, errors.New("prune artifacts: no data directory")
 	}
 	rec, found, err := c.store.GetSession(ctx, id)
 	if err != nil {
 		return 0, err
 	}
+	dir := sessionartifacts.ResolveManaged(c.dataDir, id, rec.Metadata.ArtifactDir)
 	switch {
 	case !found:
 		return 0, fmt.Errorf("%w: session not found", ErrPruneRefused)
@@ -52,7 +52,7 @@ func (c *Capturer) PruneRegenerable(ctx context.Context, id domain.SessionID, en
 		return 0, fmt.Errorf("%w: session is live", ErrPruneRefused)
 	case !rec.UpdatedAt.Before(endedBefore):
 		return 0, fmt.Errorf("%w: session ended too recently", ErrPruneRefused)
-	case rec.Metadata.ArtifactDir != "" && filepath.Clean(rec.Metadata.ArtifactDir) != filepath.Clean(dir):
+	case !sessionartifacts.IsManaged(c.dataDir, id, rec.Metadata.ArtifactDir):
 		return 0, fmt.Errorf("%w: artifacts are outside the managed artifact directory", ErrPruneRefused)
 	}
 	root, err := os.OpenRoot(dir)

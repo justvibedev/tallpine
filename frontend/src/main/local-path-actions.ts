@@ -67,6 +67,11 @@ export function createLocalPathActions(deps: LocalPathActionsDeps) {
 	const rootOf = (resolve: (sessionId: string) => Promise<string>, sessionId: string) =>
 		resolve(sessionId).then((root) => (api.isAbsolute(root) ? api.normalize(root) : undefined), () => undefined);
 	const routePath = (rel: string) => rel.split(api.sep).join("/");
+	// The `artifacts` directory above a session's artifact dir; the parent when none is named so.
+	const artifactsRoot = (dir: string) => {
+		for (let up = dir; api.dirname(up) !== up; up = api.dirname(up)) if (api.basename(up) === "artifacts") return up;
+		return api.dirname(dir);
+	};
 
 	// Which confined route serves an image file for `sessionId`'s chat: only a file strictly inside a real root
 	// maps — that session's worktree or artifact directory, or another session's artifact directory under the same
@@ -77,11 +82,17 @@ export function createLocalPathActions(deps: LocalPathActionsDeps) {
 		if (inWorkspace) return { kind: "workspace", path: routePath(inWorkspace) };
 		const artifactDir = await rootOf(deps.resolveArtifactDir, sessionId);
 		if (!artifactDir) return undefined;
-		const owner = pathInside(api, api.dirname(artifactDir), target)?.split(api.sep)[0];
-		if (!owner || !SESSION_ID.test(owner)) return undefined;
-		const dir = owner === sessionId ? artifactDir : await rootOf(deps.resolveArtifactDir, owner);
-		const inArtifacts = dir && pathInside(api, dir, target);
-		return inArtifacts ? { kind: "artifact", sessionId: owner, path: routePath(inArtifacts) } : undefined;
+		// Artifact dirs are `<artifacts>/<project>/<session>` or, for older sessions, `<artifacts>/<session>`, so the
+		// owner is the second or the first segment below the artifacts root (the deeper one first, since the first may be a project folder). Each candidate is checked against that
+		// session's own directory, so a same-named segment elsewhere maps nothing.
+		const segments = pathInside(api, artifactsRoot(artifactDir), target)?.split(api.sep) ?? [];
+		for (const owner of segments.slice(0, 2).reverse()) {
+			if (!SESSION_ID.test(owner)) continue;
+			const dir = owner === sessionId ? artifactDir : await rootOf(deps.resolveArtifactDir, owner);
+			const inArtifacts = dir && pathInside(api, dir, target);
+			if (inArtifacts) return { kind: "artifact", sessionId: owner, path: routePath(inArtifacts) };
+		}
+		return undefined;
 	}
 
 	// A tallpine:// artifact link becomes the file inside that session's artifact dir; anything that would

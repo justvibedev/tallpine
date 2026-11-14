@@ -239,6 +239,9 @@ func (e *Engine) Update(ctx context.Context, project string, update Update, now 
 			if err != nil {
 				return &ValidationError{Message: err.Error()}
 			}
+			if ruleName == SecurityModeRule && field == SecurityModeEnabled && securityModeUnavailable != "" && boolValue(value) {
+				return &ValidationError{Message: securityModeUnavailable}
+			}
 			cur := current.states[ruleName].fields[field]
 			if cur.Locked && string(cur.Value) != string(value) {
 				locked = append(locked, ruleName+"."+field)

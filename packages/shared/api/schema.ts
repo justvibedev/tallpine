@@ -2249,6 +2249,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/asks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the project's owner asks (open ones by default) */
+        get: operations["listProjectAsks"];
+        put?: never;
+        /** Orchestrator: ask the owner a question */
+        post: operations["createProjectAsk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/asks/{ref}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer an open ask (an orchestrator needs the owner's message) */
+        post: operations["answerProjectAsk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/asks/{ref}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw an open ask */
+        post: operations["withdrawProjectAsk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/backlog": {
         parameters: {
             query?: never;
@@ -8422,6 +8474,8 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             id: string;
+            /** @description plan_waiting only: sessionId is the lane orchestrator whose chat holds the plan card, so open that session. */
+            laneChat?: boolean;
             prUrl: string;
             projectId: string;
             /** Format: date-time */
@@ -8468,6 +8522,76 @@ export interface components {
             id: string;
             projectId: string;
             projectName?: string;
+        };
+        OwnerAsk: {
+            about?: string;
+            anchored: boolean;
+            answer?: components["schemas"]["OwnerAskAnswer"];
+            /** Format: date-time */
+            answeredAt?: null | string;
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            /** @description Backlog ref of the lane of the asking chat (B7); empty for the main chat. */
+            lane?: string;
+            options: components["schemas"]["PlanOption"][];
+            projectId: string;
+            /** @description Ref of the earlier answered ask this one repeats. */
+            reaskOf?: string;
+            reaskReason?: string;
+            reason?: string;
+            /** @description Id of the recommended option. */
+            recommended: string;
+            /** @description Per-project reference: Q1, Q2. */
+            ref: string;
+            /** @description The orchestrator that asked. */
+            sessionId?: string;
+            /** @enum {string} */
+            state: "open" | "answered" | "withdrawn";
+            text: string;
+            /** Format: date-time */
+            updatedAt: string;
+            withdrawReason?: string;
+        };
+        OwnerAskAnswer: {
+            optionId?: string;
+            other?: string;
+            /** @description The orchestrator recorded it from a chat message. */
+            relayed?: boolean;
+            /** @description What the owner chose: the option label or the free text. */
+            text: string;
+        };
+        OwnerAskAnswerRequest: {
+            /** @description Id of the chosen option. */
+            option?: string;
+            /** @description Free-text answer instead of an option. */
+            other?: string;
+            /** @description Owner chat message id, or last. Required for an orchestrator. */
+            ownerMessage?: string;
+        };
+        OwnerAskCreateRequest: {
+            /** @description Dedupe key such as a backlog ref (B62). */
+            about?: string;
+            /** @description 2 to 6 answer choices. */
+            options: components["schemas"]["PlanOption"][];
+            /** @description Why asking again is needed, to repeat an answered question. */
+            reask?: string;
+            /** @description Why the owner is asked. */
+            reason?: string;
+            /** @description Id of the recommended option. */
+            recommended: string;
+            /** @description The question, at most 500 characters. */
+            text: string;
+        };
+        OwnerAskEnvelope: {
+            ask: components["schemas"]["OwnerAsk"];
+            deliveryFailed?: boolean;
+        };
+        OwnerAskWithdrawRequest: {
+            reason?: string;
+        };
+        OwnerAsksResponse: {
+            asks: components["schemas"]["OwnerAsk"][];
         };
         PRReviewState: {
             currentHeadRuns?: components["schemas"]["ReviewRun"][];
@@ -8611,6 +8735,8 @@ export interface components {
             stale?: boolean;
             /** Format: date-time */
             startedAt: string;
+            /** @description The orchestrator that started the plan; empty when the owner started it. */
+            starterSessionId?: string;
             /** @enum {string} */
             status: "drafting" | "awaiting_answers" | "writing" | "awaiting_approval" | "approved" | "superseded" | "failed";
             /** Format: date-time */
@@ -8742,6 +8868,7 @@ export interface components {
         ProjectPlan: {
             itemRef: string;
             itemTitle: string;
+            lane?: string;
             plan: components["schemas"]["PlanView"];
         };
         ProjectPlansResponse: {
@@ -9177,6 +9304,8 @@ export interface components {
         };
         SessionBranchState: {
             commits: number;
+            head?: string;
+            landed?: boolean;
             remoteBranch?: string;
             unpushed: number;
         };
@@ -9477,6 +9606,7 @@ export interface components {
             /** @enum {string} */
             kanbanColumn: "building" | "validating" | "needs_review" | "ready" | "archive";
             kind: string;
+            landed?: boolean;
             lane?: string;
             /** Format: date-time */
             lastEventAt: string;
@@ -9507,6 +9637,8 @@ export interface components {
             reauthRequired?: boolean;
             /** @enum {string} */
             requestedOutput?: "artifact";
+            /** @enum {string} */
+            reviewVerdict?: "approved" | "changes_requested";
             reviewerConfig?: components["schemas"]["AgentConfig"];
             /** @enum {string} */
             reviewerHarness?: "claude-code" | "codex" | "kiro" | "deepseek-harness";
@@ -18289,6 +18421,333 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    listProjectAsks: {
+        parameters: {
+            query?: {
+                /** @description open (default) lists only asks waiting on the owner; all adds answered and withdrawn ones. */
+                state?: "open" | "all";
+            };
+            header?: never;
+            path: {
+                /** @description Project that owns the backlog. */
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerAsksResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    createProjectAsk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project that owns the backlog. */
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerAskCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerAskEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    answerProjectAsk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project that owns the backlog. */
+                projectId: string;
+                /** @description Ask ref (Q3). */
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerAskAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerAskEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    withdrawProjectAsk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project that owns the backlog. */
+                projectId: string;
+                /** @description Ask ref (Q3). */
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerAskWithdrawRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerAskEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

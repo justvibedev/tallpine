@@ -74,7 +74,7 @@ func TestReconcileSessionOutputType_PRAndArtifactFilesCombine(t *testing.T) {
 func TestReconcileSessionOutputType_BackfillsEmptyArtifactDir(t *testing.T) {
 	dataDir := t.TempDir()
 	m, st, _ := newManager(WithDataDir(dataDir))
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func (s *staleReadStore) GetSession(context.Context, domain.SessionID) (domain.S
 // untouched; only artifact_dir/OutputType may move.
 func TestReconcileSessionOutputType_DoesNotResurrectSessionTerminatedDuringRead(t *testing.T) {
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

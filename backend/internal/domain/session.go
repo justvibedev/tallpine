@@ -420,18 +420,6 @@ type SessionWait struct {
 	Reason    SessionWaitReason `json:"reason" enum:"working,command,approval,starting,reviewer,resume"`
 }
 
-// SessionBranchState is the session branch's commit and push facts.
-type SessionBranchState struct {
-	// Commits is how many commits the branch has on top of its base.
-	Commits int `json:"commits"`
-	// RemoteBranch is the remote-tracking branch, such as "origin/feat/x".
-	// Empty means the branch has never been pushed.
-	RemoteBranch string `json:"remoteBranch,omitempty"`
-	// Unpushed is how many branch commits are not on RemoteBranch. It equals
-	// Commits while RemoteBranch is empty.
-	Unpushed int `json:"unpushed"`
-}
-
 // SessionProvisionStepID names one stage of an asynchronous Chat start.
 type SessionProvisionStepID string
 
@@ -578,6 +566,13 @@ type Session struct {
 	// which loop is turning it: a Tallpine-driven one (validating) or the
 	// review-feedback loop whose next turn is a person's (needs_review). It is
 	// derived independently of Status and, like it, is never persisted.
+	// ReviewVerdict is the verdict of Tallpine's review of the current head (the
+	// PR head, or the branch tip for a branch without a PR); empty while the
+	// head has no settled verdict. Derived at read time, never stored.
+	ReviewVerdict ReviewVerdict `json:"reviewVerdict,omitempty" enum:"approved,changes_requested"`
+	// Landed is true once the session's work is on its base: its PR merged, or
+	// its local branch reached the base. Derived at read time, never stored.
+	Landed       bool         `json:"landed,omitempty"`
 	KanbanColumn KanbanColumn `json:"kanbanColumn" enum:"building,validating,needs_review,ready,archive"`
 	// DisplayStatus is the short phrase to render inside that column: the most
 	// important current fact about the session at the stage it sits in. It is

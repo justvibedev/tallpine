@@ -40,6 +40,7 @@ func newMergeNotifier(store *sqlite.Store, sessions *sessionsvc.Service) *merges
 		Service: newMergesService(store),
 		// The one routing rule, domain.PickOrchestrator, as worker reports use it.
 		Orchestrator: orchestratorPicker(store),
+		Owner:        mergeOwner(store),
 		Send: func(ctx context.Context, to domain.SessionID, msg string) error {
 			return sessions.Send(ctx, to, msg, nil)
 		},
@@ -59,5 +60,26 @@ func orchestratorPicker(store *sqlite.Store) func(context.Context, domain.Projec
 		}
 		rec, ok := domain.PickOrchestrator(recs, lanes, lane)
 		return rec.ID, ok
+	}
+}
+
+// mergeOwner resolves a worker's owning orchestrator: its spawning parent, when
+// that is a live orchestrator of the project.
+func mergeOwner(store *sqlite.Store) func(context.Context, domain.ProjectID, domain.SessionID) (domain.SessionID, bool) {
+	return func(ctx context.Context, project domain.ProjectID, worker domain.SessionID) (domain.SessionID, bool) {
+		lane, err := store.SessionLane(ctx, worker)
+		if err != nil || lane.ParentSessionID == "" {
+			return "", false
+		}
+		recs, err := store.ListSessions(ctx, project)
+		if err != nil {
+			return "", false
+		}
+		for _, rec := range recs {
+			if rec.ID == lane.ParentSessionID && rec.Kind == domain.KindOrchestrator && !rec.IsTerminated && rec.Activity.State != domain.ActivityExited {
+				return rec.ID, true
+			}
+		}
+		return "", false
 	}
 }

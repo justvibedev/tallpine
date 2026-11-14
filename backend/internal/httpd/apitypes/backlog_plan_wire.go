@@ -59,6 +59,7 @@ type PlanView struct {
 	ItemID            string              `json:"itemId"`
 	Status            string              `json:"status" enum:"drafting,awaiting_answers,writing,awaiting_approval,approved,superseded,failed"`
 	PlannerSessionID  string              `json:"plannerSessionId,omitempty"`
+	StarterSessionID  string              `json:"starterSessionId,omitempty" description:"The orchestrator that started the plan; empty when the owner started it."`
 	BaseCommit        string              `json:"baseCommit,omitempty"`
 	BaseBranch        string              `json:"baseBranch,omitempty"`
 	Questions         []PlanQuestionDTO   `json:"questions"`

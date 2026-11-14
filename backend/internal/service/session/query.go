@@ -91,10 +91,11 @@ func (s *Service) sessionsFromRecords(ctx context.Context, filtered []domain.Ses
 	}
 	needsInput := s.loadNeedsInput(ctx, filtered)
 	laneLabels := s.loadLaneLabels(ctx, filtered)
+	branchRuns := s.loadBranchReviewRuns(ctx, filtered)
 	out := make([]domain.Session, 0, len(filtered))
 	for _, rec := range filtered {
 		facts, found := cleanupBySession[rec.ID]
-		sess, err := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found), false, needsInput, laneLabels)
+		sess, err := s.toSessionWithFacts(ctx, rec, prsBySession[rec.ID], runsBySession[rec.ID], interrupted[rec.ID], currentWorkspaceCleanup(rec, facts, found), false, needsInput, laneLabels, branchRuns[rec.ID])
 		if err != nil {
 			return nil, err
 		}

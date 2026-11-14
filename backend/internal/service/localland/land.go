@@ -182,7 +182,7 @@ func (s *Service) Land(ctx context.Context, id domain.SessionID, req Request) (R
 		return Result{}, fmt.Errorf("%w: %s not found", ErrBadTarget, target)
 	}
 	res := Result{Target: target, OldSHA: base, DryRun: req.DryRun}
-	if landed, err := findLanded(ctx, repo, base, head); err != nil {
+	if landed, err := FindLanded(ctx, repo, "", base, head); err != nil {
 		return Result{}, err
 	} else if landed != "" {
 		res.NewSHA, res.AlreadyLanded = landed, true
@@ -295,17 +295,7 @@ func (s *Service) checkApproved(ctx context.Context, id domain.SessionID, branch
 	if err != nil {
 		return fmt.Errorf("list reviews: %w", err)
 	}
-	key := review.LocalTargetURL(branch)
-	var latest *domain.ReviewRun
-	for i := range runs {
-		r := &runs[i]
-		if r.PRURL != key || strings.TrimSpace(string(r.Verdict)) == "" {
-			continue
-		}
-		if latest == nil || r.CreatedAt.After(latest.CreatedAt) {
-			latest = r
-		}
-	}
+	latest := domain.NewestBranchVerdictRun(runs, review.LocalTargetURL(branch))
 	switch {
 	case latest == nil:
 		return fmt.Errorf("%w: %s has no review verdict; run tallpine review trigger", ErrNotApproved, branch)

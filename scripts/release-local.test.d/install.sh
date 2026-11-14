@@ -76,6 +76,7 @@ wait_alive
 points_before="$(ls -1d "${state}/releases"/2* | wc -l | tr -d ' ')"
 if TALLPINE_RELEASE_TEST_DURING_SNAPSHOT='sleep 1; touch "${data_dir}/ao.db"' rl install "${T}/build-d/${product}.app" >"${T}/out" 2>&1; then bad "install aborts when ao.db is written during the snapshot"; else ok "install aborts when ao.db is written during the snapshot"; fi
 check "the abort names the database change" 'grep -q "changed while it was being snapshotted" "${T}/out"'
+check "B695: a spoiled snapshot is retaken before giving up" '[[ "$(grep -c "retaking the snapshot" "${T}/out")" == 2 ]] && grep -q "kept being started again (3 attempts)" "${T}/out"'
 check_relaunch "ao.db write abort keeps B installed and relaunched" '[[ "$(installed)" == "${B}" ]] && wait_up && kill -0 "$(daemon_pid)"'
 check "ao.db write abort leaves no new rollback point" '[[ "$(ls -1d "${state}/releases"/2* | wc -l | tr -d " ")" == "${points_before}" ]]'
 wait_alive
@@ -372,3 +373,17 @@ check "keeps the newest 3 rollback points" '[[ "$(ls -1d "${state}/releases"/2* 
 check "retention drops the oldest seeded point and keeps the newer ones" '[[ ! -e "${state}/releases/20200101T000000Z-seeded" && -d "${state}/releases/20200102T000000Z-seeded" && -d "${state}/releases/20200103T000000Z-seeded" ]]'
 check "last install is D" '[[ "$(installed)" == "${D}" ]]'
 
+
+# B695: macOS relaunches the app (a Dock click, Spotlight) while the install has it stopped; the install quits it
+# again and retakes the snapshot instead of failing.
+relaunch_once="if [[ ! -e '${T}/relaunched' ]]; then : >'${T}/relaunched'; '${T}/launch' \"\${app_path}\"; for _ in \$(seq 1 50); do [[ -f \"\${run_file}\" ]] && break; sleep 0.1; done; touch \"\${data_dir}/ao.db\"; fi"
+if TALLPINE_RELEASE_TEST_DURING_SNAPSHOT="${relaunch_once}" rl install "${T}/build-b/${product}.app" >"${T}/out" 2>&1; then
+  ok "B695: install survives a relaunch during the snapshot"
+else
+  bad "B695: install survives a relaunch during the snapshot"; cat "${T}/out"
+fi
+check "B695: the relaunch was simulated" '[[ -e "${T}/relaunched" ]]'
+check "B695: the relaunched app was quit again and the snapshot retaken" '[[ "$(grep -c "retaking the snapshot (attempt 2 of 3)" "${T}/out")" == 1 ]]'
+check "B695: B is installed and healthy" '[[ "$(installed)" == "${B}" ]] && grep -q "Daemon healthy" "${T}/out" && kill -0 "$(daemon_pid)"'
+check "B695: a single app instance runs" '[[ "$(ps -axo command= | awk -v exe="${apps}/${product}.app/Contents/MacOS/fake" "index(\$0, exe) && !/awk/" | wc -l | tr -d " ")" == 1 ]]'
+check "B695: no partial snapshot left" 'no_leftovers'

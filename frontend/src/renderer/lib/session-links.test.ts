@@ -74,6 +74,7 @@ describe("session links", () => {
 		expect(artifactLinkForPath("w/plans/my  plan.md", workspaces)).toBeUndefined();
 		expect(artifactLinkForPath("/tmp/tallpine/artifacts/w/plan.md", workspaces)).toBe("tallpine://sessions/p%201/w/artifacts/plan.md");
 		expect(artifactLinkForPath("C:\\tallpine\\artifacts\\w\\plan.md", workspaces)).toBe("tallpine://sessions/p%201/w/artifacts/plan.md");
+		expect(artifactLinkForPath("/tmp/tallpine/artifacts/p/w/plans/my plan.md", workspaces)).toBe("tallpine://sessions/p%201/w/artifacts/plans/my%20plan.md");
 		expect(artifactLinkForPath("w/missing.md", workspaces)).toBeUndefined();
 		expect(artifactLinkForPath("/tmp/w/plan.md", workspaces)).toBeUndefined();
 		expect(artifactLinkForPath("plan.md", workspaces)).toBeUndefined();

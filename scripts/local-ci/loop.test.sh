@@ -106,9 +106,10 @@ printf '#!/bin/bash\nsleep 3\n' >"$WORK/scripts/verify"
 echo stale >"$tmp/s.ps"; printf '#!/bin/bash\nexit 1\n' >"$WORK/scripts/verify"
 ( cd "$WORK" && SNAPSHOT_EVERY=1000 run_verify_supervised "$new" "$tmp/s.log" "$tmp/s.rc" --all >/dev/null 2>&1 )
 [ ! -e "$tmp/s.ps" ] || { fails=$((fails + 1)); echo "FAIL: stale ps snapshot survived a new run"; }
-printf '#!/bin/bash\nsleep 3\n' >"$WORK/scripts/verify"
+# The fake verify stays alive (with a recognisable child) until the loop has written a snapshot, so no load can end it first.
+printf '#!/bin/bash\nsleep 7 & k=$!\nfor _ in $(seq 1 1200); do [ -s "%s" ] && break; sleep 0.1; done\nkill $k\n' "$tmp/s.ps" >"$WORK/scripts/verify"
 ( cd "$WORK" && SNAPSHOT_EVERY=1 SUPERSEDE_CHECK=1000 run_verify_supervised "$new" "$tmp/s.log" "$tmp/s.rc" --all >/dev/null 2>&1 )
-grep -q 'sleep 3' "$tmp/s.ps" && head -1 "$tmp/s.ps" | grep -q '^# ' && grep -q 'PPID' "$tmp/s.ps" || { fails=$((fails + 1)); echo "FAIL: no ps snapshot of the verify tree: $(cat "$tmp/s.ps" 2>&1)"; }
+grep -q 'sleep 7' "$tmp/s.ps" && head -1 "$tmp/s.ps" | grep -q '^# ' && grep -q 'PPID' "$tmp/s.ps" || { fails=$((fails + 1)); echo "FAIL: no ps snapshot of the verify tree: $(cat "$tmp/s.ps" 2>&1)"; }
 
 # B602: a verify run gets its own short TMPDIR, and nothing it leaves there survives.
 SCR="$VERIFY_SCRATCH"; mkdir -p "$SCR"; echo stale >"$SCR/left-by-killed-run"

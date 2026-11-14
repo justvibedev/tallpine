@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/adapters/chatdriver/deepseekharnessacp"
@@ -222,10 +220,7 @@ func (m *Manager) resolveAgentConfigFor(ctx context.Context, decision agentpolic
 }
 
 var (
-	claudeFamilyAliases = []string{"fable", "opus", "sonnet", "haiku"}
-	claudeEffortLevels  = []string{"low", "medium", "high", "xhigh", "max"}
-	claudeVersionNumber = regexp.MustCompile(`\d+`)
-	claudeVersionNoise  = regexp.MustCompile(`\(.*?\)|\[.*?\]`)
+	claudeEffortLevels = []string{"low", "medium", "high", "xhigh", "max"}
 )
 
 // newestClaudeFamilyModel returns the newest concrete catalog model of the
@@ -234,64 +229,14 @@ var (
 // search to models that report effort levels (effort validation); alias
 // acceptance passes false so effort-less families still resolve.
 func newestClaudeFamilyModel(models []ports.AgentModelInfo, alias string, requireEfforts bool) *ports.AgentModelInfo {
-	family := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(alias), "[1m]"))
-	if !containsString(claudeFamilyAliases, family) {
-		return nil
+	candidates := make([]domain.ClaudeFamilyCandidate, len(models))
+	for i, m := range models {
+		candidates[i] = domain.ClaudeFamilyCandidate{ID: m.ID, Label: m.Label, Skip: requireEfforts && len(m.Efforts) == 0}
 	}
-	var best *ports.AgentModelInfo
-	var bestVersion []int
-	for i := range models {
-		if requireEfforts && len(models[i].Efforts) == 0 {
-			continue
-		}
-		version := claudeFamilyVersion(models[i], family)
-		if version == nil {
-			continue
-		}
-		if best == nil || compareVersions(version, bestVersion) > 0 {
-			best, bestVersion = &models[i], version
-		}
-	}
-	return best
-}
-
-// claudeFamilyVersion reads major.minor from a model's label or ID, or nil when
-// the model is not in the family. Snapshot dates and "v1:0" suffixes are longer
-// than two digits or beyond the second number, so they are ignored.
-func claudeFamilyVersion(model ports.AgentModelInfo, family string) []int {
-	for _, text := range []string{model.Label, model.ID} {
-		lower := claudeVersionNoise.ReplaceAllString(strings.ToLower(text), "")
-		if !strings.Contains(lower, family) {
-			continue
-		}
-		var version []int
-		for _, part := range claudeVersionNumber.FindAllString(lower, -1) {
-			if len(part) <= 2 && len(version) < 2 {
-				n, _ := strconv.Atoi(part)
-				version = append(version, n)
-			}
-		}
-		if len(version) > 0 {
-			return version
-		}
+	if i := domain.NewestClaudeFamilyModel(candidates, alias); i >= 0 {
+		return &models[i]
 	}
 	return nil
-}
-
-func compareVersions(a, b []int) int {
-	for i := 0; i < len(a) || i < len(b); i++ {
-		var x, y int
-		if i < len(a) {
-			x = a[i]
-		}
-		if i < len(b) {
-			y = b[i]
-		}
-		if x != y {
-			return x - y
-		}
-	}
-	return 0
 }
 
 func containsString(values []string, value string) bool {

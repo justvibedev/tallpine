@@ -1,6 +1,7 @@
 import type { BrowserEntry, BrowserNavState, BrowserSessionEntry, BrowserTabState, BrowserTabsState } from "./types";
 import { sanitizeBrowserTitle, sanitizeBrowserURL, sanitizeURLsInText } from "./url";
 import { browserError } from "./args";
+import { needsAgentTab } from "./agent-partition";
 
 // agent-browser-runtime.ts's parseAgentBrowserJSON throws this exact code for
 // any command the automation runtime's own process reports success:false for
@@ -75,10 +76,14 @@ export function tabResult(
 export function agentTabResult(
   entry: BrowserEntry,
   active: boolean,
-): BrowserTabState & { untrustedExternalContent: true } {
+  session?: BrowserSessionEntry,
+): BrowserTabState & { agentDrivable?: boolean; untrustedExternalContent: true } {
   const tab = tabResult(entry, active);
   return {
     ...tab,
+    // false: a page command or select on this tab is refused or redirected
+    // (the person's own tab with no login grant, or a viewer of the agent's browser).
+    ...(session ? { agentDrivable: entry.agentTab === undefined && !needsAgentTab(entry, session) } : {}),
     url: sanitizeBrowserURL(tab.url),
     title: sanitizeBrowserTitle(tab.title),
   };
@@ -91,7 +96,7 @@ export function agentTabsResult(
     viewId: session.viewId,
     activeTabId: session.activeTabId,
     tabs: [...session.tabs.values()].map((entry) =>
-      agentTabResult(entry, entry.tabId === session.activeTabId),
+      agentTabResult(entry, entry.tabId === session.activeTabId, session),
     ),
     untrustedExternalContent: true,
   };

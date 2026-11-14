@@ -207,10 +207,7 @@ func (s *Service) SaveRenderAsArtifact(ctx context.Context, id domain.SessionID,
 	if err != nil {
 		return RenderArtifact{}, fmt.Errorf("read render: %w", err)
 	}
-	dir := record.Metadata.ArtifactDir
-	if dir == "" {
-		dir = sessionartifacts.Dir(s.dataDir, id)
-	}
+	dir := sessionartifacts.Resolve(s.dataDir, id, record.Metadata.ArtifactDir)
 	if dir == "" {
 		return RenderArtifact{}, errors.New("the session has no artifact directory")
 	}

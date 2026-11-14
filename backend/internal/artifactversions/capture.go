@@ -120,7 +120,7 @@ func (c *Capturer) SetKeep(n int) {
 func (c *Capturer) CaptureSession(ctx context.Context, sess domain.SessionRecord) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	dir := cmp.Or(sess.Metadata.ArtifactDir, sessionartifacts.Dir(c.dataDir, sess.ID))
+	dir := sessionartifacts.Resolve(c.dataDir, sess.ID, sess.Metadata.ArtifactDir)
 	files, err := sessionartifacts.List(ctx, dir)
 	if err != nil {
 		return err
@@ -304,7 +304,7 @@ func (c *Capturer) Snapshot(ctx context.Context, sess domain.SessionRecord, relP
 func (c *Capturer) recordNow(ctx context.Context, sess domain.SessionRecord, relPath string, w writer, settle time.Duration) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	dir := cmp.Or(sess.Metadata.ArtifactDir, sessionartifacts.Dir(c.dataDir, sess.ID))
+	dir := sessionartifacts.Resolve(c.dataDir, sess.ID, sess.Metadata.ArtifactDir)
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return "", err
@@ -345,7 +345,7 @@ func (c *Capturer) List(ctx context.Context, id domain.SessionID, relPath string
 
 // ReadVersion returns the content of v from the session's blob store.
 func (c *Capturer) ReadVersion(sess domain.SessionRecord, v domain.SessionArtifactVersion) ([]byte, error) {
-	dir := cmp.Or(sess.Metadata.ArtifactDir, sessionartifacts.Dir(c.dataDir, sess.ID))
+	dir := sessionartifacts.Resolve(c.dataDir, sess.ID, sess.Metadata.ArtifactDir)
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, err

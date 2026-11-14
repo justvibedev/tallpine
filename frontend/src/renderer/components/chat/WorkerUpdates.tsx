@@ -70,7 +70,7 @@ export function asksUser(text: string): boolean {
 	return /[?？](?=[\s"'”’)\]*_]|$)/.test(prose);
 }
 
-function finalReply(items: readonly ConversationItem[]): ConversationMessage | undefined {
+export function finalReply(items: readonly ConversationItem[]): ConversationMessage | undefined {
 	for (let index = items.length - 1; index >= 0; index -= 1) {
 		const item = items[index];
 		if (item?.kind === "message" && item.role === "assistant" && item.text.trim() !== "") return item;

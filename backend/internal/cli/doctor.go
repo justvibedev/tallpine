@@ -526,6 +526,7 @@ func (c *commandContext) checkCodexLaunchFlags(ctx context.Context) doctorCheck 
 	if err != nil || path == "" {
 		return doctorCheck{Level: doctorPass, Section: doctorSectionAgents, Name: name, Message: "skipped: codex not found in PATH"}
 	}
+	path = codex.ResolveNativeCodex(path)
 	for _, probe := range codex.DoctorLaunchProbes() {
 		reqCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 		out, err := c.deps.CommandOutput(reqCtx, path, probe...)

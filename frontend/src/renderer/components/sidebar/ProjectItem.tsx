@@ -12,7 +12,7 @@ import { ProjectRowActions } from "./ProjectRowActions";
 import { ProjectRowButton } from "./ProjectRowButton";
 import { ProjectSessionsList } from "./ProjectSessionsList";
 import { type ProjectItemProps, projectItemPropsEqual } from "./project-item-props";
-import { useOrchestratorNeedsYou } from "./orchestratorNeedsYou";
+import { useOrchestratorNeedsYou, useWaitingOnYouCount } from "./orchestratorNeedsYou";
 import { useProjectOrchestrator } from "./useProjectOrchestrator";
 import { useProjectRemoval } from "./useProjectRemoval";
 import { useProjectSessions } from "./useProjectSessions";
@@ -72,6 +72,8 @@ export const ProjectItem = memo(function ProjectItem({
 	const { orchestrator, isSpawning, openOrchestrator } = useProjectOrchestrator({ workspace, selection, expanded, toggleDisclosure, onOpenOrchestrator, isProjectProvisioning, isProjectRestarting });
 	// Hidden while that chat is open: the owner is already reading the reply.
 	const needsYou = useOrchestratorNeedsYou(orchestrator, !orchestratorActive);
+	// Asks and plans waiting on the owner in the main chat (local projects only: asks have no remote route).
+	const waiting = useWaitingOnYouCount(workspace.id, {}, !workspace.hostId);
 
 	// Expanded + already on the project board → collapse. Expanded + on a
 	// session (orchestrator or worker) → board. Collapsed → expand + board.
@@ -147,6 +149,7 @@ export const ProjectItem = memo(function ProjectItem({
 								dashboardActive={dashboardActive}
 								projectActive={projectActive}
 								needsYou={needsYou}
+								waiting={waiting}
 								projectIsDragging={projectIsDragging}
 								projectDragInProgress={projectDragInProgress}
 								onProjectClick={onProjectClick}

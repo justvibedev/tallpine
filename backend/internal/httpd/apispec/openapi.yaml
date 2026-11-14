@@ -5746,6 +5746,276 @@ paths:
       summary: Speculatively create the next task's worktree
       tags:
       - projects
+  /api/v1/projects/{projectId}/asks:
+    get:
+      operationId: listProjectAsks
+      parameters:
+      - description: Project that owns the backlog.
+        in: path
+        name: projectId
+        required: true
+        schema:
+          description: Project that owns the backlog.
+          type: string
+      - description: open (default) lists only asks waiting on the owner; all adds
+          answered and withdrawn ones.
+        in: query
+        name: state
+        schema:
+          description: open (default) lists only asks waiting on the owner; all adds
+            answered and withdrawn ones.
+          enum:
+          - open
+          - all
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerAsksResponse'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the project's owner asks (open ones by default)
+      tags:
+      - backlog
+    post:
+      operationId: createProjectAsk
+      parameters:
+      - description: Project that owns the backlog.
+        in: path
+        name: projectId
+        required: true
+        schema:
+          description: Project that owns the backlog.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnerAskCreateRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerAskEnvelope'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: 'Orchestrator: ask the owner a question'
+      tags:
+      - backlog
+  /api/v1/projects/{projectId}/asks/{ref}/answer:
+    post:
+      operationId: answerProjectAsk
+      parameters:
+      - description: Project that owns the backlog.
+        in: path
+        name: projectId
+        required: true
+        schema:
+          description: Project that owns the backlog.
+          type: string
+      - description: Ask ref (Q3).
+        in: path
+        name: ref
+        required: true
+        schema:
+          description: Ask ref (Q3).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnerAskAnswerRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerAskEnvelope'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Answer an open ask (an orchestrator needs the owner's message)
+      tags:
+      - backlog
+  /api/v1/projects/{projectId}/asks/{ref}/withdraw:
+    post:
+      operationId: withdrawProjectAsk
+      parameters:
+      - description: Project that owns the backlog.
+        in: path
+        name: projectId
+        required: true
+        schema:
+          description: Project that owns the backlog.
+          type: string
+      - description: Ask ref (Q3).
+        in: path
+        name: ref
+        required: true
+        schema:
+          description: Ask ref (Q3).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnerAskWithdrawRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerAskEnvelope'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Withdraw an open ask
+      tags:
+      - backlog
   /api/v1/projects/{projectId}/backlog:
     get:
       operationId: listProjectBacklog
@@ -24729,6 +24999,10 @@ components:
           type: string
         id:
           type: string
+        laneChat:
+          description: 'plan_waiting only: sessionId is the lane orchestrator whose
+            chat holds the plan card, so open that session.'
+          type: boolean
         prUrl:
           type: string
         projectId:
@@ -24845,6 +25119,152 @@ components:
       required:
       - id
       - projectId
+      type: object
+    OwnerAsk:
+      properties:
+        about:
+          type: string
+        anchored:
+          type: boolean
+        answer:
+          $ref: '#/components/schemas/OwnerAskAnswer'
+        answeredAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        lane:
+          description: Backlog ref of the lane of the asking chat (B7); empty for
+            the main chat.
+          type: string
+        options:
+          items:
+            $ref: '#/components/schemas/PlanOption'
+          type: array
+        projectId:
+          type: string
+        reaskOf:
+          description: Ref of the earlier answered ask this one repeats.
+          type: string
+        reaskReason:
+          type: string
+        reason:
+          type: string
+        recommended:
+          description: Id of the recommended option.
+          type: string
+        ref:
+          description: 'Per-project reference: Q1, Q2.'
+          type: string
+        sessionId:
+          description: The orchestrator that asked.
+          type: string
+        state:
+          enum:
+          - open
+          - answered
+          - withdrawn
+          type: string
+        text:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        withdrawReason:
+          type: string
+      required:
+      - id
+      - projectId
+      - ref
+      - text
+      - options
+      - recommended
+      - state
+      - anchored
+      - createdAt
+      - updatedAt
+      type: object
+    OwnerAskAnswer:
+      properties:
+        optionId:
+          type: string
+        other:
+          type: string
+        relayed:
+          description: The orchestrator recorded it from a chat message.
+          type: boolean
+        text:
+          description: 'What the owner chose: the option label or the free text.'
+          type: string
+      required:
+      - text
+      type: object
+    OwnerAskAnswerRequest:
+      properties:
+        option:
+          description: Id of the chosen option.
+          type: string
+        other:
+          description: Free-text answer instead of an option.
+          type: string
+        ownerMessage:
+          description: Owner chat message id, or last. Required for an orchestrator.
+          type: string
+      type: object
+    OwnerAskCreateRequest:
+      properties:
+        about:
+          description: Dedupe key such as a backlog ref (B62).
+          type: string
+        options:
+          description: 2 to 6 answer choices.
+          items:
+            $ref: '#/components/schemas/PlanOption'
+          type: array
+        reask:
+          description: Why asking again is needed, to repeat an answered question.
+          type: string
+        reason:
+          description: Why the owner is asked.
+          type: string
+        recommended:
+          description: Id of the recommended option.
+          type: string
+        text:
+          description: The question, at most 500 characters.
+          type: string
+      required:
+      - text
+      - options
+      - recommended
+      type: object
+    OwnerAskEnvelope:
+      properties:
+        ask:
+          $ref: '#/components/schemas/OwnerAsk'
+        deliveryFailed:
+          type: boolean
+      required:
+      - ask
+      type: object
+    OwnerAskWithdrawRequest:
+      properties:
+        reason:
+          type: string
+      type: object
+    OwnerAsksResponse:
+      properties:
+        asks:
+          items:
+            $ref: '#/components/schemas/OwnerAsk'
+          type: array
+      required:
+      - asks
       type: object
     PRReviewState:
       properties:
@@ -25181,6 +25601,10 @@ components:
         startedAt:
           format: date-time
           type: string
+        starterSessionId:
+          description: The orchestrator that started the plan; empty when the owner
+            started it.
+          type: string
         status:
           enum:
           - drafting
@@ -25513,6 +25937,8 @@ components:
         itemRef:
           type: string
         itemTitle:
+          type: string
+        lane:
           type: string
         plan:
           $ref: '#/components/schemas/PlanView'
@@ -26615,6 +27041,10 @@ components:
       properties:
         commits:
           type: integer
+        head:
+          type: string
+        landed:
+          type: boolean
         remoteBranch:
           type: string
         unpushed:
@@ -27411,6 +27841,8 @@ components:
           type: string
         kind:
           type: string
+        landed:
+          type: boolean
         lane:
           type: string
         lastEventAt:
@@ -27483,6 +27915,11 @@ components:
         requestedOutput:
           enum:
           - artifact
+          type: string
+        reviewVerdict:
+          enum:
+          - approved
+          - changes_requested
           type: string
         reviewerConfig:
           $ref: '#/components/schemas/AgentConfig'

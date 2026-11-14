@@ -272,7 +272,7 @@ func codexWindowsHandleSecurityState(handle windows.Handle, classifyDevicePrinci
 	if err != nil || owner == nil {
 		return false, false, nil, errors.New("codex path owner is unavailable")
 	}
-	ownerCurrent := owner.Equals(user.User.Sid)
+	ownerCurrent := codexWindowsOwnerIsCurrent(owner.Equals(user.User.Sid), owner.Equals(administrators), token.IsElevated())
 	ownerTrusted := ownerCurrent || owner.Equals(system) || owner.Equals(administrators) || owner.Equals(trustedInstaller)
 	dacl, _, err := sd.DACL()
 	if err != nil || dacl == nil {

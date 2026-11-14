@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,20 @@ func (f *fakeStore) ResolveSessionNotifications(
 	}
 	return f.resolveMatching(at, func(rec domain.NotificationRecord) bool {
 		return rec.SessionID == id && rec.Type == typ
+	}), nil
+}
+
+func (f *fakeStore) ResolveSourceNotifications(
+	_ context.Context,
+	prefix string,
+	typ domain.NotificationType,
+	at time.Time,
+) ([]domain.NotificationRecord, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.resolveMatching(at, func(rec domain.NotificationRecord) bool {
+		return strings.HasPrefix(rec.SourceKey, prefix) && rec.Type == typ
 	}), nil
 }
 

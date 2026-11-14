@@ -170,6 +170,11 @@ func TestAgentScopeWorkerActsOnlyOnItself(t *testing.T) {
 		{"POST", "/api/v1/orchestrators/app-1/research", 403},
 		{"POST", "/api/v1/orchestrators/app-orch/research", 403},
 		{"GET", "/api/v1/orchestrators/app-orch/research", 403},
+		// Owner asks are an orchestrator's alone (B698).
+		{"GET", "/api/v1/projects/app/asks", 403},
+		{"POST", "/api/v1/projects/app/asks", 403},
+		{"POST", "/api/v1/projects/app/asks/Q1/answer", 403},
+		{"POST", "/api/v1/projects/app/asks/Q1/withdraw", 403},
 		// Never its own approvals or input requests.
 		{"POST", "/api/v1/sessions/app-1/conversation/approvals/req-1/resolve", 403},
 		{"POST", "/api/v1/sessions/app-1/conversation/inputs/req-1/resolve", 403},
@@ -196,6 +201,13 @@ func TestAgentScopeOrchestratorIsBoundToItsProject(t *testing.T) {
 		{"POST", "/api/v1/sessions/app-1/pr/claim", 200},
 		{"POST", "/api/v1/sessions/app-1/reviews/trigger", 200},
 		{"GET", "/api/v1/reports?projectId=app", 200},
+		// Owner asks of its own project only (B698).
+		{"GET", "/api/v1/projects/app/asks", 200},
+		{"POST", "/api/v1/projects/app/asks", 200},
+		{"POST", "/api/v1/projects/app/asks/Q1/answer", 200},
+		{"POST", "/api/v1/projects/app/asks/Q1/withdraw", 200},
+		{"GET", "/api/v1/projects/web/asks", 403},
+		{"POST", "/api/v1/projects/web/asks", 403},
 		// Handoff of its own session only: not a worker, not another
 		// project's orchestrator.
 		{"POST", "/api/v1/orchestrators/app-orch/handoff", 200},

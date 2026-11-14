@@ -166,7 +166,7 @@ export type TimelineGroup = {
 	/** An account switch stopped this turn; its notice replaces the outcome. */
 	accountSwitched?: boolean;
 	/** "Just me" view: this row stands for a run of orchestration turns (see just-me.ts). */
-	collapsedRun?: { count: number; open: boolean };
+	collapsedRun?: { count: number; open: boolean; /** A run of worker updates in the default view. */ workers?: boolean; /** The newest worker headline in that run. */ headline?: string };
 };
 
 type GroupPreview = { title: string; detail?: string };

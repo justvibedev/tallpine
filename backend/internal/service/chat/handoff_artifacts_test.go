@@ -14,7 +14,7 @@ func TestHandoffArtifactsListsTheSessionDirectoryNewestFirst(t *testing.T) {
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	dir := filepath.Join(dataDir, "artifacts", "s-1")
+	dir := filepath.Join(dataDir, "artifacts", "s", "s-1")
 	write := func(name string, at time.Time) {
 		t.Helper()
 		path := filepath.Join(dir, name)

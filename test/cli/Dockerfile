@@ -46,7 +46,7 @@ RUN chmod +x /usr/local/bin/tallpine /usr/local/bin/tallpine-install-check.sh
 # Run as an unprivileged user with a real HOME, like a normal install.
 RUN useradd --create-home --shell /bin/bash tallpine
 USER tallpine
-WORKDIR /home/vo
+WORKDIR /home/tallpine
 
 # Sanity: prove the install resolved before the check runs.
 RUN tallpine version

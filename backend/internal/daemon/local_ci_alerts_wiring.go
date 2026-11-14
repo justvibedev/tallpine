@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
+	"tallpine.eu/tallpine/backend/internal/config"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/service/localcialerts"
 )
@@ -17,12 +18,12 @@ type localCIAlertSessions interface {
 // alerts (build done or failed, main red or green) to the main-health
 // orchestrator (B680). The loop cannot call the daemon under the peer check;
 // the daemon reads its alerts file instead. An isolated daemon
-// (TALLPINE_DATA_DIR) has its own state root and so no local-CI directory;
+// (TALLPINE_DATA_DIR elsewhere) has its own state root and so no local-CI directory;
 // TALLPINE_LOCAL_CI_DIR is not read, so a test daemon under the loop never
 // takes the real alerts.
 func (b *boot) wireLocalCIAlerts() {
 	reader := &localcialerts.Reader{
-		Dir:    filepath.Join(b.cfg.StateDir, "local-ci"),
+		Dir:    localCIDir(b.cfg),
 		Target: localCIAlertTarget(b.store, orchestratorPicker(b.store)),
 		Send: func(ctx context.Context, to domain.SessionID, msg string) error {
 			return b.sessionSvc.Send(ctx, to, msg, nil)
@@ -35,6 +36,12 @@ func (b *boot) wireLocalCIAlerts() {
 		<-done
 	})
 }
+
+// localCIDir is where the launchd scripts write alerts: <state root>/local-ci.
+// The app starts the daemon with TALLPINE_DATA_DIR=~/.tallpine/data, which
+// makes StateDir that data dir, so the real root comes from Config.HardenRoot,
+// the one place that recognises it (B688).
+func localCIDir(cfg config.Config) string { return filepath.Join(cfg.HardenRoot(), "local-ci") }
 
 // localCIAlertTarget resolves the session named in notify-target: itself while
 // it is a live orchestrator, else its project's main orchestrator, so a

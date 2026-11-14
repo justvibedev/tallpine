@@ -53,3 +53,12 @@ func TestPlannerOrchestratorPromptIntroFollowsPlanningMode(t *testing.T) {
 		t.Error("orchestrator prompt intro must defer to the planning mode")
 	}
 }
+
+// B710: a stale plan plus an owner intent to continue never stalls silently.
+func TestPlannerOrchestratorPromptStalePlanBranch(t *testing.T) {
+	for _, want := range []string{"stale plan meets an owner intent to continue", "tallpine plan replan <ref>", "never stall silently"} {
+		if !strings.Contains(plannerOrchestratorPrompt, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+}

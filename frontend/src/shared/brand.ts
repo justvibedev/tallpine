@@ -68,3 +68,6 @@ export const MOBILE_URL_SCHEME = "tallpine-mobile";
  *  official AO apps, which cannot pair with Tallpine. */
 export const MOBILE_IOS_STORE_URL: string | null = null;
 export const MOBILE_ANDROID_STORE_URL: string | null = null;
+/** Windows beta installers (prereleases on a releases-only repo). Windows has
+ *  no in-app updater: Settings links here instead. */
+export const WINDOWS_RELEASES_URL = "https://github.com/justvibedev/tallpine-releases/releases";

@@ -449,6 +449,11 @@ var baseAgentRules = []agentRule{
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/defaults", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/approve", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/build-anyway", orchestrator, targetOwnProject},
+	// Owner asks (B698): only an orchestrator files, lists, relays an answer to
+	// or withdraws an ask, own project; the owner's UI answers directly.
+	{"GET,POST", "/api/v1/projects/{projectId}/asks", orchestrator, targetOwnProject},
+	{"POST", "/api/v1/projects/{projectId}/asks/{ref}/answer", orchestrator, targetOwnProject},
+	{"POST", "/api/v1/projects/{projectId}/asks/{ref}/withdraw", orchestrator, targetOwnProject},
 	{"GET", "/api/v1/projects/{projectId}/backlog/next", workerUp, targetOwnProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/reorder", orchestrator, targetOwnProject},
 	{"GET", "/api/v1/projects/{projectId}/backlog/{ref}", workerUp, targetOwnOrEvalProject},

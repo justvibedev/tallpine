@@ -227,6 +227,11 @@ describe("plan_waiting notifications", () => {
 		expect(notificationTarget(n, "host-a")).toBe("/backlog?projectId=p%201&hostId=host-a");
 		expect(notificationAction(n, { terminated: true, sessionsReady: false })).toEqual({ kind: "plan", projectId: "p 1" });
 	});
+	it("opens the lane orchestrator's chat for a lane plan, on tap and in history", () => {
+		const n = { type: "plan_waiting", sessionId: "lane-1", projectId: "p1", hostId: "host-a", laneChat: true };
+		expect(notificationTarget(n, "host-a")).toBe("/session/lane-1?hostId=host-a");
+		expect(notificationAction(n, { terminated: false, sessionsReady: true })).toEqual({ kind: "open", sessionId: "lane-1" });
+	});
 	it("is counted as needing attention while unread", () => {
 		const sections = notificationSections([{ status: "unread", type: "plan_waiting" }]);
 		expect(sections[0].key).toBe("attention");

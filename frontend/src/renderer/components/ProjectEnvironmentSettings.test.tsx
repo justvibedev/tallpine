@@ -17,11 +17,11 @@ it("saves validated variables without dropping other project settings", async ()
 	render(<QueryClientProvider client={client}><ProjectEnvironmentSettings projectId="p" /></QueryClientProvider>);
 	const value = await screen.findByLabelText("Value 1");
 	expect(value).toHaveAttribute("type", "password");
-	await userEvent.clear(value);
-	await userEvent.type(value, "new");
+	// fireEvent.change sets each value in one step; per-keystroke userEvent.type made this test's duration scale with CPU load.
+	fireEvent.change(value, { target: { value: "new" } });
 	await userEvent.click(screen.getByRole("button", { name: "Add variable" }));
-	await userEvent.type(screen.getByLabelText("Name 2"), "SECOND");
-	await userEvent.type(screen.getByLabelText("Value 2"), "another");
+	fireEvent.change(screen.getByLabelText("Name 2"), { target: { value: "SECOND" } });
+	fireEvent.change(screen.getByLabelText("Value 2"), { target: { value: "another" } });
 	fireEvent.submit(document.getElementById("project-settings-form")!);
 	await waitFor(() => expect(putMock).toHaveBeenCalledOnce());
 	expect(putMock.mock.calls[0][1].body).toEqual({ displayName: "Example", config: { env: { EXISTING: "new", SECOND: "another" }, autoReview: true } });

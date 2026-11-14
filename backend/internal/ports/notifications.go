@@ -41,8 +41,11 @@ type NotificationIntent struct {
 // PRURL wins when set (a PR-scoped notification can outlive its session's
 // activity churn); otherwise the resolution is scoped to SessionID.
 type NotificationResolution struct {
-	Type       domain.NotificationType
-	SessionID  domain.SessionID
-	PRURL      string
-	ResolvedAt time.Time
+	Type      domain.NotificationType
+	SessionID domain.SessionID
+	PRURL     string
+	// SourceKeyPrefix, when set (and PRURL is not), scopes the resolution to the
+	// notifications whose source key starts with it, e.g. one plan's alerts.
+	SourceKeyPrefix string
+	ResolvedAt      time.Time
 }

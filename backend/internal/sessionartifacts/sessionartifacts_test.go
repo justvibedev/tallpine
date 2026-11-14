@@ -15,7 +15,7 @@ import (
 
 func TestDir_JoinsDataDirArtifactsAndID(t *testing.T) {
 	got := Dir("/data", domain.SessionID("mer-1"))
-	want := filepath.Join("/data", "artifacts", "mer-1")
+	want := filepath.Join("/data", "artifacts", "mer", "mer-1")
 	if got != want {
 		t.Fatalf("Dir = %q, want %q", got, want)
 	}
@@ -209,5 +209,35 @@ func TestIgnoredPath(t *testing.T) {
 		if got := IgnoredPath(rel); got != want {
 			t.Errorf("IgnoredPath(%q) = %v, want %v", rel, got, want)
 		}
+	}
+}
+
+func TestRemoveIfEmpty(t *testing.T) {
+	root := t.TempDir()
+	empty := filepath.Join(root, "empty")
+	if err := os.MkdirAll(filepath.Join(empty, "a", "b"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := RemoveIfEmpty(empty); err != nil || !ok {
+		t.Fatalf("empty tree: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Fatalf("empty tree still exists: %v", err)
+	}
+	full := filepath.Join(root, "full")
+	if err := os.MkdirAll(filepath.Join(full, "a"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(full, "a", "f.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := RemoveIfEmpty(full); err != nil || ok {
+		t.Fatalf("non-empty tree: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(full, "a", "f.md")); err != nil {
+		t.Fatalf("file removed: %v", err)
+	}
+	if ok, err := RemoveIfEmpty(filepath.Join(root, "missing")); err != nil || ok {
+		t.Fatalf("missing: ok=%v err=%v", ok, err)
 	}
 }

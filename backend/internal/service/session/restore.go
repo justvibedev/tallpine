@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
@@ -223,10 +222,11 @@ func (s *Service) DeleteArtifacts(ctx context.Context, id domain.SessionID) erro
 	if s.artifactDeleter == nil {
 		return fmt.Errorf("delete artifacts %s: no artifact deleter", id)
 	}
-	// The deleter only touches <dataDir>/artifacts/<id>. A row whose files live
-	// elsewhere (written under another data dir) is refused rather than
-	// reported deleted while its files stay where the UI reads them.
-	if stored := rec.Metadata.ArtifactDir; stored != "" && filepath.Clean(stored) != sessionartifacts.Dir(s.dataDir, id) {
+	// The deleter only touches the session's managed directory (canonical or
+	// legacy flat). A row whose files live elsewhere (written under another data
+	// dir) is refused rather than reported deleted while its files stay where
+	// the UI reads them.
+	if stored := rec.Metadata.ArtifactDir; !sessionartifacts.IsManaged(s.dataDir, id, stored) {
 		return fmt.Errorf("delete artifacts %s: artifact dir %q is outside the data dir", id, stored)
 	}
 	err = s.artifactDeleter.DeleteSession(ctx, id)

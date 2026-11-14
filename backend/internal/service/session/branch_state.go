@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/service/localland"
 )
 
 // branchStateWriter is the narrow store write for observed branch facts.
@@ -158,6 +159,10 @@ func (s *Service) reconcileBranchTarget(ctx context.Context, writer branchStateW
 		}
 		state.Commits = commits
 	}
+	state.Head = local
+	// Commits==0 alone also reads an untouched branch; a tip that left the
+	// creation base and is now inside the base is a landed one.
+	state.Landed = s.branchLanded(ctx, rec, base, local, state.Commits)
 	switch remote {
 	case "":
 		state.Unpushed = state.Commits
@@ -283,4 +288,26 @@ func gitRevListCount(ctx context.Context, root, rangeSpec string) (int, bool) {
 	}
 	count, err := strconv.Atoi(strings.TrimSpace(out))
 	return count, err == nil
+}
+
+// branchLanded reports whether the branch's work is on its base. A merge or
+// fast-forward leaves no commits above the base; `tallpine land` squashes, so
+// the branch keeps its commits and the base carries a commit with the branch
+// tip's Tallpine-Head trailer instead. A tip still on the commit the session was
+// created from is an untouched branch, never a landed one.
+func (s *Service) branchLanded(ctx context.Context, rec domain.SessionRecord, base, local string, commits int) bool {
+	created := strings.TrimSpace(rec.Metadata.DiffBaseSHA)
+	if base == "" || created == "" || local == created {
+		return false
+	}
+	if commits == 0 {
+		return true
+	}
+	root := rec.Metadata.WorkspacePath
+	forkPoint, err := gitWorkspaceOutput(ctx, root, "merge-base", base, local)
+	if err != nil {
+		return false
+	}
+	landed, err := localland.FindLanded(ctx, root, strings.TrimSpace(forkPoint), base, local)
+	return err == nil && landed != ""
 }

@@ -235,7 +235,7 @@ describe("browser profile partitions and replacement", () => {
 				await provider.createTarget("http://192.168.1.20:3000/");
 				return {};
 			});
-			await expect(host.execute("worker-1", "tab-select", { tabId: "t1" })).rejects.toThrow(/private-network/);
+			await expect(host.execute("worker-1", "tab-new", { url: "https://example.com/" })).rejects.toThrow(/private-network/);
 			expect(constructorOptions).toHaveLength(2);
 		});
 

@@ -159,6 +159,30 @@ func (s *Store) ResolveSessionNotifications(
 	return notificationsFromGen(rows), nil
 }
 
+// ResolveSourceNotifications marks every open notification of one type whose
+// source key starts with the prefix resolved and returns the rows it changed.
+func (s *Store) ResolveSourceNotifications(
+	ctx context.Context,
+	sourceKeyPrefix string,
+	typ domain.NotificationType,
+	at time.Time,
+) ([]domain.NotificationRecord, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	var rows []gen.Notification
+	err := s.inTx(ctx, "resolve source notifications", func(q *gen.Queries) error {
+		var err error
+		rows, err = q.ResolveSourceKeyNotificationsByType(ctx, gen.ResolveSourceKeyNotificationsByTypeParams{
+			ResolvedAt: nullTime(at), SourcePrefix: sourceKeyPrefix, Type: typ,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve source notifications %s/%s: %w", sourceKeyPrefix, typ, err)
+	}
+	return notificationsFromGen(rows), nil
+}
+
 // ResolvePRNotifications marks every open notification of one type on a PR
 // resolved and returns the rows it changed.
 func (s *Store) ResolvePRNotifications(

@@ -29,3 +29,30 @@ func TestAcceptsUnlistedClaudeModelIDNeedsAFirstPartyCatalog(t *testing.T) {
 		t.Error("malformed ID accepted")
 	}
 }
+
+func TestNewestClaudeFamilyModel(t *testing.T) {
+	ids := []string{"claude-haiku-4-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-opus-4-1", "claude-fable-5-2", "claude-sonnet-5-5-20260101"}
+	cands := make([]ClaudeFamilyCandidate, len(ids))
+	for i, id := range ids {
+		cands[i] = ClaudeFamilyCandidate{ID: id}
+	}
+	for alias, want := range map[string]string{
+		"haiku": "claude-haiku-5-5", "Sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5", "opus[1m]": "claude-opus-5-5", "fable": "claude-fable-5-2",
+	} {
+		if i := NewestClaudeFamilyModel(cands, alias); i < 0 || ids[i] != want {
+			t.Errorf("%s -> %d; want %q", alias, i, want)
+		}
+	}
+	for _, m := range []string{"claude-haiku-5-5", "gpt-5", "mythos", ""} {
+		if i := NewestClaudeFamilyModel(cands, m); i >= 0 {
+			t.Errorf("%q resolved to %q; want no alias", m, ids[i])
+		}
+	}
+	if i := NewestClaudeFamilyModel(cands[3:4], "haiku"); i >= 0 {
+		t.Error("alias with no family model resolved")
+	}
+	cands[1].Skip = true
+	if i := NewestClaudeFamilyModel(cands, "haiku"); i < 0 || ids[i] != "claude-haiku-4-5" {
+		t.Errorf("skip not honored: %d", i)
+	}
+}

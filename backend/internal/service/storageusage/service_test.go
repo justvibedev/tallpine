@@ -329,3 +329,24 @@ func TestRemoveTreeContainmentIsStrict(t *testing.T) {
 		t.Fatal("prefix sibling must be refused")
 	}
 }
+
+// Both layouts are measured: <project>/<session> dirs and flat legacy dirs
+// (live, or without a row) as one entry each.
+func TestArtifactsBothLayouts(t *testing.T) {
+	f := newFixture(t, rec("tw-2", false, domain.KindWorker), rec("tw-1", true, domain.KindWorker))
+	write(t, filepath.Join(f.data, "artifacts", "tw-2", "report.html"), 100)
+	write(t, filepath.Join(f.data, "artifacts", "gone-7", "report.html"), 10)
+	write(t, filepath.Join(f.data, "artifacts", "gone-7", "sub", "b.png"), 10)
+	write(t, filepath.Join(f.data, "artifacts", "tw", "tw-1", "a.md"), 50)
+	snap := f.svc.Refresh(context.Background())
+	if live := f.entry(t, snap, "data/artifacts/tw-2"); live.Session != "tw-2" {
+		t.Fatalf("flat live dir session = %q", live.Session)
+	}
+	f.entry(t, snap, "data/artifacts/gone-7")
+	f.entry(t, snap, "data/artifacts/tw/tw-1")
+	for _, e := range snap.Entries {
+		if b := filepath.Base(e.Path); b == "report.html" || b == "sub" {
+			t.Fatalf("a flat dir was split into its files: %+v", e)
+		}
+	}
+}

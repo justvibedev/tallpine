@@ -239,6 +239,7 @@ export interface SystemEventDetail {
 		| "context.boundary"
 		| "provider_switch"
 		| "render"
+		| "ask"
 		| "artifact"
 		| "workspace.setup"
 		| "account.switched"
@@ -273,6 +274,8 @@ export interface SystemEventDetail {
 	setupHint?: string;
 	/** render */
 	render?: RenderRef;
+	/** ask: the tracked owner ask this row marks on the asking turn. */
+	ask?: { id: string; ref: string };
 	/** artifact */
 	artifact?: ArtifactRef;
 	/** model.rerouted */

@@ -132,7 +132,7 @@ func TestProtectStatePolicySandboxesClaudeShell(t *testing.T) {
 			t.Errorf("allowWrite %v lacks the build cache %s", s.Filesystem.AllowWrite, rel)
 		}
 	}
-	for _, p := range []string{tmp, filepath.Join(dataDir, "artifacts", "s-1"), filepath.Join(dataDir, "verify-slots"), "/tmp/tp-tmux", "/private/tmp/tp-tmux", filepath.Join(root, "home", ".tallpine", "golangci-cache"), filepath.Join(root, "home", "go", "pkg", "mod")} {
+	for _, p := range []string{tmp, filepath.Join(dataDir, "artifacts", "s", "s-1"), filepath.Join(dataDir, "verify-slots"), "/tmp/tp-tmux", "/private/tmp/tp-tmux", filepath.Join(root, "home", ".tallpine", "golangci-cache"), filepath.Join(root, "home", "go", "pkg", "mod")} {
 		if !slices.Contains(s.Filesystem.AllowWrite, p) {
 			t.Errorf("allowWrite %v lacks %s", s.Filesystem.AllowWrite, p)
 		}
@@ -354,7 +354,7 @@ func TestProtectStateSettingsGolden(t *testing.T) {
 			"filesystem": map[string]any{
 				"denyRead": append(append([]string{}, state.Files...), state.Dirs...),
 				"allowWrite": []string{
-					"/state/tmp", "/state/data/artifacts/s-1", "/state/data/verify-slots", "/tmp/tp-tmux", "/private/tmp/tp-tmux", "/home/Library/Caches", "/home/Library/Developer/Xcode/DerivedData", "/home/.cache",
+					"/state/tmp", "/state/data/artifacts/s/s-1", "/state/data/verify-slots", "/tmp/tp-tmux", "/private/tmp/tp-tmux", "/home/Library/Caches", "/home/Library/Developer/Xcode/DerivedData", "/home/.cache",
 					"/home/go/pkg/mod", "/home/.npm", "/home/.cargo/registry", "/home/.gradle/caches", "/home/.gradle/wrapper", "/home/.gradle/daemon", "/home/.gradle/native", "/home/.m2/repository",
 					"/home/.bun/install/cache", "/home/.rustup/downloads", "/home/.rustup/tmp", "/home/Library/pnpm/store", "/home/.local/share/pnpm/store", "/home/.tallpine/golangci-cache",
 				},

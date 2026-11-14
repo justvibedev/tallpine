@@ -1,3 +1,4 @@
+import type { WorkspaceSession } from "../../types/workspace";
 import { type CSSProperties } from "react";
 import { TriangleAlert } from "lucide-react";
 import { ChatHeader } from "./ChatHeader";
@@ -152,6 +153,7 @@ export function ChatWorkspaceContent(props: ChatWorkspaceContentProps) {
 						onOpenShell={onOpenShell}
 						openingShell={openingShell}
 						shellError={shellError}
+						finishedLabel={finishedSessionLabel(session)}
 					/>
 					{snapshot.threadState ? <ThreadStateBanner threadState={snapshot.threadState} /> : null}
 					<BackgroundTasksBanner tasks={session?.backgroundTasks} sessionId={snapshot.sessionId} hostId={activeRemoteHostId} />
@@ -198,4 +200,11 @@ export function ChatWorkspaceContent(props: ChatWorkspaceContentProps) {
 			/>
 		</section>
 	);
+}
+
+/** Calm label for a session ended on purpose; undefined while it is live. */
+export function finishedSessionLabel(session?: WorkspaceSession): string | undefined {
+	if (!session || session.isTerminated !== true) return undefined;
+	const merged = session.prs?.find((pr) => pr.state === "merged");
+	return merged ? `Finished: PR #${merged.number} merged` : "Session finished";
 }

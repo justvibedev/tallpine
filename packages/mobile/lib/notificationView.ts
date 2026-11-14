@@ -104,7 +104,7 @@ export function notificationVisual(t: Theme, type: string, urgency?: string): No
  * opening it from the tray agree — the rule lives here rather than being written
  * twice.
  */
-export function notificationTarget(n: { type: string; sessionId?: string; hostId?: string; prUrl?: string; projectId?: string }, knownHosts: string | ReadonlySet<string> | undefined): string {
+export function notificationTarget(n: { type: string; sessionId?: string; hostId?: string; prUrl?: string; projectId?: string; laneChat?: boolean }, knownHosts: string | ReadonlySet<string> | undefined): string {
 	// An older push has no machine identity. It cannot safely open (or mark read)
 	// a same-ID session on whichever machine is currently selected. History passes
 	// its current host; push taps can name any paired host.
@@ -112,6 +112,8 @@ export function notificationTarget(n: { type: string; sessionId?: string; hostId
 	const sessionId = n.sessionId?.trim();
 	const hostId = encodeURIComponent(n.hostId);
 	// A plan waiting on the owner opens the backlog, where its card lives.
+	// A lane plan's card lives in its lane orchestrator's chat, which the alert's session is.
+	if (n.type === "plan_waiting" && n.laneChat && sessionId) return `/session/${encodeURIComponent(sessionId)}?hostId=${hostId}`;
 	if (n.type === "plan_waiting" && n.projectId) return `/backlog?projectId=${encodeURIComponent(n.projectId)}&hostId=${hostId}`;
 	if ((n.type === "review_completed" || n.type === "review_changes_requested") && sessionId && n.prUrl) {
 		return `/review/${encodeURIComponent(sessionId)}?prUrl=${encodeURIComponent(n.prUrl)}&hostId=${hostId}`;
@@ -158,12 +160,12 @@ export type NotificationAction =
 	| { kind: "none" };
 
 export function notificationAction(
-	n: { type: string; sessionId?: string; prUrl?: string; projectId?: string },
+	n: { type: string; sessionId?: string; prUrl?: string; projectId?: string; laneChat?: boolean },
 	state: { terminated: boolean; sessionsReady: boolean },
 ): NotificationAction {
 	const sessionId = n.sessionId?.trim();
 	// The planner session may be long gone; the card lives on the project backlog.
-	if (n.type === "plan_waiting" && n.projectId) return { kind: "plan", projectId: n.projectId };
+	if (n.type === "plan_waiting" && n.projectId && !(n.laneChat && sessionId)) return { kind: "plan", projectId: n.projectId };
 	if (n.type === "review_completed" || n.type === "review_changes_requested") {
 		return sessionId && n.prUrl
 			? { kind: "review", sessionId, prUrl: n.prUrl }

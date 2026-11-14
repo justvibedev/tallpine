@@ -72,11 +72,37 @@ export function getAttentionZoneViewForZone(
 	return getPortableAttentionZoneViewForZone(zone, translator(t));
 }
 
+/**
+ * Why an idle-toned, not-working session is quiet: it waits on the owner
+ * (review approved its current head and it has not landed, or the board holds
+ * it in Ready), or on a timer or background task. Undefined means plain idle or
+ * finished. Statuses that already colour the dot (approved, needs-input) never
+ * reach this, since callers only ask for idle-toned sessions.
+ */
+export function getIdleReason(
+	session: {
+		backgroundTasks?: readonly unknown[];
+		kanbanColumn?: string;
+		landed?: boolean;
+		pausedUntil?: string;
+		reviewVerdict?: string;
+	},
+	now: number = Date.now(),
+): "owner" | "timer" | undefined {
+	if ((session.reviewVerdict === "approved" && !session.landed) || session.kanbanColumn === "ready") return "owner";
+	if ((session.backgroundTasks?.length ?? 0) > 0) return "timer";
+	const until = session.pausedUntil ? Date.parse(session.pausedUntil) : Number.NaN;
+	if (until > now) return "timer";
+	return undefined;
+}
+
 export type SessionStatusDotView = {
 	className: string;
 	breathe: boolean;
 	/** The agent sleeps (its processes are stopped) and nothing more urgent claims the slot. */
 	sleeping: boolean;
+	/** Why a quiet (idle-toned) worker is quiet, when something other than plain idle explains it. */
+	idleReason?: "owner" | "timer";
 	/** Tooltip for the dot when its tone needs explaining (waiting on the orchestrator). */
 	title?: string;
 };
@@ -106,7 +132,12 @@ export function getSessionStatusDotView(
 	session: {
 		activity?: SessionActivity | null;
 		displayStatus?: string;
+		backgroundTasks?: readonly unknown[];
 		hibernatedAt?: string;
+		kanbanColumn?: string;
+		landed?: boolean;
+		pausedUntil?: string;
+		reviewVerdict?: string;
 		needsInputAudience?: "orchestrator" | "human";
 		scmStatus?: SessionStatus;
 		status: SessionStatus;
@@ -135,10 +166,13 @@ export function getSessionStatusDotView(
 					? getSessionStatusView(toneStatus, t).dotClassName
 					: (actionDotTones[toneStatus] ?? getAttentionZoneView(toneStatus, t).dotClassName);
 
+	const quiet = !working && toneStatus === "idle";
+	const idleReason = quiet ? getIdleReason(session) : undefined;
 	return {
 		className,
 		breathe: working,
-		sleeping: Boolean(session.hibernatedAt) && !working && toneStatus === "idle",
+		idleReason,
+		sleeping: quiet && Boolean(session.hibernatedAt) && !idleReason,
 	};
 }
 

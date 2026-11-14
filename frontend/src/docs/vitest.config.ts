@@ -13,5 +13,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.tsx", "scripts/**/*.test.ts"],
+    // MDX compiles are CPU-bound; the 5s default timed out on a loaded machine (B717). Only a ceiling.
+    testTimeout: 30_000,
   },
 });

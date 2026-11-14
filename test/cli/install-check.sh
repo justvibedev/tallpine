@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-TALLPINE_BIN="${TALLPINE_BIN:-vo}"
+TALLPINE_BIN="${TALLPINE_BIN:-tallpine}"
 tmp="$(mktemp -d)"
 export TALLPINE_RUN_FILE="$tmp/running.json"
 export TALLPINE_DATA_DIR="$tmp/data"

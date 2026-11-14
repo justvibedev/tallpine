@@ -2,3 +2,8 @@
 backend/internal/httpd/apispec/openapi.yaml text eol=lf
 packages/shared/api/schema.ts text eol=lf
 frontend/src/renderer/routeTree.gen.ts text eol=lf
+
+# The bundled pricing catalog is hash-verified at runtime and byte-compared
+# by tooling; a CRLF checkout (Windows core.autocrlf=true) breaks the hash.
+backend/internal/pricing/bundled/** text eol=lf
+pricing/catalog/** text eol=lf

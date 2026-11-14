@@ -150,15 +150,16 @@ type ArtifactsPolicy struct {
 // DefaultPolicy is the policy of an install that never changed it. Scheduled
 // passes only remove what can be regenerated or is already safe elsewhere:
 // worktrees of sessions that ended a week ago whose work is merged or pushed.
-// Anything under artifacts waits for the user's confirmation. The first
+// Artifacts of sessions that ended a week ago are deleted without asking
+// (backlog-referenced ones are kept). The first
 // scheduled pass is a dry run (see Service.Tick).
 func DefaultPolicy() Policy {
 	return Policy{
 		Automatic: true,
 		Worktrees: WorktreePolicy{Enabled: true, RetentionDays: 7, RequireMerged: true},
 		Artifacts: ArtifactsPolicy{
-			Enabled: true, RetentionDays: 30, AutoPrune: false,
-			DeliverableAction: DeliverableArchive,
+			Enabled: true, RetentionDays: 7, AutoPrune: true,
+			DeliverableAction: DeliverableDelete, AutoDeliverables: true,
 		},
 		SessionTemp:   SessionTempPolicy{Enabled: true},
 		HarnessCaches: HarnessCachesPolicy{Enabled: true, RetentionDays: 14},
@@ -250,7 +251,8 @@ func validTempPattern(pattern string) error {
 // FailSafePolicy is what an unreadable policy reads as: the defaults with
 // Automatic off. The user may have turned scheduled cleanup or a rule off, and
 // a storage failure must never turn deletion back on behind their back; a
-// manual run still works.
+// manual run still works, and it applies the defaults, so it deletes artifacts
+// of sessions past retention without asking.
 func FailSafePolicy() Policy {
 	p := DefaultPolicy()
 	p.Automatic = false

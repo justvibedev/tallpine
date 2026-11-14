@@ -422,7 +422,7 @@ func TestGetBackfillsEmptyArtifactDirOnRead(t *testing.T) {
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func TestGetBackfillsArtifactDirAndReconcilesEvenForTerminatedSessions(t *testin
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestGetReconcilesTerminatedSessionWithPersistedDirAndUnreconciledArtifact(t
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +541,7 @@ func TestGetToleratesUnwalkableArtifactRoot(t *testing.T) {
 		t.Skip("chmod permissions are not enforced on Windows")
 	}
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +570,7 @@ func TestGetDoesNotReconcileWhenPersistedOutputTypeAlreadyHasArtifact(t *testing
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -599,7 +599,7 @@ func TestGetReconcilesWhenPersistedArtifactOutputHasNoFilesLeft(t *testing.T) {
 	t.Parallel()
 
 	dataDir := t.TempDir()
-	artifactDir := filepath.Join(dataDir, "artifacts", "mer-1")
+	artifactDir := filepath.Join(dataDir, "artifacts", "mer", "mer-1")
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -738,7 +738,7 @@ func TestDeleteArtifactsAcceptsTheCanonicalArtifactDir(t *testing.T) {
 	st := newFakeStore()
 	st.sessions["mer-1"] = domain.SessionRecord{
 		ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, IsTerminated: true,
-		Metadata: domain.SessionMetadata{ArtifactDir: filepath.Join(dataDir, "artifacts", "mer-1")},
+		Metadata: domain.SessionMetadata{ArtifactDir: filepath.Join(dataDir, "artifacts", "mer", "mer-1")},
 	}
 	deleter := &fakeArtifactDeleter{}
 	svc := NewWithDeps(Deps{Store: st, DataDir: dataDir, ArtifactDeleter: deleter})

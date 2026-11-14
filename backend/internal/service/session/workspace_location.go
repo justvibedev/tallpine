@@ -59,7 +59,7 @@ func (s *Service) ArtifactLocation(ctx context.Context, id domain.SessionID) (st
 	}
 	dir := strings.TrimSpace(record.Metadata.ArtifactDir)
 	if dir == "" {
-		dir = sessionartifacts.Dir(s.dataDir, record.ID)
+		dir = sessionartifacts.Resolve(s.dataDir, record.ID, "")
 	}
 	notFound := apierr.NotFound("SESSION_ARTIFACTS_NOT_FOUND", "This session has no artifacts folder yet.")
 	if dir == "" || !filepath.IsAbs(dir) {

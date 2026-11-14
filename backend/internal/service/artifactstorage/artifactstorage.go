@@ -220,8 +220,7 @@ func (s *Service) dir(rec domain.SessionRecord) string {
 // different ArtifactDir is measured but never archived or deleted: archiving
 // one directory and deleting another would report bytes freed that were not.
 func (s *Service) managed(rec domain.SessionRecord) bool {
-	custom := rec.Metadata.ArtifactDir
-	return custom == "" || filepath.Clean(custom) == filepath.Clean(sessionartifacts.Dir(s.dataDir, rec.ID))
+	return sessionartifacts.IsManaged(s.dataDir, rec.ID, rec.Metadata.ArtifactDir)
 }
 
 func (s *Service) eligible(rec domain.SessionRecord, cutoff time.Time) bool {

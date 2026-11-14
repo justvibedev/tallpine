@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AgentPolicy } from "../../hooks/useAgentPolicy";
 import { cn } from "@/lib/utils";
+import { isWindowsPlatform } from "../../lib/platform";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { AgentPolicyLock } from "./AgentPolicyLock";
 import { DEV_MODE_RULE, isModeBlocked, type SecurityMode, securityModeOf, shownMode } from "./securityModes";
@@ -19,6 +20,8 @@ export function SecurityModeChoice({ policy, disabled, onChange }: { policy: Age
 	const { t } = useTranslation();
 	const [confirming, setConfirming] = useState(false);
 	const current = shownMode(policy);
+	// Security mode's fence is not built for Windows; the daemon refuses it too.
+	const protectedUnavailable = isWindowsPlatform();
 	const conflict = securityModeOf(policy) === "conflict";
 	const fieldOf = (rule: string) => policy.rules.find((r) => r.name === rule)?.fields.find((f) => f.name === "enabled");
 	const securityLocked = fieldOf(SECURITY_MODE_RULE)?.locked || !!policy.profile;
@@ -38,7 +41,7 @@ export function SecurityModeChoice({ policy, disabled, onChange }: { policy: Age
 			</SettingsRow>
 			<div role="radiogroup" aria-label={t("settings.security.mode.label")} className="flex flex-col gap-1.5 pt-1">
 				{MODES.map((mode) => {
-					const blocked = isModeBlocked(policy, mode) && mode !== current;
+					const blocked = (isModeBlocked(policy, mode) && mode !== current) || (protectedUnavailable && mode === "protected");
 					return (
 						<button
 							key={mode}
@@ -52,6 +55,9 @@ export function SecurityModeChoice({ policy, disabled, onChange }: { policy: Age
 							<span className="block text-body font-medium">{t(`settings.security.mode.${mode}.label`)}</span>
 							<span className="block text-caption leading-4 text-settings-muted">{t(`settings.security.mode.${mode}.line1`)}</span>
 							<span className="block text-caption leading-4 text-settings-muted">{t(`settings.security.mode.${mode}.line2`)}</span>
+							{protectedUnavailable && mode === "protected" ? (
+								<span data-testid="security-mode-unavailable" className="block text-caption leading-4 text-warning">{t("settings.security.mode.unavailableWindows", "Not available on Windows")}</span>
+							) : null}
 						</button>
 					);
 				})}

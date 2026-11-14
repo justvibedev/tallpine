@@ -481,3 +481,8 @@ export function projectPageStats(
 	}
 	return stats;
 }
+
+/** The lane an orchestrator chat owns (backlog ref), for the "Waiting on you" strip; undefined for a project's main chat. */
+export function askLaneOf(session: DashboardSession | OrchestratorLink): string | undefined {
+	return "lane" in session ? session.lane : undefined;
+}

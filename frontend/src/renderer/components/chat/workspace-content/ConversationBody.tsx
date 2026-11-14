@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { cn } from "../../../lib/utils";
 import { agentLabel } from "../../../lib/agent-options";
 import { OrchestratorStartupStatus, RolledBackNotice } from "../ChatStartupNotices";
 import { SkillsOfferCard } from "../../SkillsOfferCard";
+import { AskStrip } from "../../ask/AskStrip";
 import { PlanCards } from "../../plan/PlanCards";
 import { WelcomePromptSuggestions } from "../WelcomePromptSuggestions";
 import { Timeline } from "../Timeline";
@@ -135,6 +137,9 @@ export function ConversationBody({ props, v }: { props: ChatWorkspaceContentProp
 		uiSessionId,
 		welcomeLeaving,
 	} = v;
+	const [openAsks, setOpenAsks] = useState(0);
+	// The pinned "Waiting on you" strip is the one surface while an ask is open: no hero or suggestions beside it.
+	const welcomeVisible = conversationEmpty && openAsks === 0;
 	return (
 		<>
 			<ChatDropOverlay
@@ -205,7 +210,8 @@ export function ConversationBody({ props, v }: { props: ChatWorkspaceContentProp
 								className="mx-auto flex w-full max-w-3xl flex-col gap-2 transition-[max-width] duration-500 ease-out data-[empty]:max-w-2xl"
 							>
 								{discarded > 0 ? <RolledBackNotice count={discarded} /> : null}
-								{sessionRole === "orchestrator" && !activeRemoteHostId && session?.workspaceId ? <PlanCards projectId={session.workspaceId} /> : null}
+								{sessionRole === "orchestrator" && !activeRemoteHostId && session?.workspaceId ? <AskStrip projectId={session.workspaceId} lane={session.lane} onOpenCount={setOpenAsks} /> : null}
+								{sessionRole === "orchestrator" && !activeRemoteHostId && session?.workspaceId ? <PlanCards projectId={session.workspaceId} sessionId={session.id} lane={session.lane} /> : null}
 								{!activeRemoteHostId && session?.workspaceId ? <SkillsOfferCard projectId={session.workspaceId} sessionId={session.id} /> : null}
 								{limitedTurn?.usageLimit && retryControl ? (
 									<UsageLimitNotice
@@ -221,13 +227,13 @@ export function ConversationBody({ props, v }: { props: ChatWorkspaceContentProp
 											(retryControl.autoResumeTurnId === limitedTurn.id ? retryControl.autoResumeError : undefined)}
 									/>
 								) : null}
-								{conversationEmpty ? (
+								{welcomeVisible ? (
 									<h1 className="mb-5 text-center text-2xl font-normal tracking-tight text-foreground sm:text-3xl">
 										{t(artifactSession ? "chat.welcome.artifactHeading" : "chat.welcome.heading")}
 									</h1>
 								) : null}
 								<WelcomePromptSuggestions
-									open={conversationEmpty && !newWorkDisabled && composerEmpty}
+									open={welcomeVisible && !newWorkDisabled && composerEmpty}
 									artifact={artifactSession}
 									onPick={(text) => composerFocusRef.current?.setDraft(text)}
 								/>

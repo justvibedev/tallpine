@@ -9,7 +9,7 @@ import { NAV_ROW_HIGHLIGHT_HOST_CLASS, NavRowHighlight } from "../NavRowHighligh
 import { NAV_ROW_CLASS, SIDEBAR_ROW_CLASS } from "./constants";
 import { useProjectPin } from "./useProjectPin";
 
-export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandalone, expanded, dashboardActive, projectActive, needsYou, projectIsDragging, projectDragInProgress, onProjectClick, onFolderClick }: { workspace: WorkspaceSummary; hostLabel?: string; nameWithHost: string; isStandalone: boolean; expanded: boolean; dashboardActive: boolean; projectActive: boolean; needsYou: boolean; projectIsDragging: boolean; projectDragInProgress: boolean; onProjectClick: () => void; onFolderClick: (event: MouseEvent) => void }) {
+export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandalone, expanded, dashboardActive, projectActive, needsYou, waiting, projectIsDragging, projectDragInProgress, onProjectClick, onFolderClick }: { workspace: WorkspaceSummary; hostLabel?: string; nameWithHost: string; isStandalone: boolean; expanded: boolean; dashboardActive: boolean; projectActive: boolean; needsYou: boolean; waiting: number; projectIsDragging: boolean; projectDragInProgress: boolean; onProjectClick: () => void; onFolderClick: (event: MouseEvent) => void }) {
 	const { t } = useTranslation();
 	const { isPinned } = useProjectPin(workspace, isStandalone);
 	return (
@@ -80,7 +80,16 @@ export function ProjectRowButton({ workspace, hostLabel, nameWithHost, isStandal
 										>
 											{workspace.name}
 										</span>
-										{needsYou && (
+										{waiting > 0 ? (
+											<span
+												className="relative z-[1] inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-status-needs-you-dot px-1 text-2xs font-medium text-background group-data-[collapsible=icon]:hidden"
+												data-project-waiting=""
+												title={t("ask.waitingCount", { count: waiting })}
+											>
+												{waiting}
+												<span className="sr-only">{t("ask.waitingCount", { count: waiting })}</span>
+											</span>
+										) : needsYou && (
 											<span
 												className="relative z-[1] inline-flex shrink-0 text-status-needs-you-dot group-data-[collapsible=icon]:hidden"
 												data-project-needs-you=""

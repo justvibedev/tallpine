@@ -36,6 +36,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/service/agentaccounts"
 	"tallpine.eu/tallpine/backend/internal/service/agentauth"
 	"tallpine.eu/tallpine/backend/internal/service/artifactstorage"
+	asksvc "tallpine.eu/tallpine/backend/internal/service/ask"
 	automation "tallpine.eu/tallpine/backend/internal/service/automation"
 	backlogsvc "tallpine.eu/tallpine/backend/internal/service/backlog"
 	browsersvc "tallpine.eu/tallpine/backend/internal/service/browser"
@@ -125,6 +126,7 @@ type boot struct {
 	autoReview                *autoreview.Coordinator
 	backlogSvc                *backlogsvc.Service
 	planSvc                   *backlogsvc.PlanService
+	askSvc                    *asksvc.Service
 	reportSvc                 *reportsvc.Service
 	turnFallbackDone          <-chan struct{}
 	reviewNotices             reviewFailureSweeper

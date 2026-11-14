@@ -63,7 +63,7 @@ func (c *Capturer) trimSession(ctx context.Context, id domain.SessionID) error {
 	if len(sums) == 0 {
 		return nil
 	}
-	root, err := os.OpenRoot(sessionartifacts.Dir(c.dataDir, id))
+	root, err := os.OpenRoot(sessionartifacts.ResolveForID(ctx, c.dataDir, c.store, id, false))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
