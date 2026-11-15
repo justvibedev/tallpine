@@ -43,6 +43,9 @@ type ChatState struct {
 	Handoff     bool
 	// Research reports research mode (B413) is on.
 	Research bool
+	// ResearchLastTurn is the last turn in research mode (B736); zero falls
+	// back to the session's last activity.
+	ResearchLastTurn time.Time
 }
 
 // Deps wires the sweep.
@@ -213,10 +216,20 @@ func (s *Sweeper) logSkip(id domain.SessionID, reason string, facts domain.IdleC
 // expireResearch ends research mode of an orchestrator that has had no turn
 // for domain.ResearchQuietExpiry.
 func (s *Sweeper) expireResearch(ctx context.Context, rec domain.SessionRecord) {
-	if s.deps.ClearResearch == nil || s.deps.Now().Sub(rec.Activity.LastActivityAt) < domain.ResearchQuietExpiry {
+	if s.deps.ClearResearch == nil {
 		return
 	}
-	if st, ok := s.deps.State(ctx, rec.ID); !ok || !st.Research || st.Busy {
+	st, ok := s.deps.State(ctx, rec.ID)
+	if !ok || !st.Research || st.Busy {
+		return
+	}
+	// The persisted research turn survives a daemon restart; the session's
+	// activity time may move on a relaunch.
+	last := rec.Activity.LastActivityAt
+	if !st.ResearchLastTurn.IsZero() {
+		last = st.ResearchLastTurn
+	}
+	if s.deps.Now().Sub(last) < domain.ResearchQuietExpiry {
 		return
 	}
 	if s.deps.ClearResearch(ctx, rec.ID) {

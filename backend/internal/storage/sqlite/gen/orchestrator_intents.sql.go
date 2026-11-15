@@ -11,10 +11,30 @@ import (
 	"time"
 )
 
+const claimIntentWake = `-- name: ClaimIntentWake :execrows
+UPDATE orchestrator_intents
+SET woken_at = ?
+WHERE id = ? AND done_at IS NULL AND woken_at IS NULL
+`
+
+type ClaimIntentWakeParams struct {
+	WokenAt sql.NullTime
+	ID      string
+}
+
+// Claims the intent's single wake; zero rows means it was cleared or already claimed.
+func (q *Queries) ClaimIntentWake(ctx context.Context, arg ClaimIntentWakeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, claimIntentWake, arg.WokenAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const insertOrchestratorIntent = `-- name: InsertOrchestratorIntent :exec
 
-INSERT INTO orchestrator_intents (id, project_id, text, created_by, created_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO orchestrator_intents (id, project_id, text, created_by, created_at, wake_at)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertOrchestratorIntentParams struct {
@@ -23,6 +43,7 @@ type InsertOrchestratorIntentParams struct {
 	Text      string
 	CreatedBy string
 	CreatedAt time.Time
+	WakeAt    sql.NullTime
 }
 
 // Durable owner intents and standing decisions of a project's orchestrator.
@@ -34,6 +55,7 @@ func (q *Queries) InsertOrchestratorIntent(ctx context.Context, arg InsertOrches
 		arg.Text,
 		arg.CreatedBy,
 		arg.CreatedAt,
+		arg.WakeAt,
 	)
 	return err
 }
@@ -58,8 +80,61 @@ func (q *Queries) MarkOrchestratorIntentDone(ctx context.Context, arg MarkOrches
 	return result.RowsAffected()
 }
 
+const releaseIntentWake = `-- name: ReleaseIntentWake :exec
+UPDATE orchestrator_intents
+SET woken_at = NULL
+WHERE id = ? AND done_at IS NULL
+`
+
+// Gives a claimed wake back after a failed delivery so the next sweep retries.
+func (q *Queries) ReleaseIntentWake(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, releaseIntentWake, id)
+	return err
+}
+
+const selectDueIntentWakes = `-- name: SelectDueIntentWakes :many
+SELECT id, project_id, text, created_by, created_at, done_at, wake_at, woken_at
+FROM orchestrator_intents
+WHERE done_at IS NULL AND wake_at IS NOT NULL AND woken_at IS NULL AND wake_at <= ?
+ORDER BY wake_at, id
+`
+
+// Open intents whose wake time has passed and whose one wake is not yet
+// delivered (or claimed).
+func (q *Queries) SelectDueIntentWakes(ctx context.Context, wakeAt sql.NullTime) ([]OrchestratorIntent, error) {
+	rows, err := q.db.QueryContext(ctx, selectDueIntentWakes, wakeAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OrchestratorIntent{}
+	for rows.Next() {
+		var i OrchestratorIntent
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Text,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.DoneAt,
+			&i.WakeAt,
+			&i.WokenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectOrchestratorIntents = `-- name: SelectOrchestratorIntents :many
-SELECT id, project_id, text, created_by, created_at, done_at
+SELECT id, project_id, text, created_by, created_at, done_at, wake_at, woken_at
 FROM orchestrator_intents
 WHERE project_id = ?
   AND (CAST(?2 AS INTEGER) = 1 OR done_at IS NULL)
@@ -87,6 +162,8 @@ func (q *Queries) SelectOrchestratorIntents(ctx context.Context, arg SelectOrche
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.DoneAt,
+			&i.WakeAt,
+			&i.WokenAt,
 		); err != nil {
 			return nil, err
 		}

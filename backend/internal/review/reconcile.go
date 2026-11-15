@@ -33,8 +33,12 @@ func (e *Engine) reconcileExitedReviewer(ctx stdctx.Context, review *domain.Revi
 	}
 	// Any state can hide a dead pane: a fresh launch has no hook state yet, and
 	// a finished turn reads idle.
-	if len(running) == 0 || review.ReviewerHandleID == "" {
+	if len(running) == 0 {
 		return overdue, nil
+	}
+	if review.ReviewerHandleID == "" {
+		failed, err := e.failOrphanedRuns(ctx, *review, running)
+		return failed || overdue, err
 	}
 	// The session-end hook already proved this launch exited; the hook only
 	// records the state, so its passes are settled here.

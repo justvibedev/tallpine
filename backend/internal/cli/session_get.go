@@ -23,6 +23,9 @@ func (c *commandContext) getSession(ctx context.Context, cmd *cobra.Command, id 
 	if err := writeSessionDetails(cmd, res.Session); err != nil {
 		return err
 	}
+	if err := writeCompactionLine(cmd.OutOrStdout(), res.Compaction); err != nil {
+		return err
+	}
 	return writeLastAssistantMessage(cmd, res.LastAssistantMessage)
 }
 

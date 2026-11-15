@@ -5,7 +5,8 @@ import { useSettings, useUpdateHarnessDefault } from "../../../hooks/useSettings
 
 /**
  * Where new sessions of one agent compact on their own, saved per agent. A
- * session can pick its own in the model menu. Shown only for agents Tallpine can tell
+ * session can pick its own in the model menu. A percent is of a fixed 1M tokens
+ * and leaves the agent default when it does not fit the model. Shown only for agents Tallpine can tell
  * where to compact (Claude Code; Codex terminals).
  */
 export function AutoCompactDefaultRow({ agentId, hostId }: { agentId: string; hostId?: string }) {

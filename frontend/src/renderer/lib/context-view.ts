@@ -12,6 +12,10 @@ export interface ContextDetails {
 	capacity?: number;
 	/** Where the chosen setting compacts, resolved by the daemon; absent for Auto or an unknown window. */
 	compactThreshold?: number;
+	/** The context the session was measured to start with at its launch; the window keeps room above it. */
+	baseline?: number;
+	/** Where the agent compacts with compactThreshold (Claude Code keeps a reserve below it); absent for its own default. */
+	trigger?: number;
 	/** The agent cannot be told where to compact, as Codex chats. */
 	autoCompactUnsupported?: boolean;
 	/** ISO time of the last compaction, absent when none is known. */
@@ -40,6 +44,9 @@ export interface ContextView {
 	windowKnown: boolean;
 	percent?: number;
 	threshold?: number;
+	/** The context size at which the agent compacts, when the daemon reports it. */
+	trigger?: number;
+	baseline?: number;
 	left?: number;
 	compactsAt: CompactsAt;
 }
@@ -65,7 +72,11 @@ export function resolveContextView(usage: ConversationUsage, details?: ContextDe
 	else if (threshold === undefined) compactsAt = { kind: "needsWindow", choice };
 	else compactsAt = { kind: "tokens", tokens: threshold, share: windowKnown ? Math.round((threshold / capacity) * 100) : undefined };
 
-	return { capacity, windowKnown, percent, threshold, left: threshold === undefined ? undefined : threshold - contextUsed, compactsAt };
+	const trigger = threshold !== undefined && details?.trigger && details.trigger > 0 ? details.trigger : undefined;
+	const baseline = details?.baseline && details.baseline > 0 ? details.baseline : undefined;
+	// The agent compacts at its trigger, which is below the window it is given.
+	const until = trigger ?? threshold;
+	return { capacity, windowKnown, percent, threshold, trigger, baseline, left: until === undefined ? undefined : until - contextUsed, compactsAt };
 }
 
 /**

@@ -220,6 +220,8 @@ func (c *Controller) applyTurnCompleted(ctx context.Context, event ports.ChatEve
 		if state == domain.TurnStateFailed {
 			if limit := domain.ParseConversationUsageLimit(message, &now); limit != nil {
 				excerpt = domain.UsageLimitFallbackExcerpt(limit.PausedUntil(now), c.autoResumes(limit))
+			} else if domain.IsContextThrashStop(message) {
+				excerpt = domain.ContextThrashFallbackExcerpt(message)
 			}
 		}
 		if err := c.store.RecordChatTurnFallback(ctx, c.conversation.ID, event.ProviderTurnID, excerpt, now); err != nil {

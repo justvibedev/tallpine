@@ -51,6 +51,7 @@ type APIDeps struct {
 	SessionMemory      controllers.SessionMemoryService
 	LastMessages       controllers.LastAssistantMessageReader
 	ServedModel        func(ctx context.Context, sess domain.Session) string
+	Compaction         func(ctx context.Context, sess domain.Session) (domain.AutoCompactView, bool)
 	Models             controllers.ModelResolver
 	Instructions       controllers.WorkerInstructionsReader
 	BackgroundTasks    BackgroundTaskTracker

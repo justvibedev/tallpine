@@ -17,5 +17,6 @@ func (s *Service) newReplacementController(id domain.SessionID, source *Controll
 	replacement.kind = source.kind
 	replacement.transientRetry.policy = s.transientRetryPolicy()
 	replacement.compactBaseline = source.projectCompactBaseline()
+	replacement.startBaseline = source.startBaseline
 	return replacement
 }

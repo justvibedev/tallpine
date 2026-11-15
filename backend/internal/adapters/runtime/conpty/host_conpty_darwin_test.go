@@ -53,6 +53,20 @@ func TestDarwinPTYCloseReapsTermIgnoringProcessGroup(t *testing.T) {
 // An interactive shell ignores SIGTERM. Closing must not wait out the full
 // grace for it: Tallpine closes a terminal the way a closing terminal window would.
 func TestDarwinPTYCloseDoesNotWaitOutAShellThatIgnoresSIGTERM(t *testing.T) {
+	// A Close that really waits out the grace takes >= grace every time, but a
+	// loaded machine can push one prompt Close just past it (B726). Retry so a
+	// scheduling hiccup does not fail the test; a real wait fails every attempt.
+	var elapsed time.Duration
+	for attempt := 0; attempt < 3; attempt++ {
+		if elapsed = closeSIGTERMIgnoringShell(t); elapsed < darwinPTYCloseGrace {
+			return
+		}
+	}
+	t.Fatalf("Close took %s on every attempt; a SIGTERM-ignoring shell waited out the %s grace", elapsed, darwinPTYCloseGrace)
+}
+
+func closeSIGTERMIgnoringShell(t *testing.T) time.Duration {
+	t.Helper()
 	conn, err := newConPTY(t.TempDir(), "/bin/sh", []string{"-c", `trap '' TERM; printf 'ready\n'; while :; do sleep 1; done`}, initialConPTYColumns, initialConPTYRows)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +94,5 @@ func TestDarwinPTYCloseDoesNotWaitOutAShellThatIgnoresSIGTERM(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed >= darwinPTYCloseGrace {
-		t.Fatalf("Close took %s; a SIGTERM-ignoring shell waited out the %s grace", elapsed, darwinPTYCloseGrace)
-	}
+	return time.Since(started)
 }

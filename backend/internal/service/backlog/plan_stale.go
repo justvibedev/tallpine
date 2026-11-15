@@ -21,6 +21,15 @@ type PlanDiffText interface {
 	ChangedLines(ctx context.Context, projectID domain.ProjectID, baseCommit string, paths []string) (map[string][]string, error)
 }
 
+// PlanDiffSkipping is an optional PlanDiff capability: the same answers with
+// the listed default-branch commits left out. A child's check skips the merge
+// commits of the plan's own earlier PRs (B737) while any other commit in the
+// window still counts as drift.
+type PlanDiffSkipping interface {
+	ChangedSinceSkipping(ctx context.Context, projectID domain.ProjectID, baseCommit string, skip []string) ([]string, error)
+	ChangedLinesSkipping(ctx context.Context, projectID domain.ProjectID, baseCommit string, skip, paths []string) (map[string][]string, error)
+}
+
 // PlanSummary is the plan state an item carries on its views.
 type PlanSummary struct {
 	ID     string
@@ -75,10 +84,24 @@ func (p *PlanService) storeSubmission(ctx context.Context, plan domain.BacklogPl
 
 // staleSplit checks the plan's PR split against the default branch.
 func (p *PlanService) staleSplit(ctx context.Context, plan domain.BacklogPlan) bool {
+	return p.staleSplitSkipping(ctx, plan, nil)
+}
+
+// staleSplitSkipping is staleSplit ignoring the skip commits. Without the
+// PlanDiffSkipping capability the skip list is ignored.
+func (p *PlanService) staleSplitSkipping(ctx context.Context, plan domain.BacklogPlan, skip []string) bool {
 	if !p.Enabled() || p.diff == nil || plan.Status != domain.PlanApproved || plan.BuildAnyway || plan.BaseCommit == "" {
 		return false
 	}
-	changed, err := p.diff.ChangedSince(ctx, plan.ProjectID, plan.BaseCommit)
+	sk, canSkip := p.diff.(PlanDiffSkipping)
+	canSkip = canSkip && len(skip) > 0
+	var changed []string
+	var err error
+	if canSkip {
+		changed, err = sk.ChangedSinceSkipping(ctx, plan.ProjectID, plan.BaseCommit, skip)
+	} else {
+		changed, err = p.diff.ChangedSince(ctx, plan.ProjectID, plan.BaseCommit)
+	}
 	if err != nil {
 		p.log.Warn("plan stale check", "plan", plan.ID, "error", err)
 		return false
@@ -94,7 +117,12 @@ func (p *PlanService) staleSplit(ctx context.Context, plan domain.BacklogPlan) b
 	if len(covered) == 0 {
 		return false
 	}
-	lines, err := dt.ChangedLines(ctx, plan.ProjectID, plan.BaseCommit, covered)
+	var lines map[string][]string
+	if canSkip {
+		lines, err = sk.ChangedLinesSkipping(ctx, plan.ProjectID, plan.BaseCommit, skip, covered)
+	} else {
+		lines, err = dt.ChangedLines(ctx, plan.ProjectID, plan.BaseCommit, covered)
+	}
 	if err != nil {
 		// Advisory like ChangedSince: a transient diff error must not block a spawn.
 		p.log.Warn("plan stale hunks", "plan", plan.ID, "error", err)

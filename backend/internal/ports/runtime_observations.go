@@ -59,6 +59,9 @@ type ActivitySignal struct {
 	UsageLimitPausedUntil time.Time
 	// UsageLimitAutoResume says Tallpine resumes that turn itself at the reset.
 	UsageLimitAutoResume bool
+	// ContextThrash is set on a chat turn-completed signal when the agent
+	// stopped the turn because its auto-compaction thrashed: the stop text.
+	ContextThrash string
 	// Waiting describes what a chat session waits on (an approval's reason or
 	// command, or the agent's question). It only feeds the orchestrator notice.
 	Waiting string

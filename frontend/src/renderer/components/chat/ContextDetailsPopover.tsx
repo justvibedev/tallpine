@@ -1,7 +1,7 @@
 /**
  * The detail view behind the context circle: what the hover tooltip has no room
- * for. Model and window, fullness, where the agent compacts and how far away
- * that is, when it last did, and the account quota when the provider reports it.
+ * for. Model and window, fullness, the starting context, the compaction window
+ * and where the agent compacts within it and how far away that is, when it last did, and the account quota when the provider reports it.
  *
  * Every figure is one the daemon or provider reported. A missing window, a
  * percent threshold with no window to apply to, or an agent that cannot be told
@@ -34,7 +34,7 @@ export function ContextDetailsPopover({ usage, details }: { usage: ConversationU
 	const { t } = useTranslation();
 	const { contextUsed } = usage;
 	const view = resolveContextView(usage, details);
-	const { capacity, windowKnown, percent, threshold, left } = view;
+	const { capacity, windowKnown, percent, threshold, trigger, baseline, left } = view;
 	const unknown = t("contextMeter.details.unknown");
 
 	let compactsAt: string;
@@ -59,7 +59,13 @@ export function ContextDetailsPopover({ usage, details }: { usage: ConversationU
 				<Row label={t("contextMeter.details.used")}>
 					{t("contextMeter.details.tokens", { value: tokens(contextUsed) })}{percent === undefined ? "" : ` (${percent}%)`}
 				</Row>
+				{baseline !== undefined ? (
+					<Row label={t("contextMeter.details.baseline")}>{t("contextMeter.details.tokens", { value: tokens(baseline) })}</Row>
+				) : null}
 				<Row label={t("contextMeter.details.compactsAt")}>{compactsAt}</Row>
+				{trigger !== undefined ? (
+					<Row label={t("contextMeter.details.trigger")}>{t("contextMeter.details.tokens", { value: tokens(trigger) })}</Row>
+				) : null}
 				{left !== undefined ? (
 					<Row label={t("contextMeter.details.left")}>
 						{left > 0 ? t("contextMeter.details.tokens", { value: tokens(left) }) : t("contextMeter.details.pastThreshold")}

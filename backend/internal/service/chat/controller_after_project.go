@@ -58,6 +58,9 @@ func (c *Controller) afterProject(ctx context.Context, event ports.ChatEvent, pr
 				signal.UsageLimitPausedUntil = limit.PausedUntil(now)
 				signal.UsageLimitAutoResume = c.autoResumes(limit)
 			}
+			if text := event.Err.Error(); domain.IsContextThrashStop(text) {
+				signal.ContextThrash = text
+			}
 		}
 		// Armed before the activity write: that write is what makes clients
 		// refetch, and the snapshot must already show the pending retry.
@@ -65,6 +68,9 @@ func (c *Controller) afterProject(ctx context.Context, event ports.ChatEvent, pr
 			signal.State, signal.Event = domain.ActivityActive, "chat.turn.retrying"
 		}
 		c.reportActivitySignal(ctx, signal)
+		if c.onTurnEnded != nil {
+			c.onTurnEnded(ctx, c, event.ProviderTurnID, signal.ContextThrash)
+		}
 		c.armUsageLimitedTurn(ctx, event, now)
 		// Only a completed turn releases queued work; a failed or recovered one holds
 		// the queue so it cannot cascade through the same outage (issue #4861).

@@ -11,6 +11,9 @@ type SpawnSessionResponse struct {
 	SystemPromptBytes int         `json:"systemPromptBytes"`
 	// Warnings are non-fatal notices, e.g. a backlog item with open blockers.
 	Warnings []string `json:"warnings,omitempty"`
+	// Compaction is what the new session's auto-compaction resolves to, for an
+	// agent Tallpine sets a compaction window on.
+	Compaction *domain.AutoCompactView `json:"compaction,omitempty"`
 }
 
 // StageSessionAttachmentsRequest attaches files to a session that is already

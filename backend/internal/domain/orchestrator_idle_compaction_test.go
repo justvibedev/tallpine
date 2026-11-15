@@ -21,7 +21,7 @@ func TestIdleCompactThreshold(t *testing.T) {
 		{"50%", 0, 0},        // unknown window
 		{AutoCompactOff, 200_000, 0},
 	} {
-		if got := IdleCompactThreshold(tc.setting, tc.window); got != tc.want {
+		if got := IdleCompactThreshold(tc.setting, tc.window, 0); got != tc.want {
 			t.Errorf("IdleCompactThreshold(%q, %d) = %d, want %d", tc.setting, tc.window, got, tc.want)
 		}
 	}

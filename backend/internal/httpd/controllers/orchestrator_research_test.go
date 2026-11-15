@@ -20,8 +20,17 @@ import (
 // researchFake adds the research mode ability to the conversation fake.
 type researchFake struct {
 	*fakeConversationService
-	err error
-	on  []bool
+	err     error
+	on      []bool
+	windows []string
+}
+
+func (f *researchFake) SetResearchWindow(_ context.Context, _ domain.SessionID, window string) (chatsvc.ResearchStatus, error) {
+	f.windows = append(f.windows, window)
+	if f.err != nil {
+		return chatsvc.ResearchStatus{}, f.err
+	}
+	return chatsvc.ResearchStatus{Active: true, Available: true, Window: 400_000, ResearchWindow: window}, nil
 }
 
 func (f *researchFake) SetResearchMode(_ context.Context, _ domain.SessionID, on bool) (chatsvc.ResearchStatus, error) {
@@ -94,5 +103,27 @@ func TestOrchestratorResearchNeedsAnExplicitEnabled(t *testing.T) {
 	code, _ := postResearch(t, researchHandler(svc), `{}`)
 	if code != http.StatusBadRequest || len(svc.on) != 0 {
 		t.Fatalf("status %d calls %v, want 400 and no switch", code, svc.on)
+	}
+}
+
+func TestOrchestratorResearchWindowRoutesToTheWindowSwitch(t *testing.T) {
+	svc := &researchFake{fakeConversationService: &fakeConversationService{}}
+	h := researchHandler(svc)
+	if code, body := postResearch(t, h, `{"enabled":true,"window":"400k"}`); code != http.StatusOK || !strings.Contains(body, `"researchWindow":"400k"`) {
+		t.Fatalf("status %d body %s", code, body)
+	}
+	if len(svc.windows) != 1 || svc.windows[0] != "400k" || len(svc.on) != 0 {
+		t.Fatalf("windows %v on %v, want one window switch", svc.windows, svc.on)
+	}
+	if code, _ := postResearch(t, h, `{"enabled":false,"window":"400k"}`); code != http.StatusBadRequest {
+		t.Fatalf("off with a window: status %d, want 400", code)
+	}
+	svc.err = chatsvc.ErrResearchWindowTooLarge
+	if code, body := postResearch(t, h, `{"enabled":true,"window":"1m"}`); code != http.StatusConflict || !strings.Contains(body, "RESEARCH_WINDOW_TOO_LARGE") {
+		t.Fatalf("too large: status %d body %s", code, body)
+	}
+	svc.err = chatsvc.ErrResearchWindowInvalid
+	if code, body := postResearch(t, h, `{"enabled":true,"window":"300k"}`); code != http.StatusBadRequest || !strings.Contains(body, "RESEARCH_WINDOW_INVALID") {
+		t.Fatalf("invalid: status %d body %s", code, body)
 	}
 }

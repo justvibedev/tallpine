@@ -232,3 +232,30 @@ func (s *Service) reopenAutoClosed(ctx context.Context, parent domain.BacklogIte
 		s.log.Warn("reopen planned item", "item", parent.Ref(), "error", err)
 	}
 }
+
+// siblingMergeCommits are the default-branch merge commits of the child's
+// earlier siblings' merged PRs. The staleness check skips them: what the plan's
+// own earlier PRs changed is the plan working, not drift (B737). Unknown
+// commits are left out, so the check then behaves as before.
+func (s *Service) siblingMergeCommits(ctx context.Context, owner domain.BacklogItem, entry int) []string {
+	kids, err := s.planMadeChildren(ctx, owner)
+	if err != nil {
+		return nil
+	}
+	var shas []string
+	for _, k := range kids {
+		if n, err := strconv.Atoi(k.Fields[planPRField]); err != nil || n-1 >= entry || k.State != domain.BacklogDone {
+			continue
+		}
+		facts, err := s.store.BacklogFactsFor(ctx, k.ID)
+		if err != nil {
+			continue
+		}
+		for _, f := range append(facts.PRs, facts.AckedPRs...) {
+			if pr, ok, err := s.store.GetPR(ctx, f.URL); err == nil && ok && pr.Merged && pr.MergeCommitSHA != "" {
+				shas = append(shas, pr.MergeCommitSHA)
+			}
+		}
+	}
+	return shas
+}

@@ -39,6 +39,8 @@ export function toSnapshot(wire: WireSnapshot): ConversationSnapshot {
 			autoCompactProjectTokens: wire.settings?.autoCompactProjectTokens || undefined,
 			contextCapacity: wire.settings?.contextCapacity || undefined,
 			compactThreshold: wire.settings?.compactThreshold || undefined,
+			autoCompactBaseline: wire.settings?.autoCompactBaseline || undefined,
+			autoCompactTrigger: wire.settings?.autoCompactTrigger || undefined,
 			modelLabel: wire.settings?.modelLabel || undefined,
 		},
 		// Absent means the provider has not reported, which the meter renders as

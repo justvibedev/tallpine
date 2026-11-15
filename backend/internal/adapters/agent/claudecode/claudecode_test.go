@@ -1641,16 +1641,6 @@ func TestPreLaunchUsesTheLaunchClaudeConfigDir(t *testing.T) {
 	}
 }
 
-func TestLaunchSettingsTurnAPercentIntoTokens(t *testing.T) {
-	got := claudeLaunchSettingsArgs(domain.AgentLaunchOptions{AutoCompactWindow: "70%", ModelContextWindow: 200_000}, "", nil, agentpolicy.Decision{})
-	if len(got) != 2 || !strings.Contains(got[1], `"autoCompactWindow":140000`) {
-		t.Fatalf("settings %#v: want autoCompactWindow 140000", got)
-	}
-	if got := claudeLaunchSettingsArgs(domain.AgentLaunchOptions{AutoCompactWindow: "70%"}, "", nil, agentpolicy.Decision{}); strings.Contains(got[1], "autoCompact") {
-		t.Fatalf("settings %#v: an unknown window must not set a threshold", got)
-	}
-}
-
 func TestClaudeLaunchSettingsDenyDaemonTokenRead(t *testing.T) {
 	runFile := filepath.Join(t.TempDir(), "running.json")
 	args := claudeLaunchSettingsArgs(domain.AgentLaunchOptions{}, "", map[string]string{brand.Env("RUN_FILE"): runFile}, agentpolicy.Decision{})

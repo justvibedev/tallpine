@@ -66,3 +66,21 @@ func TestResearchDoesNotExpireWhileBusy(t *testing.T) {
 		t.Fatalf("cleared %v while busy", *order)
 	}
 }
+
+// B736: after a daemon restart the relaunch moves the session's activity time,
+// but the persisted research turn still ends research mode after a quiet hour.
+func TestResearchExpiryRunsFromThePersistedResearchTurn(t *testing.T) {
+	h, order := researchHarness()
+	h.state.ContextUsed = 10_000
+	h.store.sessions[0] = session("orch", domain.KindOrchestrator, time.Minute) // relaunched a minute ago
+	h.state.ResearchLastTurn = now.Add(-domain.ResearchQuietExpiry + time.Minute)
+	h.sweep(t)
+	if len(*order) != 0 {
+		t.Fatalf("cleared %v before the quiet hour", *order)
+	}
+	h.state.ResearchLastTurn = now.Add(-domain.ResearchQuietExpiry)
+	h.sweep(t)
+	if got := *order; len(got) != 1 || got[0] != "clear" {
+		t.Fatalf("order = %v, want one clear an hour after the persisted research turn", got)
+	}
+}

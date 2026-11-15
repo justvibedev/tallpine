@@ -86,3 +86,31 @@ func ParseUsageLimitFallbackExcerpt(excerpt string) (until time.Time, auto, ok b
 	until, err := time.Parse(time.RFC3339, rest)
 	return until, auto, err == nil
 }
+
+const (
+	// contextThrashStopPrefix starts the error Claude Code ends a turn with when
+	// its auto-compaction breaker trips: the context refilled to the compaction
+	// limit right after each compact, three times in a row.
+	contextThrashStopPrefix    = "Autocompact is thrashing"
+	contextThrashExcerptPrefix = "context-thrash:"
+)
+
+// IsContextThrashStop reports whether a turn's error is Claude Code's
+// auto-compaction thrash stop. Nudging such a worker cannot help: every new
+// turn refills the same too-small context.
+func IsContextThrashStop(turnError string) bool {
+	return strings.HasPrefix(strings.TrimSpace(turnError), contextThrashStopPrefix)
+}
+
+// ContextThrashFallbackExcerpt is the fallback excerpt of a turn that stopped on
+// the auto-compaction thrash. Like the usage-limit excerpt, it carries why the
+// turn stopped instead of the earlier work the last assistant message describes.
+func ContextThrashFallbackExcerpt(turnError string) string {
+	return contextThrashExcerptPrefix + TurnFallbackExcerpt(turnError)
+}
+
+// ParseContextThrashFallbackExcerpt returns the thrash stop text a fallback
+// excerpt carries.
+func ParseContextThrashFallbackExcerpt(excerpt string) (detail string, ok bool) {
+	return strings.CutPrefix(excerpt, contextThrashExcerptPrefix)
+}

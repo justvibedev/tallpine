@@ -4,6 +4,27 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.18]
+
+### Added
+- Orchestrators can schedule timed follow-ups with `intent add --wake-at`. Off by default behind a project switch (#1229).
+- Orchestrators can get a one-shot nudge when idle. Off by default behind a project switch (#1228).
+- The orchestrator's research window is expandable and persists, and steps up automatically when compaction thrashes (#1220).
+- Every auto-compact window has a floor of the baseline plus 100k, and the baseline is shown (#1218).
+- Windows x64 beta installer continues to ship.
+
+### Fixed
+- Auto-compact percent windows resolve against a fixed 1M reference, and reviewers get a window (#1217).
+- Spawning leaves the agent default when a percent auto-compact window is below 100k (#1215).
+- The orchestrator is told when a worker stops on autocompact thrash (#1216).
+- Chat turn-end notifications wait for the chat quiet delay (#1219).
+- Auto-close holds a worker that is waiting on the owner (#1223).
+- Backlog plan staleness ignores the plan's own merged child PRs (#1224).
+- Worker branches are named from an explicit `--name`, and dotted versions stay whole (#1225).
+- Running review passes fail when their reviewer has ended and its handle was cleared (#1222).
+- Importing a Codex account folder with no legacy `account.json` is treated as a leftover, not a broken account (#1227).
+- Test stability: the PTY close-grace and settings recovery-modal tests tolerate load (#1221, #1226).
+
 ## [0.13.17]
 
 ### Added

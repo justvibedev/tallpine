@@ -9,6 +9,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 	chatsvc "tallpine.eu/tallpine/backend/internal/service/chat"
 	"tallpine.eu/tallpine/backend/internal/service/orchestratorcompact"
+	"tallpine.eu/tallpine/backend/internal/service/orchestratoridle"
 	"tallpine.eu/tallpine/backend/internal/storage/sqlite"
 )
 
@@ -21,6 +22,7 @@ const idleCompactionTick = time.Minute
 // is about to sleep wakes up small.
 func startIdleCompaction(ctx context.Context, store *sqlite.Store, chat *chatsvc.Service, tasks *bgtasks.Tracker,
 	handoff func(context.Context, domain.SessionID) error,
+	send func(context.Context, domain.SessionID, string) (bool, error),
 	hibernation interface {
 		SetBeforeHibernate(func(context.Context, domain.SessionID) (bool, error))
 	}, log *slog.Logger,
@@ -29,7 +31,7 @@ func startIdleCompaction(ctx context.Context, store *sqlite.Store, chat *chatsvc
 		Store: store,
 		State: func(ctx context.Context, id domain.SessionID) (orchestratorcompact.ChatState, bool) {
 			st, ok := chat.IdleCompaction(ctx, id)
-			return orchestratorcompact.ChatState{Busy: st.Busy, ContextUsed: st.ContextUsed, Threshold: st.Threshold, Handoff: st.Handoff, Research: st.Research}, ok
+			return orchestratorcompact.ChatState{Busy: st.Busy, ContextUsed: st.ContextUsed, Threshold: st.Threshold, Handoff: st.Handoff, Research: st.Research, ResearchLastTurn: st.ResearchLastTurn}, ok
 		},
 		Compact: func(ctx context.Context, id domain.SessionID) error {
 			_, err := chat.CompactIdle(ctx, id)
@@ -41,6 +43,7 @@ func startIdleCompaction(ctx context.Context, store *sqlite.Store, chat *chatsvc
 		Log:             log,
 	})
 	hibernation.SetBeforeHibernate(sweeper.MaybeCompact)
+	nudger := orchestratoridle.New(orchestratoridle.Deps{Store: store, Send: send, Log: log})
 	go func() {
 		ticker := time.NewTicker(idleCompactionTick)
 		defer ticker.Stop()
@@ -51,6 +54,9 @@ func startIdleCompaction(ctx context.Context, store *sqlite.Store, chat *chatsvc
 			case <-ticker.C:
 				if err := sweeper.Sweep(ctx); err != nil && ctx.Err() == nil {
 					log.Warn("idle orchestrator compaction failed", "err", err)
+				}
+				if err := nudger.Sweep(ctx); err != nil && ctx.Err() == nil {
+					log.Warn("idle orchestrator nudge failed", "err", err)
 				}
 			}
 		}

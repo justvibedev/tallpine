@@ -41,6 +41,7 @@ func ImportRegistry(ctx context.Context, root string, store ports.AgentAccountSt
 		return result, fmt.Errorf("read Codex account registry: %w", err)
 	}
 	var records []codexAccountRecord
+	noDescriptor := map[string]bool{}
 	for _, entry := range entries {
 		id := entry.Name()
 		if !isCanonicalUUIDv4(id) {
@@ -49,6 +50,9 @@ func ImportRegistry(ctx context.Context, root string, store ports.AgentAccountSt
 		descriptor, readErr := readCodexAccountDescriptor(filepath.Join(root, id, codexAccountDescriptorFilename))
 		if readErr == nil && descriptor.Version != 1 && descriptor.Version != codexAccountVersion {
 			readErr = errors.New("unsupported descriptor version")
+		}
+		if _, statErr := os.Lstat(filepath.Join(root, id, codexAccountDescriptorFilename)); errors.Is(statErr, os.ErrNotExist) {
+			noDescriptor[id] = true
 		}
 		records = append(records, catalog.inspectManaged(id, descriptor, readErr))
 	}
@@ -67,6 +71,13 @@ func ImportRegistry(ctx context.Context, root string, store ports.AgentAccountSt
 		case byID[id]:
 			result.Existing++
 			logger.Debug("codex registry account already in the account store", "account", id)
+			continue
+		case noDescriptor[id] && record.Snapshot.ReasonCode == domain.CodexAccountReasonDescriptorInvalid:
+			// Accounts saved since the account store existed have no legacy
+			// account.json; a folder like this with no store row is a leftover
+			// (for example after its row was removed), not a damaged login.
+			result.Skipped++
+			logger.Info("codex registry folder ignored: no legacy account.json and no saved account row", "account", id)
 			continue
 		case record.Snapshot.Status == domain.CodexAccountStatusBroken:
 			result.Skipped++

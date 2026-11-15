@@ -14,10 +14,10 @@ import (
 // body of code itself switches it on; its compaction window then rises to the
 // research window until it switches it off, an idle compaction or handoff
 // ends it, or it has no turn for domain.ResearchQuietExpiry. The state lives
-// in memory on the controller. Claude Code applies a window only at launch, so
-// switching on restarts the idle agent and the flag is carried across that
-// restart (compaction_research_restart.go); a daemon restart drops back to
-// coordination.
+// on the controller and is persisted on the session, so a daemon restart keeps
+// it (compaction_research_window.go). Claude Code applies a window only at
+// launch, so switching on restarts the idle agent and the flag is carried
+// across that restart (compaction_research_restart.go).
 
 var (
 	// ErrResearchUnsupported means the session is not an orchestrator whose
@@ -31,14 +31,24 @@ var (
 	ErrResearchRequestFailed = errors.New("could not ask the agent to change its compaction window")
 )
 
-// researchState is a controller's research mode. on and since (when it was
-// switched on) are in memory only and guarded by Controller.mu; mu serializes
+// researchState is a controller's research mode, guarded by Controller.mu and
+// persisted through Service.researchStore (B736); mu serializes
 // switches so a flag change and its live window change stay together.
 // restartPending is set while the flag waits for the agent's restart to apply
 // the research window.
 type researchState struct {
-	on             bool
-	since          time.Time
+	on    bool
+	since time.Time
+	// window is the research window chosen for this session (a ladder rung
+	// from --window or a thrash step-up); empty follows the project.
+	window string
+	// lastTurn is the last finished turn in research mode (B736).
+	lastTurn time.Time
+	// auto reports the switch was a thrash step-up, for the wake message.
+	auto bool
+	// stepTurn is the turn whose thrash stop last stepped the window up, so a
+	// notice steps at most once.
+	stepTurn       string
 	restartPending bool
 	mu             sync.Mutex
 }
@@ -73,7 +83,14 @@ func (s *Service) researchChoice(ctx context.Context, c *Controller) (string, bo
 	if c.kind != domain.KindOrchestrator {
 		return "", false
 	}
-	return domain.ResearchCompactChoice(s.compactProjectConfig(ctx, c.conversation.ProjectID), s.dynamicContextEnabled(ctx))
+	choice, ok := domain.ResearchCompactChoice(s.compactProjectConfig(ctx, c.conversation.ProjectID), s.dynamicContextEnabled(ctx))
+	c.mu.Lock()
+	own := c.research.window
+	c.mu.Unlock()
+	if ok && own != "" {
+		return own, true
+	}
+	return choice, ok
 }
 
 // researchInEffect reports whether c compacts at the research window now:
@@ -121,14 +138,10 @@ func windowLarger(a, b int) bool {
 
 // researchTokens resolves the research choice against the model window. A
 // window that is not below the model's own falls back to the agent's default
-// (0), where it compacts on its own anyway.
+// (0), where it compacts on its own anyway (domain.ResolveAutoCompactWindow).
 func (s *Service) researchTokens(ctx context.Context, c *Controller, choice string) int {
 	modelWindow, _ := s.modelCapacity(ctx, c.harness, c.conversation.ProjectID, c.Settings().Model)
-	tokens := domain.AutoCompactTokenCount(choice, modelWindow)
-	if tokens <= 0 || (modelWindow > 0 && int64(tokens) >= modelWindow) {
-		return 0
-	}
-	return tokens
+	return domain.ResolveAutoCompactWindow(choice, modelWindow, c.startBaseline)
 }
 
 // ResearchStatus reports an orchestrator's research mode; ok is false for a
@@ -162,71 +175,108 @@ func (s *Service) researchStatus(ctx context.Context, c *Controller) ResearchSta
 // SetResearchMode switches an orchestrator's research mode. Switching on while
 // on changes nothing and adds no second chat line.
 func (s *Service) SetResearchMode(ctx context.Context, id domain.SessionID, on bool) (ResearchStatus, error) {
-	c, err := s.Controller(id)
+	c, err := s.researchController(ctx, id)
 	if err != nil {
 		return ResearchStatus{}, err
 	}
-	if c.kind != domain.KindOrchestrator || c.harness != domain.HarnessClaudeCode {
-		return ResearchStatus{}, ErrResearchUnsupported
-	}
 	c.research.mu.Lock()
 	defer c.research.mu.Unlock()
-	c.mu.Lock()
-	was := c.research.on
-	c.mu.Unlock()
-	if on {
-		if _, allowed := s.researchChoice(ctx, c); !allowed {
-			return ResearchStatus{}, ErrResearchDisabled
-		}
-	}
-	if on == was {
-		return s.researchStatus(ctx, c), nil
-	}
-	_, effectiveBefore := s.researchInEffect(ctx, c)
-	s.setResearchFlag(c, on)
 	if !on {
+		return s.switchResearchOff(ctx, c), nil
+	}
+	c.mu.Lock()
+	window := c.research.window
+	c.mu.Unlock()
+	return s.switchResearchOn(ctx, c, window, false)
+}
+
+// switchResearchOff ends research mode; the caller holds c.research.mu.
+func (s *Service) switchResearchOff(ctx context.Context, c *Controller) ResearchStatus {
+	if c.researchActive() {
+		_, effectiveBefore := s.researchInEffect(ctx, c)
+		s.setResearchFlag(ctx, c, nil, false)
 		s.reconcileCompaction(ctx, c)
 		if effectiveBefore {
 			s.announceResearch(ctx, c, false, s.compactionPending(ctx, c))
 		}
+	}
+	return s.researchStatus(ctx, c)
+}
+
+// switchResearchOn switches research mode on at window (empty follows the
+// project), or moves a running research mode to another window. auto marks a
+// thrash step-up: its chat line and wake message say so. The caller holds
+// c.research.mu.
+func (s *Service) switchResearchOn(ctx context.Context, c *Controller, window string, auto bool) (ResearchStatus, error) {
+	c.mu.Lock()
+	was, prevWindow, prevSince := c.research.on, c.research.window, c.research.since
+	restarting := c.research.restartPending
+	c.mu.Unlock()
+	if _, allowed := s.researchChoice(ctx, c); !allowed {
+		return ResearchStatus{}, ErrResearchDisabled
+	}
+	if was && window == prevWindow {
 		return s.researchStatus(ctx, c), nil
 	}
+	_, effectiveBefore := s.researchInEffect(ctx, c)
+	now := s.clock()
+	since := now
+	if was {
+		since = prevSince
+	}
+	s.setResearchFlag(ctx, c, &domain.SessionResearch{Window: window, Since: since, LastTurnAt: now}, auto)
 	out, live, desired, err := s.tryLiveCompaction(ctx, c)
 	switch out {
 	case compactAskFailed:
 		// Nothing was asked for in the end: the flag goes back, so the log says
 		// only what happened.
-		s.setResearchFlag(c, false)
+		var prev *domain.SessionResearch
+		if was {
+			prev = &domain.SessionResearch{Window: prevWindow, Since: prevSince, LastTurnAt: now}
+		}
+		s.setResearchFlag(ctx, c, prev, false)
 		s.log.Warn("research mode not enabled: the request to change the live compaction window failed", "session", c.sessionID, "live", live, "desired", desired, "error", err)
 		return ResearchStatus{}, ErrResearchRequestFailed
 	case compactKept, compactNoSetter:
 		// The agent reads its window only at launch: restart it when idle.
-		s.log.Info("research mode waits for an agent restart", "session", c.sessionID, "live", live, "desired", desired)
-		s.beginResearchRestart(c)
-		s.announceResearchPending(ctx, c)
+		s.log.Info("research mode waits for an agent restart", "session", c.sessionID, "live", live, "desired", desired, "auto", auto)
+		s.beginResearchRestart(c, restarting)
+		if auto {
+			s.announceThrashStep(ctx, c, live, true)
+		} else {
+			s.announceResearchPending(ctx, c)
+		}
 		return s.researchStatus(ctx, c), nil
 	case compactApplied:
 		s.log.Info("compaction window applied live", "session", c.sessionID, "previous", live, "tokens", desired)
 	}
 	// A chat with a window of its own is unchanged by the switch: no line.
-	if _, effectiveAfter := s.researchInEffect(ctx, c); effectiveBefore != effectiveAfter {
+	_, effectiveAfter := s.researchInEffect(ctx, c)
+	switch {
+	case auto && out == compactApplied:
+		s.announceThrashStep(ctx, c, live, false)
+	case effectiveBefore != effectiveAfter || (effectiveAfter && out == compactApplied):
 		s.announceResearch(ctx, c, true, false)
 	}
 	return s.researchStatus(ctx, c), nil
 }
 
-func (s *Service) setResearchFlag(c *Controller, on bool) {
+// setResearchFlag sets c's research mode in memory and on the session; nil
+// switches it off.
+func (s *Service) setResearchFlag(ctx context.Context, c *Controller, research *domain.SessionResearch, auto bool) {
 	c.mu.Lock()
-	c.research.on = on
-	c.research.since = time.Time{}
+	c.research.on = research != nil
+	c.research.since, c.research.lastTurn = time.Time{}, time.Time{}
+	c.research.window, c.research.auto = "", false
 	c.research.restartPending = false
-	if !on {
+	if research == nil {
 		s.researchCarried.take(c.sessionID)
-	}
-	if on {
-		c.research.since = time.Now()
+	} else {
+		c.research.since, c.research.lastTurn = research.Since, research.LastTurnAt
+		c.research.window, c.research.auto = research.Window, auto
 	}
 	c.mu.Unlock()
+	s.persistResearch(ctx, c.sessionID, research)
 }
 
 // ClearResearch ends an orchestrator's research mode, as an idle compaction or
@@ -234,7 +284,8 @@ func (s *Service) setResearchFlag(c *Controller, on bool) {
 func (s *Service) ClearResearch(ctx context.Context, id domain.SessionID) bool {
 	c, err := s.Controller(id)
 	if err != nil {
-		return false
+		// Hibernated or stopped: the persisted state still ends.
+		return s.clearStoredResearch(ctx, id)
 	}
 	return s.clearResearch(ctx, c)
 }
@@ -248,12 +299,7 @@ func (s *Service) clearResearch(ctx context.Context, c *Controller) bool {
 	if !was {
 		return false
 	}
-	_, effective := s.researchInEffect(ctx, c)
-	s.setResearchFlag(c, false)
-	s.reconcileCompaction(ctx, c)
-	if effective {
-		s.announceResearch(ctx, c, false, s.compactionPending(ctx, c))
-	}
+	s.switchResearchOff(ctx, c)
 	return true
 }
 
@@ -270,6 +316,14 @@ func (s *Service) ClearAllResearch(ctx context.Context) {
 	s.mu.RUnlock()
 	for _, c := range targets {
 		s.clearResearch(ctx, c)
+	}
+	// An orchestrator without a controller (hibernated, stopped) keeps its
+	// research mode only on the session and in the carry: end it there too.
+	s.researchCarried.clear()
+	if s.researchStore != nil {
+		if err := s.researchStore.ClearAllSessionResearch(ctx); err != nil {
+			s.log.Warn("could not clear persisted orchestrator research modes", "error", err)
+		}
 	}
 }
 
@@ -319,4 +373,10 @@ func (c *Controller) researchActive() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.research.on
+}
+
+func (c *Controller) researchLastTurn() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.research.lastTurn
 }

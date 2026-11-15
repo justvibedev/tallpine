@@ -108,11 +108,18 @@ func (o *Observer) deliverPending(ctx context.Context) time.Duration {
 			next = 5 * time.Second
 			continue
 		}
-		message := Message(KindTurnEnded, rec, f.Excerpt)
+		kind, excerpt := turnEndKind(f.Excerpt)
+		message := Message(kind, rec, excerpt)
 		if until, auto, limited := domain.ParseUsageLimitFallbackExcerpt(f.Excerpt); limited {
+			kind = KindUsageLimited
 			message = Message(KindUsageLimited, rec, usageLimitDetail(until, auto))
 		}
-		_, err = reports.Create(ctx, reportsvc.CreateInput{ID: f.ID, TurnFallbackID: f.ID, SessionID: f.SessionID, Message: message, Synthesized: true, Immediate: true, Quiet: true})
+		in := reportsvc.CreateInput{ID: f.ID, TurnFallbackID: f.ID, SessionID: f.SessionID, Message: message, Synthesized: true, Immediate: true}
+		in.Quiet, in.QuietFor = quietPolicy(kind, rec)
+		_, err = reports.Create(ctx, in)
+		if err == nil {
+			o.Log.Info("turn fallback became report", "session", f.SessionID, "fallback", f.ID, "kind", kind, "quiet", in.Quiet, "quiet_for", in.QuietFor)
+		}
 		if err != nil && !errors.Is(err, domain.ErrDuplicateReport) && !errors.Is(err, domain.ErrTurnFallbackInactive) {
 			o.Log.Warn("persist turn fallback report", "session", f.SessionID, "err", err)
 			next = 5 * time.Second

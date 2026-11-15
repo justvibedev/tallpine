@@ -16,7 +16,7 @@ func (s *Store) InsertOrchestratorIntent(ctx context.Context, in domain.Orchestr
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	err := s.qw.InsertOrchestratorIntent(ctx, gen.InsertOrchestratorIntentParams{
-		ID: in.ID, ProjectID: string(in.ProjectID), Text: in.Text, CreatedBy: in.CreatedBy, CreatedAt: in.CreatedAt,
+		ID: in.ID, ProjectID: string(in.ProjectID), Text: in.Text, CreatedBy: in.CreatedBy, CreatedAt: in.CreatedAt, WakeAt: wakeAtParam(in.WakeAt),
 	})
 	if err != nil {
 		if isSQLiteForeignKey(err) {
@@ -40,14 +40,52 @@ func (s *Store) SelectOrchestratorIntents(ctx context.Context, project domain.Pr
 	}
 	out := make([]domain.OrchestratorIntent, 0, len(rows))
 	for _, r := range rows {
-		in := domain.OrchestratorIntent{ID: r.ID, ProjectID: domain.ProjectID(r.ProjectID), Text: r.Text, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt}
-		if r.DoneAt.Valid {
-			t := r.DoneAt.Time
-			in.DoneAt = &t
-		}
-		out = append(out, in)
+		out = append(out, intentFromRow(r))
 	}
 	return out, nil
+}
+
+func intentFromRow(r gen.OrchestratorIntent) domain.OrchestratorIntent {
+	return domain.OrchestratorIntent{
+		ID: r.ID, ProjectID: domain.ProjectID(r.ProjectID), Text: r.Text, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
+		DoneAt: nullTimePtr(r.DoneAt), WakeAt: nullTimePtr(r.WakeAt), WokenAt: nullTimePtr(r.WokenAt),
+	}
+}
+
+// SelectDueIntentWakes lists open intents of any project whose wake time is at
+// or before now and whose wake has not been delivered.
+func (s *Store) SelectDueIntentWakes(ctx context.Context, now time.Time) ([]domain.OrchestratorIntent, error) {
+	rows, err := s.qr.SelectDueIntentWakes(ctx, sql.NullTime{Time: now, Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("select due intent wakes: %w", err)
+	}
+	out := make([]domain.OrchestratorIntent, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, intentFromRow(r))
+	}
+	return out, nil
+}
+
+// ClaimIntentWake claims an open intent's single wake, reporting whether this
+// call got it.
+func (s *Store) ClaimIntentWake(ctx context.Context, id string, at time.Time) (bool, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	n, err := s.qw.ClaimIntentWake(ctx, gen.ClaimIntentWakeParams{WokenAt: sql.NullTime{Time: at, Valid: true}, ID: id})
+	if err != nil {
+		return false, fmt.Errorf("claim wake of intent %s: %w", id, err)
+	}
+	return n > 0, nil
+}
+
+// ReleaseIntentWake gives a claimed wake back after a failed delivery.
+func (s *Store) ReleaseIntentWake(ctx context.Context, id string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.qw.ReleaseIntentWake(ctx, id); err != nil {
+		return fmt.Errorf("release wake of intent %s: %w", id, err)
+	}
+	return nil
 }
 
 // MarkOrchestratorIntentDone clears an open intent of the project, reporting
@@ -62,4 +100,11 @@ func (s *Store) MarkOrchestratorIntentDone(ctx context.Context, project domain.P
 		return false, fmt.Errorf("mark orchestrator intent %s done: %w", id, err)
 	}
 	return n > 0, nil
+}
+
+func wakeAtParam(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
 }

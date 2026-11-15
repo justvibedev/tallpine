@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -31,19 +32,26 @@ func intentsPath(ctx *commandContext, cmd *cobra.Command, project string) (strin
 }
 
 func newIntentAddCommand(ctx *commandContext) *cobra.Command {
-	var project string
+	var project, wakeAt string
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "add <text>",
 		Short: "Record an intent or standing decision",
-		Args:  cobra.MinimumNArgs(1),
+		Long: "Record an intent. With --wake-at the daemon sends the orchestrator one message naming the intent at that time,\n" +
+			"if it is still open. Delivery needs the project setting intentWake (off by default); a daemon that was down at\n" +
+			"that time delivers it once on start.",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			wake, err := parseWakeAt(wakeAt, time.Now(), time.Local)
+			if err != nil {
+				return err
+			}
 			base, err := intentsPath(ctx, cmd, project)
 			if err != nil {
 				return err
 			}
 			var res controllers.IntentResponse
-			if err := ctx.postJSON(cmd.Context(), base, controllers.CreateIntentRequest{Text: strings.Join(args, " ")}, &res); err != nil {
+			if err := ctx.postJSON(cmd.Context(), base, controllers.CreateIntentRequest{Text: strings.Join(args, " "), WakeAt: wake}, &res); err != nil {
 				return err
 			}
 			if jsonOutput {
@@ -54,7 +62,35 @@ func newIntentAddCommand(ctx *commandContext) *cobra.Command {
 		},
 	}
 	addBacklogProjectFlag(cmd, &project, &jsonOutput)
+	cmd.Flags().StringVar(&wakeAt, "wake-at", "", "Wake the orchestrator once at this time if the intent is still open: RFC 3339, local \"2006-01-02 15:04\", or a duration from now such as 90m")
 	return cmd
+}
+
+// parseWakeAt reads a --wake-at value: RFC 3339, a local date-time, or a
+// duration from now. Empty means no wake.
+func parseWakeAt(v string, now time.Time, loc *time.Location) (*time.Time, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil, nil
+	}
+	var t time.Time
+	if d, err := time.ParseDuration(v); err == nil {
+		t = now.Add(d)
+	} else if t, err = time.Parse(time.RFC3339, v); err != nil {
+		for _, layout := range []string{"2006-01-02 15:04", "2006-01-02T15:04"} {
+			if t, err = time.ParseInLocation(layout, v, loc); err == nil {
+				break
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("--wake-at %q: use RFC 3339, \"2006-01-02 15:04\" (local time) or a duration such as 90m", v)
+		}
+	}
+	if !t.After(now) {
+		return nil, fmt.Errorf("--wake-at %q is not in the future", v)
+	}
+	t = t.UTC()
+	return &t, nil
 }
 
 func newIntentListCommand(ctx *commandContext) *cobra.Command {
@@ -97,6 +133,9 @@ func writeIntents(cmd *cobra.Command, items []controllers.IntentResponse) error 
 		mark := ""
 		if in.DoneAt != nil {
 			mark = " [done]"
+		}
+		if in.WakeAt != nil {
+			mark += " [wake " + in.WakeAt.Local().Format("2006-01-02 15:04") + "]"
 		}
 		if _, err := fmt.Fprintf(out, "%s%s  %s  %s\n", in.ID, mark, in.CreatedAt.Format("2006-01-02"), in.Text); err != nil {
 			return err

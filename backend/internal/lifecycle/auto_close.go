@@ -32,6 +32,9 @@ type autoCloseHooks interface {
 	EndOnMergeSessions(ctx context.Context) ([]domain.SessionID, error)
 	// NotifyHeld tells the orchestrator a close has been held past the bound (B498).
 	NotifyHeld(ctx context.Context, rec domain.SessionRecord, reason string)
+	// WaitingOnOwnerReason says why the worker's last report keeps it open
+	// (waiting on the owner or orchestrator), or "" (B720).
+	WaitingOnOwnerReason(ctx context.Context, id domain.SessionID) (string, error)
 	// FinishedWorkerKeepReason says why a worker with no merged PR must stay
 	// open, or "" when it is finished with nothing unmerged (B588).
 	FinishedWorkerKeepReason(ctx context.Context, rec domain.SessionRecord, now time.Time) (string, error)
@@ -154,6 +157,16 @@ func (m *Manager) tryAutoClose(ctx context.Context, id domain.SessionID) (held b
 		}
 		if queued {
 			m.holdAutoClose(ctx, rec, hooks, "unanswered input (queued message or open turn)", 1)
+			return true, nil
+		}
+		// A worker whose last report says it waits on the owner or orchestrator
+		// is not finished (B720); the hold is bounded like the others.
+		waiting, err := hooks.WaitingOnOwnerReason(ctx, id)
+		if err != nil {
+			return false, fmt.Errorf("check last report for %s: %w", id, err)
+		}
+		if waiting != "" {
+			m.holdAutoClose(ctx, rec, hooks, "waiting on owner: "+waiting, 1)
 			return true, nil
 		}
 		// Open backlog items linked to the session are work it still owns

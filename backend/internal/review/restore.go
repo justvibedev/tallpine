@@ -22,6 +22,14 @@ func (e *Engine) RestoreReviewer(ctx stdctx.Context, workerID domain.SessionID) 
 	}
 	unlock := e.lockWorker(workerID)
 	defer unlock()
+	result, err := e.restoreSelectedReviewerLocked(ctx, workerID)
+	if settleErr := e.settleRestorePending(ctx, workerID, err); settleErr != nil {
+		err = errors.Join(err, settleErr)
+	}
+	return result, err
+}
+
+func (e *Engine) restoreSelectedReviewerLocked(ctx stdctx.Context, workerID domain.SessionID) (RestoreReviewerResult, error) {
 	worker, ok, err := e.sessions.GetSession(ctx, workerID)
 	if err != nil {
 		return RestoreReviewerResult{}, err
@@ -266,7 +274,7 @@ func (e *Engine) restoreReviewerLocked(
 		ProjectID:            worker.ProjectID,
 		ProjectEnv:           projectEnv,
 		Harness:              harness,
-		AgentConfig:          e.withReviewerLaunch(ctx, worker.ProjectID, config),
+		AgentConfig:          e.withReviewerLaunch(ctx, worker.ProjectID, harness, config),
 		WorkspacePath:        worker.Metadata.WorkspacePath,
 		AgentSessionID:       agentSessionID,
 		RequireNativeHistory: harness == domain.ReviewerCodex && strings.TrimSpace(agentSessionID) != "",
@@ -343,6 +351,7 @@ func (e *Engine) TeardownReviewerTerminal(ctx stdctx.Context, workerID domain.Se
 		if err := e.store.ClearReviewerHandle(ctx, workerID); err != nil {
 			return err
 		}
+		return e.markRestorePending(ctx, workerID, reviews)
 	}
 	return nil
 }

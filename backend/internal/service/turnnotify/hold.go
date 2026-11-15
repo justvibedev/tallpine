@@ -35,7 +35,8 @@ type holdState struct {
 // because the re-armed timer sends it once nothing holds it. Caller holds o.mu
 // and t is the current turn of id.
 func (o *Observer) holdForOwnJob(id domain.SessionID, t *turn, gen uint64) bool {
-	if !t.limitUntil.IsZero() {
+	// A stop the worker did not choose is never waiting on its own job.
+	if kind, _ := turnEndKind(t.last); !t.limitUntil.IsZero() || kind == KindContextThrash {
 		return false
 	}
 	o.mu.Unlock()

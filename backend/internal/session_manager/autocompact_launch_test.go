@@ -72,7 +72,7 @@ func TestFreshLaunchOptionsResolvesFamilyAliasWithoutCatalog(t *testing.T) {
 		m.defaults = compactDefaults{window: "40%"}
 		wire(m)
 		got := m.freshLaunchOptions(context.Background(), domain.HarnessClaudeCode, domain.KindWorker, "mer", domain.ProjectConfig{}, "opus", domain.AgentLaunchOptions{})
-		if tokens := domain.AutoCompactTokenCount(got.AutoCompactWindow, got.ModelContextWindow); tokens != 400_000 {
+		if tokens := domain.ResolveAutoCompactWindow(got.AutoCompactWindow, got.ModelContextWindow, 0); tokens != 400_000 {
 			t.Errorf("%s: compact tokens = %d (%+v), want 400000", name, tokens, got)
 		}
 	}
@@ -111,5 +111,110 @@ func TestFreshLaunchOptionsFillsShellOutputLimit(t *testing.T) {
 	got = m.freshLaunchOptions(context.Background(), domain.HarnessCodex, domain.KindWorker, "mer", domain.ProjectConfig{Env: map[string]string{domain.EnvShellOutputLimit: "off"}}, "", domain.AgentLaunchOptions{})
 	if got.ShellOutputChars != 0 {
 		t.Fatalf("off = %d", got.ShellOutputChars)
+	}
+}
+
+// A planner is a worker session with the planner role, so it compacts by the
+// worker rule: the Settings default for its agent against a fixed 1M, never the
+// orchestrator's 120k (B734).
+func TestSpawnPlannerFollowsTheWorkerCompactionPath(t *testing.T) {
+	t.Parallel()
+	for _, role := range []domain.SessionRole{"", domain.SessionRolePlanner} {
+		st := newFakeStore()
+		st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
+		agent := &recordingAgent{}
+		m := New(Deps{Runtime: &fakeRuntime{}, Agents: singleAgent{agent: agent}, Workspace: &fakeWorkspace{}, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st},
+			LookPath: func(string) (string, error) { return "/bin/true", nil }})
+		m.defaults = compactDefaults{window: "40%"}
+		m.SetModelCatalog(tuningCatalog{catalog: ports.AgentModelCatalog{Models: []ports.AgentModelInfo{
+			{ID: "opus", IsDefault: true, ContextWindow: 1_000_000},
+		}}})
+		if _, _, _, err := m.Spawn(context.Background(), ports.SpawnConfig{
+			ProjectID: "mer", Kind: domain.KindWorker, Role: role, Harness: domain.HarnessClaudeCode, RequestedMode: domain.SessionModeTUI,
+			AgentConfig: ports.AgentConfig{Model: "opus"},
+		}); err != nil {
+			t.Fatalf("role %q: %v", role, err)
+		}
+		launch := agent.lastLaunch.Config.Launch
+		if tokens := domain.ResolveAutoCompactWindow(launch.AutoCompactWindow, launch.ModelContextWindow, 0); launch.AutoCompactWindow != "40%" || tokens != 400_000 {
+			t.Fatalf("role %q launch = %+v (%d tokens), want the 40%% default as 400000", role, launch, tokens)
+		}
+	}
+}
+
+// baselineStore is a fake store that also measures baselines.
+type baselineStore struct {
+	*fakeStore
+	baseline int64
+	asked    []domain.SessionKind
+}
+
+func (s *baselineStore) Baseline(_ context.Context, _ domain.ProjectID, kind domain.SessionKind, _ domain.AgentHarness) (int64, error) {
+	s.asked = append(s.asked, kind)
+	return s.baseline, nil
+}
+
+// A spawn reads the measured baseline at launch and hands it to the adapter,
+// which floors the window at baseline + 100k (B735).
+func TestSpawnCarriesTheMeasuredBaseline(t *testing.T) {
+	t.Parallel()
+	st := &baselineStore{fakeStore: newFakeStore(), baseline: 66_000}
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
+	agent := &recordingAgent{}
+	m := New(Deps{Runtime: &fakeRuntime{}, Agents: singleAgent{agent: agent}, Workspace: &fakeWorkspace{}, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st.fakeStore},
+		LookPath: func(string) (string, error) { return "/bin/true", nil }})
+	m.defaults = compactDefaults{window: "120k"}
+	m.SetModelCatalog(tuningCatalog{catalog: ports.AgentModelCatalog{Models: []ports.AgentModelInfo{
+		{ID: "opus", IsDefault: true, ContextWindow: 1_000_000},
+	}}})
+	if _, _, _, err := m.Spawn(context.Background(), ports.SpawnConfig{
+		ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode, RequestedMode: domain.SessionModeTUI,
+		AgentConfig: ports.AgentConfig{Model: "opus"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	launch := agent.lastLaunch.Config.Launch
+	if launch.AutoCompactBaseline != 66_000 || len(st.asked) != 1 || st.asked[0] != domain.KindWorker {
+		t.Fatalf("launch = %+v asked %v, want baseline 66000 read once for a worker", launch, st.asked)
+	}
+	if tokens := domain.ResolveAutoCompactWindow(launch.AutoCompactWindow, launch.ModelContextWindow, launch.AutoCompactBaseline); tokens != 166_000 {
+		t.Fatalf("resolved window = %d, want 166000", tokens)
+	}
+}
+
+// The session readout resolves a terminal worker's window by the relaunch path.
+func TestAutoCompactViewResolvesTheLaunchPath(t *testing.T) {
+	t.Parallel()
+	st := &baselineStore{fakeStore: newFakeStore(), baseline: 66_000}
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
+	m := New(Deps{Runtime: &fakeRuntime{}, Agents: singleAgent{agent: &recordingAgent{}}, Workspace: &fakeWorkspace{}, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st.fakeStore},
+		LookPath: func(string) (string, error) { return "/bin/true", nil }})
+	m.defaults = compactDefaults{window: "120k"}
+	m.SetModelCatalog(tuningCatalog{catalog: ports.AgentModelCatalog{Models: []ports.AgentModelInfo{{ID: "opus", IsDefault: true, ContextWindow: 1_000_000}}}})
+	rec := domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode}
+	view, ok := m.AutoCompactView(context.Background(), rec)
+	if !ok || view.Baseline != 66_000 || view.Window != 166_000 || view.Trigger != 133_000 || view.ModelWindow != 1_000_000 || view.RoomTight {
+		t.Fatalf("view = %+v ok=%v, want 66k baseline, 166k window, 133k trigger", view, ok)
+	}
+	rec.Harness = "kiro"
+	if _, ok := m.AutoCompactView(context.Background(), rec); ok {
+		t.Fatal("an agent Tallpine sets no window on has no readout")
+	}
+}
+
+// An Auto choice passes no window, but a baseline that leaves too little room
+// on the model still warns: the room check holds whatever the choice (B735).
+func TestAutoCompactViewWarnsForAnAutoChoiceWithATightRoom(t *testing.T) {
+	t.Parallel()
+	st := &baselineStore{fakeStore: newFakeStore(), baseline: 150_000}
+	st.projects["mer"] = domain.ProjectRecord{ID: "mer", Config: testRoleAgents()}
+	m := New(Deps{Runtime: &fakeRuntime{}, Agents: singleAgent{agent: &recordingAgent{}}, Workspace: &fakeWorkspace{}, Store: st, Messenger: &fakeMessenger{}, Lifecycle: &fakeLCM{store: st.fakeStore},
+		LookPath: func(string) (string, error) { return "/bin/true", nil }})
+	m.defaults = compactDefaults{window: ""}
+	m.SetModelCatalog(tuningCatalog{catalog: ports.AgentModelCatalog{Models: []ports.AgentModelInfo{{ID: "sonnet", IsDefault: true, ContextWindow: 200_000}}}})
+	rec := domain.SessionRecord{ID: "mer-1", ProjectID: "mer", Kind: domain.KindWorker, Harness: domain.HarnessClaudeCode}
+	view, ok := m.AutoCompactView(context.Background(), rec)
+	if !ok || view.Window != 0 || view.Baseline != 150_000 || view.ModelWindow != 200_000 || !view.RoomTight || view.RoomWarning() == "" {
+		t.Fatalf("view = %+v ok=%v, want Auto (no window) with a tight-room warning", view, ok)
 	}
 }

@@ -21924,6 +21924,11 @@ components:
       properties:
         text:
           type: string
+        wakeAt:
+          format: date-time
+          type:
+          - "null"
+          - string
       required:
       - text
       type: object
@@ -21943,6 +21948,16 @@ components:
           type: string
         text:
           type: string
+        wakeAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        wokenAt:
+          format: date-time
+          type:
+          - "null"
+          - string
       required:
       - id
       - text
@@ -22022,6 +22037,15 @@ components:
           type:
           - "null"
           - boolean
+        window:
+          description: 'With enabled true, the research window: 250k, 400k or 1m.
+            It must fit the orchestrator''s model. Empty keeps the current research
+            window or the project''s.'
+          enum:
+          - 250k
+          - 400k
+          - 1m
+          type: string
       required:
       - enabled
       type: object
@@ -23093,9 +23117,14 @@ components:
           - auto
           - bypass-permissions
           type: string
+        autoCompactBaseline:
+          format: int64
+          type: integer
         autoCompactPending:
           type: boolean
         autoCompactProjectTokens:
+          type: integer
+        autoCompactTrigger:
           type: integer
         autoCompactWindow:
           description: Empty (Auto), a size from 50k to 1m (Claude Code runs anything
@@ -23562,6 +23591,27 @@ components:
       required:
       - state
       - lastActivityAt
+      type: object
+    DomainAutoCompactView:
+      properties:
+        baseline:
+          format: int64
+          type: integer
+        modelWindow:
+          format: int64
+          type: integer
+        roomTight:
+          type: boolean
+        trigger:
+          type: integer
+        window:
+          type: integer
+      required:
+      - baseline
+      - window
+      - trigger
+      - modelWindow
+      - roomTight
       type: object
     DomainModelPolicy:
       properties:
@@ -25864,12 +25914,16 @@ components:
           type: boolean
         githubUser:
           type: string
+        intentWake:
+          type: boolean
         models:
           $ref: '#/components/schemas/DomainModelPolicy'
         noCI:
           type: boolean
         orchestrator:
           $ref: '#/components/schemas/RoleOverride'
+        orchestratorIdleNudge:
+          type: boolean
         orchestratorRules:
           type: string
         planAutoApprove:
@@ -27736,6 +27790,8 @@ components:
       type: object
     SessionResponse:
       properties:
+        compaction:
+          $ref: '#/components/schemas/DomainAutoCompactView'
         lastAssistantMessage:
           $ref: '#/components/schemas/SessionLastAssistantMessage'
         session:
@@ -29290,6 +29346,8 @@ components:
       type: object
     SpawnSessionResponse:
       properties:
+        compaction:
+          $ref: '#/components/schemas/DomainAutoCompactView'
         promptBytes:
           type: integer
         session:

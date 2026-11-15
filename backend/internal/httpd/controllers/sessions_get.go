@@ -26,6 +26,9 @@ func (c *SessionsController) get(w http.ResponseWriter, r *http.Request) {
 	if resp.Session.Model == "" && c.Models != nil && !resp.Session.IsTerminated {
 		resp.Session.Model = c.Models.EffectiveModel(r.Context(), sess.ID)
 	}
+	if view, ok := c.compactionView(r.Context(), sess); ok {
+		resp.Compaction = &view
+	}
 	if c.LastMessages != nil {
 		// A failed read leaves the optional field out; the session is still served.
 		if text, at, found, readErr := c.LastMessages.LastAssistantMessage(r.Context(), sess.ID); readErr == nil && found {

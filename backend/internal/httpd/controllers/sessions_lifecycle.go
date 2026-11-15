@@ -177,7 +177,15 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	warnings = c.linkBacklogSession(r, backlogItem, sess.ID, string(in.ParentSessionID), warnings)
-	envelope.WriteJSON(w, http.StatusCreated, SpawnSessionResponse{Session: c.view(r.Context(), r, sess), PromptBytes: promptBytes, SystemPromptBytes: systemPromptBytes, Warnings: warnings})
+	resp := SpawnSessionResponse{Session: c.view(r.Context(), r, sess), PromptBytes: promptBytes, SystemPromptBytes: systemPromptBytes}
+	if view, ok := c.compactionView(r.Context(), sess); ok {
+		resp.Compaction = &view
+		if warning := view.RoomWarning(); warning != "" {
+			warnings = append(warnings, warning)
+		}
+	}
+	resp.Warnings = warnings
+	envelope.WriteJSON(w, http.StatusCreated, resp)
 }
 
 // BacklogSpawner is the backlog side of `tallpine spawn --backlog`.

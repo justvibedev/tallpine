@@ -126,6 +126,12 @@ type ProjectConfig struct {
 	// default.
 	ApproveIdenticalPatch bool `json:"approveIdenticalPatch,omitempty"`
 
+	// OrchestratorIdleNudge turns on a one-shot [auto] nudge to an orchestrator
+	// that has been idle for OrchestratorIdleNudgeAfter with open intents and
+	// nothing in flight (no running worker, review or open ask) (B713). Off by
+	// default.
+	OrchestratorIdleNudge bool `json:"orchestratorIdleNudge,omitempty"`
+
 	// TerminateOnPRMerge is the default for each new worker's own
 	// terminate-on-merge flag: when set, a worker ends once its PRs are merged
 	// and none is open. Copied at spawn like AutoReview; nil is on (B407).
@@ -169,6 +175,12 @@ type ProjectConfig struct {
 	// policy.planner.inPlace of "off" locks it off.
 	PlanInPlace bool `json:"planInPlace,omitempty"`
 
+	// IntentWake turns on timed orchestrator follow-ups (B714): an intent added
+	// with --wake-at wakes the project's orchestrator once at that time while it
+	// is still open. Off by default, so a stored wake time stays inert until a
+	// person or the orchestrator switches it on.
+	IntentWake bool `json:"intentWake,omitempty"`
+
 	// Eval marks a throwaway evaluation project (B335). The orchestrator that
 	// registered it may then drive its backlog, plans and sessions from its own
 	// project and answer and approve plans as the owner's proxy; a project that
@@ -199,28 +211,6 @@ type ProjectConfig struct {
 	// ChatHibernation is the project-level opt-out for idle Chat hibernation.
 	// A pointer so an unset opt-out is omitted from the stored config.
 	ChatHibernation *ChatHibernationConfig `json:"chatHibernation,omitempty"`
-}
-
-// ChatHibernationDisabled reports whether the project opted out of idle Chat
-// hibernation.
-func (c ProjectConfig) ChatHibernationDisabled() bool {
-	return c.ChatHibernation != nil && c.ChatHibernation.Disabled
-}
-
-// ChatHibernationConfig is the project-level opt-out for idle Chat
-// hibernation. The app-wide setting still applies when this is unset.
-type ChatHibernationConfig struct {
-	// Disabled keeps every Chat session of this project awake however long
-	// it is idle.
-	Disabled bool `json:"disabled,omitempty"`
-}
-
-// ContainerReapConfig is the project-level opt-out for #2652's Docker
-// container reaping on session terminal state.
-type ContainerReapConfig struct {
-	// Disabled turns off container reaping for every session in this project.
-	// Per-container sparing (tallpine.spare=true) is unaffected either way.
-	Disabled bool `json:"disabled,omitempty"`
 }
 
 // RoleOverride overrides the harness and/or agent config for a session role.

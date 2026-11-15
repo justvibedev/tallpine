@@ -50,9 +50,9 @@ When a skill is missing for an agent, the session shows a notice naming the skil
 
 ## Context window and compaction
 
-A Chat session's context meter shows how full the model's context window is. Click it for details: the **Model**, the **Window**, how much is **Used**, where the agent **Compacts at**, how much is **Left until compaction**, and when the conversation was **Last compacted**. A compaction in progress shows **Compacting…**.
+A Chat session's context meter shows how full the model's context window is. Click it for details: the **Model**, the **Window**, how much is **Used**, the **Starting context** the session was measured to launch with, the **Auto-compact window** Tallpine gives the agent, where it actually **Compacts at**, how much is **Left until compaction**, and when the conversation was **Last compacted**. A compaction in progress shows **Compacting…**.
 
-The **Auto-compact** control in the agent controls sets when Claude Code compacts the conversation on its own. Choose **Auto** (the agent's default), a percentage of the window, or a **Custom %**. It is not supported for Codex chats. The stored setting is `autoCompactWindow` in the agent configuration: a size such as `200k` or `1m`, or a percentage such as `70%`.
+The **Auto-compact** control in the agent controls sets when Claude Code compacts the conversation on its own. Choose **Auto** (the agent's default), a percentage of a fixed 1M tokens (40% is 400k on every model), or a **Custom %**. A choice that does not fit below the model's window leaves the agent's own default. It is not supported for Codex chats. The stored setting is `autoCompactWindow` in the agent configuration: a size such as `200k` or `1m`, or a percentage such as `70%`.
 
 ## Usage
 

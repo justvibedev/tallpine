@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
@@ -22,6 +23,9 @@ type IdleCompactionState struct {
 	Handoff bool
 	// Research reports the orchestrator is in research mode (B413).
 	Research bool
+	// ResearchLastTurn is the last turn in research mode, persisted across a
+	// daemon restart (B736); the quiet-hour expiry runs from it.
+	ResearchLastTurn time.Time
 }
 
 // IdleCompaction reports a live orchestrator controller's idle-compaction
@@ -53,11 +57,12 @@ func (s *Service) idleCompactionState(ctx context.Context, c *Controller) (IdleC
 	}
 	cfg := s.compactProjectConfig(ctx, c.conversation.ProjectID)
 	return IdleCompactionState{
-		Busy:        c.busy() || c.State() != ports.ChatControllerReady,
-		ContextUsed: usage.ContextUsed,
-		Threshold:   domain.IdleCompactThreshold(cfg.Orchestrator.IdleCompactAt, window),
-		Handoff:     cfg.Orchestrator.IdleAction == domain.IdleActionHandoff,
-		Research:    c.researchActive(),
+		Busy:             c.busy() || c.State() != ports.ChatControllerReady,
+		ContextUsed:      usage.ContextUsed,
+		Threshold:        domain.IdleCompactThreshold(cfg.Orchestrator.IdleCompactAt, window, c.startBaseline),
+		Handoff:          cfg.Orchestrator.IdleAction == domain.IdleActionHandoff,
+		Research:         c.researchActive(),
+		ResearchLastTurn: c.researchLastTurn(),
 	}, true
 }
 

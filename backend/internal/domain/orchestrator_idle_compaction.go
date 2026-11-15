@@ -46,7 +46,12 @@ func ValidIdleCompactAt(v string) bool {
 // effective compaction window in tokens. 0 means never: the setting is off, a
 // percent has no known window, or the threshold is not below the window, where
 // the provider compacts on its own anyway.
-func IdleCompactThreshold(setting string, window int64) int64 {
+//
+// baseline is the session's measured starting context (AutoCompactBaseline),
+// 0 when not measured: the threshold is at least baseline +
+// IdleCompactBaselineRoom, so an idle compaction does not fire on a context
+// that is mostly the baseline it would come back to.
+func IdleCompactThreshold(setting string, window, baseline int64) int64 {
 	switch setting {
 	case AutoCompactOff:
 		return 0
@@ -58,6 +63,9 @@ func IdleCompactThreshold(setting string, window int64) int64 {
 		threshold = int64(tokens)
 	} else if percent, ok := ParseAutoCompactPercent(setting); ok && window > 0 {
 		threshold = window * int64(percent) / 100
+	}
+	if threshold > 0 && baseline > 0 {
+		threshold = max(threshold, baseline+IdleCompactBaselineRoom)
 	}
 	if threshold <= 0 || (window > 0 && threshold >= window) {
 		return 0

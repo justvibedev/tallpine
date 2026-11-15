@@ -3,7 +3,6 @@ package chat
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/contextwindow"
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -24,7 +23,7 @@ func (s *Service) previousCompactWindow(ctx context.Context, cfg StartConfig, co
 }
 
 // compactModelWindow is the capacity of the model a chat is starting on, which
-// a percent compaction window applies to. 0 when unknown: the percent is then
+// a compaction window must fit below. 0 when unknown: the percent is then
 // left to the agent's own default rather than resolved against another model.
 // The agent's reported window is never used: after Tallpine sets a compaction env the
 // agent reports that limit as its window, so each restart would shrink it again.
@@ -40,13 +39,16 @@ func (s *Service) compactModelWindow(ctx context.Context, cfg StartConfig, _ dom
 // updated in place.
 func (s *Service) applyLaunchCompaction(ctx context.Context, cfgp *StartConfig, conversation *domain.ConversationRecord) {
 	cfg := *cfgp
+	// The window an earlier start set was floored at that start's baseline.
+	previousBaseline := cfg.AutoCompactBaseline
+	cfg.AutoCompactBaseline = s.launchBaseline(ctx, cfg)
 	dropStaleCompactWindow(&cfg)
 	// A switch to Claude Code sets the window, Auto (empty) included.
 	if cfg.ProviderSwitch != nil && contextwindow.AutoCompactEnvKey(cfg.Harness) != "" {
 		// The switch's config is the source's, which may still carry the window
 		// Tallpine set for an earlier Claude Code start. Drop that value so the new
 		// choice, Auto included, is what starts; a project's own value stays.
-		if previous := domain.AutoCompactTokenCount(conversation.Settings.AutoCompactWindow, s.previousCompactWindow(ctx, cfg, *conversation)); previous > 0 &&
+		if previous := domain.ResolveAutoCompactWindow(conversation.Settings.AutoCompactWindow, s.previousCompactWindow(ctx, cfg, *conversation), previousBaseline); previous > 0 &&
 			cfg.Env[contextwindow.AutoCompactEnvKey(cfg.Harness)] == fmt.Sprint(previous) {
 			cfg.Env = cloneStartConfig(cfg).Env
 			delete(cfg.Env, contextwindow.AutoCompactEnvKey(cfg.Harness))
@@ -75,11 +77,26 @@ func (s *Service) applyLaunchCompaction(ctx context.Context, cfgp *StartConfig, 
 		return
 	}
 	var modelWindow int64
-	if strings.HasSuffix(window, "%") {
+	if window != "" {
 		modelWindow = s.compactModelWindow(ctx, cfg, *conversation, launchModel)
 	}
-	if tokens := domain.AutoCompactTokenCount(window, modelWindow); contextwindow.AutoCompactEnvKey(cfg.Harness) != "" && tokens > 0 {
+	if tokens := domain.ResolveAutoCompactWindow(window, modelWindow, cfg.AutoCompactBaseline); contextwindow.AutoCompactEnvKey(cfg.Harness) != "" && tokens > 0 {
 		setTallpineCompactWindow(&cfg, tokens)
 	}
 	*cfgp = cfg
+}
+
+// launchBaseline is the context a chat of cfg's project, kind and harness is
+// measured to start with, read once per launch (B735) for a harness Tallpine
+// sets a window on. 0 without a reader; the default on a failed read.
+func (s *Service) launchBaseline(ctx context.Context, cfg StartConfig) int64 {
+	if s.autoCompactBaselines == nil || contextwindow.AutoCompactEnvKey(cfg.Harness) == "" {
+		return 0
+	}
+	baseline, err := s.autoCompactBaselines.Baseline(ctx, cfg.ProjectID, cfg.Kind, cfg.Harness)
+	if err != nil {
+		s.log.Warn("read auto-compact baseline", "session", cfg.SessionID, "error", err)
+		return domain.AutoCompactBaselineDefault
+	}
+	return baseline
 }

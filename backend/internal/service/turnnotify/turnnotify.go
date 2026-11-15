@@ -455,11 +455,12 @@ func (o *Observer) turnEnded(ctx context.Context, id domain.SessionID, s ports.A
 	if durable {
 		o.wakePending()
 	}
+	last = liveTurnText(s, last)
 	// Chat turn ends are definite (ACP prompt completion) and each nudge is a
 	// paid prompt, so only TUI workers get the idle-check nudge.
 	nudge := !t.reported && !strings.HasPrefix(generation, "chat:") && o.nudging() && !t.nudged && t.nudges < maxNudgesPerEpisode
 	if !t.approvedAt.IsZero() {
-		covered := o.Now().Sub(t.approvedAt) <= approvalCoverWindow && s.UsageLimitPausedUntil.IsZero()
+		covered := o.Now().Sub(t.approvedAt) <= approvalCoverWindow && s.UsageLimitPausedUntil.IsZero() && s.ContextThrash == ""
 		t.approvedAt = time.Time{}
 		if covered {
 			return
@@ -586,7 +587,7 @@ func (o *Observer) idleElapsed(id domain.SessionID, gen uint64) {
 	}
 	// The pending nudge check shares this generation, so it stays armed.
 	t.notified, t.timer = true, nil
-	last, kind := t.last, KindTurnEnded
+	kind, last := turnEndKind(t.last)
 	if !t.limitUntil.IsZero() {
 		kind, last = KindUsageLimited, usageLimitDetail(t.limitUntil, t.limitAuto)
 	}
@@ -694,10 +695,8 @@ func (o *Observer) sendWithID(id domain.SessionID, kind, last, reportID string) 
 	// the quiet window instead of waking an idle orchestrator (B192). A chat
 	// turn end is definite, so its quiet window is short (B255): an unreported stop
 	// surfaces within ChatQuietDelay without waking the orchestrator per turn.
-	in := reportsvc.CreateInput{ID: reportID, SessionID: id, Message: Message(kind, rec, last), Immediate: true, Synthesized: true, Quiet: kind == KindTurnEnded || kind == KindUsageLimited}
-	if (kind == KindTurnEnded || kind == KindUsageLimited) && domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat {
-		in.QuietFor = ChatQuietDelay
-	}
+	in := reportsvc.CreateInput{ID: reportID, SessionID: id, Message: Message(kind, rec, last), Immediate: true, Synthesized: true}
+	in.Quiet, in.QuietFor = quietPolicy(kind, rec)
 	if kind == KindAuthRequired || kind == KindInputRequired {
 		// Actionable: the worker cannot proceed until someone renews its login.
 		in.State, in.Note, in.Message = domain.ReportNeedsInput, in.Message, ""
@@ -706,6 +705,20 @@ func (o *Observer) sendWithID(id domain.SessionID, kind, last, reportID string) 
 	if err != nil && !errors.Is(err, domain.ErrDuplicateReport) {
 		o.Log.Warn("turn notification failed", "session", id, "kind", kind, "err", err)
 	}
+}
+
+// quietPolicy is the one place a synthesized notice picks its quiet queueing,
+// shared by the live and durable (fallback row) paths. Only a plain turn end
+// or usage limit is an FYI; a chat one gets the short ChatQuietDelay window
+// instead of the report service's default (B255, B738).
+func quietPolicy(kind string, rec domain.SessionRecord) (quiet bool, quietFor time.Duration) {
+	if kind != KindTurnEnded && kind != KindUsageLimited {
+		return false, 0
+	}
+	if domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat {
+		return true, ChatQuietDelay
+	}
+	return true, 0
 }
 
 // maxReasonCharacters bounds an approval's stated reason and
@@ -749,6 +762,8 @@ func Message(kind string, rec domain.SessionRecord, last string) string {
 		fmt.Fprintf(&b, "the worker's agent is waiting for input in its terminal (a question, a login or a prompt); check session %s", rec.ID)
 	case KindInputRequired:
 		fmt.Fprintf(&b, "the worker's agent is blocked on a prompt; answer it in session %s (or `%s session approve|deny <session> <requestId>` where the project allows it)", rec.ID, brand.CLIName)
+	case KindContextThrash:
+		b.WriteString(contextThrashNotice)
 	case KindStartFailed:
 		fmt.Fprintf(&b, "the worker's agent failed to start and is not running; retry it with `%s session resume-agent %s` or kill it", brand.CLIName, rec.ID)
 	default:
@@ -768,7 +783,7 @@ func Message(kind string, rec domain.SessionRecord, last string) string {
 	b.WriteString(".")
 	if last = strings.TrimSpace(last); last != "" {
 		switch kind {
-		case KindStartFailed:
+		case KindStartFailed, KindContextThrash:
 			b.WriteString("\nError: ")
 		case KindInputRequired, KindTerminalPrompt, KindTerminalWait:
 			b.WriteString("\n")

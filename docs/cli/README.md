@@ -155,6 +155,11 @@ gives up after `tallpine spawn` already answered (the ACP `session/new` handshak
 retried twice on a fresh process first). It carries the start error and the
 `tallpine session resume-agent <id>` retry command, and the session reads `exited`
 instead of `idle` until it is retried.
+A Chat worker turn that Claude Code stopped because auto-compaction thrashed
+(its context refilled to the compaction limit right after each compact) is
+filed as `[auto] context_thrash` instead of `turn_ended`: it quotes the agent's
+stop text, wakes the orchestrator at once, and tells it to respawn the task on
+a larger-window model, since nudging the worker only repeats the stop.
 A fourth, `[auto] review_failed`, is filed when a Tallpine review pass of the
 worker's PR fails or is cancelled by Tallpine because its reviewer became
 unavailable. It names the PR, head, reviewer and reason, and the worker is

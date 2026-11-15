@@ -1,9 +1,9 @@
 /**
  * Where an agent compacts its own conversation, as a stored choice.
  *
- * A token preset, or a percent of the model's context window. Only the choice is
- * parsed and validated here; the daemon turns it into tokens (backend
- * domain.AutoCompactTokenCount) and sends the resolved threshold.
+ * A token preset, or a percent of a fixed 1M tokens. Only the choice is parsed
+ * and validated here; the daemon turns it into tokens (backend
+ * domain.ResolveAutoCompactWindow) and sends the resolved threshold.
  */
 
 /** Any whole percent in this range is accepted (backend domain.ParseAutoCompactPercent). */

@@ -108,6 +108,7 @@ func (b *boot) wireHTTP() error {
 		LastMessages:         b.store,
 		Models:               b.chatSvc,
 		ServedModel:          servedModelReader{accounts: b.agentAccountSvc, projects: b.store}.ServedModel,
+		Compaction:           b.sessionCompaction,
 		Instructions:         b.sessMgr,
 		BackgroundTasks:      b.bgTasks,
 		UsageLimits:          b.chatSvc,

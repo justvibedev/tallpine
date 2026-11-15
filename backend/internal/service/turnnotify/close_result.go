@@ -33,10 +33,10 @@ func (o *Observer) UndeliveredTurnResult(ctx context.Context, rec domain.Session
 		return ""
 	}
 	if last := o.liveTurnResult(rec.ID); last != "" {
-		return Message(KindTurnEnded, rec, last)
+		return turnEndMessage(rec, last)
 	}
 	if last := o.pendingFallbackResult(ctx, rec.ID); last != "" {
-		return Message(KindTurnEnded, rec, last)
+		return turnEndMessage(rec, last)
 	}
 	if held, ok := o.Fallbacks.(heldTurnReports); ok {
 		message, found, err := held.LatestHeldTurnEndedReport(ctx, rec.ID)
@@ -118,5 +118,5 @@ func finishingText(s ports.ActivitySignal) string {
 	if s.Event == "stop" && s.RunningSubagentIDs != nil && len(*s.RunningSubagentIDs) > 0 {
 		return ""
 	}
-	return strings.TrimSpace(s.FinalAssistantMessage)
+	return liveTurnText(s, strings.TrimSpace(s.FinalAssistantMessage))
 }

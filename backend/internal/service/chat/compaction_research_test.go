@@ -158,7 +158,7 @@ func TestIdleThresholdIgnoresTheResearchWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	window := int64(f.s.desiredCompactTokensIn(context.Background(), f.c, false))
-	if got := domain.IdleCompactThreshold("", window); got != 36_000 {
+	if got := domain.IdleCompactThreshold("", window, 0); got != 36_000 {
 		t.Fatalf("idle threshold = %d, want 36000", got)
 	}
 }

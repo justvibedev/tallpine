@@ -27,7 +27,7 @@ const TOKEN_CHOICES: { value: AutoCompactChoice; label: string }[] = [
 const CUSTOM = "custom";
 
 /**
- * The compaction choices as a select: Auto, a percent of the model window, or a
+ * The compaction choices as a select: Auto, a percent of a fixed 1M tokens, or a
  * token preset. "Custom" takes any other whole percent from 20 to 95; a saved
  * percent that is not one of the listed steps shows as its own option.
  */

@@ -65,6 +65,19 @@ func (h autoCloseHooks) OpenBacklogItems(ctx context.Context, id domain.SessionI
 	return len(items), err
 }
 
+// WaitingOnOwnerReason reads the worker's reports for a wait on the owner (B720).
+func (h autoCloseHooks) WaitingOnOwnerReason(ctx context.Context, id domain.SessionID) (string, error) {
+	reports, err := h.store.ListReportsBySession(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	prs, err := h.store.ListPRsBySession(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return domain.ReportWaitingReason(reports, prs), nil
+}
+
 // EndOnMergeSessions lists the live sessions marked end-on-merge.
 func (h autoCloseHooks) EndOnMergeSessions(ctx context.Context) ([]domain.SessionID, error) {
 	recs, err := h.store.ListAllSessions(ctx)

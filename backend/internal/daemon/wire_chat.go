@@ -40,6 +40,8 @@ func (b *boot) wireChat() error {
 		ReconcileOutputType:        b.lcStack.LCM.ReconcileSessionOutputType,
 		HibernationEnabled:         b.settingsSvc.ChatHibernationEnabled,
 		AutoCompactDefault:         b.settingsSvc.AutoCompactDefault,
+		AutoCompactBaselines:       b.store,
+		ResearchStore:              b.store,
 		DynamicOrchestratorContext: b.settingsSvc.DynamicOrchestratorContextEnabled,
 		HibernationPolicy:          chatHibernationPolicy(b.settingsSvc, b.store),
 		BackgroundProcesses:        chatBackgroundProcesses(b.cfg.DataDir, nil, b.log),

@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"tallpine.eu/tallpine/backend/internal/contextwindow"
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
 
@@ -101,6 +102,12 @@ type Deps struct {
 	PRs        PRs
 	Projects   Projects
 	Launcher   Launcher
+	// CompactDefaults reads the Settings compaction default of an agent, and
+	// ModelCatalog the saved model catalog its window is checked against, so a
+	// Claude Code or Codex reviewer compacts by the worker rule. Nil leaves the
+	// reviewer on its agent's own default.
+	CompactDefaults CompactDefaults
+	ModelCatalog    contextwindow.CatalogReader
 	// Plans, when set, supplies the approved plan of the backlog item a worker
 	// builds so the reviewer can check the code against it (B205). Nil: none.
 	Plans PlanSource
@@ -143,9 +150,12 @@ type Engine struct {
 	projects   Projects
 	launcher   Launcher
 	plans      PlanSource
-	items      ItemSource
-	clock      func() time.Time
-	newID      func() string
+
+	compactDefaults CompactDefaults
+	modelCatalog    contextwindow.CatalogReader
+	items           ItemSource
+	clock           func() time.Time
+	newID           func() string
 
 	changedPaths func(ctx stdctx.Context, workspace string, pr domain.PullRequest) ([]string, error)
 	patchID      func(ctx stdctx.Context, workspace, base, sha string) (string, error)
@@ -208,13 +218,16 @@ func New(d Deps) *Engine {
 		prs:          d.PRs,
 		projects:     d.Projects,
 		launcher:     d.Launcher,
-		plans:        d.Plans,
-		items:        d.Items,
-		clock:        clock,
-		newID:        newID,
-		triggerLocks: make(map[domain.SessionID]*sync.Mutex),
-		launchedAt:   make(map[string]time.Time),
-		remindedAt:   make(map[string]time.Time),
+
+		compactDefaults: d.CompactDefaults,
+		modelCatalog:    d.ModelCatalog,
+		plans:           d.Plans,
+		items:           d.Items,
+		clock:           clock,
+		newID:           newID,
+		triggerLocks:    make(map[domain.SessionID]*sync.Mutex),
+		launchedAt:      make(map[string]time.Time),
+		remindedAt:      make(map[string]time.Time),
 
 		chatRecoveryDone: d.ChatRecoveryDone,
 		passDeadline:     d.PassDeadline,

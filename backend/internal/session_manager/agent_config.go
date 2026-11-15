@@ -142,20 +142,21 @@ func (m *Manager) sessionLaunchOptions(ctx context.Context, id domain.SessionID)
 	return options
 }
 
-// launchOptionsWithWindow reads the session's launch options and, for a percent
+// launchOptionsWithWindow reads the session's launch options and, for a
 // compaction window, adds the model's context window from the saved catalog so
-// the adapter can turn the percent into tokens. An empty model resolves to the
-// catalog's default model, else its largest window; a named model missing from
-// the catalog stays 0, so the percent is then not applied.
+// the adapter can resolve it (domain.ResolveAutoCompactWindow). An empty model
+// resolves to the catalog's default model, else its largest window; a named
+// model missing from the catalog stays 0, so a percent is then not applied.
 func (m *Manager) launchOptionsWithWindow(ctx context.Context, rec domain.SessionRecord, project domain.ProjectConfig, model string) domain.AgentLaunchOptions {
 	return m.freshLaunchOptions(ctx, rec.Harness, rec.Kind, rec.ProjectID, project, model, m.sessionLaunchOptions(ctx, rec.ID))
 }
 
-// withModelWindow adds the model's context window from the saved catalog to a
-// percent compaction window's options. An empty model uses the catalog default,
+// withModelWindow adds the model's context window from the saved catalog to the
+// options of a session with a compaction window, so a window the model cannot
+// hold is left to the agent's default. An empty model uses the catalog default,
 // else its largest window; a named model the catalog lacks stays 0.
 func (m *Manager) withModelWindow(ctx context.Context, harness domain.AgentHarness, project domain.ProjectID, model string, options domain.AgentLaunchOptions) domain.AgentLaunchOptions {
-	if !strings.HasSuffix(options.AutoCompactWindow, "%") {
+	if options.AutoCompactWindow == "" {
 		return options
 	}
 	options.ModelContextWindow, _ = contextwindow.Lookup(ctx, m.modelCatalog, string(harness), string(project), model)
@@ -181,7 +182,34 @@ func (m *Manager) freshLaunchOptions(ctx context.Context, harness domain.AgentHa
 	}
 	options.EnabledPlugins, options.AutoMemoryOff = project.ClaudeLaunchFor(domain.SessionRoleFor(kind))
 	options.ShellOutputChars = domain.ShellOutputLimit(project.Env)
-	return m.withModelWindow(ctx, harness, projectID, model, options)
+	options = m.withModelWindow(ctx, harness, projectID, model, options)
+	// The baseline and the model window are read for any agent that takes a
+	// window, Auto included: the room check (and the readout) holds whatever
+	// the choice, and an Auto choice resolves to no window either way.
+	if contextwindow.AutoCompactEnvKey(harness) != "" {
+		if options.ModelContextWindow == 0 {
+			options.ModelContextWindow, _ = contextwindow.Lookup(ctx, m.modelCatalog, string(harness), string(projectID), model)
+		}
+		options.AutoCompactBaseline = m.autoCompactBaseline(ctx, projectID, kind, harness)
+	}
+	return options
+}
+
+// autoCompactBaseline is the context a session of this project, kind and
+// harness is measured to start with, read at each launch (B735). A store
+// without the reader measures nothing (0, no floor); a failed read uses the
+// default, so the window still keeps room above a typical start.
+func (m *Manager) autoCompactBaseline(ctx context.Context, project domain.ProjectID, kind domain.SessionKind, harness domain.AgentHarness) int64 {
+	reader, ok := m.store.(ports.AutoCompactBaselineReader)
+	if !ok {
+		return 0
+	}
+	baseline, err := reader.Baseline(ctx, project, kind, harness)
+	if err != nil {
+		m.logger.Warn("read auto-compact baseline", "project", project, "kind", kind, "harness", harness, "error", err)
+		return domain.AutoCompactBaselineDefault
+	}
+	return baseline
 }
 
 func restoredAgentConfig(rec domain.SessionRecord, cfg domain.ProjectConfig) ports.AgentConfig {

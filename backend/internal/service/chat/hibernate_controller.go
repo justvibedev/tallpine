@@ -20,12 +20,13 @@ func (s *Service) readingController(ctx context.Context, id domain.SessionID) (*
 // tryReadingController is readingController that never waits for the gate: a
 // start, stop, hibernate or switch in progress holds it for the whole provider
 // call, and a plain read must not queue behind that.
-func (s *Service) tryReadingController(ctx context.Context, id domain.SessionID) (*Controller, domain.SessionRecord, func(), error) {
+func (s *Service) tryReadingController(ctx context.Context, id domain.SessionID) (*Controller, func(), error) {
 	gate := s.controllerGate(domain.SessionConversationOwner(id))
 	if !gate.tryLock() {
-		return nil, domain.SessionRecord{}, nil, ErrControllerHandoff
+		return nil, nil, ErrControllerHandoff
 	}
-	return s.admitReading(ctx, id, gate)
+	controller, _, release, err := s.admitReading(ctx, id, gate)
+	return controller, release, err
 }
 
 // admitReading runs with gate held and releases it before returning.

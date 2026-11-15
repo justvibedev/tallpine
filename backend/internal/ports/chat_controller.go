@@ -31,6 +31,10 @@ type ChatControllerStart struct {
 	// while CompactWindowFromTallpine has the chat service's value in Env, so a restart
 	// can put it back and an Auto choice can follow it.
 	ProjectCompactWindow string
+	// AutoCompactBaseline is the context the session was measured to start
+	// with at this launch (domain.AutoCompactBaseline), set by the chat
+	// service; every compaction window of the launch keeps room above it.
+	AutoCompactBaseline int64
 	// ReconnectOnly restricts startup recovery to an existing provider process.
 	ReconnectOnly bool
 	// AwakeReconnectTarget additionally requires current, unconsumed evidence

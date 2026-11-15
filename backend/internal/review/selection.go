@@ -114,9 +114,11 @@ func (e *Engine) checkModelPolicy(ctx stdctx.Context, id domain.ProjectID, model
 }
 
 // withReviewerLaunch adds the project's reviewer-role Claude Code launch
-// options (claudePlugins, claudeAutoMemory) to a reviewer's config. Other
-// harnesses ignore them.
-func (e *Engine) withReviewerLaunch(ctx stdctx.Context, id domain.ProjectID, config domain.AgentConfig) domain.AgentConfig {
+// options (claudePlugins, claudeAutoMemory) to a reviewer's config, and the
+// compaction window a worker of the reviewer's agent would get
+// (withReviewerCompaction). Other harnesses ignore them.
+func (e *Engine) withReviewerLaunch(ctx stdctx.Context, id domain.ProjectID, harness domain.ReviewerHarness, config domain.AgentConfig) domain.AgentConfig {
+	config = e.withReviewerCompaction(ctx, id, harness, config)
 	if e.projects == nil {
 		return config
 	}

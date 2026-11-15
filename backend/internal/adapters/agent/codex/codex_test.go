@@ -1168,25 +1168,3 @@ func TestNativeConversationExistsFollowsALinkedSessionsFolder(t *testing.T) {
 		t.Fatalf("rollout through a linked sessions folder: exists=%v err=%v", exists, err)
 	}
 }
-
-func TestGetLaunchCommandSetsAutoCompactTokenLimitFromPercent(t *testing.T) {
-	plugin := &Plugin{resolvedBinary: "codex"}
-	cmd, err := plugin.GetLaunchCommand(context.Background(), ports.LaunchConfig{Config: ports.AgentConfig{
-		Launch: domain.AgentLaunchOptions{AutoCompactWindow: "80%", ModelContextWindow: 400_000},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !containsSubsequence(cmd, []string{"-c", "model_auto_compact_token_limit=320000"}) {
-		t.Fatalf("command %#v missing the token limit", cmd)
-	}
-	// An unknown window must not invent a limit.
-	cmd, _ = plugin.GetLaunchCommand(context.Background(), ports.LaunchConfig{Config: ports.AgentConfig{
-		Launch: domain.AgentLaunchOptions{AutoCompactWindow: "80%"},
-	}})
-	for _, arg := range cmd {
-		if strings.HasPrefix(arg, "model_auto_compact_token_limit") {
-			t.Fatalf("command %#v set a limit with an unknown window", cmd)
-		}
-	}
-}

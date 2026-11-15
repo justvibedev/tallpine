@@ -7278,6 +7278,8 @@ export interface components {
         };
         ControllersCreateIntentRequest: {
             text: string;
+            /** Format: date-time */
+            wakeAt?: null | string;
         };
         ControllersIntentResponse: {
             /** Format: date-time */
@@ -7287,6 +7289,10 @@ export interface components {
             doneAt?: null | string;
             id: string;
             text: string;
+            /** Format: date-time */
+            wakeAt?: null | string;
+            /** Format: date-time */
+            wokenAt?: null | string;
         };
         ControllersKeepAwakeStatus: {
             active: boolean;
@@ -7315,6 +7321,11 @@ export interface components {
         ControllersOrchestratorResearchRequest: {
             /** @description true switches research mode on, false off. */
             enabled: null | boolean;
+            /**
+             * @description With enabled true, the research window: 250k, 400k or 1m. It must fit the orchestrator's model. Empty keeps the current research window or the project's.
+             * @enum {string}
+             */
+            window?: "250k" | "400k" | "1m";
         };
         ControllersOrchestratorResearchResponse: {
             /** @description Research mode is on and in effect. */
@@ -7727,8 +7738,11 @@ export interface components {
         ConversationTurnSettingsPayload: {
             /** @enum {string} */
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
+            /** Format: int64 */
+            autoCompactBaseline?: number;
             autoCompactPending?: boolean;
             autoCompactProjectTokens?: number;
+            autoCompactTrigger?: number;
             /** @description Empty (Auto), a size from 50k to 1m (Claude Code runs anything under 100k as 100k), or a whole percent from 20% to 95% of the model window. */
             autoCompactWindow?: string;
             compactThreshold?: number;
@@ -7917,6 +7931,15 @@ export interface components {
             /** Format: date-time */
             lastActivityAt: string;
             state: string;
+        };
+        DomainAutoCompactView: {
+            /** Format: int64 */
+            baseline: number;
+            /** Format: int64 */
+            modelWindow: number;
+            roomTight: boolean;
+            trigger: number;
+            window: number;
         };
         DomainModelPolicy: {
             allowlist?: string[];
@@ -8840,9 +8863,11 @@ export interface components {
             };
             eval?: boolean;
             githubUser?: string;
+            intentWake?: boolean;
             models?: components["schemas"]["DomainModelPolicy"];
             noCI?: boolean;
             orchestrator?: components["schemas"]["RoleOverride"];
+            orchestratorIdleNudge?: boolean;
             orchestratorRules?: string;
             planAutoApprove?: null | boolean;
             planInPlace?: boolean;
@@ -9567,6 +9592,7 @@ export interface components {
             status: "pending" | "running" | "done";
         };
         SessionResponse: {
+            compaction?: components["schemas"]["DomainAutoCompactView"];
             lastAssistantMessage?: components["schemas"]["SessionLastAssistantMessage"];
             session: components["schemas"]["SessionView"];
             workerInstructions?: string;
@@ -10188,6 +10214,7 @@ export interface components {
             trackerProvider?: "github" | "gitlab";
         };
         SpawnSessionResponse: {
+            compaction?: components["schemas"]["DomainAutoCompactView"];
             promptBytes: number;
             session: components["schemas"]["SessionView"];
             systemPromptBytes: number;

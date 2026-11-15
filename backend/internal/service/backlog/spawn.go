@@ -280,7 +280,11 @@ func (s *Service) approvedPlanContext(ctx context.Context, item, owner domain.Ba
 	if owner.ID != item.ID {
 		entry, hasEntry = planEntry(item, len(plan.PRSplit))
 	}
-	if !force && s.plans.staleSplit(ctx, narrowedForChild(plan, owner.ID != item.ID, entry, hasEntry)) {
+	var skip []string
+	if hasEntry && !force {
+		skip = s.siblingMergeCommits(ctx, owner, entry)
+	}
+	if !force && s.plans.staleSplitSkipping(ctx, narrowedForChild(plan, owner.ID != item.ID, entry, hasEntry), skip) {
 		return "", apierr.Conflict("PLAN_STALE", fmt.Sprintf("the plan for %s is stale: files it names changed on the default branch since it was made. Re-plan (`tallpine plan replan %s`) or build anyway (`tallpine plan build-anyway %s`), or pass --force", owner.Ref(), owner.Ref(), owner.Ref()), nil)
 	}
 	out := "\n\n" + planSpawnContext(plan, owner.Ref())

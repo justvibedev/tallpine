@@ -304,6 +304,12 @@ type ConversationTurnSettingsPayload struct {
 	ContextCapacity  int64  `json:"contextCapacity,omitempty"`
 	CompactThreshold int    `json:"compactThreshold,omitempty"`
 	ModelLabel       string `json:"modelLabel,omitempty"`
+	// AutoCompactBaseline and AutoCompactTrigger are set by the daemon, never
+	// read from a request: the context the running session was measured to
+	// start with (0 when not measured), and where the agent compacts with
+	// CompactThreshold (0 for its own default).
+	AutoCompactBaseline int64 `json:"autoCompactBaseline,omitempty"`
+	AutoCompactTrigger  int   `json:"autoCompactTrigger,omitempty"`
 }
 
 // ResolveConversationApprovalRequest answers a pending approval. DecisionID must

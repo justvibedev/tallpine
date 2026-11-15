@@ -64,7 +64,7 @@ func TestCompactThresholdStaysStableAcrossRestartsForAlias(t *testing.T) {
 	cfg := StartConfig{Harness: domain.HarnessClaudeCode}
 	for restart := 0; restart < 3; restart++ {
 		capacity := s.compactModelWindow(ctx, cfg, record, "opus")
-		if got := domain.AutoCompactTokenCount("40%", capacity); got != 400_000 {
+		if got := domain.ResolveAutoCompactWindow("40%", capacity, 0); got != 400_000 {
 			t.Fatalf("restart %d: threshold = %d, want 400000", restart, got)
 		}
 		record.Usage = &domain.ConversationUsage{ContextWindow: 400_000}

@@ -278,7 +278,7 @@ func TestDesiredCompactTokensResolvesAPercentForADefaultModelChat(t *testing.T) 
 	// After a restart the launch path reads the stored usage the same way.
 	record := domain.ConversationRecord{Usage: &domain.ConversationUsage{ContextWindow: 1_000_000}}
 	window := s.compactModelWindow(ctx, StartConfig{Harness: domain.HarnessClaudeCode}, record, "")
-	if tokens := domain.AutoCompactTokenCount("40%", window); tokens != 400_000 {
+	if tokens := domain.ResolveAutoCompactWindow("40%", window, 0); tokens != 400_000 {
 		t.Fatalf("launch: tokens = %d, want 400000", tokens)
 	}
 }
@@ -290,7 +290,7 @@ func TestCompactModelWindowForAFreshDefaultModelChat(t *testing.T) {
 	ctx := context.Background()
 	s := &Service{modelCatalog: windowCatalog{"sonnet": 200_000, "opus": 1_000_000}}
 	window := s.compactModelWindow(ctx, StartConfig{Harness: domain.HarnessClaudeCode}, domain.ConversationRecord{}, "")
-	if tokens := domain.AutoCompactTokenCount("40%", window); tokens != 400_000 {
+	if tokens := domain.ResolveAutoCompactWindow("40%", window, 0); tokens != 400_000 {
 		t.Fatalf("no default marked: tokens = %d, want 400000 from the largest window", tokens)
 	}
 }

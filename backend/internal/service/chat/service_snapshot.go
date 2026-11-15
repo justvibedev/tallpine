@@ -162,7 +162,7 @@ func (s *Service) Snapshot(ctx context.Context, id domain.SessionID) (Snapshot, 
 		rows.Conversation.Settings.FastMode, rows.Conversation.Settings.PlanMode = live.FastMode, live.PlanMode
 		s.overlayCompactionView(ctx, &rows.Conversation.Settings, controller, s.compactionPending(ctx, controller))
 	} else {
-		s.overlayResolvedView(ctx, &rows.Conversation.Settings, record.Harness, record.Kind, rows.Conversation.ProjectID)
+		s.overlayResolvedView(ctx, &rows.Conversation.Settings, record.Harness, record.Kind, rows.Conversation.ProjectID, 0)
 	}
 
 	return Snapshot{
@@ -274,7 +274,7 @@ func (s *Service) SnapshotPage(ctx context.Context, id domain.SessionID, beforeS
 		rows.Conversation.Settings.FastMode, rows.Conversation.Settings.PlanMode = live.FastMode, live.PlanMode
 		s.overlayCompactionView(ctx, &rows.Conversation.Settings, controller, s.compactionPending(ctx, controller))
 	} else {
-		s.overlayResolvedView(ctx, &rows.Conversation.Settings, record.Harness, record.Kind, rows.Conversation.ProjectID)
+		s.overlayResolvedView(ctx, &rows.Conversation.Settings, record.Harness, record.Kind, rows.Conversation.ProjectID, 0)
 	}
 	return Snapshot{
 		Conversation:                     rows.Conversation,

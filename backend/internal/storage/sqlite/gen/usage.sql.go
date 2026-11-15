@@ -687,6 +687,74 @@ func (q *Queries) InsertUsageSource(ctx context.Context, arg InsertUsageSourcePa
 	return i, err
 }
 
+const listAutoCompactBaselineSamples = `-- name: ListAutoCompactBaselineSamples :many
+WITH first_events AS (
+    SELECT ub.session_id, mue.input_tokens, mue.created_at, mue.id
+    FROM usage_sources src
+    JOIN usage_bindings ub ON ub.id = src.binding_id
+    JOIN sessions s ON s.id = ub.session_id
+    JOIN model_usage_events mue ON mue.id = (
+        SELECT MIN(earliest.id) FROM model_usage_events earliest
+        WHERE earliest.usage_source_id = src.id
+    )
+    WHERE s.project_id = ?2
+      AND s.kind = ?3
+      AND ub.harness = ?4
+      AND src.kind <> 'claude_subagent'
+),
+ranked AS (
+    SELECT session_id, input_tokens, ROW_NUMBER() OVER (
+        PARTITION BY session_id ORDER BY created_at IS NULL, created_at, id
+    ) AS position
+    FROM first_events
+)
+SELECT CAST(ranked.input_tokens AS INTEGER) AS input_tokens
+FROM ranked
+JOIN sessions s ON s.id = ranked.session_id
+WHERE ranked.position = 1 AND ranked.input_tokens > 0
+ORDER BY s.created_at DESC, s.id DESC
+LIMIT ?1
+`
+
+type ListAutoCompactBaselineSamplesParams struct {
+	SampleLimit int64
+	ProjectID   *domain.ProjectID
+	Kind        domain.SessionKind
+	Harness     domain.AgentHarness
+}
+
+// The first-call input size of the newest sessions of one project, session kind
+// and harness (B735): the earliest event of each main-thread source (a
+// subagent's calls are not the session's context), the earliest of those per
+// session, newest sessions first. Each source's first event is an index seek.
+func (q *Queries) ListAutoCompactBaselineSamples(ctx context.Context, arg ListAutoCompactBaselineSamplesParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listAutoCompactBaselineSamples,
+		arg.SampleLimit,
+		arg.ProjectID,
+		arg.Kind,
+		arg.Harness,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var input_tokens int64
+		if err := rows.Scan(&input_tokens); err != nil {
+			return nil, err
+		}
+		items = append(items, input_tokens)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCompactSessionUsage = `-- name: ListCompactSessionUsage :many
 SELECT
     ub.session_id,

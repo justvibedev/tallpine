@@ -42,6 +42,8 @@ export function useContextDetails({ sessionId, hostId, harness, model, modelLabe
 			model: settings?.modelLabel || modelLabel || model,
 			capacity: settings?.contextCapacity,
 			compactThreshold: settings?.compactThreshold,
+			baseline: settings?.autoCompactBaseline,
+			trigger: settings?.autoCompactTrigger,
 			autoCompact: compactsAt,
 			projectTokens: settings?.autoCompactProjectTokens,
 			// Only Claude Code chats can break the window down (Codex shows totals only).
@@ -57,7 +59,7 @@ export function useContextDetails({ sessionId, hostId, harness, model, modelLabe
 				pendingRestart: pending,
 				onChange: (value) => {
 					// The daemon replaces the saved choices as a whole; its pending flag is read-only.
-					const { autoCompactPending: _pending, autoCompactProjectTokens: _project, contextCapacity: _capacity, compactThreshold: _threshold, modelLabel: _label, ...choices } = settings ?? {};
+					const { autoCompactPending: _pending, autoCompactProjectTokens: _project, contextCapacity: _capacity, compactThreshold: _threshold, autoCompactBaseline: _baseline, autoCompactTrigger: _trigger, modelLabel: _label, ...choices } = settings ?? {};
 					onChooseSettings({ ...choices, autoCompactWindow: value });
 				},
 				onSetDefault: (value) => { void updateDefault({ agentId: harness, autoCompactWindow: value }).catch(() => undefined); },
@@ -67,6 +69,6 @@ export function useContextDetails({ sessionId, hostId, harness, model, modelLabe
 				error: restart.error ?? defaultError,
 			} : undefined,
 		};
-	}, [harness, model, modelLabel, hostId, compactsAt, support, settings?.autoCompactProjectTokens, settings?.modelLabel, settings?.contextCapacity, settings?.compactThreshold, compactedAt, rateLimits, lastCompaction, own, harnessDefault, pending, settings, onChooseSettings, sessionId, updateDefault, restart.restart, restart.restarting, restart.busy, restart.error, defaultError]);
+	}, [harness, model, modelLabel, hostId, compactsAt, support, settings?.autoCompactProjectTokens, settings?.modelLabel, settings?.contextCapacity, settings?.compactThreshold, settings?.autoCompactBaseline, settings?.autoCompactTrigger, compactedAt, rateLimits, lastCompaction, own, harnessDefault, pending, settings, onChooseSettings, sessionId, updateDefault, restart.restart, restart.restarting, restart.busy, restart.error, defaultError]);
 	return { details, compactsAt };
 }

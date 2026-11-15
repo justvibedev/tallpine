@@ -55,12 +55,16 @@ type AgentLaunchOptions struct {
 	// Ultracode starts Claude Code with Ultracode on.
 	Ultracode bool `json:"ultracode,omitempty"`
 	// AutoCompactWindow is where the agent compacts on its own: "120k" (any 50k to 1m), "1m", or
-	// a percent of the model's window such as "70%" (see AutoCompactTokenCount).
+	// a percent of a fixed 1M tokens such as "40%" (see ResolveAutoCompactWindow).
 	AutoCompactWindow string `json:"autoCompactWindow,omitempty"`
 	// ModelContextWindow is the model's context window in tokens, 0 when unknown.
-	// The session manager fills it at launch so a percent window can become a
-	// token count; it is not stored.
+	// The session manager fills it at launch so a window the model cannot hold
+	// is left to the agent's default (see ResolveAutoCompactWindow); it is not stored.
 	ModelContextWindow int64 `json:"-"`
+	// AutoCompactBaseline is the context the session is measured to start with
+	// (AutoCompactBaseline), read at launch so the resolved window keeps room
+	// above it (see ResolveAutoCompactWindow); 0 when not measured. Not stored.
+	AutoCompactBaseline int64 `json:"-"`
 	// EnabledPlugins is the Claude Code enabledPlugins override from the
 	// project's claudePlugins setting for the session's role, as a JSON object
 	// (a string keeps the options comparable). Filled at launch, not stored;
@@ -151,23 +155,46 @@ func ValidAutoCompactWindow(value string) bool {
 	return ok
 }
 
-// AutoCompactTokenCount is the compaction threshold in tokens for a stored
-// choice, or 0 when Tallpine should leave the agent's own default: Auto, an
-// unrecognised value, or a percent whose model window is unknown (never
-// guessed). An explicit size or a percent is clamped to the range Claude Code accepts (a
-// "60k" window runs as 100k), and this is
-// the one place the clamp lives: 40% of a 200k model is 80k, raised to the 100k
-// minimum (50% of that window), because Claude Code ignores a lower value.
-func AutoCompactTokenCount(value string, modelWindow int64) int {
-	if tokens, ok := ParseAutoCompactTokens(value); ok {
-		return max(tokens, autoCompactMinTokens)
+// AutoCompactReference is the fixed token count a percent choice is taken of:
+// "40%" is 400k on every model. A percent of the model's own window made the
+// same Settings default mean 80k on a 200k model and 400k on a 1M one.
+const AutoCompactReference = 1_000_000
+
+// ResolveAutoCompactWindow is the compaction threshold in tokens for a stored
+// choice, or 0 when Tallpine should leave the agent's own default. This is the
+// one place that rule lives.
+//
+// A percent is taken of AutoCompactReference, not of the model's window. An
+// explicit size is clamped to the range Claude Code accepts (a "60k" window
+// runs as 100k). The result is 0 for Auto, an unrecognised value, a percent
+// whose model window is unknown (never guessed), and any result at or above a
+// known model window: the agent compacts near its own limit by itself, and a
+// percent that does not fit (40% on a 200k model) must not become a window the
+// model cannot hold. An explicit size with an unknown model window is kept.
+//
+// baseline is the session's measured starting context (AutoCompactBaseline),
+// 0 when not measured. A resolved window is raised to baseline +
+// AutoCompactWorkRoom, never lowered, so the agent has room to work between
+// compactions; a floor at or above the model window passes nothing.
+func ResolveAutoCompactWindow(value string, modelWindow, baseline int64) int {
+	tokens, ok := ParseAutoCompactTokens(value)
+	if ok {
+		tokens = max(tokens, autoCompactMinTokens)
+	} else {
+		percent, isPercent := ParseAutoCompactPercent(value)
+		if !isPercent || modelWindow <= 0 {
+			return 0
+		}
+		tokens = AutoCompactReference * percent / 100
 	}
-	percent, ok := ParseAutoCompactPercent(value)
-	if modelWindow <= 0 || !ok {
+	if baseline > 0 {
+		tokens = max(tokens, int(min(baseline+AutoCompactWorkRoom, AutoCompactReference)))
+	}
+	tokens = min(tokens, autoCompactMaxTokens)
+	if modelWindow > 0 && int64(tokens) >= modelWindow {
 		return 0
 	}
-	tokens := int(modelWindow * int64(percent) / 100)
-	return min(max(tokens, autoCompactMinTokens), autoCompactMaxTokens)
+	return tokens
 }
 
 // IsZero reports whether the config carries no settings, so storage can persist

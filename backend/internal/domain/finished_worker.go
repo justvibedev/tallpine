@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -109,6 +110,75 @@ func FinishedWorkerKeepReason(f FinishedWorkerFacts) string {
 		}
 	}
 	return unresolvedPRReason(f.Reports, f.PRs)
+}
+
+// ReportWaitingReason says why the worker's latest report keeps it open: it
+// asked for input, is stuck, or its note says it waits on someone (B720). ""
+// when it is not waiting. Reports are in creation order. The one exemption is
+// the report that announces a PR which has since merged or closed (workers
+// file it as needs_input) and waits on nothing else.
+func ReportWaitingReason(reports []ReportRecord, prs []PullRequest) string {
+	if len(reports) == 0 {
+		return ""
+	}
+	last := reports[len(reports)-1]
+	if announcesSettledPR(last, prs) && !hasOwnerWait(last) {
+		return ""
+	}
+	if last.State == ReportNeedsInput || last.State == ReportStuck {
+		return fmt.Sprintf("last report is %q", last.State)
+	}
+	if phrase := reportWaitPhrase(last); phrase != "" {
+		return fmt.Sprintf("last report says %q", phrase)
+	}
+	return ""
+}
+
+// ownerWaitPhrases are the waits that outlive a PR announcement; the broader
+// reportWaitPhrases ("please review", "?") are how announcements read.
+var ownerWaitPhrases = []string{
+	"waiting on", "waiting for", "awaiting", "blocked on", "blocked by",
+	"needs your", "need your", "please confirm", "your call", "decision",
+}
+
+func hasOwnerWait(r ReportRecord) bool {
+	text := strings.ToLower(r.Note + " " + r.Message)
+	for _, phrase := range ownerWaitPhrases {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// announcesSettledPR reports whether r was filed before, and names, a PR that
+// has since merged or closed. A report filed after the settle is a fresh one.
+func announcesSettledPR(r ReportRecord, prs []PullRequest) bool {
+	text := r.Note + " " + r.Message
+	for _, pr := range prs {
+		if (!pr.Merged && !pr.Closed) || r.CreatedAt.After(pr.StateChangedAt) {
+			continue
+		}
+		refs := prRefSet{urls: map[string]bool{}, numbers: map[string]bool{}}
+		refs.add(pr.URL)
+		refs.add(pr.HTMLURL)
+		for _, o := range r.Outputs {
+			if o.Kind == ReportOutputPRCreated && refs.hasURL(o.Reference) {
+				return true
+			}
+		}
+		for _, u := range reportedPRURL.FindAllString(text, -1) {
+			if refs.hasURL(u) {
+				return true
+			}
+		}
+		for _, m := range reportedPRNumber.FindAllStringSubmatch(text, -1) {
+			if pr.Number != 0 && m[1] == strconv.Itoa(pr.Number) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func reportWaitPhrase(r ReportRecord) string {

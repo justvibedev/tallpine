@@ -28,7 +28,8 @@ func TestConversationEndpointCarriesTheResolvedCompactionView(t *testing.T) {
 		capacity, thresh float64
 	}{
 		{"opus with a 40% default", "opus", "40%", 1_000_000, 400_000},
-		{"sonnet at 1m", "sonnet", "1m", 1_000_000, 1_000_000},
+		{"sonnet at 250k", "sonnet", "250k", 1_000_000, 250_000},
+		{"sonnet at 1m leaves the agent default", "sonnet", "1m", 1_000_000, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -77,7 +78,8 @@ func TestConversationEndpointCarriesTheResolvedCompactionView(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
-			if body.Settings["contextCapacity"] != tc.capacity || body.Settings["compactThreshold"] != tc.thresh || body.Settings["modelLabel"] == "" {
+			thresh, _ := body.Settings["compactThreshold"].(float64) // omitted when 0
+			if body.Settings["contextCapacity"] != tc.capacity || thresh != tc.thresh || body.Settings["modelLabel"] == "" {
 				t.Fatalf("settings = %v, want capacity %v threshold %v and a model label", body.Settings, tc.capacity, tc.thresh)
 			}
 		})

@@ -114,7 +114,7 @@ SessionPRReviewEntry: autoInjectReview body,omitempty isBot,omitempty reviewUrl,
 SessionPRReviewSummary: decision hasUnresolvedHumanComments resolvedBy,omitempty reviews,omitempty unresolvedBy unresolvedThreadCount,omitempty
 SessionPRSummary: additions author authorAvatarUrl,omitempty changedFiles ci ciObservedAt,omitempty createdAt,omitempty deletions headSha htmlUrl,omitempty mergeability number observedAt,omitempty provider repo review reviewObservedAt,omitempty sourceBranch state stateChangedAt,omitempty targetBranch title updatedAt url
 SessionPRUnresolvedReviewer: count isBot,omitempty links reviewUrl,omitempty reviewerId
-SessionResponse: lastAssistantMessage,omitempty session workerInstructions,omitempty
+SessionResponse: compaction,omitempty lastAssistantMessage,omitempty session workerInstructions,omitempty
 SessionStepResponse: endedAt,omitempty failed startedAt tool
 SessionView: artifactFiles,omitempty backgroundTasks,omitempty branch,omitempty hasArtifacts,omitempty lastEventAt lastInteractionAt,omitempty lastUserMessageAt,omitempty model,omitempty pausedUntil,omitempty previewRevision,omitempty previewUrl,omitempty prs reauthRequired,omitempty terminalGeneration,omitempty waitingOn,omitempty
 SetActivityRequest: agentSessionId,omitempty conversationCheckpointOrigin,omitempty coordinationId,omitempty entrypoint,omitempty event,omitempty finalAssistantMessage,omitempty harness,omitempty latestAssistantUpdate,omitempty latestUserPrompt,omitempty launchId,omitempty observedAt,omitempty processId,omitempty providerTurnId,omitempty runningSubagentIds,omitempty state,omitempty subagentId,omitempty submissionId,omitempty toolName,omitempty toolUseId,omitempty transcriptPath,omitempty turnUserRequest,omitempty usage,omitempty

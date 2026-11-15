@@ -24,6 +24,10 @@ type OrchestratorIntent struct {
 	CreatedBy string
 	CreatedAt time.Time
 	DoneAt    *time.Time
+	// WakeAt, when set, is when the orchestrator is woken once if the intent is
+	// still open (B714); WokenAt is when that wake was delivered.
+	WakeAt  *time.Time
+	WokenAt *time.Time
 }
 
 // NormalizeOrchestratorIntentText trims text and validates its length.

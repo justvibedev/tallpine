@@ -344,6 +344,8 @@ func turnSettingsPayload(settings domain.ConversationSettings) ConversationTurnS
 		ContextCapacity:          settings.ContextCapacity,
 		CompactThreshold:         settings.CompactThreshold,
 		ModelLabel:               settings.ModelLabel,
+		AutoCompactBaseline:      settings.AutoCompactBaseline,
+		AutoCompactTrigger:       settings.AutoCompactTrigger,
 	}
 }
 

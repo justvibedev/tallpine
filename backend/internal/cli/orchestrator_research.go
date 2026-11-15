@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"tallpine.eu/tallpine/backend/internal/brand"
+	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/controllers"
 )
 
@@ -16,11 +17,14 @@ func newOrchestratorResearchCommand(ctx *commandContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "research",
 		Short: "Raise this orchestrator's compaction window while it examines a large codebase itself",
-		Long: "Research mode (Claude Code orchestrators only) raises the compaction window, 250k by default, so material you read " +
+		Long: "Research mode (chat-mode Claude Code orchestrators only) raises the compaction window, 250k by default or the size " +
+			"`research on --window` picks (250k, 400k or 1m, if it fits your model), so material you read " +
 			"yourself is not compacted away mid-analysis. Claude Code applies the window only at launch, so switching it on " +
 			"restarts your agent once it is idle (your conversation is kept) and sends you a message to continue the reading. Plain coordination keeps the early window: switch it on only when you " +
 			"decide a task needs you to read broadly, and off when the analysis is done. It also ends on its own when you are " +
-			"idle-compacted or handed off, or after an hour without a turn. The owner can turn the feature off in Settings " +
+			"idle-compacted or handed off, or after an hour without a turn; a daemon restart keeps it. When a turn stops on " +
+			"compaction thrash, Tallpine raises your window one size (250k, 400k, 1m) and restarts you to resume. " +
+			"The owner can turn the feature off in Settings " +
 			"(Dynamic orchestrator context) or per project (`tallpine project set --orchestrator-research-window off`).",
 	}
 	cmd.AddCommand(newResearchSwitchCommand(ctx, "on", true), newResearchSwitchCommand(ctx, "off", false), newResearchStatusCommand(ctx))
@@ -57,7 +61,7 @@ func writeResearchStatus(cmd *cobra.Command, res controllers.OrchestratorResearc
 }
 
 func newResearchSwitchCommand(ctx *commandContext, use string, on bool) *cobra.Command {
-	var session string
+	var session, window string
 	var asJSON bool
 	short := "Switch research mode off and return to the coordination window"
 	if on {
@@ -72,8 +76,11 @@ func newResearchSwitchCommand(ctx *commandContext, use string, on bool) *cobra.C
 			if err != nil {
 				return err
 			}
+			if window != "" && !domain.ValidResearchWindow(window) {
+				return usageError{fmt.Errorf("--window %q: use 250k, 400k or 1m", window)}
+			}
 			var res controllers.OrchestratorResearchResponse
-			if err := ctx.postJSON(cmd.Context(), path, controllers.OrchestratorResearchRequest{Enabled: &on}, &res); err != nil {
+			if err := ctx.postJSON(cmd.Context(), path, controllers.OrchestratorResearchRequest{Enabled: &on, Window: window}, &res); err != nil {
 				return err
 			}
 			return writeResearchStatus(cmd, res, asJSON)
@@ -81,6 +88,9 @@ func newResearchSwitchCommand(ctx *commandContext, use string, on bool) *cobra.C
 	}
 	cmd.Flags().StringVar(&session, "session", "", "Orchestrator session id (default: $TALLPINE_SESSION_ID)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
+	if on {
+		cmd.Flags().StringVar(&window, "window", "", "Research window: 250k, 400k or 1m; it must fit your model (default: the project's research window)")
+	}
 	return cmd
 }
 

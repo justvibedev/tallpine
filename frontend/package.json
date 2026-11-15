@@ -1,7 +1,7 @@
 {
 	"name": "tallpine",
 	"productName": "Tallpine",
-	"version": "0.13.17",
+	"version": "0.13.18",
 	"private": true,
 	"description": "Electron + TypeScript desktop app for Tallpine (a fork of agent-orchestrator)",
 	"author": "Tallpine",

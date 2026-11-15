@@ -70,3 +70,26 @@ func TestProjectSetConfigResearchWindowUsesRulesEndpoint(t *testing.T) {
 		t.Fatalf("calls=%v body=%s", calls, put)
 	}
 }
+
+func TestOrchestratorResearchOnSendsTheWindow(t *testing.T) {
+	calls := researchServer(t)
+	for _, w := range []string{"250k", "400k", "1m"} {
+		if _, _, err := executeCLI(t, aliveDeps(), "orchestrator", "research", "on", "--session", "orch-1", "--window", w); err != nil {
+			t.Fatalf("%s: %v", w, err)
+		}
+	}
+	want := []string{
+		`POST /api/v1/orchestrators/orch-1/research {"enabled":true,"window":"250k"}`,
+		`POST /api/v1/orchestrators/orch-1/research {"enabled":true,"window":"400k"}`,
+		`POST /api/v1/orchestrators/orch-1/research {"enabled":true,"window":"1m"}`,
+	}
+	if strings.Join(*calls, "|") != strings.Join(want, "|") {
+		t.Fatalf("calls = %v, want %v", *calls, want)
+	}
+	if _, _, err := executeCLI(t, aliveDeps(), "orchestrator", "research", "on", "--session", "orch-1", "--window", "300k"); err == nil || !strings.Contains(err.Error(), "250k, 400k or 1m") {
+		t.Fatalf("300k: err %v, want a usage error", err)
+	}
+	if len(*calls) != 3 {
+		t.Fatalf("an invalid window reached the daemon: %v", *calls)
+	}
+}

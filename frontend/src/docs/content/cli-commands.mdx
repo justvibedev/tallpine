@@ -1728,7 +1728,9 @@ Available Commands:
 #### `tallpine orchestrator intent add`
 
 ```text
-Record an intent or standing decision
+Record an intent. With --wake-at the daemon sends the orchestrator one message naming the intent at that time,
+if it is still open. Delivery needs the project setting intentWake (off by default); a daemon that was down at
+that time delivers it once on start.
 
 Usage:
   tallpine orchestrator intent add <text> [flags]
@@ -1736,6 +1738,7 @@ Usage:
 Flags:
       --json             Print JSON
       --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+      --wake-at string   Wake the orchestrator once at this time if the intent is still open: RFC 3339, local "2006-01-02 15:04", or a duration from now such as 90m
 ```
 
 #### `tallpine orchestrator intent done`
@@ -1822,7 +1825,7 @@ Flags:
 ### `tallpine orchestrator research`
 
 ```text
-Research mode (Claude Code orchestrators only) raises the compaction window, 250k by default, so material you read yourself is not compacted away mid-analysis. Claude Code applies the window only at launch, so switching it on restarts your agent once it is idle (your conversation is kept) and sends you a message to continue the reading. Plain coordination keeps the early window: switch it on only when you decide a task needs you to read broadly, and off when the analysis is done. It also ends on its own when you are idle-compacted or handed off, or after an hour without a turn. The owner can turn the feature off in Settings (Dynamic orchestrator context) or per project (`tallpine project set --orchestrator-research-window off`).
+Research mode (chat-mode Claude Code orchestrators only) raises the compaction window, 250k by default or the size `research on --window` picks (250k, 400k or 1m, if it fits your model), so material you read yourself is not compacted away mid-analysis. Claude Code applies the window only at launch, so switching it on restarts your agent once it is idle (your conversation is kept) and sends you a message to continue the reading. Plain coordination keeps the early window: switch it on only when you decide a task needs you to read broadly, and off when the analysis is done. It also ends on its own when you are idle-compacted or handed off, or after an hour without a turn; a daemon restart keeps it. When a turn stops on compaction thrash, Tallpine raises your window one size (250k, 400k, 1m) and restarts you to resume. The owner can turn the feature off in Settings (Dynamic orchestrator context) or per project (`tallpine project set --orchestrator-research-window off`).
 
 Usage:
   tallpine orchestrator research [command]
@@ -1857,6 +1860,7 @@ Usage:
 Flags:
       --json             Output as JSON
       --session string   Orchestrator session id (default: $TALLPINE_SESSION_ID)
+      --window string    Research window: 250k, 400k or 1m; it must fit your model (default: the project's research window)
 ```
 
 #### `tallpine orchestrator research status`
@@ -2328,6 +2332,7 @@ Flags:
       --default-session-mode string                                      Interface for new worker sessions: tui or chat (empty clears; not the reasoning effort in agentConfig.mode)
       --env stringArray                                                  Env var KEY=VALUE forwarded into sessions (repeatable)
       --github-user tallpine github accounts                             Signed-in gh account to use for this project; it must be signed in (see tallpine github accounts). Empty returns to auto-pick (the account that can push to the repo). Applies to sessions started afterwards
+      --intent-wake tallpine orchestrator intent add --wake-at           Let tallpine orchestrator intent add --wake-at wake the orchestrator once at that time while the intent is open; --intent-wake=false restores the default (off)
       --json                                                             Output the updated project as JSON
       --model string                                                     Agent model override (e.g. claude-opus-4-5)
       --no-ci                                                            Declare that the project has no CI: when the provider reports no checks for a PR head, an approved Tallpine review of that exact head is the merge gate (failing or pending checks still block); --no-ci=false restores the default

@@ -100,8 +100,25 @@ describe("SessionContextMeter resolved compaction view", () => {
 		const dialog = await open({ model: "opus", autoCompactWindow: "40%", contextCapacity: 1_000_000, compactThreshold: 400_000, modelLabel: "Opus 5.5" });
 		expect(dialog.textContent).toContain("Opus 5.5");
 		expect(dialog.textContent).toMatch(/Window.*1M/);
-		expect(dialog.textContent).toMatch(/Compacts at.*400K \(40%\)/);
+		expect(dialog.textContent).toMatch(/Auto-compact window.*400K \(40%\)/);
 		expect(dialog.textContent).not.toContain("160K");
+	});
+
+	it("shows the launch baseline, the floored window and where the agent compacts (B735)", async () => {
+		// 20% (200k) floored at a 150k baseline + 100k is 250k; Claude Code compacts 33k below it.
+		const dialog = await open({ model: "opus", contextCapacity: 1_000_000, compactThreshold: 250_000, autoCompactBaseline: 150_000, autoCompactTrigger: 217_000, autoCompactWindow: "20%" });
+		expect(dialog.textContent).toMatch(/Starting context\s*150K/);
+		expect(dialog.textContent).toMatch(/Auto-compact window\s*250K \(25%\)/);
+		expect(dialog.textContent).toMatch(/Compacts at\s*217K/);
+		// Left is measured to where the agent compacts, not the window: 217K − 123.7K.
+		expect(dialog.textContent).toMatch(/Left until compaction\s*93\.3K/);
+	});
+
+	it("leaves out the baseline and trigger rows when the daemon reports none", async () => {
+		const dialog = await open({ model: "opus", autoCompactWindow: "40%", contextCapacity: 1_000_000, compactThreshold: 400_000 });
+		expect(dialog.textContent).not.toContain("Starting context");
+		expect(dialog.textContent).not.toMatch(/Compacts at/);
+		expect(dialog.textContent).toMatch(/Left until compaction\s*276\.3K/);
 	});
 
 	it("says a percent is not applied when the model window is unknown", async () => {

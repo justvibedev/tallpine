@@ -1,7 +1,7 @@
 // Package contextwindow resolves what Tallpine knows about a model's context window.
 //
 // Three quantities stay apart: capacity (the model's real window, resolved
-// here), the compaction threshold (domain.AutoCompactTokenCount), and the usage
+// here), the compaction threshold (domain.ResolveAutoCompactWindow), and the usage
 // an agent reports (display only). An agent's reported window is never a source
 // of capacity: once Tallpine sets a compaction env, Claude Code reports that limit as
 // its window, so feeding it back compounds a percent on every restart.

@@ -45,6 +45,16 @@ func TestIntentsRoutes(t *testing.T) {
 	if st != http.StatusBadRequest {
 		t.Fatalf("blank st=%d", st)
 	}
+	// A wake time is stored in UTC; a past one is refused.
+	future := time.Now().Add(time.Hour).Format(time.RFC3339)
+	_, st, _ = doRequest(t, srv, http.MethodPost, "/api/v1/projects/tp/intents", `{"text":"check","wakeAt":"`+future+`"}`)
+	if st != http.StatusCreated || len(f.added) != 2 || f.added[1].WakeAt == nil || f.added[1].WakeAt.Location() != time.UTC {
+		t.Fatalf("create with wake st=%d %+v", st, f.added)
+	}
+	_, st, _ = doRequest(t, srv, http.MethodPost, "/api/v1/projects/tp/intents", `{"text":"check","wakeAt":"2020-01-01T00:00:00Z"}`)
+	if st != http.StatusBadRequest || len(f.added) != 2 {
+		t.Fatalf("past wake st=%d %+v", st, f.added)
+	}
 	raw, st, _ := doRequest(t, srv, http.MethodGet, "/api/v1/projects/tp/intents?all=true", "")
 	if st != http.StatusOK || !f.all || !strings.Contains(string(raw), "hold install") {
 		t.Fatalf("list st=%d all=%v %s", st, f.all, raw)

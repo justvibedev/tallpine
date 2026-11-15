@@ -13,8 +13,8 @@ import (
 
 // Research mode through a restart (B638). Claude Code reads its compaction
 // window only at launch, so an orchestrator that asks for research mode keeps
-// the flag across a restart: the flag is carried in service memory (a daemon
-// restart drops back to the normal window), the agent is restarted once it is
+// the flag across a restart: the flag is carried in service memory and on the
+// session (B736), so a daemon restart keeps it; the agent is restarted once it is
 // idle, the new launch uses the research window, and a wake message lets the
 // agent continue the reading it asked for.
 
@@ -31,35 +31,53 @@ func (s *Service) researchWaitLimit() time.Duration {
 	return researchRestartTimeout
 }
 
-// researchCarry holds, per orchestrator, the research flag that waits for the
+// researchCarry holds, per orchestrator, the research mode that waits for the
 // next launch. The zero value is ready to use.
 type researchCarry struct {
-	mu    sync.Mutex
-	since map[domain.SessionID]time.Time
+	mu      sync.Mutex
+	carried map[domain.SessionID]carriedResearch
 }
 
-func (r *researchCarry) put(id domain.SessionID, since time.Time) {
+// carriedResearch is a research mode carried to the next launch; auto marks a
+// thrash step-up.
+type carriedResearch struct {
+	domain.SessionResearch
+	auto bool
+}
+
+func (r *researchCarry) put(id domain.SessionID, research carriedResearch) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.since == nil {
-		r.since = map[domain.SessionID]time.Time{}
+	if r.carried == nil {
+		r.carried = map[domain.SessionID]carriedResearch{}
 	}
-	r.since[id] = since
+	r.carried[id] = research
+}
+
+func (r *researchCarry) get(id domain.SessionID) (carriedResearch, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	research, ok := r.carried[id]
+	return research, ok
 }
 
 func (r *researchCarry) has(id domain.SessionID) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	_, ok := r.since[id]
+	_, ok := r.get(id)
 	return ok
 }
 
-func (r *researchCarry) take(id domain.SessionID) (time.Time, bool) {
+func (r *researchCarry) clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	since, ok := r.since[id]
-	delete(r.since, id)
-	return since, ok
+	clear(r.carried)
+}
+
+func (r *researchCarry) take(id domain.SessionID) (carriedResearch, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	research, ok := r.carried[id]
+	delete(r.carried, id)
+	return research, ok
 }
 
 // researchLaunchTokens is the window a launch of cfg's orchestrator uses when
@@ -68,23 +86,28 @@ func (r *researchCarry) take(id domain.SessionID) (time.Time, bool) {
 // window. tokens 0 is the agent's own default. coordination is the choice the
 // launch would otherwise resolve; model is the launch model.
 func (s *Service) researchLaunchTokens(ctx context.Context, cfg StartConfig, own, coordination, model string) (tokens int, ok bool) {
-	if cfg.Kind != domain.KindOrchestrator || own != "" || !s.researchCarried.has(cfg.SessionID) {
+	if cfg.Kind != domain.KindOrchestrator {
+		return 0, false
+	}
+	s.restoreResearch(ctx, cfg.SessionID, cfg.Harness)
+	carried, ok := s.researchCarried.get(cfg.SessionID)
+	if own != "" || !ok {
 		return 0, false
 	}
 	choice, allowed := domain.ResearchCompactChoice(s.compactProjectConfig(ctx, cfg.ProjectID), s.dynamicContextEnabled(ctx))
 	if !allowed {
 		return 0, false
 	}
-	modelWindow, _ := s.modelCapacity(ctx, cfg.Harness, cfg.ProjectID, model)
-	tokens = domain.AutoCompactTokenCount(choice, modelWindow)
-	if tokens <= 0 || (modelWindow > 0 && int64(tokens) >= modelWindow) {
-		tokens = 0
+	if carried.Window != "" {
+		choice = carried.Window
 	}
+	modelWindow, _ := s.modelCapacity(ctx, cfg.Harness, cfg.ProjectID, model)
+	tokens = domain.ResolveAutoCompactWindow(choice, modelWindow, cfg.AutoCompactBaseline)
 	baseline := projectCompactTokens(cfg)
 	if tokens == 0 {
 		tokens = baseline
 	}
-	coordTokens := domain.AutoCompactTokenCount(coordination, modelWindow)
+	coordTokens := domain.ResolveAutoCompactWindow(coordination, modelWindow, cfg.AutoCompactBaseline)
 	if coordTokens <= 0 {
 		coordTokens = baseline
 	}
@@ -94,27 +117,36 @@ func (s *Service) researchLaunchTokens(ctx context.Context, cfg StartConfig, own
 // carryResearchToController gives a controller built for a launch the research
 // flag the previous controller carried, when research mode is still allowed.
 func (s *Service) carryResearchToController(ctx context.Context, c *Controller) {
-	since, ok := s.researchCarried.take(c.sessionID)
+	if c.kind != domain.KindOrchestrator {
+		return
+	}
+	s.restoreResearch(ctx, c.sessionID, c.harness)
+	carried, ok := s.researchCarried.take(c.sessionID)
 	if !ok {
 		return
 	}
-	if _, allowed := s.researchChoice(ctx, c); !allowed {
-		return
-	}
 	c.mu.Lock()
-	c.research.on, c.research.since = true, since
+	c.research.on, c.research.since, c.research.lastTurn = true, carried.Since, carried.LastTurnAt
+	c.research.window, c.research.auto = carried.Window, carried.auto
 	c.mu.Unlock()
+	if _, allowed := s.researchChoice(ctx, c); !allowed {
+		s.setResearchFlag(ctx, c, nil, false)
+	}
 }
 
 // beginResearchRestart records that c's research flag waits for a restart and
-// starts the wait for the agent to be idle.
-func (s *Service) beginResearchRestart(c *Controller) {
+// starts the wait for the agent to be idle. running says a wait already runs
+// (the window changed while it waited): it takes the new carried state, so no
+// second wait starts.
+func (s *Service) beginResearchRestart(c *Controller, running bool) {
 	c.mu.Lock()
 	c.research.restartPending = true
-	since := c.research.since
+	carried := carriedResearch{SessionResearch: domain.SessionResearch{Window: c.research.window, Since: c.research.since, LastTurnAt: c.research.lastTurn}, auto: c.research.auto}
 	c.mu.Unlock()
-	s.researchCarried.put(c.sessionID, since)
-	go s.restartForResearch(c)
+	s.researchCarried.put(c.sessionID, carried)
+	if !running {
+		go s.restartForResearch(c)
+	}
 }
 
 // restartForResearch restarts c's agent once it is idle, then wakes it. Any
@@ -148,6 +180,7 @@ func (s *Service) restartForResearch(c *Controller) {
 				s.sendResearchMessage(ctx, c, s.researchWakeText(ctx, c))
 			} else {
 				s.researchCarried.take(c.sessionID)
+				s.persistResearch(ctx, c.sessionID, nil)
 			}
 			return
 		case c.busy():
@@ -199,6 +232,13 @@ func (s *Service) sendResearchMessage(ctx context.Context, c *Controller, text s
 }
 
 func (s *Service) researchWakeText(ctx context.Context, c *Controller) string {
+	c.mu.Lock()
+	auto := c.research.auto
+	c.mu.Unlock()
+	if auto {
+		return fmt.Sprintf("Your last turn stopped because auto-compaction was thrashing, so your compaction window was raised to %s and your agent was restarted to apply it; the conversation is kept. "+
+			"Continue the task you were working on. The larger window ends like research mode: when you are idle-compacted, after an hour without a turn, or with `research off`.", s.researchWindowLabel(ctx, c))
+	}
 	return fmt.Sprintf("Research mode is on: your compaction window is now %s and your agent was restarted to apply it; the conversation is kept. "+
 		"Continue the reading task you started. Switch research mode off when the analysis is done.", s.researchWindowLabel(ctx, c))
 }
@@ -214,7 +254,7 @@ func (s *Service) failResearchRestart(_ context.Context, c *Controller, cause er
 		return // already switched off
 	}
 	c.research.mu.Lock()
-	s.setResearchFlag(c, false)
+	s.setResearchFlag(ctx, c, nil, false)
 	c.research.mu.Unlock()
 	s.log.Warn("research mode not applied: the agent restart failed", "session", c.sessionID, "error", cause)
 	s.announceSummary(ctx, c, "Research mode not enabled: the agent could not be restarted for the larger compaction window")

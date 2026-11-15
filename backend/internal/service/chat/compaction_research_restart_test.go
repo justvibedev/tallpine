@@ -167,7 +167,7 @@ func TestLaunchUsesTheCarriedResearchWindowOnce(t *testing.T) {
 		key := contextwindow.AutoCompactEnvKey(domain.HarnessClaudeCode)
 		coordination := cfg
 		s.applyLaunchCompaction(context.Background(), &coordination, &conv)
-		s.researchCarried.put("s1", time.Now())
+		s.researchCarried.put("s1", carriedResearch{SessionResearch: domain.SessionResearch{Since: time.Now()}})
 		s.applyLaunchCompaction(context.Background(), &cfg, &conv)
 		if cfg.Env[key] != "250000" || coordination.Env[key] == "250000" {
 			t.Fatalf("%s: research env %q, coordination env %q", model, cfg.Env[key], coordination.Env[key])
@@ -187,7 +187,7 @@ func TestLaunchUsesTheCarriedResearchWindowOnce(t *testing.T) {
 func TestLaunchKeepsAChatsOwnWindowOverCarriedResearch(t *testing.T) {
 	s, cfg, conv := launchFixture("opus")
 	conv.Settings.AutoCompactWindow = "300k"
-	s.researchCarried.put("s1", time.Now())
+	s.researchCarried.put("s1", carriedResearch{SessionResearch: domain.SessionResearch{Since: time.Now()}})
 	s.applyLaunchCompaction(context.Background(), &cfg, &conv)
 	if got := cfg.Env[contextwindow.AutoCompactEnvKey(domain.HarnessClaudeCode)]; got != "300000" {
 		t.Fatalf("env %q, want the chat's own 300k", got)

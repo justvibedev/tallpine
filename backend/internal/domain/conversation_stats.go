@@ -263,6 +263,14 @@ type ConversationSettings struct {
 	ContextCapacity  int64  `json:"contextCapacity,omitempty"`
 	CompactThreshold int    `json:"compactThreshold,omitempty"`
 	ModelLabel       string `json:"modelLabel,omitempty"`
+	// AutoCompactBaseline is the context the running session was measured to
+	// start with at its launch (AutoCompactBaseline), which CompactThreshold
+	// keeps room above; 0 when not measured (a stopped chat, or an agent
+	// Tallpine sets no window on). AutoCompactTrigger is the context size at
+	// which the agent compacts with CompactThreshold (AutoCompactTrigger), 0
+	// for the agent's own default. Read-only and never stored.
+	AutoCompactBaseline int64 `json:"autoCompactBaseline,omitempty"`
+	AutoCompactTrigger  int   `json:"autoCompactTrigger,omitempty"`
 }
 
 // ModelUsage is one model's cumulative token spend in a conversation. Input

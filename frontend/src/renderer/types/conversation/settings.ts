@@ -29,6 +29,9 @@ export interface TurnSettings {
 	/** The model's real context window and where the chosen auto-compact setting compacts against it. Daemon-set. */
 	contextCapacity?: number;
 	compactThreshold?: number;
+	/** The context the running session was measured to start with, and where the agent compacts with compactThreshold. Daemon-set. */
+	autoCompactBaseline?: number;
+	autoCompactTrigger?: number;
 	/** The catalog's name for the model. Daemon-set. */
 	modelLabel?: string;
 }

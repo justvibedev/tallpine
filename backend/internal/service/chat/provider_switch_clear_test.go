@@ -35,7 +35,7 @@ func newClearHarness(t *testing.T, agent domain.AgentHarness) (*harness, *editDr
 	if agent == domain.HarnessClaudeCode {
 		if err := h.svc.SwitchProvider(ctx, testSession, domain.ProviderSwitchRequest{
 			TargetHarness: domain.HarnessClaudeCode, IdempotencyKey: "to-claude",
-			Model: "claude-opus-5-5", AutoCompactWindow: "1m",
+			Model: "claude-opus-5-5", AutoCompactWindow: "400k",
 		}); err != nil {
 			t.Fatalf("switch to Claude: %v", err)
 		}
@@ -141,8 +141,8 @@ func assertClearHandsOver(t *testing.T, agent domain.AgentHarness) {
 		t.Fatalf("fresh context model = %q, want the session's %q", cfg.Model, model)
 	}
 	if agent == domain.HarnessClaudeCode {
-		if got := cfg.Env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]; got != "1000000" {
-			t.Fatalf("fresh context compaction window = %q, want the session's 1m", got)
+		if got := cfg.Env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]; got != "400000" {
+			t.Fatalf("fresh context compaction window = %q, want the session's 400k", got)
 		}
 	}
 

@@ -126,6 +126,10 @@ type SessionResponse struct {
 	// project rules section (agentRules plus agentRulesFile, capped) the worker
 	// received in its system prompt. Read-only; absent when none.
 	WorkerInstructions string `json:"workerInstructions,omitempty"`
+	// Compaction is set only by GET /api/v1/sessions/{sessionId} for an agent
+	// Tallpine sets a compaction window on: the launch baseline, the window it
+	// passes (0 is the agent's own default) and where the agent compacts.
+	Compaction *domain.AutoCompactView `json:"compaction,omitempty"`
 }
 
 // SessionLastAssistantMessage is a display copy of a main turn's final

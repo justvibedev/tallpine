@@ -1,10 +1,13 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,4 +123,22 @@ func writeLegacyAccount(t *testing.T, root, id, method string, email *string) le
 		t.Fatal(err)
 	}
 	return legacyAccount{id: id, home: canonicalPath(home)}
+}
+
+func TestImportRegistryLogsFolderWithoutLegacyDescriptorAsLeftover(t *testing.T) {
+	root := t.TempDir()
+	id := "b60a377d-da68-4a61-86f2-f31f04c571f2"
+	if err := os.MkdirAll(filepath.Join(root, id, "credential-home"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	got, err := ImportRegistry(context.Background(), root, &importStore{}, logger)
+	if err != nil || got.Skipped != 1 {
+		t.Fatalf("import = %+v, %v", got, err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "WARN") || strings.Contains(out, "account_descriptor_invalid") || !strings.Contains(out, "no legacy account.json") {
+		t.Fatalf("log = %q, want an info note about a leftover folder, no descriptor-invalid warning", out)
+	}
 }

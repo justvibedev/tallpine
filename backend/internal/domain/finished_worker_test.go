@@ -103,3 +103,36 @@ func TestWorkerBranchWork_KeepReason(t *testing.T) {
 		t.Errorf("unmerged: %q", got)
 	}
 }
+
+func TestReportWaitingReason(t *testing.T) {
+	t0 := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
+	r := func(st ReportState, note string, at time.Time, outs ...ReportOutput) []ReportRecord {
+		return []ReportRecord{{State: st, Note: note, CreatedAt: at, Outputs: outs}}
+	}
+	const url = "https://github.com/o/r/pull/7"
+	merged := []PullRequest{{Number: 7, URL: url, Merged: true, StateChangedAt: t0}}
+	otherClosed := []PullRequest{{Number: 7, URL: url}, {Number: 3, URL: "https://github.com/o/r/pull/3", Closed: true, StateChangedAt: t0}}
+	after, before := t0.Add(time.Minute), t0.Add(-time.Minute)
+	for _, tc := range []struct {
+		name string
+		in   []ReportRecord
+		prs  []PullRequest
+		want bool
+	}{
+		{"none", nil, merged, false},
+		{"needs input after merge", r(ReportNeedsInput, "x", after), merged, true},
+		{"stuck after merge", r(ReportStuck, "x", after), merged, true},
+		{"checkpoint waiting after merge", r(ReportCheckpoint, "waiting for the owner's go", after), merged, true},
+		{"PR-created needs_input before merge", r(ReportNeedsInput, "PR #7 ready", before, ReportOutput{Kind: ReportOutputPRCreated, Reference: url}), merged, false},
+		{"announce by number only", r(ReportNeedsInput, "PR #7 head abc; tests pass", before), merged, false},
+		{"pre-merge wait on a post-merge step", r(ReportNeedsInput, "PR #7 ready; waiting for the owner to say Tallpine is open before the SSH checklist", before), merged, true},
+		{"pre-merge wait naming no PR", r(ReportNeedsInput, "need a decision", before), merged, true},
+		{"wait then unrelated PR closes", r(ReportNeedsInput, "waiting for the owner", before), otherClosed, true},
+		{"announce of open PR while another closes", r(ReportNeedsInput, "PR #7 ready", before), otherClosed, true},
+		{"plain done", r(ReportDone, "merged", after), merged, false},
+	} {
+		if got := ReportWaitingReason(tc.in, tc.prs) != ""; got != tc.want {
+			t.Errorf("%s: got %v want %v", tc.name, got, tc.want)
+		}
+	}
+}

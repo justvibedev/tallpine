@@ -84,12 +84,13 @@ type Service struct {
 	renderCheck      RenderCheck
 	renderMeasure    RenderMeasure
 	// renderMeasures tracks background measures, so tests can wait for them.
-	renderMeasures     sync.WaitGroup
-	sides              *sideManager
-	wakeChat           func(context.Context, domain.SessionID) error
-	hibernationEnabled func() bool
-	modelCatalog       ModelCatalogReader
-	autoCompactDefault func(ctx context.Context, harness domain.AgentHarness) string
+	renderMeasures       sync.WaitGroup
+	sides                *sideManager
+	wakeChat             func(context.Context, domain.SessionID) error
+	hibernationEnabled   func() bool
+	modelCatalog         ModelCatalogReader
+	autoCompactDefault   func(ctx context.Context, harness domain.AgentHarness) string
+	autoCompactBaselines ports.AutoCompactBaselineReader
 	// dynamicContext reports the global "Dynamic orchestrator context" toggle
 	// (B413); nil counts as on.
 	dynamicContext func(ctx context.Context) bool
@@ -98,6 +99,7 @@ type Service struct {
 	// researchCarried keeps research mode across the restart that applies it;
 	// the rest are test seams for that restart (B638).
 	researchCarried      researchCarry
+	researchStore        ports.SessionResearchStore
 	researchPoll         time.Duration
 	researchWait         time.Duration
 	researchHibernatedFn func(context.Context, domain.SessionID) bool
@@ -245,9 +247,15 @@ type Options struct {
 	// AutoCompactDefault reads the per-harness compaction default from Settings.
 	// A conversation with no choice of its own starts with it. Nil means none.
 	AutoCompactDefault func(ctx context.Context, harness domain.AgentHarness) string
+	// AutoCompactBaselines measures the context a session starts with, read
+	// at each launch (B735). Nil measures nothing: no floor.
+	AutoCompactBaselines ports.AutoCompactBaselineReader
 	// DynamicOrchestratorContext reads the global toggle for orchestrator
 	// research mode (B413); nil counts as on.
 	DynamicOrchestratorContext func(ctx context.Context) bool
+	// ResearchStore persists orchestrator research mode across a daemon
+	// restart (B736). Nil keeps it in memory only.
+	ResearchStore ports.SessionResearchStore
 	// HibernationEnabled reads the daemon-owned feature gate. Nil is disabled.
 	HibernationEnabled func() bool
 	// HibernationPolicy decides whether one session may sleep when idle and
@@ -297,6 +305,8 @@ func New(opts Options) *Service {
 		reconcileOutput:        opts.ReconcileOutputType,
 		hibernationEnabled:     opts.HibernationEnabled,
 		autoCompactDefault:     opts.AutoCompactDefault,
+		autoCompactBaselines:   opts.AutoCompactBaselines,
+		researchStore:          opts.ResearchStore,
 		dynamicContext:         opts.DynamicOrchestratorContext,
 		hibernationPolicy:      opts.HibernationPolicy,
 		backgroundWork:         opts.BackgroundProcesses,

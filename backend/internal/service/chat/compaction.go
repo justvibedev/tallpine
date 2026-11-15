@@ -98,8 +98,9 @@ func projectCompactTokens(cfg StartConfig) int {
 
 // desiredCompactTokens is the window the session should compact at now: its
 // own choice, else the Settings default for its agent, resolved against the
-// model's window. Auto, or a percent whose window is unknown (a named model the catalog lacks),
-// means the window the project's environment sets, else 0: the agent's default.
+// model's window. Auto, a percent whose window is unknown (a named model the
+// catalog lacks), or a choice that does not fit below the model's window means
+// the window the project's environment sets, else 0: the agent's default.
 func (s *Service) desiredCompactTokens(ctx context.Context, c *Controller) int {
 	return s.desiredCompactTokensIn(ctx, c, true)
 }
@@ -116,14 +117,14 @@ func (s *Service) desiredCompactTokensIn(ctx context.Context, c *Controller, res
 	settings := c.Settings()
 	window := s.effectiveCompactChoice(ctx, c.harness, c.kind, c.conversation.ProjectID, settings.AutoCompactWindow)
 	var modelWindow int64
-	if _, percent := domain.ParseAutoCompactPercent(window); percent {
+	if window != "" {
 		modelWindow, _ = s.modelCapacity(ctx, c.harness, c.conversation.ProjectID, settings.Model)
 	}
-	if tokens := domain.AutoCompactTokenCount(window, modelWindow); tokens > 0 {
+	if tokens := domain.ResolveAutoCompactWindow(window, modelWindow, c.startBaseline); tokens > 0 {
 		return tokens
 	}
-	// Auto (or a percent whose window is unknown): the project's own window if it
-	// sets one, else the agent's default.
+	// Auto, a percent whose window is unknown, or a choice the model cannot
+	// hold: the project's own window if it sets one, else the agent's default.
 	return c.projectCompactBaseline()
 }
 
@@ -154,9 +155,10 @@ func (s *Service) overlayCompactionView(ctx context.Context, settings *domain.Co
 	if contextwindow.AutoCompactEnvKey(c.harness) != "" {
 		settings.AutoCompactProjectTokens = c.projectCompactBaseline()
 	}
-	s.overlayResolvedView(ctx, settings, c.harness, c.kind, c.conversation.ProjectID)
+	s.overlayResolvedView(ctx, settings, c.harness, c.kind, c.conversation.ProjectID, c.startBaseline)
 	if choice, ok := s.researchInEffect(ctx, c); ok {
 		settings.CompactThreshold = s.researchTokens(ctx, c, choice)
+		settings.AutoCompactTrigger = domain.AutoCompactTrigger(c.harness, settings.CompactThreshold)
 	}
 }
 
@@ -164,12 +166,15 @@ func (s *Service) overlayCompactionView(ctx context.Context, settings *domain.Co
 // setting makes of it, and the model's name, so a client renders them instead
 // of deriving them from the window the agent reports (its compaction limit once
 // Tallpine sets one). It needs no controller: a stopped or hibernated chat has the
-// same view.
-func (s *Service) overlayResolvedView(ctx context.Context, settings *domain.ConversationSettings, harness domain.AgentHarness, kind domain.SessionKind, project domain.ProjectID) {
+// same view, except that it has no launch baseline (0): a baseline is read
+// only when a session launches.
+func (s *Service) overlayResolvedView(ctx context.Context, settings *domain.ConversationSettings, harness domain.AgentHarness, kind domain.SessionKind, project domain.ProjectID, baseline int64) {
 	capacity, label := s.modelCapacity(ctx, harness, project, settings.Model)
 	settings.ModelLabel = label
 	settings.ContextCapacity = capacity
-	settings.CompactThreshold = domain.AutoCompactTokenCount(s.effectiveCompactChoice(ctx, harness, kind, project, settings.AutoCompactWindow), capacity)
+	settings.CompactThreshold = domain.ResolveAutoCompactWindow(s.effectiveCompactChoice(ctx, harness, kind, project, settings.AutoCompactWindow), capacity, baseline)
+	settings.AutoCompactBaseline = baseline
+	settings.AutoCompactTrigger = domain.AutoCompactTrigger(harness, settings.CompactThreshold)
 }
 
 // effectiveCompactChoice is the session's own choice, else its default: the
@@ -415,7 +420,7 @@ func (s *Service) EffectiveModel(ctx context.Context, id domain.SessionID) strin
 	}
 	// Never wait for the controller gate or a slow provider: this serves plain
 	// reads (session get), which must not hang behind a start or switch.
-	controller, _, release, gerr := s.tryReadingController(ctx, id)
+	controller, release, gerr := s.tryReadingController(ctx, id)
 	if gerr != nil {
 		return ""
 	}

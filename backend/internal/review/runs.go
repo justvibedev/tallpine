@@ -114,7 +114,7 @@ func (e *Engine) reviewLaunchSpec(
 		WorkerID:        worker.ID,
 		ProjectID:       worker.ProjectID,
 		Harness:         harness,
-		AgentConfig:     e.withReviewerLaunch(ctx, worker.ProjectID, config),
+		AgentConfig:     e.withReviewerLaunch(ctx, worker.ProjectID, harness, config),
 		WorkspacePath:   worker.Metadata.WorkspacePath,
 		AgentSessionID:  agentSessionID,
 		PreviousRuns:    nil,

@@ -13,6 +13,7 @@ type fakeAutoClose struct {
 	queued   bool
 	jobs     int
 	items    int
+	waiting  string
 	held     []string
 	sessions []domain.SessionID
 	closed   []domain.SessionID
@@ -39,6 +40,9 @@ func (f *fakeAutoClose) RunningJobs(context.Context, domain.SessionRecord) (int,
 }
 func (f *fakeAutoClose) OpenBacklogItems(context.Context, domain.SessionID) (int, error) {
 	return f.items, nil
+}
+func (f *fakeAutoClose) WaitingOnOwnerReason(context.Context, domain.SessionID) (string, error) {
+	return f.waiting, nil
 }
 func (f *fakeAutoClose) EndOnMergeSessions(context.Context) ([]domain.SessionID, error) {
 	return f.sessions, nil

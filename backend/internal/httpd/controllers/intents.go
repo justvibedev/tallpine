@@ -46,6 +46,10 @@ type IntentsQuery struct {
 // CreateIntentRequest is the body of POST /projects/{projectId}/intents.
 type CreateIntentRequest struct {
 	Text string `json:"text"`
+	// WakeAt, when set, wakes the orchestrator once at that time if the intent
+	// is still open. It must be in the future; it only fires in a project that
+	// turned on the intentWake setting.
+	WakeAt *time.Time `json:"wakeAt,omitempty"`
 }
 
 // IntentResponse is one intent.
@@ -55,6 +59,8 @@ type IntentResponse struct {
 	CreatedBy string     `json:"createdBy"`
 	CreatedAt time.Time  `json:"createdAt"`
 	DoneAt    *time.Time `json:"doneAt,omitempty"`
+	WakeAt    *time.Time `json:"wakeAt,omitempty"`
+	WokenAt   *time.Time `json:"wokenAt,omitempty"`
 }
 
 // ListIntentsResponse is the body of GET /projects/{projectId}/intents.
@@ -70,7 +76,7 @@ func (c *IntentsController) Register(r chi.Router) {
 }
 
 func intentResponse(in domain.OrchestratorIntent) IntentResponse {
-	return IntentResponse{ID: in.ID, Text: in.Text, CreatedBy: in.CreatedBy, CreatedAt: in.CreatedAt, DoneAt: in.DoneAt}
+	return IntentResponse{ID: in.ID, Text: in.Text, CreatedBy: in.CreatedBy, CreatedAt: in.CreatedAt, DoneAt: in.DoneAt, WakeAt: in.WakeAt, WokenAt: in.WokenAt}
 }
 
 func (c *IntentsController) list(w http.ResponseWriter, r *http.Request) {
@@ -106,9 +112,18 @@ func (c *IntentsController) create(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INTENT_TEXT_INVALID", "Intent text must be 1 to 2048 bytes", nil)
 		return
 	}
+	now := time.Now().UTC()
+	if req.WakeAt != nil && !req.WakeAt.After(now) {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "INTENT_WAKE_INVALID", "wakeAt must be in the future", nil)
+		return
+	}
 	in := domain.OrchestratorIntent{
 		ID: uuid.NewString(), ProjectID: domain.ProjectID(chi.URLParam(r, "projectId")), Text: text,
-		CreatedBy: intentAuthor(r), CreatedAt: time.Now().UTC(),
+		CreatedBy: intentAuthor(r), CreatedAt: now,
+	}
+	if req.WakeAt != nil {
+		wake := req.WakeAt.UTC()
+		in.WakeAt = &wake
 	}
 	if err := c.Store.InsertOrchestratorIntent(r.Context(), in); err != nil {
 		if errors.Is(err, domain.ErrProjectUnknown) {

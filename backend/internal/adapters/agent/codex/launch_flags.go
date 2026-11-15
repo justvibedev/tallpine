@@ -23,7 +23,7 @@ func appendFastTierFlag(args *[]string, launch domain.AgentLaunchOptions) {
 // in its config reference) from the session's compaction choice. Auto, or a
 // percent whose model window is unknown, leaves Codex's own default.
 func appendAutoCompactFlag(args *[]string, launch domain.AgentLaunchOptions) {
-	if tokens := domain.AutoCompactTokenCount(launch.AutoCompactWindow, launch.ModelContextWindow); tokens > 0 {
+	if tokens := domain.ResolveAutoCompactWindow(launch.AutoCompactWindow, launch.ModelContextWindow, launch.AutoCompactBaseline); tokens > 0 {
 		*args = append(*args, "-c", "model_auto_compact_token_limit="+strconv.Itoa(tokens))
 	}
 }

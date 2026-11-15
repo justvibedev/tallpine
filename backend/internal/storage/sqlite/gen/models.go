@@ -680,6 +680,8 @@ type OrchestratorIntent struct {
 	CreatedBy string
 	CreatedAt time.Time
 	DoneAt    sql.NullTime
+	WakeAt    sql.NullTime
+	WokenAt   sql.NullTime
 }
 
 type OwnerAsk struct {
@@ -1005,6 +1007,9 @@ type Session struct {
 	BranchNaming                     bool
 	TemporaryBranch                  string
 	Role                             string
+	ResearchSince                    sql.NullTime
+	ResearchWindow                   sql.NullString
+	ResearchLastTurnAt               sql.NullTime
 }
 
 type SessionAgentAccount struct {

@@ -647,3 +647,35 @@ LEFT JOIN usage_session_integrity integrity ON integrity.session_id = ub.session
 WHERE (sqlc.arg(project_id) = '' OR s.project_id = sqlc.arg(project_id))
 GROUP BY ub.session_id, s.project_id, s.num, integrity.incomplete
 ORDER BY s.project_id, s.num;
+
+-- name: ListAutoCompactBaselineSamples :many
+-- The first-call input size of the newest sessions of one project, session kind
+-- and harness (B735): the earliest event of each main-thread source (a
+-- subagent's calls are not the session's context), the earliest of those per
+-- session, newest sessions first. Each source's first event is an index seek.
+WITH first_events AS (
+    SELECT ub.session_id, mue.input_tokens, mue.created_at, mue.id
+    FROM usage_sources src
+    JOIN usage_bindings ub ON ub.id = src.binding_id
+    JOIN sessions s ON s.id = ub.session_id
+    JOIN model_usage_events mue ON mue.id = (
+        SELECT MIN(earliest.id) FROM model_usage_events earliest
+        WHERE earliest.usage_source_id = src.id
+    )
+    WHERE s.project_id = sqlc.arg(project_id)
+      AND s.kind = sqlc.arg(kind)
+      AND ub.harness = sqlc.arg(harness)
+      AND src.kind <> 'claude_subagent'
+),
+ranked AS (
+    SELECT session_id, input_tokens, ROW_NUMBER() OVER (
+        PARTITION BY session_id ORDER BY created_at IS NULL, created_at, id
+    ) AS position
+    FROM first_events
+)
+SELECT CAST(ranked.input_tokens AS INTEGER) AS input_tokens
+FROM ranked
+JOIN sessions s ON s.id = ranked.session_id
+WHERE ranked.position = 1 AND ranked.input_tokens > 0
+ORDER BY s.created_at DESC, s.id DESC
+LIMIT sqlc.arg(sample_limit);

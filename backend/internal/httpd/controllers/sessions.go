@@ -212,6 +212,10 @@ type SessionsController struct {
 	ServedModel func(ctx context.Context, sess domain.Session) string
 	// Models fills the model of a session spawned without one; nil leaves it empty.
 	Models ModelResolver
+	// Compaction reports what a session's auto-compaction resolves to (launch
+	// baseline, window, trigger) for session get and spawn; nil, or ok false,
+	// leaves it out.
+	Compaction func(ctx context.Context, sess domain.Session) (domain.AutoCompactView, bool)
 	// Instructions reads the effective worker project rules for the session
 	// detail read; nil leaves them out.
 	Instructions WorkerInstructionsReader

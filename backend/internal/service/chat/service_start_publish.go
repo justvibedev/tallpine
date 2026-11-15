@@ -49,6 +49,7 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 	l.controller.onUsageLimitPaused = s.failoverPausedSession
 	l.controller.compactLive = launchedCompactTokens(*l.cfg, l.liveReconnect)
 	l.controller.compactBaseline = projectCompactTokens(*l.cfg)
+	l.controller.startBaseline = l.cfg.AutoCompactBaseline
 	if contextwindow.AutoCompactEnvKey(l.cfg.Harness) != "" {
 		// tokens -1: a reattached agent whose window is reconciled below; 0: the agent's default.
 		s.log.Info("chat compaction window at launch", "session", l.cfg.SessionID, "kind", l.cfg.Kind,
@@ -57,6 +58,7 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 	l.controller.kind = l.cfg.Kind
 	l.controller.transientRetry.policy = s.transientRetryPolicy()
 	s.carryResearchToController(ctx, l.controller)
+	l.controller.onTurnEnded = s.researchTurnEnded
 	controller := l.controller
 	controller.prepareWorkerQueue = func(ctx context.Context, queued domain.QueuedTurn) (domain.QueuedTurn, error) {
 		return s.prepareWorkerQueue(ctx, controller, queued)

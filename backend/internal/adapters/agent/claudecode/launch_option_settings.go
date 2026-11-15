@@ -14,7 +14,7 @@ func addLaunchOptionSettings(settings map[string]any, options domain.AgentLaunch
 	if options.Ultracode {
 		settings["ultracode"] = true
 	}
-	if tokens := domain.AutoCompactTokenCount(options.AutoCompactWindow, options.ModelContextWindow); tokens > 0 {
+	if tokens := domain.ResolveAutoCompactWindow(options.AutoCompactWindow, options.ModelContextWindow, options.AutoCompactBaseline); tokens > 0 {
 		settings["autoCompactEnabled"] = true
 		settings["autoCompactWindow"] = tokens
 	}
