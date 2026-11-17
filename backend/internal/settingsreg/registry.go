@@ -63,7 +63,7 @@ var (
 // package tests catch.
 func Default() *Registry {
 	defaultOnce.Do(func() {
-		all := append(appSettings(), cleanupSettings()...)
+		all := append(append(appSettings(), appInstructionSettings()...), cleanupSettings()...)
 		all = append(all, projectSettings()...)
 		all = append(all, policySettings(rules.All())...)
 		reg, err := New(all...)

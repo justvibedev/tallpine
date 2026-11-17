@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { DEFAULT_DAEMON_PORT, ENV_PREFIX, HOME_DIR_NAME } from "../shared/brand";
+import { DEFAULT_DAEMON_PORT, DEV_DAEMON_PORT, ENV_PREFIX, HOME_DIR_NAME } from "../shared/brand";
 
 /** Set to "1" to let a dev build started inside an agent session use the inherited real state. */
 export const DEV_REAL_DATA_ENV = "TALLPINE_DEV_REAL_DATA";
@@ -11,6 +11,7 @@ const isProductEnv = (name: string): boolean => name.startsWith(ENV_PREFIX);
 const isDevKnob = (name: string): boolean => name.startsWith(`${ENV_PREFIX}DEV_`) || name === `${ENV_PREFIX}OPEN_DEVTOOLS`;
 
 const AGENT_SESSION_ENV = ["TALLPINE_SESSION_ID", "AO_SESSION_ID"];
+const PROVIDER_HOME_ENV = ["CLAUDE_CONFIG_DIR", "CODEX_HOME"];
 const DEV_PORT_BASE = 3200;
 const DEV_PORT_SPAN = 500;
 
@@ -75,6 +76,15 @@ export function isolateDevSessionEnv(
 		Number.isInteger(inheritedPort) && inheritedPort > 0 && inheritedPort !== DEFAULT_DAEMON_PORT ? inheritedPort : undefined;
 
 	const dropped: string[] = [];
+	// A session runs under a Tallpine-managed account home (<root>/data/agent-accounts/...);
+	// inherited, it would make the isolated daemon list that real account's skills.
+	for (const name of PROVIDER_HOME_ENV) {
+		const value = env[name]?.trim();
+		if (value && within(realRoot, value) && !within(devRoot, value)) {
+			dropped.push(name);
+			delete env[name];
+		}
+	}
 	for (const name of Object.keys(env)) {
 		if (name === "AO_SESSION_ID" || (isProductEnv(name) && !isDevKnob(name))) {
 			dropped.push(name);
@@ -98,4 +108,19 @@ export function isolateDevSessionEnv(
 	env.TALLPINE_PORT = String(isolation.port);
 	env.TALLPINE_DEV_ELECTRON_DIR = isolation.electronDir;
 	return isolation;
+}
+
+/**
+ * Where the dev renderer's Vite proxy should send /api and /mux: the daemon
+ * this checkout's dev app will start, never the installed app's port. The
+ * proxy config loads before the app's own isolation runs, so it derives the
+ * same port from a copy of the environment.
+ */
+export function devProxyTarget(env: Record<string, string | undefined>, opts: { homeDir: string; checkoutDir: string }): string {
+	if (env.TALLPINE_DEV_API_TARGET?.trim()) return env.TALLPINE_DEV_API_TARGET.trim();
+	const copy = { ...env };
+	const isolation = isolateDevSessionEnv(copy, { isPackaged: false, ...opts });
+	const explicit = Number(copy.TALLPINE_PORT);
+	const port = isolation?.port ?? (Number.isInteger(explicit) && explicit > 0 ? explicit : DEV_DAEMON_PORT);
+	return `http://127.0.0.1:${port}`;
 }

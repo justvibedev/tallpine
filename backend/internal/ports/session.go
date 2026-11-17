@@ -45,10 +45,13 @@ type SpawnConfig struct {
 	// notes for the worker's task prompt (`tallpine spawn --backlog`). Task text, never
 	// the system prompt, and never stored in issue_id.
 	BacklogContext string
-	Kind           domain.SessionKind
-	Harness        domain.AgentHarness
-	Branch         string
-	Prompt         string
+	// CodeIntel asks for code intelligence mode (`tallpine spawn --code-intel`).
+	// Spawn clears it unless domain.CodeIntelApplies (Claude Code workers).
+	CodeIntel bool
+	Kind      domain.SessionKind
+	Harness   domain.AgentHarness
+	Branch    string
+	Prompt    string
 	// AgentConfig overrides the resolved project/role agent config for this
 	// single spawn. Empty fields keep the project defaults.
 	AgentConfig AgentConfig

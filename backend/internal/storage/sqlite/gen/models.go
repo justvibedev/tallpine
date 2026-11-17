@@ -221,6 +221,8 @@ type AppSetting struct {
 	DynamicOrchestratorContext             bool
 	WorkflowDefaults                       string
 	PeerCheck                              string
+	MachineMaxReviewers                    int64
+	MachineLoadPercent                     int64
 }
 
 type Automation struct {
@@ -911,6 +913,8 @@ type ReviewRun struct {
 	Model             string
 	FailureNotifiedAt sql.NullTime
 	ModelReason       string
+	Focus             string
+	FocusAuthor       string
 }
 
 type ReviewTriggerQueue struct {
@@ -924,6 +928,8 @@ type ReviewTriggerQueue struct {
 	TriggerSource string
 	Attempts      int64
 	NextAttemptAt time.Time
+	Focus         string
+	FocusAuthor   string
 }
 
 type Session struct {

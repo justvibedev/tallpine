@@ -17,7 +17,11 @@ type TriggerResult struct {
 	Created          bool
 	// Queued is set when the pass could not start because the reviewer is busy
 	// and was parked to start once it is free; nothing was created.
-	Queued          bool
+	Queued bool
+	// HeldReason is why a queued pass waits for the machine rather than for
+	// its reviewer: "machine busy (load X/Y cores, reviewers A/B)". Empty when
+	// the pass is not held by the machine-load gate.
+	HeldReason      string
 	Reviews         []PRReviewState
 	Runs            []domain.ReviewRun
 	CreatedRuns     []domain.ReviewRun
@@ -42,6 +46,9 @@ type SessionReviews struct {
 	ActiveReviewers []domain.ReviewerSurface
 	// Queued lists the passes waiting for the reviewer to be free.
 	Queued []domain.QueuedReviewTrigger
+	// HeldReason is why the queued passes are waiting for the machine right
+	// now, or empty when the machine is not holding them.
+	HeldReason string
 }
 
 // CancelResult is the review state after a reviewer pane cancellation.
@@ -94,6 +101,11 @@ type TriggerOptions struct {
 	// QueuedSince marks a rerun that waited in the trigger queue since then:
 	// it is skipped when the reviewer already reviewed the head after that.
 	QueuedSince time.Time
+	// Focus is a one-off review focus for the passes this trigger starts; it is
+	// stored on their runs and is never carried to a later independent pass.
+	// FocusAuthor says who gave it and must come from the caller's credentials.
+	Focus       string
+	FocusAuthor domain.ReviewFocusAuthor
 }
 
 // TriggerWithOptions starts reviews for every PR on the worker session that needs review.
@@ -123,6 +135,7 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 
 	p := &triggerPass{e: e, ctx: ctx, workerID: workerID, opts: opts, source: source, mode: opts.InterfaceMode}
 	defer p.releaseHarnessUse()
+	defer p.releaseMachineSlot()
 	for _, step := range []func() (TriggerResult, bool, error){
 		p.loadWorker,
 		p.loadPRsAndRuns,
@@ -131,7 +144,9 @@ func (e *Engine) TriggerWithOptions(ctx stdctx.Context, workerID domain.SessionI
 		p.reconcileRuns,
 		p.carryApprovals,
 		p.planReviews,
+		p.gateMachine,
 		p.recordRuns,
+		p.releaseMachineSlotStep,
 		p.reuseWhenNothingDue,
 		p.launchReviewer,
 	} {
@@ -168,6 +183,9 @@ func validateTriggerRequest(workerID domain.SessionID, opts TriggerOptions) (dom
 	}
 	if source == domain.ReviewTriggerAuto && mode != "" {
 		return "", fmt.Errorf("%w: automatic review cannot override interface mode", ErrInvalid)
+	}
+	if err := validateTriggerFocus(opts); err != nil {
+		return "", err
 	}
 	return source, nil
 }

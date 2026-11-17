@@ -24,6 +24,9 @@ type ListReviewsResponse struct {
 	// QueuedReviews are passes waiting for the reviewer to be free; none has a
 	// run yet. `review cancel` withdraws them.
 	QueuedReviews []domain.QueuedReviewTrigger `json:"queuedReviews"`
+	// HeldReason is set while the machine is too busy for the queued passes to
+	// start: "machine busy (load X/Y cores, reviewers A/B)".
+	HeldReason string `json:"heldReason,omitempty" description:"Why queued passes wait for the machine: machine busy (load X/Y cores, reviewers A/B). Empty when the machine is not holding them."`
 }
 
 // TriggerReviewResponse is the body of trigger (200/201). reviews carries the
@@ -39,6 +42,8 @@ type TriggerReviewResponse struct {
 	// Queued is true when the reviewer was busy and the pass was parked to start
 	// once it is free (HTTP 200, nothing created yet).
 	Queued bool `json:"queued" description:"True when the reviewer was busy on another head and the pass was queued to start once it is free; nothing was created yet."`
+	// HeldReason is set when the pass was queued because the machine is busy.
+	HeldReason string `json:"heldReason,omitempty" description:"Set when the pass was queued because the machine is busy: machine busy (load X/Y cores, reviewers A/B)."`
 	// AutoInjectEnabled is true when this request turned the worker session's
 	// review auto-inject on.
 	AutoInjectEnabled bool `json:"autoInjectEnabled" description:"True when this request turned the worker session's review auto-inject on."`

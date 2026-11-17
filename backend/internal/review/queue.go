@@ -28,26 +28,32 @@ func (e *Engine) queue() (TriggerQueue, bool) {
 // so the caller keeps the rejection: a pass already running on this very head
 // is a true duplicate, not a busy reviewer.
 func (p *triggerPass) queueBusyRerun() (TriggerResult, bool, error) {
-	queue, ok := p.e.queue()
-	if !ok {
-		return TriggerResult{}, false, nil
-	}
-	queued := false
+	var states []PRReviewState
 	for _, state := range p.reviews {
 		if state.Status == ReviewStateIneligible || headRunningForHarness(p.runs, state.PRURL, state.TargetSHA, p.harness) {
 			continue
 		}
-		err := queue.EnqueueReviewTrigger(p.ctx, domain.QueuedReviewTrigger{SessionID: p.workerID, PRURL: state.PRURL, Harness: p.harness, CreatedAt: p.e.clock(), Model: p.opts.Config.Model, Effort: p.opts.Config.Effort, InterfaceMode: p.opts.InterfaceMode, TriggerSource: p.source})
-		if err != nil {
+		states = append(states, state)
+	}
+	return p.queueStates(states, "")
+}
+
+// queueStates parks one pass per PR state and reports the queued result. It
+// reports false when the store has no queue or there was nothing to park.
+// heldReason says why the pass waits when the cause is not a busy reviewer.
+func (p *triggerPass) queueStates(states []PRReviewState, heldReason string) (TriggerResult, bool, error) {
+	queue, ok := p.e.queue()
+	if !ok || len(states) == 0 {
+		return TriggerResult{}, false, nil
+	}
+	for _, state := range states {
+		if err := queue.EnqueueReviewTrigger(p.ctx, queuedTrigger(p, state.PRURL)); err != nil {
 			return TriggerResult{}, false, err
 		}
-		queued = true
-	}
-	if !queued {
-		return TriggerResult{}, false, nil
 	}
 	return TriggerResult{
 		Queued:           true,
+		HeldReason:       heldReason,
 		ReviewerHandleID: legacyReviewerHandle(p.reviewRow),
 		Reviews:          p.reviews,
 		Runs:             p.runs,
@@ -142,4 +148,12 @@ func reviewedSince(runs []domain.ReviewRun, state PRReviewState, harness domain.
 		}
 	}
 	return false
+}
+
+// queuedTrigger is the queue entry that replays this trigger for one PR,
+// keeping the requester's options and one-off focus.
+func queuedTrigger(p *triggerPass, prURL string) domain.QueuedReviewTrigger {
+	q := domain.QueuedReviewTrigger{SessionID: p.workerID, PRURL: prURL, Harness: p.harness, CreatedAt: p.e.clock(), Model: p.opts.Config.Model, Effort: p.opts.Config.Effort, InterfaceMode: p.opts.InterfaceMode, TriggerSource: p.source}
+	q.Focus, q.FocusAuthor = triggerFocus(p.opts)
+	return q
 }

@@ -9,6 +9,7 @@ func orchestratorReviewWorkflow(trackedRemote bool) string {
 	return `## Review and CI Workflow
 
 - If CI fails, send the failing output to the responsible worker and ask them to fix and push.
+- When a worker reports a PR ready or partial, compare its file list and summary with the backlog item's note and done-when (or the brief) before you start a review; send any gaps back to the worker.
 - If review changes are requested on a Tallpine worker's implementation PR, send the review findings to that implementation worker. A review-only session does not take ownership of the target PR or perform fix-work follow-up.
 - If work is green and approved, report that state to the human. Do not merge unless explicitly asked and supported by project rules.
 - Before you merge a PR, run "tallpine merges": it lists what merged recently and what is in flight in every lane. Merge PRs that touch the same files one at a time, oldest first, and have the later worker rebase.

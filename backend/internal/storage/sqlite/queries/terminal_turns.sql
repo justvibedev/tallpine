@@ -15,12 +15,23 @@ WHERE session_terminal_turns.id = (SELECT MAX(t.id) FROM session_terminal_turns 
   -- grow one turn without end; past this size a request starts its own.
   AND length(session_terminal_turns.user_request) < 32000;
 
--- name: CloseTerminalTurn :exec
+-- name: CloseTerminalTurn :execrows
 -- Answers the session's newest turn. A stop with no open turn changes nothing.
 UPDATE session_terminal_turns
 SET agent_response = sqlc.arg(agent_response), responded_at = sqlc.arg(responded_at)
 WHERE session_terminal_turns.id = (SELECT MAX(t.id) FROM session_terminal_turns AS t WHERE t.session_id = sqlc.arg(session_id))
   AND session_terminal_turns.responded_at IS NULL;
+
+-- name: InsertAnsweredTerminalTurn :exec
+-- A turn that opened with no prompt hook (a monitor wakeup, a queued task
+-- notification): its answer is kept with a placeholder request.
+INSERT INTO session_terminal_turns (session_id, harness, native_session_id, user_request, agent_response, requested_at, responded_at)
+SELECT sqlc.arg(session_id), sqlc.arg(harness), sqlc.arg(native_session_id), sqlc.arg(user_request), sqlc.arg(agent_response), sqlc.arg(at), sqlc.arg(at)
+-- A repeated stop hook must not add the answer it already closed a turn with.
+WHERE NOT EXISTS (
+    SELECT 1 FROM session_terminal_turns AS t
+    WHERE t.id = (SELECT MAX(m.id) FROM session_terminal_turns AS m WHERE m.session_id = sqlc.arg(session_id))
+      AND t.agent_response = sqlc.arg(agent_response));
 
 -- name: TrimTerminalTurns :exec
 DELETE FROM session_terminal_turns

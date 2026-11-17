@@ -145,6 +145,7 @@ tallpine project set-config <id> [flags]
 | `--agent-rules-file string` | Repo-relative file containing project-specific worker standing instructions | - |
 | `--canonical-repo-url string` | Explicit upstream HTTPS repository URL for PR claims; may be on another host when the repo moved, then it replaces origin for PR tracking | - |
 | `--clear` | Clear all config | - |
+| `--claude-plugin stringArray` | Per-role Claude plugin switch `role=id:on\|off\|unset` (role `worker`, `orchestrator` or `reviewer`; id `name@marketplace`; repeatable). Merges: other plugins and config are kept. Example: `--claude-plugin worker=swift-lsp@claude-plugins-official:off` | - |
 | `--config-json string` | Full config as a JSON object; replaces the entire config (overrides field flags) | - |
 | `--default-branch string` | Base branch new session worktrees are created from | - |
 | `--env stringArray` | Env var `KEY=VALUE` forwarded into sessions (repeatable) | - |

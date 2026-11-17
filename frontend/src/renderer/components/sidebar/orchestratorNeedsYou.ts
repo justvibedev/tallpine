@@ -5,13 +5,14 @@ import { waitingCount } from "../ask/askModel";
 import { fetchConversationPage } from "../../hooks/conversation/useConversationQuery";
 import type { ConversationItem } from "../../types/conversation";
 import type { WorkspaceSession } from "../../types/workspace";
-import { hasNeedsYouMarker } from "../chat/WorkerUpdates";
+import { asksOwnerAtEnd } from "../chat/WorkerUpdates";
 
 /** Recent items are enough: only the newest reply and anything after it matter. */
 const TAIL_LIMIT = 30;
 
 /**
- * True while the newest assistant reply carries the "Needs you:" marker and the
+ * True while the newest assistant reply ends asking the owner something (the
+ * "Needs you:" marker, a closing question or an offer needing a yes) and the
  * owner has not written since. A human message after it answers it.
  */
 export function latestReplyUnanswered(items: readonly ConversationItem[]): boolean {
@@ -19,7 +20,7 @@ export function latestReplyUnanswered(items: readonly ConversationItem[]): boole
 		const item = items[index];
 		if (item?.kind !== "message") continue;
 		if (item.role === "user" && item.origin === "human" && !item.continuation) return false;
-		if (item.role === "assistant" && item.text.trim() !== "") return hasNeedsYouMarker(item.text);
+		if (item.role === "assistant" && item.text.trim() !== "") return asksOwnerAtEnd(item.text);
 	}
 	return false;
 }

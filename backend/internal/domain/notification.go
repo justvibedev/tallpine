@@ -167,11 +167,19 @@ func (r NotificationRecord) IsAsk() bool {
 		(strings.HasPrefix(r.SourceKey, AskSourcePrefix) || strings.HasPrefix(r.SourceKey, AskLaneSourcePrefix))
 }
 
+// IsOwnerQuestion reports whether the notification is an orchestrator reply
+// that ended on a question to the owner with no ask filed (B750).
+func (r NotificationRecord) IsOwnerQuestion() bool {
+	return r.Type == NotificationPlanWaiting &&
+		(strings.HasPrefix(r.SourceKey, OwnerQuestionSourcePrefix) || strings.HasPrefix(r.SourceKey, OwnerQuestionLaneSourcePrefix))
+}
+
 // LaneChat reports whether the notification's session is the lane orchestrator
 // whose chat holds the plan or ask card, so a client opens that session.
 func (r NotificationRecord) LaneChat() bool {
 	return r.Type == NotificationPlanWaiting &&
-		(strings.HasPrefix(r.SourceKey, PlanLaneSourcePrefix) || strings.HasPrefix(r.SourceKey, AskLaneSourcePrefix))
+		(strings.HasPrefix(r.SourceKey, PlanLaneSourcePrefix) || strings.HasPrefix(r.SourceKey, AskLaneSourcePrefix) ||
+			strings.HasPrefix(r.SourceKey, OwnerQuestionLaneSourcePrefix))
 }
 
 // Resolved reports whether the issue behind this notification is closed.

@@ -9,8 +9,8 @@ import (
 // It never mentions the GitHub CLI: findings travel in the submitted body, one
 // per line as `path:line - finding`, and the worker receives that body.
 func localReviewTexts(spec LaunchSpec) (prompt, systemPrompt string) {
-	queueText := localQueueText(spec) + reviewTaskContextText(spec.TaskContext) + reviewPlanText(spec.PlanDecisions, spec.PlanFocus)
-	prompt = fmt.Sprintf(`Review the requested local branch(es) owned by worker session %s. These branches have no pull request: the worker committed on its branch in the current checkout.
+	queueText := localQueueText(spec) + reviewCheckoutText(spec.WorkspacePath) + reviewTaskContextText(spec.TaskContext) + reviewPlanText(spec.PlanDecisions, spec.PlanFocus) + reviewRulesText(spec.AppReviewerRules, spec.ReviewerRules, spec.ReviewerRulesNote) + reviewSkillsText(spec.ReviewerSkillsDir, spec.ReviewerSkills, spec.ReviewerSkillsSkipped) + reviewFocusText(spec.ReviewQueue)
+	prompt = fmt.Sprintf(`Review the requested local branch(es) owned by worker session %s. These branches have no pull request: the worker committed on its branch in the worker checkout named below.
 %s
 
 Complete every review task in the queue autonomously and do not ask whether to continue. `+localFlowNote+`
@@ -45,7 +45,7 @@ func localQueueText(spec LaunchSpec) string {
 func localReviewSystemPrompt() string {
 	return `## Code reviewer role
 
-You are Tallpine's native code reviewer for a Tallpine worker's local branch, which has no pull request. Review the branch's change in the current checkout: the diff from the base commit to the head commit given in the task (` + "`git diff <base>...<head>`" + `). Do not start unrelated work. Review for correctness bugs, missing error handling, security issues, test coverage, and clear deviations from the surrounding code's conventions. Prefer a few high-confidence findings over nitpicks.
+You are Tallpine's native code reviewer for a Tallpine worker's local branch, which has no pull request. Review the branch's change in the worker checkout named in the task: the diff from the base commit to the head commit given in the task (` + "`git diff <base>...<head>`" + `). Do not start unrelated work. Review for correctness bugs, missing error handling, security issues, test coverage, and clear deviations from the surrounding code's conventions. Prefer a few high-confidence findings over nitpicks.
 
 Duplication check: grep the repository for the concepts the diff introduces (business logic, helpers, parsers, clients, models, codecs). If an existing implementation already does the same job, report it with its file:line. Request changes when the duplication is real business logic.
 

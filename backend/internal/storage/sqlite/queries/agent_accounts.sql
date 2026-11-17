@@ -56,6 +56,29 @@ SELECT EXISTS (
       )
 );
 
+-- A completed model turn on any session currently bound to the same agent
+-- account proves that the account's quota works again, but only if it began
+-- after the refusal: a turn already running when the quota ran out proves nothing.
+-- name: AccountTurnCompletedSince :one
+SELECT EXISTS (
+    SELECT 1 FROM sessions me
+    JOIN conversation_turns t ON t.state = 'completed' AND t.completed_at > sqlc.arg(since)
+      AND COALESCE(t.started_at, t.requested_at) > sqlc.arg(since)
+    JOIN sessions o ON o.id = t.handled_by_session_id AND o.harness = me.harness
+    WHERE me.id = sqlc.arg(session_id)
+      AND (
+          SELECT a.account_id FROM session_agent_accounts a
+          WHERE a.session_id = o.id
+            AND a.provider = CASE o.harness WHEN 'claude-code' THEN 'claude' WHEN 'codex' THEN 'codex' ELSE '' END
+          ORDER BY a.bound_at DESC LIMIT 1
+      ) = (
+          SELECT a.account_id FROM session_agent_accounts a
+          WHERE a.session_id = me.id
+            AND a.provider = CASE me.harness WHEN 'claude-code' THEN 'claude' WHEN 'codex' THEN 'codex' ELSE '' END
+          ORDER BY a.bound_at DESC LIMIT 1
+      )
+);
+
 -- Each usage event counts for the account its session used when the event
 -- happened; an event older than the session's first binding counts for that
 -- first account. Days are UTC calendar days.

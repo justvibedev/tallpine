@@ -33,6 +33,10 @@ func projectSettings() []Setting {
 	orchestratorRules := p("orchestratorRules", KindText, "", "Standing instructions for the project's orchestrator.")
 	orchestratorRules.Writers = rules
 	orchestratorRules.MaxBytes = domain.MaxAgentRulesBytes
+	// Review rules bind the reviewer that checks agents' work, so only a
+	// person may set them.
+	reviewerRules := humanOnly(p("reviewerRules", KindText, "", "Project review rules added to every native review pass; they add checks and cannot relax the reviewer role or verdict."))
+	reviewerRules.MaxBytes = domain.MaxAgentRulesBytes
 	// Read by domain.DefaultAutoCompactChoice; the project's orchestrator
 	// writes it through the rules route (B193).
 	compactWindow := p("orchestrator.autoCompactWindow", KindString, domain.OrchestratorAutoCompactDefault,
@@ -55,7 +59,7 @@ func projectSettings() []Setting {
 	mode.Enum = []string{"", "chat", "tui"}
 	planning := p("planningMode", KindEnum, "", "When the project plans before it builds: auto (the orchestrator decides), always or off. Empty follows the app default (Settings > Reviews); an explicit auto stays auto. A managed policy.planner.mode wins.")
 	planning.Enum = []string{"", "auto", "always", "off"}
-	return []Setting{
+	return append([]Setting{
 		p("canonicalRepoURL", KindString, "", "Canonical repository URL of the project."),
 		p("githubUser", KindString, "", "GitHub account the project's sessions act as."),
 		byCreator(p("defaultBranch", KindString, "", "Branch worktrees are created from.")),
@@ -69,6 +73,9 @@ func projectSettings() []Setting {
 		p("agentRulesFile", KindString, "", "Repo-relative file appended to the worker rules."),
 		p("verifyCommand", KindString, "", "Command that verifies a worker's change."),
 		orchestratorRules,
+		p("orchestratorRulesFile", KindString, "", "Repo-relative file appended to the orchestrator rules."),
+		reviewerRules,
+		humanOnly(p("reviewerRulesFile", KindString, "", "Repo-relative file of review rules, read from origin/<default branch> (never the PR head) and appended to reviewerRules.")),
 		mode,
 		p("agentConfig", KindObject, nil, "Default harness, model and permissions of the project's sessions."),
 		lockable(byCreator(p("worker", KindObject, nil, "Worker overrides of agentConfig."))),
@@ -100,9 +107,29 @@ func projectSettings() []Setting {
 		lockable(p("models", KindObject, nil, "Models allowed in the project.")),
 		p("promptCacheTTL", KindObject, nil, "Prompt cache TTL per session role."),
 		p("claudePlugins", KindObject, nil, "Claude Code enabledPlugins override per session role (orchestrator, worker, reviewer); an unset role keeps the account's plugins."),
+		// The reviewer checks agents' work, so only a person picks its plugins.
+		humanOnly(p("claudePlugins.reviewer", KindObject, nil, "Claude Code enabledPlugins override of native reviewers; only a person may set it.")),
 		p("claudeAutoMemory", KindObject, nil, "Claude Code auto-memory per session role; false turns it off for that role, unset inherits."),
+		p("skillRoles", KindObject, nil, "Skill switches per session role (worker, orchestrator, reviewer): skill name -> on/off. Unset skills stay on for workers and orchestrators and off for reviewers."),
+		// Reviewer and orchestrator skills shape how agents' work is checked
+		// and steered, so only a person sets them (B740 a5).
+		humanOnly(p("skillRoles.reviewer", KindObject, nil, "Skill switches of native reviewers; only a person may set them.")),
+		humanOnly(p("skillRoles.orchestrator", KindObject, nil, "Skill switches of the project orchestrator; only a person may set them.")),
+		// The master and agent-type switches cut a skill off for every role,
+		// the reviewer's and orchestrator's included, so only a person sets them (B766).
+		humanOnly(p("skillRoles.all", KindObject, nil, "Master skill switches: a skill set to false is off for every role and agent; only a person may set them.")),
 		p("chatHibernation", KindObject, nil, "Project override of Chat hibernation."),
+	}, skillAgentSettings(p)...)
+}
+
+// skillAgentSettings declares the per-agent skill switches (skillRoles.agentCodex
+// and so on), a person's alone like the master switch (B766).
+func skillAgentSettings(p func(name string, kind Kind, def any, desc string) Setting) []Setting {
+	out := make([]Setting, 0, len(domain.AllHarnesses))
+	for _, h := range domain.AllHarnesses {
+		out = append(out, humanOnly(p("skillRoles."+domain.SkillAgentKey(string(h)), KindObject, nil, "Skill switches for one agent type: a skill set to false is not delivered to "+string(h)+" in any role; only a person may set them.")))
 	}
+	return out
 }
 
 // humanOnly restricts a project field to the user: no agent, not even the

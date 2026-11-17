@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
@@ -115,5 +116,34 @@ func TestReviewMessageAndCancelUseInteractiveTUI(t *testing.T) {
 	cancel, err := r.ReviewCancel(context.Background())
 	if err != nil || cancel.Mode != ports.ReviewCancelInput || cancel.Input != "\x1b" {
 		t.Fatalf("ReviewCancel = %+v, %v", cancel, err)
+	}
+}
+
+// The Kiro reviewer's resources are the skills switched on for the reviewer
+// role and nothing else (none by default, B740 q1).
+func TestReviewCommandListsReviewerSkillsOnly(t *testing.T) {
+	promptRoot := t.TempDir()
+	systemPath := filepath.Join(promptRoot, "system.md")
+	if err := os.WriteFile(systemPath, []byte("role\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Reviewer{resolveBinary: func(context.Context) (string, error) { return "kiro-cli", nil }}
+	launch := domain.SkillLaunch{Resources: []string{"skill:///home/u/.claude/skills/b/SKILL.md"}}
+	spec, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{
+		WorkspacePath: "/worktrees/w", Prompt: "p", SystemPromptFile: systemPath, TaskPromptRoot: promptRoot,
+		Config: ports.AgentConfig{Launch: domain.AgentLaunchOptions{Skills: launch.Encode()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(spec.WorkingDirectory, ".kiro", "agents", reviewerAgentName+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Resources []string `json:"resources"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil || !slices.Equal(cfg.Resources, launch.Resources) {
+		t.Fatalf("resources = %v (%v)", cfg.Resources, err)
 	}
 }

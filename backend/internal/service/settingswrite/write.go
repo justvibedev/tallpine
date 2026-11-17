@@ -243,7 +243,7 @@ func (w *Writer) validate(ctx context.Context, ch Change) ([]planned, error) {
 				denied[string(k)] = why
 				return
 			}
-			if why := agentMayWrite(agent, def, cur.Value, value); why != "" {
+			if why := agentMayWrite(agent, w.registry(), def, cur.Value, value); why != "" {
 				denied[string(k)] = why
 				return
 			}
@@ -327,10 +327,7 @@ func (w *Writer) applyApp(ctx context.Context, plan []planned) error {
 	if err != nil {
 		return err
 	}
-	var hibernation settingssvc.ChatHibernationUpdate
-	var compactionOn *bool
-	var retention *int
-	setHibernation, setCompaction := false, false
+	var batch appBatch
 	for _, p := range plan {
 		raw := p.value
 		switch p.def.Key {
@@ -344,7 +341,7 @@ func (w *Writer) applyApp(ctx context.Context, plan []planned) error {
 			if err := w.setDynamicContext(ctx, raw); err != nil {
 				return err
 			}
-		case "app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort", "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort":
+		case "app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort", "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort", "app.workerRules", "app.orchestratorRules", "app.reviewerRules", "app.skillRoles":
 			if err := w.setWorkflowDefault(ctx, p.def.Key, raw, plan); err != nil {
 				return err
 			}
@@ -366,41 +363,14 @@ func (w *Writer) applyApp(ctx context.Context, plan []planned) error {
 					return appError(err)
 				}
 			}
-		case "app.chatHibernation.enabled":
-			var on bool
-			_ = json.Unmarshal(raw, &on)
-			hibernation.Enabled, setHibernation = &on, true
-		case "app.chatHibernation.workerIdleSeconds", "app.chatHibernation.orchestratorIdleSeconds":
-			var seconds int64
-			_ = json.Unmarshal(raw, &seconds)
-			d := time.Duration(seconds) * time.Second
-			if p.def.Key == "app.chatHibernation.workerIdleSeconds" {
-				hibernation.WorkerIdle = &d
-			} else {
-				hibernation.OrchestratorIdle = &d
-			}
-			setHibernation = true
-		case "app.storageCompaction":
-			var on bool
-			_ = json.Unmarshal(raw, &on)
-			compactionOn, setCompaction = &on, true
-		case "app.providerEventRetentionDays":
-			var days int
-			_ = json.Unmarshal(raw, &days)
-			retention, setCompaction = &days, true
 		default:
-			return fmt.Errorf("settingswrite: no writer for %s", p.def.Key)
+			if !batch.add(p.def.Key, raw) {
+				return fmt.Errorf("settingswrite: no writer for %s", p.def.Key)
+			}
 		}
 	}
-	if setHibernation {
-		if _, err := w.AppSettings.SetChatHibernation(ctx, hibernation); err != nil {
-			return appError(err)
-		}
-	}
-	if setCompaction {
-		if _, err := w.AppSettings.SetStorageCompaction(ctx, compactionOn, retention); err != nil {
-			return appError(err)
-		}
+	if err := batch.flush(ctx, w); err != nil {
+		return err
 	}
 	after, err := w.AppSettings.Get(ctx)
 	if err != nil {
@@ -413,7 +383,7 @@ func (w *Writer) applyApp(ctx context.Context, plan []planned) error {
 // appError turns an owner's validation sentinel into a refusal.
 func appError(err error) error {
 	for _, sentinel := range []error{settingssvc.ErrInvalidChatHibernation, settingssvc.ErrInvalidStorageCompaction,
-		settingssvc.ErrInvalidHarnessDefault, settingssvc.ErrUnknownHarness} {
+		settingssvc.ErrInvalidHarnessDefault, settingssvc.ErrUnknownHarness, settingssvc.ErrInvalidAppInstructions, settingssvc.ErrInvalidMachineLoad} {
 		if errors.Is(err, sentinel) {
 			return &Error{Code: CodeInvalid, Message: err.Error()}
 		}

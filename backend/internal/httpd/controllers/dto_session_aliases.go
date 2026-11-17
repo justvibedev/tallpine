@@ -80,6 +80,12 @@ type RestoreSessionResponse = apitypes.RestoreSessionResponse
 // ExitAgentResponse aliases apitypes.ExitAgentResponse.
 type ExitAgentResponse = apitypes.ExitAgentResponse
 
+// RunningAgentsResponse aliases apitypes.RunningAgentsResponse.
+type RunningAgentsResponse = apitypes.RunningAgentsResponse
+
+// StopAllAgentsResponse aliases apitypes.StopAllAgentsResponse.
+type StopAllAgentsResponse = apitypes.StopAllAgentsResponse
+
 // ResumeAgentResponse aliases apitypes.ResumeAgentResponse.
 type ResumeAgentResponse = apitypes.ResumeAgentResponse
 

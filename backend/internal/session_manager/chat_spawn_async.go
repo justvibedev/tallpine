@@ -357,7 +357,7 @@ func (m *Manager) retryFailedChatSpawn(ctx context.Context, rec domain.SessionRe
 	if err != nil {
 		return RestoreResult{}, false, err
 	}
-	systemPrompt, err := m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, true)
+	systemPrompt, err := m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, rec.Harness, true)
 	if err != nil {
 		return RestoreResult{}, false, err
 	}

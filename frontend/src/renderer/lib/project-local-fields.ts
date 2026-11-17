@@ -1,6 +1,10 @@
 import type { components } from "../../api/schema";
 
 type ProjectConfig = components["schemas"]["ProjectConfig"];
+export type ClaudePlugins = Record<string, Record<string, boolean>>;
+export type ClaudeAutoMemory = Record<string, boolean>;
+/** Skill name -> on/off per session role; an absent skill follows its role default. */
+export type SkillRoles = Record<string, Record<string, boolean>>;
 
 /** Project settings that used to be CLI-only; edited on the local project pages. */
 export type ProjectLocalFieldsDraft = {
@@ -11,6 +15,13 @@ export type ProjectLocalFieldsDraft = {
 	agentRules?: string;
 	agentRulesFile?: string;
 	orchestratorRules?: string;
+	orchestratorRulesFile?: string;
+	/** Claude Code enabledPlugins overrides per session role; a role or plugin absent keeps the account's value. */
+	claudePlugins?: ClaudePlugins;
+	/** Claude Code auto-memory per session role; absent inherits the account. */
+	claudeAutoMemory?: ClaudeAutoMemory;
+	/** Skill switches per session role (skillRoles). */
+	skillRoles?: SkillRoles;
 	/** "" means auto (the orchestrator decides). */
 	planningMode?: string;
 	/** "" defers to the daemon-wide default. */
@@ -18,6 +29,8 @@ export type ProjectLocalFieldsDraft = {
 	/** Digits only; "" or 0 never stops. */
 	autoReviewMaxRounds?: string;
 	approveIdenticalPatch?: boolean;
+	reviewerRules?: string;
+	reviewerRulesFile?: string;
 };
 
 export const PLANNING_MODES = ["auto", "always", "off"] as const;
@@ -46,15 +59,21 @@ export function projectLocalFieldsDraft(config: ProjectConfig): ProjectLocalFiel
 		agentRules: config.agentRules ?? "",
 		agentRulesFile: config.agentRulesFile ?? "",
 		orchestratorRules: config.orchestratorRules ?? "",
+		orchestratorRulesFile: config.orchestratorRulesFile ?? "",
+		claudePlugins: config.claudePlugins ?? {},
+		claudeAutoMemory: config.claudeAutoMemory ?? {},
+		skillRoles: config.skillRoles ?? {},
 		planningMode: config.planningMode ?? "",
 		defaultSessionMode: config.defaultSessionMode ?? "",
 		autoReviewMaxRounds: config.autoReviewMaxRounds ? String(config.autoReviewMaxRounds) : "",
 		approveIdenticalPatch: config.approveIdenticalPatch ?? false,
+		reviewerRules: config.reviewerRules ?? "",
+		reviewerRulesFile: config.reviewerRulesFile ?? "",
 	};
 }
 
 /** The config fields a draft saves; an empty value clears the key so the default applies. */
-export function projectLocalFieldsConfig(draft: ProjectLocalFieldsDraft): Pick<ProjectConfig, "symlinks" | "cloneWorktreeInclude" | "verifyCommand" | "agentRules" | "agentRulesFile" | "orchestratorRules" | "planningMode" | "defaultSessionMode" | "autoReviewMaxRounds" | "approveIdenticalPatch"> {
+export function projectLocalFieldsConfig(draft: ProjectLocalFieldsDraft): Pick<ProjectConfig, "symlinks" | "cloneWorktreeInclude" | "verifyCommand" | "agentRules" | "agentRulesFile" | "orchestratorRules" | "orchestratorRulesFile" | "claudePlugins" | "claudeAutoMemory" | "skillRoles" | "planningMode" | "defaultSessionMode" | "autoReviewMaxRounds" | "approveIdenticalPatch" | "reviewerRules" | "reviewerRulesFile"> {
 	const symlinks = lines(draft.symlinks);
 	const rounds = Number.parseInt(draft.autoReviewMaxRounds ?? "", 10);
 	return {
@@ -64,9 +83,21 @@ export function projectLocalFieldsConfig(draft: ProjectLocalFieldsDraft): Pick<P
 		agentRules: draft.agentRules?.trim() ? draft.agentRules : undefined,
 		agentRulesFile: text(draft.agentRulesFile),
 		orchestratorRules: draft.orchestratorRules?.trim() ? draft.orchestratorRules : undefined,
+		orchestratorRulesFile: text(draft.orchestratorRulesFile),
+		claudePlugins: claudePluginsConfig(draft.claudePlugins),
+		skillRoles: claudePluginsConfig(draft.skillRoles),
+		claudeAutoMemory: draft.claudeAutoMemory && Object.keys(draft.claudeAutoMemory).length ? draft.claudeAutoMemory : undefined,
 		planningMode: (draft.planningMode || undefined) as ProjectConfig["planningMode"],
 		defaultSessionMode: (draft.defaultSessionMode || undefined) as ProjectConfig["defaultSessionMode"],
 		autoReviewMaxRounds: rounds > 0 ? rounds : undefined,
 		approveIdenticalPatch: draft.approveIdenticalPatch || undefined,
+		reviewerRules: draft.reviewerRules?.trim() ? draft.reviewerRules : undefined,
+		reviewerRulesFile: text(draft.reviewerRulesFile),
 	};
+}
+
+/** Drops roles with no override, and the whole map when none is left, so an unset role keeps its default (plugins and skill switches alike). */
+function claudePluginsConfig(plugins: ClaudePlugins | undefined): ClaudePlugins | undefined {
+	const kept = Object.entries(plugins ?? {}).filter(([, overrides]) => Object.keys(overrides).length > 0);
+	return kept.length ? Object.fromEntries(kept) : undefined;
 }

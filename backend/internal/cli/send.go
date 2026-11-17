@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -169,6 +170,9 @@ func describeSendOutcome(session string, res apitypes.SendSessionMessageResponse
 	case "queued":
 		if res.WaitingOnInput {
 			return "queued for next turn in " + session + handle + "; NOT delivered yet: its running turn is waiting on an in-chat question, so the agent sees this only after that question is answered in the app"
+		}
+		if held, err := time.Parse(time.RFC3339, res.HeldUntil); err == nil {
+			return "queued for " + session + handle + "; NOT delivered yet: held until " + held.Local().Format("15:04") + " by usage-limit pause (sooner if its account completes a turn)"
 		}
 		return "queued for next turn in " + session + handle + "; the agent will see it after its current work"
 	default:

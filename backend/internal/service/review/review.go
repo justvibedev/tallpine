@@ -360,6 +360,10 @@ type TriggerRequest struct {
 	// EnableAutoInject turns on the worker session's review auto-inject once a
 	// pass has started, so the reviewer's PR review comments reach the worker.
 	EnableAutoInject bool
+	// Focus is a one-off review focus for this pass; FocusAuthor is who gave
+	// it, set by the caller from the request's credentials, never its body.
+	Focus       string
+	FocusAuthor domain.ReviewFocusAuthor
 }
 
 // TriggerOutcome is the trigger result plus whether this request turned the
@@ -409,6 +413,8 @@ func (s *Service) TriggerRequested(ctx context.Context, workerID domain.SessionI
 		PRURL:              prURL,
 		RejectReviewedHead: req.RejectReviewedHead,
 		Rerun:              req.Rerun,
+		Focus:              req.Focus,
+		FocusAuthor:        req.FocusAuthor,
 	})
 	if err != nil {
 		return TriggerOutcome{}, err

@@ -75,11 +75,25 @@ func AppSettings(s settingssvc.Snapshot) Values {
 		"app.workflowDefaults.orchestratorAgent":      raw(s.WorkflowDefaults.OrchestratorAgent),
 		"app.workflowDefaults.orchestratorModel":      raw(s.WorkflowDefaults.OrchestratorModel),
 		"app.workflowDefaults.orchestratorEffort":     raw(s.WorkflowDefaults.OrchestratorEffort),
+		"app.workerRules":                             raw(s.WorkflowDefaults.WorkerRules),
+		"app.orchestratorRules":                       raw(s.WorkflowDefaults.OrchestratorRules),
+		"app.reviewerRules":                           raw(s.WorkflowDefaults.ReviewerRules),
+		"app.skillRoles":                              raw(skillRolesOrEmpty(s.WorkflowDefaults.SkillRoles)),
 		"app.storageCompaction":                       raw(s.StorageCompaction),
 		"app.providerEventRetentionDays":              raw(s.ProviderEventRetentionDays),
 		"app.daemon.peerCheck":                        raw(settingssvc.PeerCheckOrDefault(s.PeerCheck)),
+		"app.machineLoad.maxReviewers":                raw(s.MachineMaxReviewers),
+		"app.machineLoad.loadPercent":                 raw(s.MachineLoadPercent),
 		// Mobile state lives in its own file; only the managed switch is visible
 		// here, and it reads "allowed" unless the managed file says otherwise.
 		"app.mobile.enabled": raw(true),
 	}
+}
+
+// skillRolesOrEmpty reads unset switches as {}, the setting's default.
+func skillRolesOrEmpty(r domain.SkillRoles) domain.SkillRoles {
+	if r == nil {
+		return domain.SkillRoles{}
+	}
+	return r
 }

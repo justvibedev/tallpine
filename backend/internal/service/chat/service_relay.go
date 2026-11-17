@@ -169,7 +169,11 @@ func (s *Service) RelaySessionChatTurnReceipt(ctx context.Context, id domain.Ses
 		return ports.MessageReceipt{Outcome: ports.MessageDuplicate}, nil
 	}
 	if turn.State == domain.TurnStateQueued {
-		return ports.MessageReceipt{Outcome: ports.MessageQueued, ID: turn.ID, WaitingOnInput: waitingOnInput}, nil
+		receipt := ports.MessageReceipt{Outcome: ports.MessageQueued, ID: turn.ID, WaitingOnInput: waitingOnInput}
+		if until, paused := controller.usageLimitPausedUntil(ctx); paused && msg.Origin != domain.MessageOriginHuman {
+			receipt.HeldUntil = until
+		}
+		return receipt, nil
 	}
 	if reauthRequired {
 		return ports.MessageReceipt{Outcome: ports.MessageReauthRequired, ID: turn.ID}, nil
@@ -288,6 +292,26 @@ func (s *Service) StopChat(ctx context.Context, id domain.SessionID) error {
 	return s.Stop(ctx, id)
 }
 
+// usageLimitPauseEnded reports whether the latest settled turn was a usage-limit
+// refusal that no longer pauses the session and turns are queued behind it.
+func (c *Controller) usageLimitPauseEnded(ctx context.Context) bool {
+	reader, ok := c.store.(interface {
+		LatestAutoResumeTurn(context.Context, string) (domain.ConversationTurn, error)
+	})
+	if !ok {
+		return false
+	}
+	turn, err := reader.LatestAutoResumeTurn(ctx, c.conversation.ID)
+	if err != nil || turn.State != domain.TurnStateFailed || turn.UsageLimit == nil {
+		return false
+	}
+	if _, paused := c.usageLimitPausedUntil(ctx); paused {
+		return false
+	}
+	_, err = c.store.NextQueuedTurn(ctx, c.conversation.ID)
+	return err == nil
+}
+
 // usageLimitPausedUntil reports whether the conversation's latest turn failed on
 // a provider quota refusal whose reset is still ahead. It reads the durable turn,
 // so a daemon restart keeps the pause.
@@ -313,6 +337,15 @@ func (c *Controller) usageLimitPausedUntil(ctx context.Context) (time.Time, bool
 		SessionAccountChangedSince(context.Context, domain.SessionID, time.Time) (bool, error)
 	}); ok {
 		if changed, err := mover.SessionAccountChangedSince(ctx, c.sessionID, turn.RequestedAt); err == nil && changed {
+			return time.Time{}, false
+		}
+	}
+	// A completed turn on any session of the same account after the refusal
+	// shows the quota works again, whatever reset time the provider quoted.
+	if done, ok := c.store.(interface {
+		AccountTurnCompletedSince(context.Context, domain.SessionID, time.Time) (bool, error)
+	}); ok {
+		if usable, err := done.AccountTurnCompletedSince(ctx, c.sessionID, *turn.CompletedAt); err == nil && usable {
 			return time.Time{}, false
 		}
 	}

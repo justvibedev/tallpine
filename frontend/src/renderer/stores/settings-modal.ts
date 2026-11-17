@@ -5,6 +5,7 @@ export type GlobalSettingsSection =
 	| "general"
 	| "harness"
 	| "reviews"
+	| "instructions"
 	| "security"
 	| "agents"
 	| "connections"

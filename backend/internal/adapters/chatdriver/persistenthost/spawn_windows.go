@@ -11,20 +11,22 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func spawnDetached(ctx context.Context, cfg Config) error {
+func spawnDetached(ctx context.Context, cfg Config) (<-chan struct{}, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	cmd := exec.Command(exe, hostArgs(cfg)...) //nolint:forbidigo // detached chat host has specialized lifetime and creation flags
 	cmd.Dir = cfg.Workdir
 	cmd.Env = cfg.Env
 	cmd.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP, HideWindow: true}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("spawn detached chat host: %w", err)
+		return nil, fmt.Errorf("spawn detached chat host: %w", err)
 	}
-	return cmd.Process.Release()
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	return exited, nil
 }

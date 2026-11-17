@@ -23,6 +23,7 @@ const idleCompactionTick = time.Minute
 func startIdleCompaction(ctx context.Context, store *sqlite.Store, chat *chatsvc.Service, tasks *bgtasks.Tracker,
 	handoff func(context.Context, domain.SessionID) error,
 	send func(context.Context, domain.SessionID, string) (bool, error),
+	owner orchestratoridle.Owner,
 	hibernation interface {
 		SetBeforeHibernate(func(context.Context, domain.SessionID) (bool, error))
 	}, log *slog.Logger,
@@ -43,7 +44,7 @@ func startIdleCompaction(ctx context.Context, store *sqlite.Store, chat *chatsvc
 		Log:             log,
 	})
 	hibernation.SetBeforeHibernate(sweeper.MaybeCompact)
-	nudger := orchestratoridle.New(orchestratoridle.Deps{Store: store, Send: send, Log: log})
+	nudger := orchestratoridle.New(orchestratoridle.Deps{Store: store, Send: send, Log: log, Questions: store, Owner: owner})
 	go func() {
 		ticker := time.NewTicker(idleCompactionTick)
 		defer ticker.Stop()

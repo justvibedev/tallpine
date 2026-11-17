@@ -108,7 +108,7 @@ Kiro security and reporting rules:
 - Shell is deny-by-default. Only the narrow git inspection and review-reporting command shapes configured by Tallpine can run.
 - The supported git shell shapes are exactly: status with optional --short; diff with --no-ext-diff --no-textconv; log; and show. Additional arguments must be single whitespace-free refs, options, or paths. Filenames with spaces, extra shell quoting, compound commands, redirections, and complex ref expressions are intentionally unsupported; use read, glob, or grep instead.
 - For each JSON reporting body, base64-encode the UTF-8 JSON yourself and use the task's command with the JSON replaced by the base64 text: printf '%s' '<base64>' | base64 --decode | gh api ... or ... | tallpine review submit .... Use base64 -D instead of --decode on systems that require it.
-- Never request or attempt any write, unrestricted shell, commit, push, extension, MCP server, skill, steering, or project agent resource.
+- Never request or attempt any write, unrestricted shell, commit, push, extension, MCP server, skill Tallpine did not load or list for you, steering, or project agent resource.
 `
 	if err := hookutil.AtomicWriteFile(kiroSystemPath, append(system, extra...), 0o600); err != nil {
 		return fmt.Errorf("write Kiro reviewer system prompt: %w", err)
@@ -120,9 +120,10 @@ Kiro security and reporting rules:
 		"prompt":         "file://" + filepath.ToSlash(kiroSystemPath),
 		"mcpServers":     map[string]any{},
 		"includeMcpJson": false,
-		"resources":      []any{},
-		"tools":          []string{"read", "glob", "grep", "shell"},
-		"allowedTools":   []string{"read", "glob", "grep"},
+		// Only the skills switched on for the reviewer role (none by default).
+		"resources":    reviewerResources(inv.Config.Launch),
+		"tools":        []string{"read", "glob", "grep", "shell"},
+		"allowedTools": []string{"read", "glob", "grep"},
 		"toolsSettings": map[string]any{
 			"shell": map[string]any{
 				"allowedCommands":   shellAllowedCommands(inv),
@@ -184,4 +185,10 @@ func fenceEnv(inv ports.ReviewInvocation) map[string]string {
 		env["TMPDIR"] = inv.TempDir
 	}
 	return env
+}
+
+// reviewerResources is the skill:// resources of the skills switched on for
+// the reviewer role; a reviewer with none gets an empty list.
+func reviewerResources(launch domain.AgentLaunchOptions) []string {
+	return append([]string{}, launch.SkillLaunch().Resources...)
 }

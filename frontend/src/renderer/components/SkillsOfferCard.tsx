@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
  * A compact card in the chat stream when the project's instruction file or
  * skills are invisible to its agents. It never blocks the session and appears at
  * most once per conversation start while the offer is unresolved; Review opens
- * the dialog, "Don't ask again" turns it off for the project (Settings > Skills
+ * the dialog, "Don't ask again" turns it off for the project (Settings > Instructions and skills
  * turns it back on).
  */
 export function SkillsOfferCard(props: { projectId: string; sessionId: string }) {

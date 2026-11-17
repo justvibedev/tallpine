@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -66,6 +65,14 @@ type ProjectConfig struct {
 	// OrchestratorRules are project-specific standing instructions for
 	// orchestrator sessions.
 	OrchestratorRules string `json:"orchestratorRules,omitempty"`
+	// OrchestratorRulesFile is a repo-relative file appended to
+	// OrchestratorRules, read from the project checkout like AgentRulesFile.
+	OrchestratorRulesFile string `json:"orchestratorRulesFile,omitempty"`
+	// ReviewerRules are project review rules for the native reviewer's task
+	// file, and ReviewerRulesFile a repo-relative file read from
+	// origin/<default branch> (never the PR head). Human-only settings.
+	ReviewerRules     string `json:"reviewerRules,omitempty"`
+	ReviewerRulesFile string `json:"reviewerRulesFile,omitempty"`
 
 	// DefaultSessionMode is the interface ("tui" or "chat") new worker sessions
 	// get when the spawn does not request one. Empty defers to the daemon-wide
@@ -207,6 +214,10 @@ type ProjectConfig struct {
 	// is on for it. A role absent from the map inherits the account setting;
 	// false starts that role's sessions with autoMemoryEnabled off.
 	ClaudeAutoMemory map[string]bool `json:"claudeAutoMemory,omitempty"`
+	// SkillRoles switches skills (by name) per role ("worker", "orchestrator",
+	// "reviewer"). An unset skill follows SkillDefault: on for workers and
+	// orchestrators, off for reviewers. Claude plugins stay in ClaudePlugins.
+	SkillRoles SkillRoles `json:"skillRoles,omitempty"`
 
 	// ChatHibernation is the project-level opt-out for idle Chat hibernation.
 	// A pointer so an unset opt-out is omitted from the stored config.
@@ -413,6 +424,12 @@ func (c ProjectConfig) Validate() error {
 	if err := validateRepoRelative(c.AgentRulesFile); err != nil {
 		return fmt.Errorf("agentRulesFile %q: %w", c.AgentRulesFile, err)
 	}
+	if err := validateRepoRelative(c.OrchestratorRulesFile); err != nil {
+		return fmt.Errorf("orchestratorRulesFile %q: %w", c.OrchestratorRulesFile, err)
+	}
+	if err := validateRepoRelative(c.ReviewerRulesFile); err != nil {
+		return fmt.Errorf("reviewerRulesFile %q: %w", c.ReviewerRulesFile, err)
+	}
 	if err := validateVerifyCommand(c.VerifyCommand); err != nil {
 		return err
 	}
@@ -475,30 +492,6 @@ func validateNameComponent(name, value string) error {
 	}
 	if strings.ContainsAny(trimmed, `/\`) || trimmed == "." || trimmed == ".." {
 		return fmt.Errorf("%s: must not contain path separators or traversal components", name)
-	}
-	return nil
-}
-
-// validateRepoRelative refuses paths that would let a project config escape
-// its repo root: absolute paths and any ".." segment (before or after Clean).
-// The same guard runs at spawn time as defense-in-depth, but enforcing it here
-// rejects bad config when it is set rather than at every later spawn.
-func validateRepoRelative(p string) error {
-	trimmed := strings.TrimSpace(p)
-	if trimmed == "" {
-		return nil
-	}
-	if filepath.IsAbs(trimmed) || strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, `\`) {
-		return fmt.Errorf("path must be repo-relative and must not escape the project root")
-	}
-	clean := filepath.Clean(trimmed)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("path must be repo-relative and must not escape the project root")
-	}
-	for _, seg := range strings.Split(filepath.ToSlash(clean), "/") {
-		if seg == ".." {
-			return fmt.Errorf("path must be repo-relative and must not escape the project root")
-		}
 	}
 	return nil
 }

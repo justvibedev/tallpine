@@ -3,6 +3,7 @@ package settingswrite
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -33,8 +34,12 @@ func agentMayChange(agent requestscope.Agent, project domain.ProjectID) error {
 
 // agentMayWrite returns why an orchestrator may not write def, or "". An
 // agent may tighten agent policy, never loosen it: enum values are ordered
-// from least to most strict.
-func agentMayWrite(agent requestscope.Agent, def settingsreg.Setting, cur, next json.RawMessage) string {
+// from least to most strict. Writing an object never changes a nested key
+// only the user may write (project.claudePlugins.reviewer), even in Dev mode.
+func agentMayWrite(agent requestscope.Agent, reg *settingsreg.Registry, def settingsreg.Setting, cur, next json.RawMessage) string {
+	if why := userOnlySubKeyChanged(reg, def, cur, next); why != "" {
+		return why
+	}
 	if agent.DevMode {
 		// Dev mode: anything the owner can write, except Dev mode itself.
 		if strings.HasPrefix(string(def.Key), "policy."+agentpolicy.DevModeRule+".") {
@@ -87,4 +92,43 @@ func keepsHiddenEntries(cur, next json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// userOnlySubKeyChanged returns why writing object def from cur to next
+// changes a registered nested key no orchestrator may write, or "".
+func userOnlySubKeyChanged(reg *settingsreg.Registry, def settingsreg.Setting, cur, next json.RawMessage) string {
+	if def.Kind != settingsreg.KindObject {
+		return ""
+	}
+	var from, to any
+	_ = json.Unmarshal(cur, &from)
+	_ = json.Unmarshal(next, &to)
+	prefix := string(def.Key) + "."
+	for _, sub := range reg.All() {
+		rest, ok := strings.CutPrefix(string(sub.Key), prefix)
+		if !ok || sub.CanWrite(settingsreg.ActorOrchestrator) {
+			continue
+		}
+		path := strings.Split(rest, ".")
+		if !reflect.DeepEqual(jsonAt(from, path), jsonAt(to, path)) {
+			return "only the user may change " + string(sub.Key)
+		}
+	}
+	return ""
+}
+
+// jsonAt is the value at path in a decoded JSON document, nil when absent or
+// empty, so an absent role and an empty one compare equal.
+func jsonAt(doc any, path []string) any {
+	for _, p := range path {
+		m, ok := doc.(map[string]any)
+		if !ok {
+			return nil
+		}
+		doc = m[p]
+	}
+	if m, ok := doc.(map[string]any); ok && len(m) == 0 {
+		return nil
+	}
+	return doc
 }

@@ -128,6 +128,18 @@ func (q *Queries) ClearReviewerHandleByHarness(ctx context.Context, arg ClearRev
 	return err
 }
 
+const countRunningReviewers = `-- name: CountRunningReviewers :one
+SELECT COUNT(DISTINCT review_id) FROM review_run WHERE status = 'running' AND verdict = ''
+`
+
+// Reviewers (one per worker and harness) with a pass running, across every project.
+func (q *Queries) CountRunningReviewers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRunningReviewers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const failUnsubmittedReviewBatchForChatTurn = `-- name: FailUnsubmittedReviewBatchForChatTurn :exec
 UPDATE review_run SET status = 'failed', body = COALESCE(
   -- A turn that died on the provider's usage limit keeps its message so the
@@ -314,7 +326,7 @@ func (q *Queries) GetReviewBySessionAndHarness(ctx context.Context, arg GetRevie
 }
 
 const getReviewRun = `-- name: GetReviewRun :one
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE id = ?
 `
 
@@ -340,12 +352,14 @@ func (q *Queries) GetReviewRun(ctx context.Context, id string) (ReviewRun, error
 		&i.Model,
 		&i.FailureNotifiedAt,
 		&i.ModelReason,
+		&i.Focus,
+		&i.FocusAuthor,
 	)
 	return i, err
 }
 
 const getReviewRunBySessionPRAndSHA = `-- name: GetReviewRunBySessionPRAndSHA :one
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND pr_url = ? AND target_sha = ? ORDER BY created_at DESC LIMIT 1
 `
 
@@ -377,12 +391,14 @@ func (q *Queries) GetReviewRunBySessionPRAndSHA(ctx context.Context, arg GetRevi
 		&i.Model,
 		&i.FailureNotifiedAt,
 		&i.ModelReason,
+		&i.Focus,
+		&i.FocusAuthor,
 	)
 	return i, err
 }
 
 const getReviewRunBySessionPRSHAAndHarness = `-- name: GetReviewRunBySessionPRSHAAndHarness :one
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND pr_url = ? AND target_sha = ? AND harness = ? ORDER BY created_at DESC LIMIT 1
 `
 
@@ -420,13 +436,15 @@ func (q *Queries) GetReviewRunBySessionPRSHAAndHarness(ctx context.Context, arg 
 		&i.Model,
 		&i.FailureNotifiedAt,
 		&i.ModelReason,
+		&i.Focus,
+		&i.FocusAuthor,
 	)
 	return i, err
 }
 
 const insertReviewRun = `-- name: InsertReviewRun :exec
-INSERT INTO review_run (id, review_id, session_id, batch_id, harness, trigger_source, pr_url, target_sha, status, verdict, body, github_review_id, created_at, auto_inject_review, model, model_reason)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO review_run (id, review_id, session_id, batch_id, harness, trigger_source, pr_url, target_sha, status, verdict, body, github_review_id, created_at, auto_inject_review, model, model_reason, focus, focus_author)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertReviewRunParams struct {
@@ -446,6 +464,8 @@ type InsertReviewRunParams struct {
 	AutoInjectReview bool
 	Model            string
 	ModelReason      string
+	Focus            string
+	FocusAuthor      string
 }
 
 func (q *Queries) InsertReviewRun(ctx context.Context, arg InsertReviewRunParams) error {
@@ -466,6 +486,8 @@ func (q *Queries) InsertReviewRun(ctx context.Context, arg InsertReviewRunParams
 		arg.AutoInjectReview,
 		arg.Model,
 		arg.ModelReason,
+		arg.Focus,
+		arg.FocusAuthor,
 	)
 	return err
 }
@@ -713,7 +735,7 @@ func (q *Queries) ListRecoverableChatReviews(ctx context.Context) ([]ListRecover
 }
 
 const listReviewRunsByBatch = `-- name: ListReviewRunsByBatch :many
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND batch_id = ? ORDER BY created_at ASC, id ASC
 `
 
@@ -750,6 +772,8 @@ func (q *Queries) ListReviewRunsByBatch(ctx context.Context, arg ListReviewRunsB
 			&i.Model,
 			&i.FailureNotifiedAt,
 			&i.ModelReason,
+			&i.Focus,
+			&i.FocusAuthor,
 		); err != nil {
 			return nil, err
 		}
@@ -765,7 +789,7 @@ func (q *Queries) ListReviewRunsByBatch(ctx context.Context, arg ListReviewRunsB
 }
 
 const listReviewRunsBySession = `-- name: ListReviewRunsBySession :many
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? ORDER BY created_at DESC
 `
 
@@ -797,6 +821,8 @@ func (q *Queries) ListReviewRunsBySession(ctx context.Context, sessionID domain.
 			&i.Model,
 			&i.FailureNotifiedAt,
 			&i.ModelReason,
+			&i.Focus,
+			&i.FocusAuthor,
 		); err != nil {
 			return nil, err
 		}
@@ -876,7 +902,7 @@ func (q *Queries) ListReviewsBySession(ctx context.Context, sessionID domain.Ses
 }
 
 const listRunningReviewRunsBySession = `-- name: ListRunningReviewRunsBySession :many
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND status = 'running' AND verdict = '' ORDER BY created_at DESC
 `
 
@@ -908,6 +934,8 @@ func (q *Queries) ListRunningReviewRunsBySession(ctx context.Context, sessionID 
 			&i.Model,
 			&i.FailureNotifiedAt,
 			&i.ModelReason,
+			&i.Focus,
+			&i.FocusAuthor,
 		); err != nil {
 			return nil, err
 		}
@@ -981,7 +1009,7 @@ func (q *Queries) ListSessionsWithRunningReviewRuns(ctx context.Context) ([]doma
 }
 
 const listUnnotifiedEndedReviewRuns = `-- name: ListUnnotifiedEndedReviewRuns :many
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE failure_notified_at IS NULL AND (status IN ('failed', 'cancelled') OR (status IN ('complete', 'delivered') AND verdict IN ('approved', 'changes_requested'))) ORDER BY created_at ASC, id ASC LIMIT ?
 `
 
@@ -1015,6 +1043,8 @@ func (q *Queries) ListUnnotifiedEndedReviewRuns(ctx context.Context, limit int64
 			&i.Model,
 			&i.FailureNotifiedAt,
 			&i.ModelReason,
+			&i.Focus,
+			&i.FocusAuthor,
 		); err != nil {
 			return nil, err
 		}
@@ -1160,6 +1190,24 @@ func (q *Queries) SetReviewInterfaceMode(ctx context.Context, arg SetReviewInter
 		arg.UpdatedAt,
 		arg.ID,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setReviewRunFocus = `-- name: SetReviewRunFocus :execrows
+UPDATE review_run SET focus = ?, focus_author = ? WHERE id = ?
+`
+
+type SetReviewRunFocusParams struct {
+	Focus       string
+	FocusAuthor string
+	ID          string
+}
+
+func (q *Queries) SetReviewRunFocus(ctx context.Context, arg SetReviewRunFocusParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setReviewRunFocus, arg.Focus, arg.FocusAuthor, arg.ID)
 	if err != nil {
 		return 0, err
 	}

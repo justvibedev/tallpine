@@ -90,3 +90,28 @@ func TestReviewListShowsBranchForNoPRReview(t *testing.T) {
 		t.Fatalf("stdout = %q, want the branch instead of #0", out)
 	}
 }
+
+// A pass the machine holds back shows why in `review ls` and `review trigger`.
+func TestReviewListAndTriggerShowTheMachineBusyReason(t *testing.T) {
+	cfg := setReviewEnv(t)
+	reason := "machine busy (load 9.5/8 cores, reviewers 1/3)"
+	srv, _ := reviewServer(t, http.StatusOK, `{"reviews":[],"queuedReviews":[{"sessionId":"mer-1","prUrl":"https://github.com/a/b/pull/7","harness":"claude-code"}],"heldReason":"`+reason+`"}`)
+	writeRunFileFor(t, cfg, srv)
+	out, errOut, err := executeCLI(t, aliveDeps(), "review", "ls", "mer-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "waits for the machine to be quiet: "+reason) {
+		t.Fatalf("ls stdout = %q, want the queued line to carry %q", out, reason)
+	}
+
+	srv, _ = reviewServer(t, http.StatusOK, `{"queued":true,"heldReason":"`+reason+`","reviews":[]}`)
+	writeRunFileFor(t, cfg, srv)
+	out, errOut, err = executeCLI(t, aliveDeps(), "review", "trigger", "mer-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstderr=%s", err, errOut)
+	}
+	if !strings.Contains(out, "queued a review for mer-1: "+reason) {
+		t.Fatalf("trigger stdout = %q, want %q", out, reason)
+	}
+}

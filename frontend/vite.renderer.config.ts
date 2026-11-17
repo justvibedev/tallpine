@@ -8,6 +8,8 @@ import { fileURLToPath, URL } from "node:url";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import os from "node:os";
+import { devProxyTarget } from "./src/main/dev-session-isolation";
 import { contentSecurityPolicy } from "./src/shared/renderer-csp";
 
 function gitValue(args: string[], fallback: string): string {
@@ -142,6 +144,11 @@ const DOM_TS_TESTS: string[] = [
 	"src/shared/browser-annotations.test.ts",
 ];
 
+const devApiTarget = devProxyTarget(process.env, {
+	homeDir: os.homedir(),
+	checkoutDir: fileURLToPath(new URL(".", import.meta.url)),
+});
+
 export default defineConfig({
 	define: {
 		"import.meta.env.VITE_TALLPINE_GIT_BRANCH": JSON.stringify(DEV_BUILD_INFO.branch),
@@ -177,11 +184,11 @@ export default defineConfig({
 	server: {
 		proxy: {
 			"/api": {
-				target: process.env.TALLPINE_DEV_API_TARGET ?? "http://127.0.0.1:3101",
+				target: devApiTarget,
 				changeOrigin: false,
 			},
 			"/mux": {
-				target: process.env.TALLPINE_DEV_API_TARGET ?? "http://127.0.0.1:3101",
+				target: devApiTarget,
 				changeOrigin: false,
 				ws: true,
 			},

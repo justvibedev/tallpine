@@ -21,4 +21,7 @@ type TriggerReviewRequest struct {
 	RejectReviewedHead bool `json:"rejectReviewedHead,omitempty" description:"Return 409 instead of reusing when every open PR head is already being reviewed or already has a review."`
 	Rerun              bool `json:"rerun,omitempty" description:"Start a fresh pass for already-reviewed current heads; a different reviewer may run alongside one that is still running. A person's rerun reuses an active pass from the same reviewer; an agent's rerun returns 409 REVIEW_ALREADY_RUNNING instead."`
 	EnableAutoInject   bool `json:"enableAutoInject,omitempty" description:"Turn on the worker session's review auto-inject once a pass has started, so the reviewer's PR review comments reach the worker."`
+	// Focus is a one-off review focus for this pass. Its author is taken from
+	// the caller's credentials, never from the body.
+	Focus string `json:"focus,omitempty" description:"One-off review focus for this pass only, at most 2000 characters (400 when longer). It survives an automatic retry and a queued rerun, never a later pass. The reviewer frames it by who sent it, read from the credentials: a person's or the orchestrator's focus is checked first; a worker's is an untrusted hint that does not narrow the review."`
 }

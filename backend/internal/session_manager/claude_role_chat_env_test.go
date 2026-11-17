@@ -2,10 +2,12 @@ package sessionmanager
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
+	"tallpine.eu/tallpine/backend/internal/skillbridge"
 )
 
 // Chat sessions get their role's overrides in the launch env; other roles,
@@ -13,17 +15,17 @@ import (
 func TestPinClaudeRoleSettings(t *testing.T) {
 	cfg := domain.ProjectConfig{ClaudeAutoMemory: map[string]bool{"worker": false}, Env: map[string]string{domain.EnvShellOutputLimit: "off"}}
 	env := map[string]string{}
-	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindWorker, cfg)
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindWorker, cfg, nil, skillbridge.Inventory{})
 	if env[domain.EnvClaudeRoleSettings] != `{"autoMemoryEnabled":false}` {
 		t.Fatalf("worker env = %v", env)
 	}
 	env = map[string]string{domain.EnvClaudeRoleSettings: `{"x":1}`}
-	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindOrchestrator, cfg)
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindOrchestrator, cfg, nil, skillbridge.Inventory{})
 	if _, ok := env[domain.EnvClaudeRoleSettings]; ok {
 		t.Fatalf("orchestrator env = %v", env)
 	}
 	env = map[string]string{}
-	pinClaudeRoleSettings(env, domain.HarnessCodex, domain.KindWorker, cfg)
+	pinClaudeRoleSettings(env, domain.HarnessCodex, domain.KindWorker, cfg, nil, skillbridge.Inventory{})
 	if len(env) != 0 {
 		t.Fatalf("codex env = %v", env)
 	}
@@ -133,13 +135,26 @@ func (l *baseEnvLauncher) StartChat(ctx context.Context, cfg ChatStart) (ChatSta
 func TestPinClaudeRoleSettingsCapsShellOutput(t *testing.T) {
 	t.Setenv(domain.EnvShellOutputLimit, "")
 	env := map[string]string{}
-	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindOrchestrator, domain.ProjectConfig{})
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindOrchestrator, domain.ProjectConfig{}, nil, skillbridge.Inventory{})
 	if env[domain.EnvClaudeRoleSettings] != `{"bashOutputMaxChars":12000}` {
 		t.Fatalf("default env = %v", env)
 	}
 	cfg := domain.ProjectConfig{Env: map[string]string{domain.EnvShellOutputLimit: "20000"}}
-	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindWorker, cfg)
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindWorker, cfg, nil, skillbridge.Inventory{})
 	if env[domain.EnvClaudeRoleSettings] != `{"bashOutputMaxChars":20000}` {
 		t.Fatalf("override env = %v", env)
+	}
+}
+
+func TestPinCodeIntel(t *testing.T) {
+	env := map[string]string{domain.EnvClaudeRoleSettings: `{"autoMemoryEnabled":false}`}
+	pinCodeIntel(env, false)
+	if env[domain.EnvClaudeRoleSettings] != `{"autoMemoryEnabled":false}` {
+		t.Fatalf("off changed env: %v", env)
+	}
+	pinCodeIntel(env, true)
+	got := env[domain.EnvClaudeRoleSettings]
+	if !strings.Contains(got, `"Bash(grep *)"`) || !strings.Contains(got, `autoMemoryEnabled`) {
+		t.Fatalf("env = %s", got)
 	}
 }

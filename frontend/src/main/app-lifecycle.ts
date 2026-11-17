@@ -16,7 +16,7 @@ import path from "node:path";
 import { APP_DISPLAY_NAME } from "./app-bootstrap";
 import { killDaemon } from "./daemon/daemon-process";
 import { ctx } from "./app-context";
-import { daemonAuth, daemonSocketFile, daemonToken, getShellWebContents, ipcMain, OPEN_FOLDER_PATH_CHANNEL, SHELL_ORIGIN_SET, trayLifecycle } from "./app-runtime-state";
+import { daemonAuth, daemonSocketFile, daemonToken, getShellWebContents, ipcMain, OPEN_FOLDER_PATH_CHANNEL, quitAgentsGate, SHELL_ORIGIN_SET, trayLifecycle } from "./app-runtime-state";
 import { writeAppStateMarker } from "./app-state";
 import { initAppUpdates } from "./app-updates";
 import { disposeBrowserRuntimeLink, disposeBrowserStreamLink } from "./browser-runtime-link-host";
@@ -35,7 +35,7 @@ import { refreshGitHubOwners } from "./ipc/github-ipc";
 import { readKeybindingOverrides } from "./keybinding-settings";
 import { removeStaleAppSupportDir } from "./legacy-app-support-cleanup";
 import { parseOpenFolderPathArg } from "./open-folder-arg";
-import { requestStopAgents, shouldStopAgentsOnQuit } from "./quit-agents";
+import { stopAgentsForQuit, stopAllAgentsFromTray } from "./quit-agents-wiring";
 import {
 decideRelocation,
 inspectInstalledBundle,
@@ -233,7 +233,7 @@ export function registerAppLifecycle(): void {
 				const installed = installedBundlePath(bundlePath);
 				console.info(`newer install at ${installed}; handing off and quitting`);
 				await shell.openPath(installed);
-				app.quit();
+				quitAgentsGate.quitUnattended();
 				return;
 			}
 			if (action === "relocate") {
@@ -308,12 +308,14 @@ export function registerAppLifecycle(): void {
 			: { ...DEFAULT_UI_SETTINGS };
 		ctx.soundNotificationsEnabled = initialUiSettings.soundNotificationsEnabled;
 		ctx.terminalShellPreference = initialUiSettings.terminalShell;
+		ctx.uiLocale = initialUiSettings.locale;
 		if (ctx.browserQuitRequested) return;
 		if (isTrayEnabled(process.platform)) {
 			ctx.trayController = createTrayController({
 				focusWindow: focusMainWindow,
 				openSession: trayLifecycle.openSession,
 				quitCompletely: () => app.quit(),
+				stopAllAgents: stopAllAgentsFromTray,
 				locale: initialUiSettings.locale,
 			});
 		}
@@ -377,6 +379,7 @@ export function registerAppLifecycle(): void {
 			}
 			return;
 		}
+		if (quitAgentsGate.hold(() => event.preventDefault())) return;
 		ctx.browserQuitRequested = true;
 		// Never respawn the daemon while the app is shutting down.
 		cancelDaemonAutoRestart();
@@ -398,23 +401,10 @@ export function registerAppLifecycle(): void {
 					} catch (error) { console.warn("Tallpine: side chat cleanup on quit failed", error); }
 					ctx.sideLaunchState = undefined;
 				};
-				// A full quit ends the app-owned daemon; stop its agents first so no
-				// claude or node process outlives it. Side chats retire before that.
-				const stopAgents = async (): Promise<boolean> => {
-					if (!shouldStopAgentsOnQuit({
-						ready: ctx.daemonStatus.state === "ready",
-						port: ctx.daemonStatus.port,
-						linked: ctx.supervisorLink !== null,
-						keepAlive: keepDaemonAlive(process.env),
-					}) || !ctx.daemonStatus.port) return false;
-					if (!(await requestStopAgents(ctx.daemonStatus.port, daemonToken.token()))) {
-						console.warn("Tallpine: could not ask the daemon to stop agents on quit");
-						return false;
-					}
-					return true;
-				};
 				const cleanup = Promise.all([
-					retireSides().then(stopAgents),
+					// Then the agents, as the owner chose; by default an app-owned
+					// daemon parks them so no claude or node process outlives it.
+					retireSides().then(stopAgentsForQuit),
 					disposeAllBrowserViewHosts(),
 					remoteRegistry.closeAll(),
 				]);
@@ -455,7 +445,7 @@ export function registerAppLifecycle(): void {
 			else {
 				// A signal is not interactive: no unsaved-draft dialog to answer.
 				ctx.chatDraftQuitConfirmed = true;
-				app.quit();
+				quitAgentsGate.quitUnattended();
 			}
 		});
 	}

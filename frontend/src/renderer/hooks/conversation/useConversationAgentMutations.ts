@@ -3,6 +3,7 @@
 import { type InfiniteData, useIsMutating, useMutation } from "@tanstack/react-query";
 import { apiErrorMessage } from "../../lib/api-client";
 import { clientForSessionHost } from "../../lib/host-clients";
+import { postResumeAgent } from "../../lib/resume-agent-request";
 import { workspaceQueryKeyForHost } from "../useWorkspaceQuery";
 import type { ConversationSnapshot, TurnSettings } from "../../types/conversation";
 import { conversationQueryKey } from "./conversation-state";
@@ -14,12 +15,7 @@ export function useConversationAgentMutations({ queryClient, sessionId, hostId, 
 	const resume = useMutation({
 		mutationKey: ["resume-agent", hostId ?? "local", sessionId],
 		mutationFn: async () => {
-			const { data, error, response } = await clientForSessionHost(hostId).POST(
-				"/api/v1/sessions/{sessionId}/resume-agent",
-				{
-					params: { path: { sessionId: sessionId as string } },
-				},
-			);
+			const { data, error, response } = await postResumeAgent(sessionId as string, hostId);
 			if (error)
 				throw new Error(apiErrorMessage(error, `Failed to resume agent (${response.status})`));
 			return data;

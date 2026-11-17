@@ -48,14 +48,16 @@ func TestReviewCommandUsesReadOnlySandbox(t *testing.T) {
 	t.Setenv("TALLPINE_RUN_FILE", "/wrong/running.json")
 	agent := &captureAgent{}
 	r := &Reviewer{agent: agent}
+	root := t.TempDir()
 
 	got, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{
-		ReviewerID:    "review-w1",
-		WorkspacePath: "/ws/w1",
-		DataDir:       "/tmp/tallpine data",
-		RunFilePath:   "/tmp/tallpine data/running.json",
-		Prompt:        "review it",
-		SystemPrompt:  "review only",
+		TaskPromptRoot: root,
+		ReviewerID:     "review-w1",
+		WorkspacePath:  "/ws/w1",
+		DataDir:        "/tmp/tallpine data",
+		RunFilePath:    "/tmp/tallpine data/running.json",
+		Prompt:         "review it",
+		SystemPrompt:   "review only",
 	})
 	if err != nil {
 		t.Fatalf("ReviewCommand: %v", err)
@@ -63,6 +65,8 @@ func TestReviewCommandUsesReadOnlySandbox(t *testing.T) {
 
 	want := []string{
 		"agent",
+		"-C", filepath.Join(root, "cwd", "codex"),
+		"-c", wantTrustProjects(t, filepath.Join(root, "cwd", "codex")),
 		"--sandbox", "read-only",
 		"-c", `shell_environment_policy.set.TALLPINE_PORT="3103"`,
 		"-c", `shell_environment_policy.set.TALLPINE_DATA_DIR="/tmp/tallpine data"`,
@@ -88,8 +92,9 @@ func TestReviewCommandEmitsConfiguredCodexEffort(t *testing.T) {
 	t.Setenv("PATH", binDir)
 
 	got, err := New().ReviewCommand(context.Background(), ports.ReviewInvocation{
-		Config: ports.AgentConfig{Effort: "high"},
-		Prompt: "review it",
+		TaskPromptRoot: t.TempDir(),
+		Config:         ports.AgentConfig{Effort: "high"},
+		Prompt:         "review it",
 	})
 	if err != nil {
 		t.Fatalf("ReviewCommand: %v", err)
@@ -127,6 +132,7 @@ func TestReviewCommandUsesHiddenSystemPromptFile(t *testing.T) {
 	r := &Reviewer{agent: agent}
 
 	if _, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{
+		TaskPromptRoot:   t.TempDir(),
 		Prompt:           "Start the Tallpine review task.",
 		SystemPromptFile: "/tallpine/prompts/reviewer/system.md",
 	}); err != nil {
@@ -143,8 +149,10 @@ func TestReviewRestoreCommandUsesNativeSessionIDAndReadOnlySandbox(t *testing.T)
 	t.Setenv("TALLPINE_RUN_FILE", "/wrong/running.json")
 	agent := &captureAgent{}
 	r := &Reviewer{agent: agent}
+	root := t.TempDir()
 
 	got, ok, err := r.ReviewRestoreCommand(context.Background(), ports.ReviewInvocation{
+		TaskPromptRoot:   root,
 		ReviewerID:       "review-w1",
 		AgentSessionID:   "codex-native-1",
 		WorkspacePath:    "/ws/w1",
@@ -163,6 +171,8 @@ func TestReviewRestoreCommandUsesNativeSessionIDAndReadOnlySandbox(t *testing.T)
 	}
 	want := []string{
 		"agent", "resume",
+		"-C", filepath.Join(root, "cwd", "codex"),
+		"-c", wantTrustProjects(t, filepath.Join(root, "cwd", "codex")),
 		"--sandbox", "read-only",
 		"-c", `shell_environment_policy.set.TALLPINE_PORT="3103"`,
 		"-c", `shell_environment_policy.set.TALLPINE_DATA_DIR="/tmp/tallpine data"`,
@@ -187,13 +197,15 @@ func TestReviewCommandAndRestoreCarryThePolicyDecision(t *testing.T) {
 	agent := &captureAgent{}
 	r := &Reviewer{agent: agent}
 	decision := policytest.Cap(t, permissioncap.AcceptEdits)
-	if _, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{Policy: decision, Prompt: "p"}); err != nil {
+	if _, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{
+		TaskPromptRoot: t.TempDir(), Policy: decision, Prompt: "p"}); err != nil {
 		t.Fatal(err)
 	}
 	if !permissioncap.Of(agent.got.Policy).ForbidsBypass() {
 		t.Fatal("the terminal reviewer's launch dropped the policy decision")
 	}
-	if _, _, err := r.ReviewRestoreCommand(context.Background(), ports.ReviewInvocation{Policy: decision, AgentSessionID: "native-1", Prompt: "p"}); err != nil {
+	if _, _, err := r.ReviewRestoreCommand(context.Background(), ports.ReviewInvocation{
+		TaskPromptRoot: t.TempDir(), Policy: decision, AgentSessionID: "native-1", Prompt: "p"}); err != nil {
 		t.Fatal(err)
 	}
 	if !permissioncap.Of(agent.gotRestore.Policy).ForbidsBypass() {
@@ -211,7 +223,7 @@ func TestCappedCodexReviewerLaunchIsLowered(t *testing.T) {
 	t.Setenv("PATH", filepath.Dir(bin)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	r := New()
 	launch := func(d agentpolicy.Decision) []string {
-		got, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{Policy: d, Prompt: "p", WorkspacePath: t.TempDir(), DataDir: t.TempDir()})
+		got, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{TaskPromptRoot: t.TempDir(), Policy: d, Prompt: "p", WorkspacePath: t.TempDir(), DataDir: t.TempDir()})
 		if err != nil {
 			t.Fatalf("real codex adapter launch failed: %v", err)
 		}
@@ -225,4 +237,16 @@ func TestCappedCodexReviewerLaunchIsLowered(t *testing.T) {
 	if strings.Contains(capped, "auto_review") {
 		t.Fatalf("a capped reviewer must not run in auto: %s", capped)
 	}
+}
+
+// wantTrustProjects builds the expected projects override: the literal cwd,
+// plus its symlink-resolved path when that differs (e.g. /tmp -> /private/tmp
+// on macOS).
+func wantTrustProjects(t *testing.T, cwd string) string {
+	t.Helper()
+	entries := []string{"'" + cwd + "'={trust_level=\"trusted\"}"}
+	if resolved, err := filepath.EvalSymlinks(cwd); err == nil && resolved != cwd {
+		entries = append(entries, "'"+resolved+"'={trust_level=\"trusted\"}")
+	}
+	return "projects={" + strings.Join(entries, ",") + "}"
 }

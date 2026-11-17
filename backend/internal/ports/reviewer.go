@@ -159,6 +159,10 @@ type ReviewTask struct {
 	// BaseRef is the commit a local (no-PR) target is diffed against, as
 	// base...TargetSHA. Empty for a PR task.
 	BaseRef string
+	// Focus is the run's one-off review focus and FocusAuthor who gave it;
+	// both empty when the run has none.
+	Focus       string
+	FocusAuthor domain.ReviewFocusAuthor
 }
 
 // ReviewCommandSpec is how to launch a reviewer: the argv, any extra env, and

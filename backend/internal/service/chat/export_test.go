@@ -100,3 +100,8 @@ func SetFenceGOOSForTest(goos string) (restore func()) {
 	fenceGOOS = goos
 	return func() { fenceGOOS = prev }
 }
+
+// WakeUsageLimitPaused exposes the sibling-turn wake for tests.
+func (s *Service) WakeUsageLimitPaused(from domain.SessionID, harness domain.AgentHarness) {
+	s.wakeUsageLimitPaused(from, harness)
+}

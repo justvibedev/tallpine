@@ -262,3 +262,78 @@ func TestStartWithoutTargetLeavesNoCursorThenSkipsHistory(t *testing.T) {
 		t.Fatalf("sent = %v", f.sent)
 	}
 }
+
+// B769: an alert marked [to:<session>] reaches that session; the rest still goes to the notify-target.
+func TestTickRoutesDirectAlertToItsSession(t *testing.T) {
+	f := newFixture(t)
+	f.appendAlert("2026-11-16T14:40:00Z\t[to:worker-3] [release] install of abc FAILED: boom\n2026-11-16T14:41:00Z\t[local-ci] build 5 OK\n")
+	f.tick()
+	if len(f.sent) != 2 {
+		t.Fatalf("sent %+v", f.sent)
+	}
+	if f.sent[1].to != "live-orch-9" || strings.Contains(f.sent[1].msg, "install of") || !strings.Contains(f.sent[1].msg, "build 5 OK") {
+		t.Fatalf("default delivery: %+v", f.sent[1])
+	}
+	if f.sent[0].to != "live-worker-3" || f.sent[0].msg != Header+"\n2026-11-16T14:40:00Z [release] install of abc FAILED: boom" {
+		t.Fatalf("direct delivery: %+v", f.sent[0])
+	}
+}
+
+// B769: a directed alert does not wait for the notify-target.
+func TestTickDeliversDirectAlertWithoutNotifyTarget(t *testing.T) {
+	f := newFixture(t)
+	if err := os.Remove(filepath.Join(f.dir, "notify-target")); err != nil {
+		t.Fatal(err)
+	}
+	f.appendAlert("2026-11-16T14:40:00Z\t[to:worker-3] [release] install of abc FAILED: boom\n")
+	f.tick()
+	if len(f.sent) != 1 || f.sent[0].to != "live-worker-3" {
+		t.Fatalf("sent %+v", f.sent)
+	}
+	f.tick()
+	if len(f.sent) != 1 {
+		t.Fatalf("resent: %+v", f.sent)
+	}
+}
+
+// B769: a failed later send must not resend what already went out.
+func TestTickDoesNotResendDeliveredAlertsAfterAFailedDirectSend(t *testing.T) {
+	f := newFixture(t)
+	f.appendAlert("2026-11-16T14:40:00Z\t[local-ci] build 5 OK\n2026-11-16T14:41:00Z\t[to:worker-3] [release] installed abc\n")
+	inner := f.reader.Send
+	failed := false
+	f.reader.Send = func(ctx context.Context, to domain.SessionID, msg string) error {
+		if to == "live-worker-3" && !failed {
+			failed = true
+			return errors.New("down")
+		}
+		return inner(ctx, to, msg)
+	}
+	if err := f.reader.Tick(context.Background()); err == nil {
+		t.Fatal("want the failed direct send reported")
+	}
+	f.tick()
+	if len(f.sent) != 2 || f.sent[0].to != "live-orch-9" || f.sent[1].to != "live-worker-3" {
+		t.Fatalf("each alert exactly once: %+v", f.sent)
+	}
+}
+
+// B769: with no notify-target a directed alert behind a plain one is still delivered, once, and the plain one waits.
+func TestTickDeliversDirectAlertBehindPlainLineWithoutTarget(t *testing.T) {
+	f := newFixture(t)
+	if err := os.Remove(filepath.Join(f.dir, "notify-target")); err != nil {
+		t.Fatal(err)
+	}
+	f.appendAlert("2026-11-16T14:39:00Z\t[local-ci] build 5 OK\n2026-11-16T14:40:00Z\t[to:worker-3] [release] install of abc FAILED: boom\n")
+	f.tick()
+	f.tick()
+	if len(f.sent) != 1 || f.sent[0].to != "live-worker-3" {
+		t.Fatalf("sent %+v", f.sent)
+	}
+	f.write("notify-target", "orch-9\n")
+	f.tick()
+	f.tick()
+	if len(f.sent) != 2 || f.sent[1].to != "live-orch-9" || !strings.Contains(f.sent[1].msg, "build 5 OK") || strings.Contains(f.sent[1].msg, "install of") {
+		t.Fatalf("the plain alert must follow once, without the directed one: %+v", f.sent)
+	}
+}

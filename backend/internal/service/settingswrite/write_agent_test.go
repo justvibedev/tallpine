@@ -15,20 +15,20 @@ func TestDevModeAgentWrites(t *testing.T) {
 	off, on := json.RawMessage(`"off"`), json.RawMessage(`"on"`)
 
 	orch := requestscope.Agent{Role: requestscope.RoleOrchestrator, ProjectID: "app"}
-	if agentMayWrite(orch, protect, on, off) == "" {
+	if agentMayWrite(orch, settingsreg.Default(), protect, on, off) == "" {
 		t.Error("without Dev mode an agent must not loosen protectState")
 	}
 	if agentMayChange(orch, "web") == nil {
 		t.Error("without Dev mode an agent must not change another project")
 	}
 	orch.DevMode = true
-	if why := agentMayWrite(orch, protect, on, off); why != "" {
+	if why := agentMayWrite(orch, settingsreg.Default(), protect, on, off); why != "" {
 		t.Errorf("Dev mode: protectState write refused: %s", why)
 	}
 	if err := agentMayChange(orch, "web"); err != nil {
 		t.Errorf("Dev mode: other project refused: %v", err)
 	}
-	if agentMayWrite(orch, dev, json.RawMessage(`true`), json.RawMessage(`false`)) == "" {
+	if agentMayWrite(orch, settingsreg.Default(), dev, json.RawMessage(`true`), json.RawMessage(`false`)) == "" {
 		t.Error("an agent must never change Dev mode itself")
 	}
 	env, ok := reg.Lookup("project.env")
@@ -36,10 +36,10 @@ func TestDevModeAgentWrites(t *testing.T) {
 		t.Fatal("project.env must be a sensitive setting")
 	}
 	cur, drop := json.RawMessage(`{"TOKEN":"s3cret"}`), json.RawMessage(`{"OTHER":"1"}`)
-	if agentMayWrite(orch, env, cur, drop) == "" {
+	if agentMayWrite(orch, settingsreg.Default(), env, cur, drop) == "" {
 		t.Error("Dev mode: dropping a hidden project.env entry must be refused")
 	}
-	if why := agentMayWrite(orch, env, cur, json.RawMessage(`{"TOKEN":"s3cret","OTHER":"1"}`)); why != "" {
+	if why := agentMayWrite(orch, settingsreg.Default(), env, cur, json.RawMessage(`{"TOKEN":"s3cret","OTHER":"1"}`)); why != "" {
 		t.Errorf("Dev mode: adding a project.env entry refused: %s", why)
 	}
 	worker := requestscope.Agent{Role: requestscope.RoleWorker, ProjectID: "app", DevMode: true}

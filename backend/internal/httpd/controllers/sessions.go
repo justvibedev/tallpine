@@ -186,8 +186,10 @@ type SessionsController struct {
 	// OwnerMessages resolves `tallpine send --relay-owner-message`; nil refuses it.
 	OwnerMessages OwnerMessageLookup
 	// Routes warns at spawn when the project's reports bypass its orchestrator; nil omits it.
-	Routes   RouteNoticer
-	Activity ActivityRecorder
+	Routes RouteNoticer
+	// MachineLoad adds a warning to a spawn made while the machine is busy; nil omits it.
+	MachineLoad MachineLoadChecker
+	Activity    ActivityRecorder
 	// ClearedNotes builds the note a cleared context gets; nil answers 501.
 	ClearedNotes             ClearedContextNoter
 	DataDir                  string
@@ -258,6 +260,8 @@ func (c *SessionsController) Register(r chi.Router) {
 	r.Get("/sessions", c.list)
 	r.Post("/sessions", c.spawn)
 	r.Post("/sessions/cleanup", c.cleanup)
+	r.Get("/sessions/running-agents", c.runningAgents)
+	r.Post("/sessions/running-agents/stop", c.stopAllAgents)
 	r.Delete("/sessions/{sessionId}", c.deleteSession)
 	r.Get("/sessions/{sessionId}", c.get)
 	r.Get("/sessions/{sessionId}/preview", c.preview)

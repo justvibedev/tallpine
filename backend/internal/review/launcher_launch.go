@@ -79,7 +79,14 @@ func (l *agentLauncher) startReviewerChat(ctx context.Context, spec LaunchSpec, 
 	if spec.DeferInitialMessage {
 		prompt = ""
 	}
-	start := ReviewerChatStart{BatchID: spec.BatchID, ReviewID: spec.ReviewSessionID, WorkerID: spec.WorkerID, ProjectID: spec.ProjectID, Harness: profile.ReviewChatHarness(), Model: spec.AgentConfig.Model, Effort: spec.AgentConfig.Effort, DataDir: l.dataDir, WorkspacePath: spec.WorkspacePath, Env: l.runtimeEnv(ctx, spec, nil, nil), Prompt: prompt, SystemPrompt: string(systemPrompt), ProviderConversationID: providerID}
+	// The conversation runs outside the PR checkout so the provider does not
+	// load the reviewed head's AGENTS.md, skills or project config; the
+	// read-only sandbox still reads the checkout by absolute path.
+	workingDirectory, err := ports.ReviewerNeutralDir(inv.TaskPromptRoot, string(profile.ReviewChatHarness()))
+	if err != nil {
+		return LaunchResult{}, err
+	}
+	start := ReviewerChatStart{BatchID: spec.BatchID, ReviewID: spec.ReviewSessionID, WorkerID: spec.WorkerID, ProjectID: spec.ProjectID, Harness: profile.ReviewChatHarness(), Model: spec.AgentConfig.Model, Effort: spec.AgentConfig.Effort, DataDir: l.dataDir, WorkspacePath: workingDirectory, Env: l.runtimeEnv(ctx, spec, nil, nil), Prompt: prompt, SystemPrompt: string(systemPrompt), ProviderConversationID: providerID}
 	if restore {
 		providerID, err = l.chat.RestoreReviewChat(ctx, start)
 	} else {
@@ -308,6 +315,7 @@ func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []
 	agentlaunch.AugmentRuntimePATHForLaunchBinary(ctx, env, argv, exec.LookPath, pinnedDir)
 	l.applyGitHubAccountEnv(ctx, spec, env)
 	l.applyEnvFilter(ctx, spec, env)
+	agentlaunch.ApplyParallelismDefaults(env, spec.ProjectEnv, os.Getenv, runtime.NumCPU(), runtime.GOOS == "windows")
 	l.applyGitGuard(ctx, spec, env)
 	return env
 }

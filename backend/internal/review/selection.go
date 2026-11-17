@@ -12,6 +12,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/process"
+	"tallpine.eu/tallpine/backend/internal/skillbridge"
 )
 
 // reviewerSelection resolves which reviewer reviews the worker's PR: a
@@ -86,18 +87,34 @@ func (e *Engine) projectReviewerSelection(
 			cfg = proj.Config
 		}
 	}
-	var app domain.WorkflowDefaults
-	if s, ok := e.projects.(interface {
-		WorkflowDefaults(stdctx.Context) (domain.WorkflowDefaults, error)
-	}); ok {
-		d, err := s.WorkflowDefaults(ctx)
-		if err != nil {
-			return "", domain.AgentConfig{}, err
-		}
-		app = d
+	app, err := e.appDefaults(ctx)
+	if err != nil {
+		return "", domain.AgentConfig{}, err
 	}
 	harness, config := cfg.EffectiveReviewer(app, worker.Harness)
 	return harness, config, nil
+}
+
+// appDefaults reads the app-wide workflow defaults when the project store
+// offers them; without them a project inherits nothing.
+func (e *Engine) appDefaults(ctx stdctx.Context) (domain.WorkflowDefaults, error) {
+	if s, ok := e.projects.(interface {
+		WorkflowDefaults(stdctx.Context) (domain.WorkflowDefaults, error)
+	}); ok {
+		return s.WorkflowDefaults(ctx)
+	}
+	return domain.WorkflowDefaults{}, nil
+}
+
+// appInstructions is the app-wide rules and skill switches a review pass
+// inherits; an unreadable store gives none, so a pass never fails on them.
+func (e *Engine) appInstructions(ctx stdctx.Context) domain.AppInstructions {
+	d, err := e.appDefaults(ctx)
+	if err != nil {
+		slog.Warn("review: app instructions unreadable; reviewing with project rules and switches only", "err", err)
+		return domain.AppInstructions{}
+	}
+	return d.AppInstructions
 }
 
 // checkModelPolicy refuses a reviewer model the project's model policy denies.
@@ -114,7 +131,8 @@ func (e *Engine) checkModelPolicy(ctx stdctx.Context, id domain.ProjectID, model
 }
 
 // withReviewerLaunch adds the project's reviewer-role Claude Code launch
-// options (claudePlugins, claudeAutoMemory) to a reviewer's config, and the
+// options (claudePlugins, claudeAutoMemory), its skill switches (skillRoles,
+// enforced per harness by SkillEffectFor) to a reviewer's config, and the
 // compaction window a worker of the reviewer's agent would get
 // (withReviewerCompaction). Other harnesses ignore them.
 func (e *Engine) withReviewerLaunch(ctx stdctx.Context, id domain.ProjectID, harness domain.ReviewerHarness, config domain.AgentConfig) domain.AgentConfig {
@@ -126,7 +144,12 @@ func (e *Engine) withReviewerLaunch(ctx stdctx.Context, id domain.ProjectID, har
 	if err != nil || !ok {
 		return config
 	}
-	config.Launch.EnabledPlugins, config.Launch.AutoMemoryOff = project.Config.ClaudeLaunchFor(domain.RoleReviewer)
+	_, config.Launch.AutoMemoryOff = project.Config.ClaudeLaunchFor(domain.RoleReviewer)
+	// The reviewer gets only the skills and plugins switched on for its role
+	// (B740 q1); Tallpine's own skills are not switchable, so no data dir.
+	inv := skillbridge.Discover(skillbridge.OptionsFor("", project.Path, project.Config.Env))
+	launch, plugins := skillbridge.RoleLaunch(inv, project.Config, e.appInstructions(ctx).SkillRoles, domain.RoleReviewer, string(harness))
+	config.Launch.Skills, config.Launch.EnabledPlugins = launch.Encode(), plugins
 	return config
 }
 
@@ -285,7 +308,7 @@ func (e *Engine) riskReviewerFor(ctx stdctx.Context, worker domain.SessionRecord
 				slog.Warn("review risk: changed paths unavailable", "session", worker.ID, "pr", pr.URL, "err", err)
 				continue
 			}
-			if file, glob, ok := domain.MatchReviewRisk(globs, withoutTestPaths(changed)); ok {
+			if file, glob, ok := matchReviewerRisk(cfg, globs, withoutTestPaths(changed)); ok {
 				if pick.reason == "" {
 					pick.reason = fmt.Sprintf("risky path %s matches %s", file, glob)
 				}

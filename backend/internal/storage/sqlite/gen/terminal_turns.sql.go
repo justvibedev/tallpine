@@ -45,7 +45,7 @@ func (q *Queries) AppendTerminalTurnRequest(ctx context.Context, arg AppendTermi
 	return result.RowsAffected()
 }
 
-const closeTerminalTurn = `-- name: CloseTerminalTurn :exec
+const closeTerminalTurn = `-- name: CloseTerminalTurn :execrows
 UPDATE session_terminal_turns
 SET agent_response = ?1, responded_at = ?2
 WHERE session_terminal_turns.id = (SELECT MAX(t.id) FROM session_terminal_turns AS t WHERE t.session_id = ?3)
@@ -59,9 +59,12 @@ type CloseTerminalTurnParams struct {
 }
 
 // Answers the session's newest turn. A stop with no open turn changes nothing.
-func (q *Queries) CloseTerminalTurn(ctx context.Context, arg CloseTerminalTurnParams) error {
-	_, err := q.db.ExecContext(ctx, closeTerminalTurn, arg.AgentResponse, arg.RespondedAt, arg.SessionID)
-	return err
+func (q *Queries) CloseTerminalTurn(ctx context.Context, arg CloseTerminalTurnParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, closeTerminalTurn, arg.AgentResponse, arg.RespondedAt, arg.SessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteTerminalTurnsForThread = `-- name: DeleteTerminalTurnsForThread :exec
@@ -79,6 +82,39 @@ type DeleteTerminalTurnsForThreadParams struct {
 
 func (q *Queries) DeleteTerminalTurnsForThread(ctx context.Context, arg DeleteTerminalTurnsForThreadParams) error {
 	_, err := q.db.ExecContext(ctx, deleteTerminalTurnsForThread, arg.SessionID, arg.Harness, arg.NativeSessionID)
+	return err
+}
+
+const insertAnsweredTerminalTurn = `-- name: InsertAnsweredTerminalTurn :exec
+INSERT INTO session_terminal_turns (session_id, harness, native_session_id, user_request, agent_response, requested_at, responded_at)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6
+WHERE NOT EXISTS (
+    SELECT 1 FROM session_terminal_turns AS t
+    WHERE t.id = (SELECT MAX(m.id) FROM session_terminal_turns AS m WHERE m.session_id = ?1)
+      AND t.agent_response = ?5)
+`
+
+type InsertAnsweredTerminalTurnParams struct {
+	SessionID       string
+	Harness         string
+	NativeSessionID string
+	UserRequest     string
+	AgentResponse   string
+	At              time.Time
+}
+
+// A turn that opened with no prompt hook (a monitor wakeup, a queued task
+// notification): its answer is kept with a placeholder request.
+// A repeated stop hook must not add the answer it already closed a turn with.
+func (q *Queries) InsertAnsweredTerminalTurn(ctx context.Context, arg InsertAnsweredTerminalTurnParams) error {
+	_, err := q.db.ExecContext(ctx, insertAnsweredTerminalTurn,
+		arg.SessionID,
+		arg.Harness,
+		arg.NativeSessionID,
+		arg.UserRequest,
+		arg.AgentResponse,
+		arg.At,
+	)
 	return err
 }
 

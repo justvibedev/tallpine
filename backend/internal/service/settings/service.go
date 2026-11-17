@@ -57,7 +57,11 @@ type Snapshot struct {
 	// follows the build, "off" stops refusing callers Tallpine did not start.
 	// Written only through the desktop app (daemon wiring), never here.
 	PeerCheck string
-	UpdatedAt time.Time
+	// MachineMaxReviewers and MachineLoadPercent are the machine-load gate's
+	// limits for native reviewers (B752; Settings, Reviews); 0 turns one off.
+	MachineMaxReviewers int
+	MachineLoadPercent  int
+	UpdatedAt           time.Time
 }
 
 // Peer check switch values (app_settings.peer_check).

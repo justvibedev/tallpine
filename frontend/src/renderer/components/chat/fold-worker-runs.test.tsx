@@ -41,11 +41,19 @@ describe("default view worker folding", () => {
 		["ask activity", group("ask", [msg({ sequence: 3, origin: "automation", text: "[auto] x" }), act_({ sequence: 4, activityKind: "system", detail: { event: "ask", ask: { id: "1", ref: "Q1" } } })])],
 		["Needs you reply", group("nu", [msg({ sequence: 3, origin: "automation", text: "Reports since your previous turn:\n\n[done] [C](tallpine://sessions/p/p-1)\nok" }), msg({ sequence: 4, role: "assistant", text: "**Needs you:** pick" })])],
 		["Needs you reply to an [auto] notice", group("nu2", [msg({ sequence: 3, origin: "automation", text: "[auto] worker idle" }), msg({ sequence: 4, role: "assistant", text: "**Needs you:** pick A or B" })])],
+		// B750 web-5: a full result ending on an offer, no marker, no ask.
+		["reply ending on a question to the owner", group("q", [msg({ sequence: 3, origin: "automation", text: "Reports since your previous turn:\n\n[done] [C](tallpine://sessions/p/p-1)\nok" }), msg({ sequence: 4, role: "assistant", text: "web-6 finished: PR #41 green, review approved.\n\nWant me to land it?" })])],
 		["pending approval", group("ap", [act_({ sequence: 3, activityKind: "approval", status: "pending" })])],
 	])("a %s breaks the run and never folds", (_n, breaker) => {
 		const w3 = auto("w3", 10, "[auto] third");
 		const { result } = run([w1, w2, breaker, w3, auto("w4", 11, "[auto] fourth")]);
 		expect(result.current.groups.map((g) => g.key)).toEqual(["worker-run:w1", breaker.key, "worker-run:w3"]);
+	});
+
+	it("still folds a worker turn whose reply is plain status", () => {
+		const status = group("st", [msg({ sequence: 3, origin: "automation", text: "Reports since your previous turn:\n\n[done] [C](tallpine://sessions/p/p-1)\nok" }), msg({ sequence: 4, role: "assistant", text: "Noted; PR #41 merged." })]);
+		const { result } = run([w1, status]);
+		expect(result.current.groups.map((g) => g.key)).toEqual(["worker-run:w1"]);
 	});
 
 	it("expands and collapses", () => {

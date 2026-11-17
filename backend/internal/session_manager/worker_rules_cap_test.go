@@ -46,7 +46,7 @@ func TestSpawnWorker_OverCapRulesFileTruncatedNotFailed(t *testing.T) {
 func TestCapProjectRulesKeepsValidUTF8(t *testing.T) {
 	t.Parallel()
 
-	got := capProjectRules(strings.Repeat("é", domain.MaxAgentRulesBytes))
+	got, _ := domain.CapRules(strings.Repeat("é", domain.MaxAgentRulesBytes), "agentRules/agentRulesFile")
 	if !strings.HasSuffix(got, "agentRulesFile]") {
 		t.Fatalf("missing marker: %q", got[len(got)-40:])
 	}

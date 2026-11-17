@@ -67,6 +67,7 @@ type triggerPass struct {
 	launchAgentSessionID    string
 	persistedAgentSessionID string
 	releaseHarness          func()
+	releaseMachine          func()
 }
 
 func (p *triggerPass) releaseHarnessUse() {
@@ -351,7 +352,11 @@ func (p *triggerPass) recordRuns() (TriggerResult, bool, error) {
 		if p.hasConfigOverride {
 			p.pendingSupersedes = append(p.pendingSupersedes, staleSupersede{prURL: reviewState.PRURL, targetSHA: reviewState.TargetSHA})
 			if reviewState.LatestRun != nil && reviewState.LatestRun.Status == domain.ReviewRunRunning && (reviewState.LatestRun.Harness == harness || reviewState.LatestRun.Harness == "") {
-				p.restarted = append(p.restarted, *reviewState.LatestRun)
+				restarted, err := p.focusRestartedRun(*reviewState.LatestRun)
+				if err != nil {
+					return TriggerResult{}, false, err
+				}
+				p.restarted = append(p.restarted, restarted)
 				continue
 			}
 		} else if _, err := e.store.SupersedeStaleRunningReviewRuns(ctx, workerID, reviewState.PRURL, reviewState.TargetSHA, reviewRunSupersededReason); err != nil {
@@ -378,6 +383,7 @@ func (p *triggerPass) recordRuns() (TriggerResult, bool, error) {
 			// trigger-time value also makes a running pass truthful in the API.
 			AutoInjectReview: p.worker.AutoInjectReview,
 		}
+		run.Focus, run.FocusAuthor = triggerFocus(p.opts)
 		if err := e.store.InsertReviewRun(ctx, run); err != nil {
 			if errors.Is(err, domain.ErrDuplicateReviewRun) {
 				if existing, ok, getErr := e.store.GetReviewRunBySessionPRSHAAndHarness(ctx, workerID, reviewState.PRURL, reviewState.TargetSHA, harness); getErr != nil {

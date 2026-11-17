@@ -7,23 +7,36 @@ const (
 	StatusPending    = "pending"    // in the checkout but not committed: sessions do not get it yet
 	StatusShadowed   = "shadowed"   // another skill with this name is used instead
 	StatusUnverified = "unverified" // the harness is not one we check
+	StatusListed     = "listed"     // Tallpine lists it in the session prompt (custom skills)
 )
 
 // Statuses reports, for every skill in inv.Skills (same order), how harness
 // sees it. The first same-name skill is the one an offer would link.
 func Statuses(inv Inventory, harness string) []string {
 	out := make([]string, len(inv.Skills))
-	if harness != HarnessClaude && harness != HarnessCodex {
-		for i := range out {
-			out[i] = StatusUnverified
-		}
-		return out
-	}
 	groups := map[string][]int{}
 	for i, s := range inv.Skills {
 		groups[s.Name] = append(groups[s.Name], i)
 	}
+	if harness != HarnessClaude && harness != HarnessCodex {
+		for i := range out {
+			out[i] = StatusUnverified
+		}
+	}
 	for _, idx := range groups {
+		// A custom skill is listed by Tallpine on every harness unless a
+		// higher-priority source owns its name.
+		for _, i := range idx {
+			if inv.Skills[i].Scope == ScopeCustom {
+				out[i] = StatusShadowed
+				if i == idx[0] {
+					out[i] = StatusListed
+				}
+			}
+		}
+		if harness != HarnessClaude && harness != HarnessCodex {
+			continue
+		}
 		nativeIdx := -1
 		for _, i := range idx {
 			if Native(harness, inv.Skills[i].Scope, inv.Skills[i].Convention) {
@@ -33,6 +46,7 @@ func Statuses(inv Inventory, harness string) []string {
 		}
 		for _, i := range idx {
 			switch {
+			case inv.Skills[i].Scope == ScopeCustom:
 			case nativeIdx >= 0 && i == nativeIdx && inv.Skills[i].Pending:
 				out[i] = StatusPending
 			case nativeIdx >= 0 && i == nativeIdx:

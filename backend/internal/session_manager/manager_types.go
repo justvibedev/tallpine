@@ -233,6 +233,9 @@ type conversationSettingsStore interface {
 // Manager coordinates internal session spawn, restore, kill, and cleanup over
 // the outbound ports. User-facing read-model assembly lives in the service package.
 type Manager struct {
+	// exitAllParallel overrides how many agents ExitAllAgents stops at once;
+	// zero means exitAllAgentsParallel.
+	exitAllParallel int
 	// beforeHibernate runs before idle hibernation stops a Chat; true keeps
 	// it awake this pass (SetBeforeHibernate).
 	beforeHibernate func(context.Context, domain.SessionID) (bool, error)
@@ -350,6 +353,9 @@ type Manager struct {
 	// autoResumes counts automatic (wake, startup, version-move) resumes per
 	// session, guarded by agentOpMu, so a user Resume can tell whose lock it hit.
 	autoResumes map[domain.SessionID]int
+	// resumeFlights holds each session's running resume, guarded by agentOpMu,
+	// so concurrent Resumes share one attempt (resume_flight.go).
+	resumeFlights map[domain.SessionID]*resumeFlight
 	// reconcileQueued marks sessions a live reconcile pass has reserved but no
 	// worker has started; Kill takes such a slot over at once (B541).
 	reconcileQueued map[domain.SessionID]struct{}

@@ -14,7 +14,7 @@ import (
 
 type terminalTurnRecorder interface {
 	RecordTerminalTurnRequest(context.Context, domain.TerminalTurn) error
-	RecordTerminalTurnResponse(context.Context, domain.SessionID, string, time.Time) error
+	RecordTerminalTurnResponse(context.Context, domain.TerminalTurn, string, time.Time) error
 }
 
 // recordTerminalTurn keeps Tallpine's own record of a Terminal UI turn: the request
@@ -27,6 +27,7 @@ func (m *Manager) recordTerminalTurn(ctx context.Context, rec domain.SessionReco
 		return
 	}
 	at := timeOr(s.Timestamp, now)
+	turn := domain.TerminalTurn{SessionID: rec.ID, Harness: rec.Harness, NativeSessionID: cmp.Or(s.AgentSessionID, rec.Metadata.AgentSessionID), RequestedAt: at}
 	var err error
 	switch s.Event {
 	case "user-prompt-submit":
@@ -36,13 +37,14 @@ func (m *Manager) recordTerminalTurn(ctx context.Context, rec domain.SessionReco
 			// Tallpine's own message opened this turn, or the hook carried no text.
 			// Close any turn still open so the coming stop cannot answer an
 			// earlier request.
-			err = recorder.RecordTerminalTurnResponse(ctx, rec.ID, "", at)
+			err = recorder.RecordTerminalTurnResponse(ctx, turn, "", at)
 			if err != nil || request == "" {
 				break
 			}
 			// A delivered worker report or session send carries its text: it
 			// opens a turn of its own, so the agent's answer to it is kept,
-			// as Chat keeps it. Tallpine's handoff and continuation prompts carry none.
+			// as Chat keeps it. Tallpine's handoff and continuation prompts carry none: the
+			// answer to one is kept under a placeholder request, not dropped.
 		}
 		err = recorder.RecordTerminalTurnRequest(ctx, domain.TerminalTurn{
 			SessionID: rec.ID, Harness: rec.Harness, UserRequest: request, RequestedAt: at,
@@ -52,7 +54,7 @@ func (m *Manager) recordTerminalTurn(ctx context.Context, rec domain.SessionReco
 		// The turn is over even when the hook carries no text. Closing it
 		// keeps the next request from piling onto this one.
 		if s.SubagentID == "" && !staleTerminalStop(rec, s) {
-			err = recorder.RecordTerminalTurnResponse(ctx, rec.ID, strings.TrimSpace(s.FinalAssistantMessage), at)
+			err = recorder.RecordTerminalTurnResponse(ctx, turn, strings.TrimSpace(s.FinalAssistantMessage), at)
 		}
 	}
 	if err != nil {

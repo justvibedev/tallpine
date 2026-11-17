@@ -44,6 +44,11 @@ const (
 	handoffLineClipMarker = " …[clipped]… "
 )
 
+// UnpromptedTurnRequest stands in for the request of a turn whose prompt text
+// was never recorded: a monitor wakeup, a queued task notification, or one of
+// Tallpine's own handoff and continuation prompts, which carry none.
+const UnpromptedTurnRequest = "(no prompt recorded for this turn)"
+
 // TerminalTurn is a Terminal UI turn's request as the prompt hook reported it.
 type TerminalTurn struct {
 	SessionID       SessionID

@@ -130,8 +130,7 @@ func (p *Plugin) GetLaunchCommand(ctx context.Context, cfg ports.LaunchConfig) (
 	}
 	appendTerminalCompatibilityFlags(&providerArgs)
 	appendReasoningEffortFlag(&providerArgs, cfg.Config.Effort)
-	appendFastTierFlag(&providerArgs, cfg.Config.Launch)
-	appendAutoCompactFlag(&providerArgs, cfg.Config.Launch)
+	appendLaunchFlags(&providerArgs, cfg.Config.Launch)
 	permission := capCodexPermission(cfg.Policy, cfg.Permissions, cfg.WorkspacePath, &providerArgs)
 	cmd, err = agentruntime.BuildLaunchCommand(agentruntime.LaunchConfig{
 		Harness:          agentruntime.HarnessCodex,
@@ -176,8 +175,7 @@ func (p *Plugin) GetRestoreCommand(ctx context.Context, cfg ports.RestoreConfig)
 	}
 	appendTerminalCompatibilityFlags(&providerArgs)
 	appendReasoningEffortFlag(&providerArgs, cfg.Config.Effort)
-	appendFastTierFlag(&providerArgs, cfg.Config.Launch)
-	appendAutoCompactFlag(&providerArgs, cfg.Config.Launch)
+	appendLaunchFlags(&providerArgs, cfg.Config.Launch)
 	permission := capCodexPermission(cfg.Policy, cfg.Permissions, cfg.Session.WorkspacePath, &providerArgs)
 	cmd, ok, err = agentruntime.BuildRestoreCommand(agentruntime.RestoreConfig{
 		Harness:          agentruntime.HarnessCodex,

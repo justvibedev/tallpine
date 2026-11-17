@@ -64,7 +64,7 @@ GitHubCredentialResponse: source token username
 KillSessionResponse: artifactsDeleted,omitempty cleanupPending,omitempty freed,omitempty ok sessionId
 ListAutomationRunsResponse: nextCursor,omitempty runs
 ListAutomationsResponse: automations nextCursor,omitempty
-ListReviewsResponse: activeReviewers queuedReviews reviewerActivityState,omitempty reviewerHandleId reviewerHarness,omitempty reviewerSurface,omitempty reviews runs
+ListReviewsResponse: activeReviewers heldReason,omitempty queuedReviews reviewerActivityState,omitempty reviewerHandleId reviewerHarness,omitempty reviewerSurface,omitempty reviews runs
 ListSessionPRsResponse: linkedPrs prs sessionId
 ListSessionsResponse: archived,omitempty nextCursor,omitempty sessions
 MergePRRequest: expectedHeadSha prUrl
@@ -94,8 +94,9 @@ RestoreSessionResponse: ok restoreMode session sessionId
 ResumeAgentResponse: ok resumeMode session sessionId
 ReviewRunResponse: review reviewerHandleId reviews
 RollbackSessionResponse: deleted,omitempty killed,omitempty ok sessionId
+RunningAgentsResponse: sessionIds
 SendSessionMessageRequest: attachment,omitempty message relayOwnerMessage,omitempty senderSessionId,omitempty userAuthored,omitempty
-SendSessionMessageResponse: deliveryId,omitempty message ok outcome,omitempty sessionId waitingOnInput,omitempty
+SendSessionMessageResponse: deliveryId,omitempty heldUntil,omitempty message ok outcome,omitempty sessionId waitingOnInput,omitempty
 SessionActivityResponse: current,omitempty recent
 SessionArchiveSummary: byProject total
 SessionArtifactView: inlineUrl,omitempty kind name path previewUrl,omitempty rawUrl,omitempty size updatedAt
@@ -122,14 +123,15 @@ SetReviewActivityRequest: agentSessionId,omitempty event,omitempty launchId,omit
 SettingValue: key locked lockedBy,omitempty source value writable
 SettingsChange: actor changedAt id key newValue oldValue projectId,omitempty
 SettingsValuesResponse: project,omitempty values
-SpawnSessionRequest: approvalMode,omitempty attachments,omitempty backlogAllowBlocked,omitempty backlogAllowDuplicate,omitempty backlogForce,omitempty backlogPlan,omitempty backlogRef,omitempty branch,omitempty clientRequestId,omitempty displayName,omitempty effort,omitempty harness,omitempty issueId,omitempty kind,omitempty mode,omitempty model,omitempty parentSessionId,omitempty projectId,omitempty prompt,omitempty requestedOutput,omitempty role,omitempty trackerProvider,omitempty
+SpawnSessionRequest: approvalMode,omitempty attachments,omitempty backlogAllowBlocked,omitempty backlogAllowDuplicate,omitempty backlogForce,omitempty backlogPlan,omitempty backlogRef,omitempty branch,omitempty clientRequestId,omitempty codeIntel,omitempty displayName,omitempty effort,omitempty harness,omitempty issueId,omitempty kind,omitempty mode,omitempty model,omitempty parentSessionId,omitempty projectId,omitempty prompt,omitempty requestedOutput,omitempty role,omitempty trackerProvider,omitempty
 StartBacklogRunRequest: refs,omitempty scope selection
 SteerConversationRequest: attachments,omitempty clientMessageId,omitempty recoverOnly,omitempty senderSessionId,omitempty text
 SteerOrSendConversationResponse: activityId,omitempty duplicate outcome providerTurnId,omitempty state,omitempty turnId,omitempty
+StopAllAgentsResponse: failures ok stopped
 SubmitReviewInput: body,omitempty githubReviewId,omitempty reviews,omitempty runId,omitempty verdict,omitempty
 SubmitReviewItem: body,omitempty githubReviewId,omitempty runId verdict
-TriggerReviewRequest: agentConfig,omitempty enableAutoInject,omitempty harness,omitempty head,omitempty interfaceMode,omitempty prUrl,omitempty rejectReviewedHead,omitempty rerun,omitempty source,omitempty
-TriggerReviewResponse: autoInjectEnabled created queued reviewerHandleId reviewerSurface,omitempty reviews runs
+TriggerReviewRequest: agentConfig,omitempty enableAutoInject,omitempty focus,omitempty harness,omitempty head,omitempty interfaceMode,omitempty prUrl,omitempty rejectReviewedHead,omitempty rerun,omitempty source,omitempty
+TriggerReviewResponse: autoInjectEnabled created heldReason,omitempty queued reviewerHandleId reviewerSurface,omitempty reviews runs
 UpdateAutomationRequest: cron,omitempty displayName,omitempty enabled,omitempty harness,omitempty kind,omitempty prompt,omitempty rrule,omitempty timezone,omitempty
 UpdateResult: commit finishedAt message startedAt state
 UpdateSettingsValuesRequest: project,omitempty set,omitempty unset,omitempty

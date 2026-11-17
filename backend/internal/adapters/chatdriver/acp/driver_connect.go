@@ -202,6 +202,9 @@ func (d *Driver) initialize(
 		if isACPAuthRequired(err) {
 			return nil, acpsdk.InitializeResponse{}, nil, normalizeACPError("ACP initialize", err)
 		}
+		if interrupted := initializeInterrupted(initCtx, err); interrupted != nil {
+			return nil, acpsdk.InitializeResponse{}, nil, interrupted
+		}
 		return nil, acpsdk.InitializeResponse{}, nil, fmt.Errorf("%w: ACP initialize: %w", ports.ErrChatDriverIncompatible, err)
 	}
 	if d.cfg.ValidateInitialize != nil {

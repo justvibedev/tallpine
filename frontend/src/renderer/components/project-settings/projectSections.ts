@@ -1,4 +1,4 @@
-import { Bot, GitBranch, GitPullRequest, MessageSquare, MonitorCog, Play, Settings2, Shield, Sparkles, Workflow, type LucideIcon } from "lucide-react";
+import { Bot, Code2, GitBranch, GitPullRequest, MessageSquare, MonitorCog, Play, Settings2, Shield, Sparkles, Workflow, type LucideIcon } from "lucide-react";
 import type { TFunction } from "i18next";
 import type { ProjectSettingsSection } from "../../stores/settings-modal";
 
@@ -17,12 +17,13 @@ export function projectSettingsSections(t: TFunction, remote: boolean, scratch =
 		{ id: "details", label: t("settings.project.nav.details"), icon: MonitorCog },
 		{ id: "repository", label: t("settings.project.nav.repository"), icon: GitBranch },
 		{ id: "agents", label: t("settings.project.agents"), icon: Bot },
+		{ id: "instructions", label: t("settings.project.nav.instructionsShort"), icon: Sparkles },
+		{ id: "codeIntelligence", label: t("settings.project.nav.codeIntelligence"), icon: Code2 },
 		{ id: "reviews", label: t("settings.project.nav.reviews"), icon: GitPullRequest },
 		{ id: "workflow", label: t("settings.project.workflow"), icon: Workflow },
 		{ id: "sessions", label: t("settings.sessions"), icon: MessageSquare },
 		{ id: "security", label: t("settings.security"), icon: Shield },
 		{ id: "advanced", label: t("settings.advanced"), icon: Settings2 },
-		{ id: "skills", label: t("settings.project.skills"), icon: Sparkles },
 		{ id: "cues", label: t("cues.title"), icon: Play },
 	];
 	return scratch ? sections.filter((s) => s.id !== "reviews") : sections;
@@ -32,5 +33,6 @@ export function projectSettingsSections(t: TFunction, remote: boolean, scratch =
 export function initialProjectSection(section: ProjectSettingsSection | undefined, remote: boolean): ProjectSettingsSection {
 	if (remote) return section ?? "general";
 	if (!section || section === "general") return "details";
+	if (section === "skills") return "instructions";
 	return section === "scripts" ? "repository" : section === "environment" ? "advanced" : section;
 }

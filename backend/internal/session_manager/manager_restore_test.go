@@ -287,33 +287,6 @@ func TestResumeAgent_RefusesTUIWhoseLaunchedAgentIsStillAlive(t *testing.T) {
 	}
 }
 
-func TestResumeAgent_RejectsConcurrentRequest(t *testing.T) {
-	t.Parallel()
-
-	baseRuntime := &fakeRuntime{aliveByHandle: map[string]bool{"tmux-mer-1": true}}
-	runtime := &blockingRestartRuntime{
-		fakeRuntime: baseRuntime,
-		entered:     make(chan struct{}),
-		release:     make(chan struct{}),
-	}
-	agent := supervisedLaunchAgent{launchArgvAgent{argv: []string{"codex", "resume", "agent-x"}}}
-	m, _, _ := newExitedResumeManager(t, runtime, agent)
-	firstDone := make(chan error, 1)
-	go func() {
-		_, err := m.ResumeAgentWithMode(ctx, "mer-1")
-		firstDone <- err
-	}()
-	<-runtime.entered
-
-	if _, err := m.ResumeAgentWithMode(ctx, "mer-1"); !errors.Is(err, ErrResumeInProgress) {
-		t.Fatalf("concurrent resume error = %v, want ErrResumeInProgress", err)
-	}
-	close(runtime.release)
-	if err := <-firstDone; err != nil {
-		t.Fatalf("first resume: %v", err)
-	}
-}
-
 func TestResumeAgent_ReleasesInputGateAfterInterfaceTransitionRejection(t *testing.T) {
 	t.Parallel()
 

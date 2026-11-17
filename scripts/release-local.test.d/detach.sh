@@ -18,7 +18,7 @@ slow_app() {
 # raced the 1s stop timeout: on a loaded machine the app was gone before the install gave up and the install succeeded).
 hold_until_gave_up() {
   : >"${b}/hold-quit"; : >"${T}/out"; : >"${T}/b.log" # truncate first: the watcher must not see the previous run's message
-  ( for _ in $(seq 1 2400); do grep -qs "did not quit within" "${T}/out" "${T}/b.log" && break; sleep 0.05; done; rm -f "${b}/hold-quit" ) &
+  ( for _ in $(seq 1 2400); do grep -qs "still running after" "${T}/out" "${T}/b.log" && break; sleep 0.05; done; rm -f "${b}/hold-quit" ) &
 }
 bwait() { local i; for i in $(seq 1 100); do [[ -f "${bst}/running.json" ]] && kill -0 "$(plutil -extract pid raw -o - "${bst}/running.json" 2>/dev/null)" 2>/dev/null && return 0; sleep 0.2; done; return 1; }
 binst() { /usr/libexec/PlistBuddy -c 'Print :VOBuildCommit' "${bapps}/${product}.app/Contents/Info.plist"; }
@@ -51,9 +51,9 @@ bwait || bad "b327: new app did not come up"
 hold_until_gave_up
 TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl install "${b}/newer/${product}.app" --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
 rm -f "${b}/hold-quit"; wait
-check "b327: slow quit fails the install" '[[ ${rc} -ne 0 ]] && grep -q "did not quit within 1s" "${T}/out"'
+check "b327: slow quit fails the install" '[[ ${rc} -ne 0 ]] && grep -q "still running after 1s" "${T}/out"'
 check "b327: the undo relaunched the app" 'grep -q "launch chain:" "${b}/chain.out" && bwait && [[ "$(plutil -extract pid raw -o - "${bst}/running.json")" != "${before}" ]] && [[ "$(binst)" == "${D}" ]]'
-check "b327: the failed install was reported" 'sed -n 2p "${bres}" | grep -q "^\[release\] install of ${C:0:10} FAILED: .*did not quit.*; log ${T}/b.log$" && [[ "$(sed -n 1p "${bres}")" == failed && ! -s "${bnrc}" ]]'
+check "b327: the failed install was reported" 'sed -n 2p "${bres}" | grep -q "^\[release\] install of ${C:0:10} FAILED: .*quit was cancelled.*Nothing was installed.*; log ${T}/b.log$" && [[ "$(sed -n 1p "${bres}")" == failed && ! -s "${bnrc}" ]]'
 
 # B585: the app was already relaunched (a healthy new daemon) while the old app process is still exiting: the undo
 # must not wait for that exit or launch a second app, and still reports the failure. The app is held until the
@@ -69,7 +69,7 @@ TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=180 brl install "
 rm -f "${b}/hold-quit"
 wait
 check "b585: the undo sees the app is already running again" '[[ ${rc} -ne 0 ]] && grep -q "is already running again; not relaunching it" "${T}/out" && ! grep -q "Launching" "${T}/out"'
-check "b585: the undo launched nothing and the install failure was reported" '[[ ! -s "${b}/chain.out" ]] && sed -n 2p "${bres}" | grep -q "^\[release\] install of ${C:0:10} FAILED: .*did not quit"'
+check "b585: the undo launched nothing and the install failure was reported" '[[ ! -s "${b}/chain.out" ]] && sed -n 2p "${bres}" | grep -q "^\[release\] install of ${C:0:10} FAILED: .*quit was cancelled.*Nothing was installed"'
 # Back to a normal app: stop the stand-in daemon, let the old app process finish exiting, start the app.
 bwait && kill -TERM "$(plutil -extract pid raw -o - "${bst}/running.json")"; sleep 4
 "${T}/launch" "${bapps}/${product}.app"; bwait || bad "b585: app did not come back"
@@ -79,9 +79,9 @@ bwait && kill -TERM "$(plutil -extract pid raw -o - "${bst}/running.json")"; sle
 hold_until_gave_up
 TALLPINE_RELEASE_STOP_TIMEOUT=1 TALLPINE_RELEASE_RELAUNCH_WAIT=20 brl rollback --log "${T}/b.log" >"${T}/out" 2>&1 && rc=0 || rc=$?
 rm -f "${b}/hold-quit"; wait
-check "b327: slow quit fails the rollback" '[[ ${rc} -ne 0 ]] && grep -q "did not quit within 1s" "${T}/out"'
+check "b327: slow quit fails the rollback" '[[ ${rc} -ne 0 ]] && grep -q "still running after 1s" "${T}/out"'
 check "b327: the rollback undo relaunched the app" 'grep -q "launch chain:" "${b}/chain.out" && bwait && [[ "$(plutil -extract pid raw -o - "${bst}/running.json")" != "${before}" ]] && [[ "$(binst)" == "${D}" ]]'
-check "b327: the failed rollback was reported" 'sed -n 2p "${bres}" | grep -q "^\[release\] rollback FAILED: .*did not quit.*; log ${T}/b.log$" && [[ "$(sed -n 1p "${bres}")" == failed && ! -s "${bnrc}" ]]'
+check "b327: the failed rollback was reported" 'sed -n 2p "${bres}" | grep -q "^\[release\] rollback FAILED: .*quit was cancelled.*Nothing was installed.*; log ${T}/b.log$" && [[ "$(sed -n 1p "${bres}")" == failed && ! -s "${bnrc}" ]]'
 # An agent session whose shell has a PTY on stdin is detached too; a user terminal and a non-session run are not.
 ptyrun() { python3 -c 'import pty,sys; pty.spawn(sys.argv[1:])' "$@" >/dev/null 2>&1 || true; }
 rm -f "${b}/envfile"

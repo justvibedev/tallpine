@@ -5,6 +5,7 @@ declare const __TALLPINE_TEAM_ID__: string | undefined;
 declare const __TALLPINE_BUILD_INFO__: { version: string; commit: string; date: string; dirty: string } | undefined;
 import {
 app,
+dialog,
 ipcMain as electronIpcMain,
 type WebContents
 } from "electron";
@@ -20,7 +21,11 @@ import { daemonSocketPath } from "./daemon-socket-fetch";
 import { DaemonWsBridge } from "./daemon-ws-bridge";
 import { runFilePath } from "./daemon/daemon-lifecycle";
 import { guardIpcMain, originOf } from "./ipc-guard";
+import { askQuitAgentsChoice, fetchRunningAgentCount, shouldStopAgentsOnQuit } from "./quit-agents";
+import { keepDaemonAlive } from "./daemon-owner";
+import { createQuitAgentsGate } from "./quit-agents-gate";
 import { createQuitConfirmController } from "./quit-confirm";
+import { trayText } from "./tray-text";
 import { createTrayLifecycle } from "./tray-lifecycle";
 import { focusMainWindow } from "./window/window-focus";
 
@@ -78,6 +83,41 @@ export const awakeDownloads = createAwakeDownloadBridge({
 
 export const browserCleanupPromises = new Set<Promise<void>>();
 
+// Native dialogs from the main process; the tray's Quit and Stop All Agents
+// can fire while Tallpine is in the background.
+export function showMainMessageBox(options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+	app.focus({ steal: true });
+	return dialog.showMessageBox(options);
+}
+
+async function runningAgentCount(): Promise<number | null> {
+	const port = ctx.daemonStatus.state === "ready" ? ctx.daemonStatus.port : undefined;
+	return port ? fetchRunningAgentCount(port, daemonToken.token()) : null;
+}
+
+/** The attached daemon, as the quit's agent decisions read it. */
+export function daemonForQuit(): Parameters<typeof shouldStopAgentsOnQuit>[0] {
+	return {
+		ready: ctx.daemonStatus.state === "ready",
+		port: ctx.daemonStatus.port,
+		linked: ctx.supervisorLink !== null,
+		keepAlive: keepDaemonAlive(process.env),
+	};
+}
+
+// Every quit asks what happens to the agents still running (B753), except an
+// update restart and the quits marked unattended (signals, install hand-off).
+export const quitAgentsGate = createQuitAgentsGate({
+	decide: async () => {
+		const count = await runningAgentCount();
+		if (!count) return undefined;
+		const outlivesApp = !shouldStopAgentsOnQuit(daemonForQuit());
+		return askQuitAgentsChoice(count, trayText(ctx.uiLocale), showMainMessageBox, outlivesApp);
+	},
+	quit: () => app.quit(),
+	unattended: () => ctx.updateRestartRequested,
+});
+
 // macOS app menu Quit. ⌘Q asks the shell to confirm; with no visible window
 // there is nowhere to show the dialog, so the shortcut quits directly.
 export const quitConfirm = createQuitConfirmController({
@@ -94,6 +134,7 @@ export const quitConfirm = createQuitConfirmController({
 		shell?.send(QUIT_CONFIRM_REQUEST_CHANNEL, request);
 	},
 	quit: () => app.quit(),
+	quitWillAsk: async () => Boolean(await runningAgentCount()),
 });
 
 export const RENDERER_HOST = "renderer";

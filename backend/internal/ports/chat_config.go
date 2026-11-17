@@ -260,6 +260,9 @@ type MessageReceipt struct {
 	// in-chat question when the message arrived. A delivered message was
 	// steered into that turn; a queued one waits until the question is answered.
 	WaitingOnInput bool
+	// HeldUntil is set on a queued message that the target's usage-limit pause
+	// keeps back until that time (or until its account completes a turn).
+	HeldUntil time.Time
 }
 
 // ChatTurnSettings are the per-turn choices a provider accepts alongside the

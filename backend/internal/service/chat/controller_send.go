@@ -82,10 +82,13 @@ func (c *Controller) sendLockedSteps(
 	// is exhausted wait in the queue until the reset instead of starting a turn
 	// that fails at once. A human's own message still goes through, ahead of the
 	// queued automation, which stays queued.
-	_, paused := c.usageLimitPausedUntil(ctx)
+	pausedUntil, paused := c.usageLimitPausedUntil(ctx)
 	humanSend := msg.Origin == domain.MessageOriginHuman
 	pausedAutomation := paused && !humanSend
 	if pausedAutomation {
+		// Armed here as well so a held send is drained when the pause lifts, not
+		// only when an earlier drain happened to arm the wake.
+		c.armPauseWake(pausedUntil)
 		c.requestFailover()
 	}
 	queuedAhead := false

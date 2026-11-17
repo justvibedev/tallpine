@@ -34,6 +34,10 @@ export const apiClientModule = () => ({
     }
     return fallback;
   },
+  apiErrorCode: (error: unknown) => {
+    const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+    return typeof code === "string" && code !== "" ? code : undefined;
+  },
 });
 
 export const hostClientsModule = (original: object) => ({

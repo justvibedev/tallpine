@@ -43,7 +43,11 @@ type AppSettings struct {
 	// PeerCheck is the owner's daemon peer check switch: "default" or "off"
 	// (B631).
 	PeerCheck string
-	UpdatedAt time.Time
+	// MachineMaxReviewers and MachineLoadPercent are the machine-load gate's
+	// limits for native reviewers (B752); 0 turns a limit off.
+	MachineMaxReviewers int
+	MachineLoadPercent  int
+	UpdatedAt           time.Time
 }
 
 // GetAppSettings reads the preference row.
@@ -67,6 +71,8 @@ func (s *Store) GetAppSettings(ctx context.Context) (AppSettings, error) {
 		StorageCompaction:          row.StorageCompaction,
 		ProviderEventRetentionDays: int(row.ProviderEventRetentionDays),
 		PeerCheck:                  row.PeerCheck,
+		MachineMaxReviewers:        int(row.MachineMaxReviewers),
+		MachineLoadPercent:         int(row.MachineLoadPercent),
 		ChatHibernation: domain.ChatHibernationPolicy{
 			Enabled:          row.ChatHibernation,
 			WorkerIdle:       time.Duration(row.ChatHibernationWorkerIdleSeconds) * time.Second,
@@ -111,6 +117,16 @@ func (s *Store) SetPeerCheck(ctx context.Context, value string, now time.Time) e
 	defer s.writeMu.Unlock()
 	if err := s.qw.SetPeerCheck(ctx, gen.SetPeerCheckParams{PeerCheck: value, UpdatedAt: now}); err != nil {
 		return fmt.Errorf("set peer check: %w", err)
+	}
+	return nil
+}
+
+// SetMachineLoad persists the machine-load gate's two limits.
+func (s *Store) SetMachineLoad(ctx context.Context, maxReviewers, loadPercent int, now time.Time) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.qw.SetMachineLoad(ctx, gen.SetMachineLoadParams{MaxReviewers: int64(maxReviewers), LoadPercent: int64(loadPercent), UpdatedAt: now}); err != nil {
+		return fmt.Errorf("set machine load: %w", err)
 	}
 	return nil
 }

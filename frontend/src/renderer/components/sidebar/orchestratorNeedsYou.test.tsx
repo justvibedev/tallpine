@@ -20,6 +20,9 @@ describe("latestReplyUnanswered", () => {
 	it("is false when the newest reply is unmarked, even if an older one was marked", () => {
 		expect(latestReplyUnanswered([msg({ sequence: 1, text: "**Needs you:** x" }), msg({ sequence: 2, text: "all done" })])).toBe(false);
 	});
+	it("is true for an unmarked reply that ends asking the owner (B750 web-5)", () => {
+		expect(latestReplyUnanswered([msg({ sequence: 1, role: "user", origin: "automation", text: "[done]" }), msg({ sequence: 2, text: "PR #41 is green.\n\nWant me to land it?" })])).toBe(true);
+	});
 	it("is false for an empty timeline", () => {
 		expect(latestReplyUnanswered([])).toBe(false);
 	});

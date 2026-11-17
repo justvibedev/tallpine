@@ -5,6 +5,7 @@ import { ProjectSettingsSection } from "@tallpine/product-ui";
 import type { components } from "../../api/schema";
 import { applyProjectSkillOffer, fetchProjectSkills, offerItemLine, projectSkillsQueryKey, setSkillsOfferOff } from "../lib/skills-offer";
 import { cn } from "../lib/utils";
+import { CustomSkillsSection } from "./project-settings/CustomSkillsSection";
 import { ProjectSkillControl } from "./ProjectSkillRow";
 import { SkillsCommitPanel } from "./SkillsCommitPanel";
 import { Button } from "./ui/button";
@@ -89,8 +90,10 @@ export function ProjectSkillsSettings({ projectId }: { projectId: string }) {
 	const commitPreview = [...new Set([...offers.flatMap((o) => o.items.map((i) => i.path)), ...pendingCommit])];
 	const groups = [
 		{ id: "project", title: t("settings.project.skills.group.project"), items: skills.filter((s) => s.scope === "repo") },
-		{ id: "user", title: t("settings.project.skills.group.user"), items: skills.filter((s) => s.scope !== "repo") },
+		{ id: "user", title: t("settings.project.skills.group.user"), items: skills.filter((s) => s.scope === "user") },
+		{ id: "tallpine", title: t("settings.project.skills.group.tallpine"), items: skills.filter((s) => s.scope === "tallpine") },
 	];
+	const reviewerRepo = skills.filter((s) => s.scope === "reviewer-repo");
 	const used = CHECKED.filter(([id]) => harnesses.includes(id));
 	return <div className="flex min-h-full flex-col gap-(--size-settings-section-inner-gap)">
 		{used.length > 0 && <ProjectSettingsSection title={t("settings.project.skills.instructions")} grouped>
@@ -119,15 +122,25 @@ export function ProjectSkillsSettings({ projectId }: { projectId: string }) {
 			{group.items.length === 0 ? <p className="px-(--settings-row-inset) py-2.5 text-sm text-settings-muted">{t("settings.project.skills.empty")}</p> : group.items.map((skill) => <div className="settings-row-bar flex-col items-stretch gap-1 py-2.5" key={`${skill.convention}:${skill.scope}:${skill.name}`}>
 				<div className="flex items-baseline justify-between gap-3">
 					<span className="text-sm leading-5 text-settings-label">{skill.name}</span>
-					<span className="flex shrink-0 flex-wrap justify-end gap-1">
+					{group.id === "tallpine" ? <span className="shrink-0 text-xs leading-4 text-settings-muted">{t("settings.project.skills.providedByTallpine")}</span> : <span className="flex shrink-0 flex-wrap justify-end gap-1">
 						{CHECKED.map(([id, name]) => <StatusChip key={id} name={name} status={skill.harnesses.find((h) => h.harness === id)?.status} />)}
-					</span>
+					</span>}
 				</div>
 				{skill.description && <p className="line-clamp-2 text-xs leading-4 text-settings-muted">{skill.description}</p>}
 				<p className="truncate font-mono text-xs leading-4 text-settings-muted" title={skill.path}>{skill.path}</p>
 				<ProjectSkillControl projectId={projectId} workspace={query.data.workspace} skill={skill} onRemoved={(name, localOnly, branch) => setRemoved((r) => localOnly ? [...r.filter((x) => x.name !== name), { name, branch: branch ?? "" }] : r)} />
 			</div>)}
 		</ProjectSettingsSection>)}
+		{/* App-wide custom skills are switched on the skills list and managed in Settings. */}
+		<CustomSkillsSection projectId={projectId} skills={skills.filter((s) => s.scope === "custom" && s.convention !== "custom-app")} />
+		{reviewerRepo.length > 0 && <ProjectSettingsSection title={t("settings.project.skills.group.reviewerRepo")} grouped>
+			<p className="px-(--settings-row-inset) pt-2.5 text-xs leading-4 text-settings-muted">{t("settings.project.skills.reviewerRepo.note")}</p>
+			{reviewerRepo.map((skill) => <div className="settings-row-bar flex-col items-stretch gap-1 py-2.5" key={skill.name} data-testid={`reviewer-repo-skill-${skill.name}`}>
+				<span className="text-sm leading-5 text-settings-label">{skill.name}</span>
+				{skill.description && <p className="line-clamp-2 text-xs leading-4 text-settings-muted">{skill.description}</p>}
+				<p className="truncate font-mono text-xs leading-4 text-settings-muted" title={skill.path}>{skill.path}</p>
+			</div>)}
+		</ProjectSettingsSection>}
 		{collisions.length > 0 && <ul className="flex flex-col gap-0.5 px-(--settings-row-inset) text-xs leading-4 text-settings-muted">
 			{collisions.map((c) => <li key={`${c.winner}:${c.loser}`}>{t("settings.project.skills.collision", { name: c.name, winner: c.winner })}</li>)}
 		</ul>}

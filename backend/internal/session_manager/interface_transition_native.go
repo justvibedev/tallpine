@@ -309,7 +309,7 @@ func (m *Manager) preflightTerminalLaunch(
 	if err := m.admitTerminalFence(decision, rec.Harness, restoredAgentConfigUnder(decision, rec, project.Config).Permissions); err != nil {
 		return err
 	}
-	systemPrompt, err := m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, false)
+	systemPrompt, err := m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, rec.Harness, false)
 	if err != nil {
 		return err
 	}

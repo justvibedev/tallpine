@@ -2,8 +2,10 @@ package review
 
 import (
 	"log/slog"
+	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/skillbridge"
 )
 
 // applyRiskReviewer swaps in the project's stronger reviewer (agent, model and
@@ -80,4 +82,31 @@ func (p *triggerPass) dueForRiskPick(state PRReviewState) bool {
 	default:
 		return p.source != domain.ReviewTriggerAuto && state.Status == ReviewStateChangesRequested
 	}
+}
+
+// matchReviewerRisk matches changed paths against the project's risk globs,
+// then against the reviewer-only skills directory and the configured reviewer
+// rules file, so a PR that edits the skills or rules future reviews run under
+// gets the stronger reviewer. The rules file
+// is compared as an exact path, never as a glob: "*", "[" or "{" in its name
+// stay literal.
+func matchReviewerRisk(cfg domain.ProjectConfig, globs, changed []string) (file, pattern string, ok bool) {
+	if file, glob, ok := domain.MatchReviewRisk(globs, changed); ok {
+		return file, glob, true
+	}
+	for _, f := range changed {
+		if strings.HasPrefix(strings.TrimPrefix(f, "./"), skillbridge.ReviewerSkillsDir+"/") {
+			return f, skillbridge.ReviewerSkillsDir + "/**", true
+		}
+	}
+	rules, err := domain.RepoRelativePath("", cfg.ReviewerRulesFile)
+	if err != nil || rules == "" {
+		return "", "", false
+	}
+	for _, f := range changed {
+		if strings.TrimPrefix(f, "./") == rules {
+			return f, "reviewerRulesFile", true
+		}
+	}
+	return "", "", false
 }

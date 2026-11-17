@@ -347,7 +347,7 @@ func messageFor(rec domain.NotificationRecord, token, hostID, hostName, sessionN
 	if rec.Type == domain.NotificationPlanWaiting {
 		// The planner session is usually gone; say what waits, never the item text.
 		title = fmt.Sprintf("%s · a plan is waiting on you", label)
-		if rec.IsAsk() {
+		if rec.IsAsk() || rec.IsOwnerQuestion() {
 			title = fmt.Sprintf("%s · a question is waiting on you", label)
 		}
 	}

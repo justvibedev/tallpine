@@ -75,6 +75,9 @@ func (c *Controller) afterProject(ctx context.Context, event ports.ChatEvent, pr
 		// Only a completed turn releases queued work; a failed or recovered one holds
 		// the queue so it cannot cascade through the same outage (issue #4861).
 		_ = c.drainLocked(ctx, settledTurnState(event) == domain.TurnStateCompleted) // drain logs failures.
+		if c.onModelTurnCompleted != nil && c.reviewID == "" && settledTurnState(event) == domain.TurnStateCompleted {
+			c.onModelTurnCompleted(c.sessionID, c.harness)
+		}
 	case ports.ChatEventAsyncTask:
 		c.noteAutonomousTurn(ctx, event.AsyncTask, now)
 	case ports.ChatEventApprovalRequested:

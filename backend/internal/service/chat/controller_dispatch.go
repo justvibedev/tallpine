@@ -291,6 +291,11 @@ func (c *Controller) drainLockedWithLimit(ctx context.Context, allowDispatch boo
 		}
 		return nil
 	}
+	// Not paused: nothing is waiting on a pause, so a sibling's completed turn
+	// must not wake this controller into a drain.
+	c.mu.Lock()
+	c.stopPauseWakeLocked()
+	c.mu.Unlock()
 	if !allowDispatch {
 		return nil
 	}
@@ -389,15 +394,24 @@ func (c *Controller) armPauseWake(until time.Time) {
 	c.stopPauseWakeLocked()
 	c.pauseWake = time.AfterFunc(delay, func() {
 		c.mu.Lock()
-		closed := c.explicitClose
+		c.pauseWake = nil // fired: nothing is armed until the drain re-arms it
 		c.mu.Unlock()
-		if closed {
-			return
-		}
-		if err := c.drainOne(context.Background()); err != nil {
-			c.log.Warn("drain after usage-limit pause failed", "session", c.sessionID, "error", err)
-		}
+		c.drainAfterPause()
 	})
+}
+
+// drainAfterPause runs one drain for a controller whose pause may have lifted.
+// A closed or replaced controller never claims queued turns.
+func (c *Controller) drainAfterPause() {
+	c.mu.Lock()
+	closed := c.explicitClose
+	c.mu.Unlock()
+	if closed {
+		return
+	}
+	if err := c.drainOne(context.Background()); err != nil {
+		c.log.Warn("drain after usage-limit pause failed", "session", c.sessionID, "error", err)
+	}
 }
 
 // stopPauseWakeLocked cancels the pending post-reset drain. Close and Terminate

@@ -97,6 +97,15 @@ describe("createTrayController", () => {
 		expect(quitCompletely).toHaveBeenCalledTimes(1);
 	});
 
+	it("offers Stop All Agents only when wired, and hands it to its delegate (B753)", () => {
+		expect(setup().tray.template.some((item) => item.label === "Stop All Agents…")).toBe(false);
+		const stopAllAgents = vi.fn();
+		createTrayController({ focusWindow: vi.fn(), openSession: vi.fn(), quitCompletely: vi.fn(), stopAllAgents, locale: "en" });
+		const tray = trayInstances[trayInstances.length - 1];
+		tray.template.find((item) => item.label === "Stop All Agents…")?.click?.();
+		expect(stopAllAgents).toHaveBeenCalledTimes(1);
+	});
+
 	it("hands the show action to the focusWindow delegate", () => {
 		const { tray, focusWindow } = setup();
 		tray.template.find((item) => item.label === "Show Tallpine")?.click?.();

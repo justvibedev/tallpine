@@ -166,7 +166,7 @@ func TestPendingFinalSurvivesObserverRecreation(t *testing.T) {
 	for _, mode := range []domain.SessionMode{domain.SessionModeChat, domain.SessionModeTUI} {
 		t.Run(string(mode), func(t *testing.T) {
 			h := newDurableHarness(t, mode)
-			h.complete(strings.Repeat("界", 600))
+			h.complete(strings.Repeat("界", domain.TurnFallbackExcerptCharacters+100))
 			delay := DefaultIdleDelay
 			if mode == domain.SessionModeChat {
 				delay = domain.ChatTurnFallbackDelay()
@@ -175,7 +175,7 @@ func TestPendingFinalSurvivesObserverRecreation(t *testing.T) {
 			h.now = h.now.Add(time.Second)
 			h.restart()
 			p := h.pending()
-			if len(p) != 1 || !p[0].DueAt.Equal(due) || len([]rune(p[0].Excerpt)) != 500 {
+			if len(p) != 1 || !p[0].DueAt.Equal(due) || len([]rune(p[0].Excerpt)) != domain.TurnFallbackExcerptCharacters {
 				t.Fatalf("pending=%+v", p)
 			}
 			h.o.deliverPending(context.Background())

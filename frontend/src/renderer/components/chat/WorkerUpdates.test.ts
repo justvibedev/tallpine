@@ -2,9 +2,11 @@ import { splitHeadline } from "@tallpine/shared/chat/automation/worker-reports";
 import { describe, expect, it } from "vitest";
 import type { ConversationActivity, ConversationItem, ConversationMessage } from "../../types/conversation";
 import {
+	asksOwnerAtEnd,
 	asksUser,
 	isWorkerLead,
 	piggybackedUpdates,
+	isSubstantialAnswer,
 	quietWorkerReply,
 	renamedTitle,
 	workerUpdatesOf,
@@ -116,6 +118,22 @@ describe("worker updates", () => {
 		expect(asksUser("Needs you to wait.")).toBe(false);
 	});
 
+	// Same cases as domain.TestAsksOwner in the daemon, which notifies on this rule (B750).
+	it.each([
+		["web-5 offer to land", "web-6 finished the checkout fix.\n\n- PR #41 is green, review approved\n- Tests: 212 passed\n\nWant me to land it?", true],
+		["question then link line", "Done.\n\nShall we ship 0.4 now?\n\nPR: https://github.com/x/y/pull/4", true],
+		["offer without question mark", "PR #12 is green.\n\nSay \"merge\" and I land it.", true],
+		["let me know", "Two options drafted.\n\nLet me know which one you prefer.", true],
+		["needs you marker", "**Needs you:** install the build and test login.", true],
+		["plain status", "web-6 finished; PR #41 merged. Nothing waiting on you.", false],
+		["early question, status end", "Was the flake real? Yes, fixed.\n\nworker 7 is on it.\n\nPR #9 merged.\n\nAll green.", false],
+		["question in code", "Ran `a?.b` checks.\n\n```\nok?\n```\n\nAll done.", false],
+		["word inside a word", "Fixed the retry.\n\nYour callback now fires once.", false],
+		["question in link", "See [notes](https://x.y/?q=1) for details.", false],
+	])("asksOwnerAtEnd: %s", (_name, text, want) => {
+		expect(asksOwnerAtEnd(text)).toBe(want);
+	});
+
 	it("reads spawned workers from what `tallpine spawn` prints", () => {
 		const items: ConversationItem[] = [
 			command("tallpine spawn --prompt 'check regressions'", 'spawned session proj-288 "Check regressions" (working)\n'),
@@ -129,6 +147,8 @@ describe("worker updates", () => {
 		const reply = (text: string) => message({ id: "a1", role: "assistant", origin: "provider", text });
 		expect(quietWorkerReply([message({ text: batch }), reply("Noted.")])?.text).toBe("Noted.");
 		expect(quietWorkerReply([message({ text: batch }), reply("Tunnel or loopback?")])).toBeUndefined();
+		expect(quietWorkerReply([message({ text: batch }), reply("PR #12 is green.\n\nSay \"merge\" and I land it.")])).toBeUndefined();
+		expect(quietWorkerReply([message({ text: batch }), reply("**Result:** Haiku fits 40k tokens.")])).toBeUndefined();
 		expect(quietWorkerReply([message({ text: batch }), command("gh pr merge 7054")])).toBeUndefined();
 		expect(quietWorkerReply([message({ origin: "human", text: "Hi" }), reply("Noted.")])).toBeUndefined();
 	});
@@ -138,5 +158,13 @@ describe("worker updates", () => {
 		const reply = message({ id: "a1", role: "assistant", origin: "provider", text: "A correction." });
 		expect(quietWorkerReply([framed, reply])).toBeUndefined();
 		expect(workerUpdatesOf(framed)[0]?.body).toBe("hello");
+	});
+});
+
+describe("isSubstantialAnswer", () => {
+	it("keeps a long pre-tool answer visible but not a short aside", () => {
+		const say = (text: string) => message({ id: "a2", role: "assistant", origin: "provider", text });
+		expect(isSubstantialAnswer(say("Checking the logs."))).toBe(false);
+		expect(isSubstantialAnswer(say("Finding. ".repeat(40)))).toBe(true);
 	});
 });

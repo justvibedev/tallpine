@@ -19,6 +19,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/contextwindow"
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 // ErrInvalid and ErrNotFound let the transport layer map failures to 422/404.
@@ -64,6 +65,8 @@ type Store interface {
 	// was accepted by the provider (its turn is bound to a provider turn id).
 	ReviewBatchDispatched(ctx stdctx.Context, reviewID, batchID string) (bool, error)
 	InsertReviewRun(ctx stdctx.Context, r domain.ReviewRun) error
+	// SetReviewRunFocus records the one-off review focus a trigger gave a run it restarted.
+	SetReviewRunFocus(ctx stdctx.Context, id, focus string, author domain.ReviewFocusAuthor) error
 	UpdateReviewRunResult(ctx stdctx.Context, id string, status domain.ReviewRunStatus, verdict domain.ReviewVerdict, body, githubReviewID string, autoInjectReview bool) (bool, error)
 	UpdateReviewAgentSessionID(ctx stdctx.Context, id, agentSessionID string) (bool, error)
 	SupersedeStaleRunningReviewRuns(ctx stdctx.Context, sessionID domain.SessionID, prURL, targetSHA, body string) (int64, error)
@@ -108,12 +111,25 @@ type Deps struct {
 	// reviewer on its agent's own default.
 	CompactDefaults CompactDefaults
 	ModelCatalog    contextwindow.CatalogReader
+	// MachineLoad, when set, holds a new automatic or agent-requested reviewer
+	// pass back while the machine is busy (B752). Nil never holds.
+	MachineLoad MachineGate
 	// Plans, when set, supplies the approved plan of the backlog item a worker
 	// builds so the reviewer can check the code against it (B205). Nil: none.
 	Plans PlanSource
 	// Items, when set, supplies the current text of the backlog item a worker
 	// builds, so the reviewer judges against its present done-when (B601).
 	Items ItemSource
+	// DefaultBranches resolves and refreshes the project's default branch,
+	// which the reviewer rules file is read from. Nil reads
+	// origin/<defaultBranch> as it is locally. GitCredentials, when set,
+	// authenticates that refresh with the project's own GitHub account, as
+	// every other daemon fetch does.
+	DefaultBranches ports.WorkspaceDefaultBranchRefresher
+	GitCredentials  ports.ProjectGitCredentials
+	// DataDir is the Tallpine data dir: the project custom skills a reviewer
+	// pass copies are under it. Empty skips custom skills.
+	DataDir string
 	// ChatRecoveryDone gates operations that could mistake a recovering reviewer for an exited one.
 	ChatRecoveryDone <-chan struct{}
 	// PassDeadline fails a running pass that has not submitted a result this
@@ -144,12 +160,17 @@ type Deps struct {
 // Engine is the core code-review engine.
 type Engine struct {
 	harnessUse HarnessUseGate
+	machine    MachineGate
 	store      Store
 	sessions   Sessions
 	prs        PRs
 	projects   Projects
 	launcher   Launcher
 	plans      PlanSource
+
+	defaultBranches ports.WorkspaceDefaultBranchRefresher
+	gitCredentials  ports.ProjectGitCredentials
+	dataDir         string
 
 	compactDefaults CompactDefaults
 	modelCatalog    contextwindow.CatalogReader
@@ -214,6 +235,7 @@ func New(d Deps) *Engine {
 		patchID:      gitPatchID,
 		store:        d.Store,
 		harnessUse:   d.HarnessUse,
+		machine:      d.MachineLoad,
 		sessions:     d.Sessions,
 		prs:          d.PRs,
 		projects:     d.Projects,
@@ -222,6 +244,9 @@ func New(d Deps) *Engine {
 		compactDefaults: d.CompactDefaults,
 		modelCatalog:    d.ModelCatalog,
 		plans:           d.Plans,
+		defaultBranches: d.DefaultBranches,
+		gitCredentials:  d.GitCredentials,
+		dataDir:         d.DataDir,
 		items:           d.Items,
 		clock:           clock,
 		newID:           newID,

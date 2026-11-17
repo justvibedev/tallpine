@@ -44,6 +44,12 @@ func (s *Service) Start(ctx context.Context, cfg StartConfig) (*Controller, erro
 	}
 	queuedBehind := endStart()
 	gate.unlock()
+	if err == nil && !queuedBehind && controller.usageLimitPauseEnded(ctx) {
+		// A pause that ended while the daemon was down leaves no wake to fire, so
+		// turns queued behind it are delivered here, once the controller is
+		// published and its ownership committed.
+		queuedBehind = true
+	}
 	if err == nil && queuedBehind {
 		// A send queued while this start held the gate may have landed after the
 		// controller's first drain; deliver it now rather than at the next turn.

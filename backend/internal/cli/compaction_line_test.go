@@ -55,10 +55,11 @@ func TestSpawn_ShowsCompactionAndRoomWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn failed: %v stderr=%s", err, errOut)
 	}
-	for _, want := range []string{"warning: context baseline 150k leaves under 60k of room\n", "compaction: baseline 150k, window agent default, trigger agent default\n"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("spawn output missing %q:\n%s", want, out)
-		}
+	if !strings.Contains(out, "compaction: baseline 150k, window agent default, trigger agent default\n") {
+		t.Fatalf("spawn stdout missing compaction line:\n%s", out)
+	}
+	if strings.Contains(out, "warning:") || !strings.Contains(errOut, "warning: context baseline 150k leaves under 60k of room\n") {
+		t.Fatalf("room warning must be on stderr only: stdout=%q stderr=%q", out, errOut)
 	}
 }
 

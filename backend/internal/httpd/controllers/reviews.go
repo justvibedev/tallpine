@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/httpd/apispec"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
+	"tallpine.eu/tallpine/backend/internal/httpd/requestscope"
 	"tallpine.eu/tallpine/backend/internal/ports"
 	reviewcore "tallpine.eu/tallpine/backend/internal/review"
 	reviewsvc "tallpine.eu/tallpine/backend/internal/service/review"
@@ -141,6 +143,12 @@ func (c *ReviewsController) trigger(w http.ResponseWriter, r *http.Request) {
 		// An agent-requested pass is never recorded as the user's.
 		in.Source = string(domain.ReviewTriggerAgent)
 	}
+	in.Focus = strings.TrimSpace(in.Focus)
+	if domain.ReviewFocusTooLong(in.Focus) {
+		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "REVIEW_FOCUS_TOO_LONG",
+			fmt.Sprintf("Review focus must be at most %d characters", domain.MaxReviewFocusChars), nil)
+		return
+	}
 	treq := reviewsvc.TriggerRequest{
 		Harness:            in.Harness,
 		Config:             in.AgentConfig,
@@ -151,6 +159,8 @@ func (c *ReviewsController) trigger(w http.ResponseWriter, r *http.Request) {
 		RejectReviewedHead: in.RejectReviewedHead,
 		Rerun:              in.Rerun,
 		EnableAutoInject:   in.EnableAutoInject,
+		Focus:              in.Focus,
+		FocusAuthor:        reviewFocusAuthor(r),
 	}
 	res, err := c.Svc.TriggerRequested(r.Context(), sessionID(r), treq)
 	if err != nil {
@@ -177,6 +187,7 @@ func (c *ReviewsController) trigger(w http.ResponseWriter, r *http.Request) {
 		Runs:              runs,
 		Created:           res.Created,
 		Queued:            res.Queued,
+		HeldReason:        res.HeldReason,
 		AutoInjectEnabled: res.AutoInjectEnabled,
 		ReviewerSurface:   reviewerSurfacePayload(res.ReviewerSurface),
 	})
@@ -321,6 +332,7 @@ func reviewsResponse(res reviewcore.SessionReviews, reviews []reviewcore.PRRevie
 		ReviewerSurface:       reviewerSurfacePayload(res.ReviewerSurface),
 		ActiveReviewers:       activeReviewersPayload(res.ActiveReviewers),
 		QueuedReviews:         queuedReviewsPayload(res.Queued),
+		HeldReason:            res.HeldReason,
 	}
 }
 
@@ -439,4 +451,19 @@ func truncateReviewCause(s string) string {
 		return s
 	}
 	return strings.ToValidUTF8(s[:maxReviewCauseLen], "") + "…"
+}
+
+// reviewFocusAuthor is who gave a trigger's focus, from the request's
+// credentials: no agent token is the owner, an orchestrator token the
+// orchestrator, and any other agent token (a worker) the untrusted worker.
+func reviewFocusAuthor(r *http.Request) domain.ReviewFocusAuthor {
+	agent, ok := scopedAgent(r)
+	switch {
+	case !ok:
+		return domain.ReviewFocusOwner
+	case agent.Role == requestscope.RoleOrchestrator:
+		return domain.ReviewFocusOrchestrator
+	default:
+		return domain.ReviewFocusWorker
+	}
 }

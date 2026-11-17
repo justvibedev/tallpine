@@ -121,6 +121,32 @@ describe("orchestrator worker updates", () => {
 		expect(row).not.toHaveTextContent(".md");
 	});
 
+	it("draws a **Result:** reply as a full message, but short and long routine status as footnotes", () => {
+		const entry = "[done] [Haiku analysis](tallpine://sessions/proj/proj-9)\nDone.";
+		renderOrchestrator([report("t1", 1, entry), reply("t1", 2, "**Result:** Haiku fits.")]);
+		expect(screen.getByText("Haiku fits.")).toBeInTheDocument();
+		expect(screen.queryByTestId("orchestrator-reply")).not.toBeInTheDocument();
+		cleanup();
+
+		renderOrchestrator([report("t1", 1, entry), reply("t1", 2, "Merged 1245, rebased 1253. ".repeat(25))]);
+		expect(screen.getByTestId("orchestrator-reply")).toHaveTextContent("Merged 1245");
+		cleanup();
+
+		renderOrchestrator([report("t1", 1, entry), reply("t1", 2, "Noted.")]);
+		expect(screen.getByTestId("orchestrator-reply")).toHaveTextContent("Noted.");
+	});
+
+	it("keeps a long answer written before more tool calls visible outside the Worked row", () => {
+		const answer = { ...reply("t1", 2, "Analysis result. ".repeat(25)), id: "t1-answer", sequence: 11 };
+		renderOrchestrator([
+			report("t1", 1, "[done] [Haiku analysis](tallpine://sessions/proj/proj-9)\nDone."),
+			answer,
+			command("t1", 2, "tallpine session ls"),
+			reply("t1", 3, "Done."),
+		]);
+		expect(screen.getAllByText(/Analysis result\./).length).toBeGreaterThan(0);
+	});
+
 	it("keeps an answer that asks the user something as the full reply", () => {
 		renderOrchestrator([
 			report("t1", 1, "[needs_input] [iOS pages](tallpine://sessions/proj/proj-286)\nTunnel or loopback?"),

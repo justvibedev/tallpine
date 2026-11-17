@@ -63,6 +63,7 @@ func sessionErrorRows() []sessionErrorRow {
 		{sessionmanager.ErrAgentExited, "Conflict", "AGENT_EXITED", "The agent process exited; relaunch it before sending another message"},
 		{sessionmanager.ErrAgentNotExited, "Conflict", "AGENT_NOT_EXITED", "The agent is still running; only exited agents can be resumed"},
 		{sessionmanager.ErrResumeInProgress, "Conflict", "AGENT_RESUME_IN_PROGRESS", "The agent is already being resumed"},
+		{sessionmanager.ErrResumeStillRunning, "Conflict", "AGENT_RESUME_RUNNING", "The agent is still resuming; press Resume again to keep waiting"},
 		{sessionmanager.ErrAgentExitInProgress, "Conflict", "AGENT_EXIT_IN_PROGRESS", "The agent is already exiting"},
 		{sessionmanager.ErrOperationInProgress, "Conflict", "SESSION_OPERATION_IN_PROGRESS", "Another operation is already running on this session"},
 		{sessionmanager.ErrInterfaceTransitionInProgress, "Conflict", "INTERFACE_TRANSITION_IN_PROGRESS", "This session is already switching interfaces"},

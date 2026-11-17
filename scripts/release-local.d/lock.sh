@@ -75,6 +75,12 @@ write_result() {
     rm -f "${tmp}" 2>/dev/null
     warn "could not write the result to ${f} (the ${notify_what:-install} is unaffected)"
   fi
+  # B769: each --notify session also gets the outcome as a message: "[to:<session>] ..." in alerts.tsv is
+  # delivered by the daemon's alerts reader (the daemon refuses a message sent from this detached script, B631).
+  local sid
+  for sid in ${opt_notify[@]+"${opt_notify[@]}"}; do
+    say "$(tp_record_alert "$(dirname "${ci_tsv}")/alerts.tsv" "[to:${sid}] $2")" || true
+  done
   return 0
 }
 sha10() { local c="${new_commit:-unknown}"; printf '%s' "${c:0:10}"; }

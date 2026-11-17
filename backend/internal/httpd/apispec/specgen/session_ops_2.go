@@ -342,5 +342,24 @@ func sessionOperationsPart2() []operation {
 				{http.StatusNotImplemented, envelope.APIError{}},
 			},
 		},
+		{
+			method: http.MethodGet, path: "/api/v1/sessions/running-agents", id: "listRunningAgents", tag: "sessions",
+			summary: "List the sessions whose agent is still running",
+			resps: []respUnit{
+				{http.StatusOK, controllers.RunningAgentsResponse{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/sessions/running-agents/stop", id: "stopAllAgents", tag: "sessions",
+			summary: "Stop every running agent, keeping its session",
+			resps: []respUnit{
+				{http.StatusOK, controllers.StopAllAgentsResponse{}},
+				{http.StatusConflict, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
 	}
 }

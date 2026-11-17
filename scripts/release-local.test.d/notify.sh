@@ -25,16 +25,18 @@ printf 'stale\n' >"${result}"
 TALLPINE_SESSION_ID=orch-x nrl install "${T}/nb-c/${product}.app" --notify orch-1 --log "${T}/the.log" >"${T}/out" 2>&1 \
   && ok "install C with --log succeeds" || { bad "install C with --log succeeds"; cat "${T}/out"; }
 check "the bare daemon was stopped by SIGTERM, not /shutdown" 'grep -q "Stopping the daemon (pid" "${T}/out" && [[ ! -e "${nst}/shutdown-refused" ]] || { cat "${T}/out"; false; }'
-check "--notify with --log is ignored with a warning" 'grep -q "warning: --notify is ignored (B631): poll ${result}" "${T}/out"'
+check "--notify with --log is ignored with a warning" 'grep -q "warning: --notify sends no message from here (B631): the outcome is recorded in alerts.tsv for the daemon to deliver; poll ${result}" "${T}/out"'
 check "success result: ok, then the message" '[[ "$(sed -n 1p "${result}")" == ok ]] && sed -n 2p "${result}" | grep -q "^\[release\] installed ${C:0:10}; daemon healthy (pid [0-9]*); rollback point ${nst}/releases/2[^;]*; log ${T}/the.log$"'
+check "a successful install with --notify records a message alert addressed to that session (B769)" 'grep -q "\[to:orch-1\] \[release\] installed ${C:0:10}" "${T}/alerts.tsv"'
 check "the result file has exactly two lines and no temp file is left" '[[ "$(wc -l <"${result}")" -eq 2 ]] && [[ -z "$(ls "${T}"/the.log.result.tmp.* 2>/dev/null)" ]]'
 check "nothing is sent to the daemon" '[[ ! -s "${nrc}" ]] || { cat "${nrc}"; false; }'
 
 # Failure: the new daemon never becomes healthy (a health timeout does not roll back).
 oldht="${TALLPINE_RELEASE_HEALTH_TIMEOUT}"; export TALLPINE_RELEASE_HEALTH_TIMEOUT=2
 printf '#!/bin/bash\nexit 0\n' >"${T}/nb-d/${product}.app/Contents/MacOS/fake"
-if nrl install "${T}/nb-d/${product}.app" --log "${T}/the.log" >"${T}/out" 2>&1; then bad "install D with a dead daemon fails"; else ok "install D with a dead daemon fails"; fi
+if nrl install "${T}/nb-d/${product}.app" --notify orch-1 --log "${T}/the.log" >"${T}/out" 2>&1; then bad "install D with a dead daemon fails"; else ok "install D with a dead daemon fails"; fi
 export TALLPINE_RELEASE_HEALTH_TIMEOUT="${oldht}"
+check "a failed install with --notify records a message alert addressed to that session (B769)" 'grep -q "\[to:orch-1\] \[release\] install of ${D:0:10} FAILED: the new release did not come up healthy" "${T}/alerts.tsv"'
 check "failure result names the sha, a one-line reason and the log path" '[[ "$(sed -n 1p "${result}")" == failed ]] && sed -n 2p "${result}" | grep -q "^\[release\] install of ${D:0:10} FAILED: the new release did not come up healthy.*; log ${T}/the.log$"'
 check "failure result carries no log contents" '! grep -q "Daemon healthy" "${result}"'
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cn } from "../../../lib/utils";
 import { agentLabel } from "../../../lib/agent-options";
 import { OrchestratorStartupStatus, RolledBackNotice } from "../ChatStartupNotices";
+import { LspBannerCard } from "../../LspBannerCard";
 import { SkillsOfferCard } from "../../SkillsOfferCard";
 import { AskStrip } from "../../ask/AskStrip";
 import { PlanCards } from "../../plan/PlanCards";
@@ -213,6 +214,7 @@ export function ConversationBody({ props, v }: { props: ChatWorkspaceContentProp
 								{sessionRole === "orchestrator" && !activeRemoteHostId && session?.workspaceId ? <AskStrip projectId={session.workspaceId} lane={session.lane} onOpenCount={setOpenAsks} /> : null}
 								{sessionRole === "orchestrator" && !activeRemoteHostId && session?.workspaceId ? <PlanCards projectId={session.workspaceId} sessionId={session.id} lane={session.lane} /> : null}
 								{!activeRemoteHostId && session?.workspaceId ? <SkillsOfferCard projectId={session.workspaceId} sessionId={session.id} /> : null}
+								{!activeRemoteHostId && session?.workspaceId ? <LspBannerCard projectId={session.workspaceId} /> : null}
 								{limitedTurn?.usageLimit && retryControl ? (
 									<UsageLimitNotice
 										key={limitedTurn.id}

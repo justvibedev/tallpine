@@ -12,6 +12,10 @@ func TestOrchestratorPromptCarriesTheNeedsYouMarker(t *testing.T) {
 	if got := buildSystemPromptText(systemPromptConfig{Role: sessionPromptRoleOrchestrator, Project: project}); !strings.Contains(got, marker) {
 		t.Fatalf("orchestrator prompt lacks %s", marker)
 	}
+	const result = "`**Result:**`" // parsed by WorkerUpdates.tsx hasResultMarker
+	if got := buildSystemPromptText(systemPromptConfig{Role: sessionPromptRoleOrchestrator, Project: project}); !strings.Contains(got, result) {
+		t.Fatalf("orchestrator prompt lacks %s", result)
+	}
 	for name, cfg := range map[string]systemPromptConfig{
 		"worker":            {Role: sessionPromptRoleWorker, Project: project, OrchestratorSessionID: "tp-orch"},
 		"standalone worker": {Role: sessionPromptRoleWorker, Standalone: true},

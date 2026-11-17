@@ -1,4 +1,4 @@
-import { Activity, BadgeCheck, Bot, ClipboardCheck, ShieldCheck, CircleHelp, Globe2, HardDrive, Keyboard, Settings2, Smartphone, type LucideIcon } from "lucide-react";
+import { Activity, BadgeCheck, Bot, ClipboardCheck, ShieldCheck, CircleHelp, Globe2, HardDrive, Keyboard, Settings2, Smartphone, Sparkles, type LucideIcon } from "lucide-react";
 import { lazy, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { agentLabel } from "../../lib/agent-options";
@@ -15,6 +15,7 @@ import { SectionErrorBoundary } from "./SectionErrorBoundary";
 import { GeneralSettingsSection } from "./GeneralSettingsSection";
 import { HarnessSettingsSection } from "./HarnessSettingsSection";
 import { ImportFromOfficialSection } from "./ImportFromOfficialSection";
+import { InstructionsAndSkillsAppSection } from "./InstructionsAndSkillsAppSection";
 import { KeyboardShortcutsContent } from "./KeyboardShortcutsContent";
 import { MobileDevicesSection } from "./MobileDevicesSection";
 import { ReviewsSettingsSection } from "./ReviewsSettingsSection";
@@ -86,6 +87,16 @@ const globalSettingsCatalog: SettingsCatalogItem[] = [
 		icon: ClipboardCheck,
 		label: (t) => t("settings.reviews"),
 		render: () => <ReviewsSettingsSection />,
+	},
+	{
+		id: "instructions",
+		icon: Sparkles,
+		label: (t) => t("settings.project.nav.instructions"),
+		render: (t, titleHidden) => (
+			<SettingsSection titleHidden={titleHidden} title={t("settings.project.nav.instructions")}>
+				<InstructionsAndSkillsAppSection />
+			</SettingsSection>
+		),
 	},
 	{
 		id: "security",

@@ -14,6 +14,7 @@ import {
 	isWorkerLead,
 	OrchestratorReply,
 	piggybackedUpdates,
+	isSubstantialAnswer,
 	quietWorkerReply,
 	renamedTitle,
 	TaskNamedLine,
@@ -175,7 +176,14 @@ export const TurnGroup = memo(function TurnGroup({
 	// reply under the Worked row answering a message the reader can no longer see.
 	const compaction = compactionRuns(runs, Boolean(group.outcome));
 	const noticeRuns = group.outcome
-		? workedRuns.filter((run) => isHumanRun(run.items[0]) || isNoticeRun(run) || compaction.includes(run))
+		? workedRuns.filter(
+				(run) =>
+					isHumanRun(run.items[0])
+					|| isNoticeRun(run)
+					|| compaction.includes(run)
+					// Orchestrator chat: an answer written before more tool calls stays readable.
+					|| (workerUpdates === true && isSubstantialAnswer(run.items[0])),
+			)
 		: [];
 	const foldedRuns = workedRuns.filter((run) => !noticeRuns.includes(run) && !rendersNothing(run));
 	// A turn whose only content is its compaction has no work to fold or roll back to.

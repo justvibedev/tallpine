@@ -44,6 +44,10 @@ type SpawnSessionRequest struct {
 	// approval, separate keeps today's planner flow. Empty follows the project's
 	// planInPlace setting. Needs backlogRef.
 	BacklogPlan string `json:"backlogPlan,omitempty" enum:"in-place,separate"`
+	// CodeIntel starts a Claude Code worker in code intelligence mode: its
+	// prompt says to navigate Go/TS code with the LSP tool and shell grep/rg
+	// and the Grep tool are denied. Other agents and kinds ignore it (a warning).
+	CodeIntel bool `json:"codeIntel,omitempty"`
 	// Mode picks the conversation controller: chat talks to the agent over a
 	// structured connection, tui opens the agent's native terminal interface.
 	// Omitted resolves to the daemon-owned preference, which defaults to Chat for

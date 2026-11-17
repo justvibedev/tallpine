@@ -48,3 +48,10 @@ UPDATE app_settings SET workflow_defaults = ?, updated_at = ? WHERE id = 1;
 
 -- name: SetPeerCheck :exec
 UPDATE app_settings SET peer_check = ?, updated_at = ? WHERE id = 1;
+
+-- name: SetMachineLoad :exec
+UPDATE app_settings
+SET machine_max_reviewers = sqlc.arg(max_reviewers),
+    machine_load_percent = sqlc.arg(load_percent),
+    updated_at = sqlc.arg(updated_at)
+WHERE id = 1;

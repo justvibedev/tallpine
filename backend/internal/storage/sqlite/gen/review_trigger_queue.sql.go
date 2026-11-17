@@ -26,11 +26,12 @@ func (q *Queries) DeleteQueuedReviewTrigger(ctx context.Context, arg DeleteQueue
 }
 
 const enqueueReviewTrigger = `-- name: EnqueueReviewTrigger :exec
-INSERT INTO review_trigger_queue (session_id, pr_url, harness, created_at, model, effort, interface_mode, trigger_source, next_attempt_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO review_trigger_queue (session_id, pr_url, harness, created_at, model, effort, interface_mode, trigger_source, next_attempt_at, focus, focus_author)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (session_id, pr_url, harness) DO UPDATE SET
     trigger_source = excluded.trigger_source, model = excluded.model, effort = excluded.effort,
     interface_mode = excluded.interface_mode, created_at = excluded.created_at,
+    focus = excluded.focus, focus_author = excluded.focus_author,
     attempts = 0, next_attempt_at = excluded.next_attempt_at
 WHERE review_trigger_queue.trigger_source = 'auto' AND excluded.trigger_source <> 'auto'
 `
@@ -45,6 +46,8 @@ type EnqueueReviewTriggerParams struct {
 	InterfaceMode string
 	TriggerSource string
 	NextAttemptAt time.Time
+	Focus         string
+	FocusAuthor   string
 }
 
 // An explicit request takes over a parked automatic pass; nothing else replaces an entry.
@@ -59,12 +62,14 @@ func (q *Queries) EnqueueReviewTrigger(ctx context.Context, arg EnqueueReviewTri
 		arg.InterfaceMode,
 		arg.TriggerSource,
 		arg.NextAttemptAt,
+		arg.Focus,
+		arg.FocusAuthor,
 	)
 	return err
 }
 
 const listQueuedReviewTriggers = `-- name: ListQueuedReviewTriggers :many
-SELECT session_id, pr_url, harness, created_at, model, effort, interface_mode, trigger_source, attempts, next_attempt_at
+SELECT session_id, pr_url, harness, created_at, model, effort, interface_mode, trigger_source, attempts, next_attempt_at, focus, focus_author
 FROM review_trigger_queue ORDER BY created_at ASC, session_id ASC, pr_url ASC
 `
 
@@ -88,6 +93,8 @@ func (q *Queries) ListQueuedReviewTriggers(ctx context.Context) ([]ReviewTrigger
 			&i.TriggerSource,
 			&i.Attempts,
 			&i.NextAttemptAt,
+			&i.Focus,
+			&i.FocusAuthor,
 		); err != nil {
 			return nil, err
 		}

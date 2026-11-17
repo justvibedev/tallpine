@@ -143,7 +143,7 @@ func (s *Service) Land(ctx context.Context, id domain.SessionID, req Request) (R
 	if err != nil {
 		return Result{}, fmt.Errorf("load project: %w", err)
 	}
-	branch := strings.TrimSpace(rec.Metadata.Branch)
+	branch := review.LocalBranch(ctx, rec)
 	repo := strings.TrimSpace(project.Path)
 	if !ok || branch == "" || repo == "" {
 		return Result{}, ErrNoBranch

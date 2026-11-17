@@ -24,6 +24,7 @@ func (s *Store) EnqueueReviewTrigger(ctx context.Context, q domain.QueuedReviewT
 	return s.qw.EnqueueReviewTrigger(ctx, gen.EnqueueReviewTriggerParams{
 		SessionID: string(q.SessionID), PRURL: q.PRURL, Harness: string(q.Harness), CreatedAt: q.CreatedAt,
 		Model: q.Model, Effort: q.Effort, InterfaceMode: string(q.InterfaceMode), TriggerSource: string(q.TriggerSource), NextAttemptAt: next,
+		Focus: q.Focus, FocusAuthor: string(q.FocusAuthor),
 	})
 }
 
@@ -39,6 +40,7 @@ func (s *Store) ListQueuedReviewTriggers(ctx context.Context) ([]domain.QueuedRe
 			SessionID: domain.SessionID(row.SessionID), PRURL: row.PRURL, Harness: domain.ReviewerHarness(row.Harness), CreatedAt: row.CreatedAt,
 			Model: row.Model, Effort: row.Effort, InterfaceMode: domain.ReviewerInterfaceMode(row.InterfaceMode), TriggerSource: domain.ReviewTriggerSource(row.TriggerSource),
 			Attempts: int(row.Attempts), NextAttemptAt: row.NextAttemptAt,
+			Focus: row.Focus, FocusAuthor: domain.ReviewFocusAuthor(row.FocusAuthor),
 		})
 	}
 	return out, nil

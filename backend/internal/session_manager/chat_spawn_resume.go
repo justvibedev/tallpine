@@ -56,7 +56,7 @@ func (m *Manager) resumeChatController(
 
 	// Recomputed rather than persisted, matching the terminal path: a restored
 	// session keeps its standing instructions across the relaunch.
-	systemPrompt, err := m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, true)
+	systemPrompt, err := m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, rec.Harness, true)
 	if err != nil {
 		return RestoreResult{}, fmt.Errorf("%s %s: system prompt: %w", operation, rec.ID, err)
 	}
@@ -381,7 +381,8 @@ func awakeReconnectTarget(rec domain.SessionRecord, reconnectOnly bool, awakeTar
 // chatRuntimeEnv is the environment handed to a resumed chat controller.
 func (m *Manager) chatRuntimeEnv(rec domain.SessionRecord, project domain.ProjectRecord) map[string]string {
 	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
-	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, rec.Kind, project.Config) // see spawnChat: session/new reads this env; any harness, for a later switch to Claude
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, rec.Kind, project.Config, m.workflowDefaults(context.Background()).SkillRoles, m.skillInventory(project.Path, project.Config.Env)) // see spawnChat: session/new reads this env; any harness, for a later switch to Claude
+	pinCodeIntel(env, rec.Harness == domain.HarnessClaudeCode && m.sessionLaunchOptions(context.Background(), rec.ID).CodeIntel)
 	if agent, ok := m.agents.Agent(rec.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 	}

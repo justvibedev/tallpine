@@ -262,5 +262,7 @@ func operations() []operation {
 	ops = append(ops, identityOperations()...)
 	ops = append(ops, endpointsOperations()...)
 	ops = append(ops, linkPreviewOperations()...)
+	ops = append(ops, appSkillsOperations()...)
+	ops = append(ops, lspInstallOperations()...)
 	return ops
 }

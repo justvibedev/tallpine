@@ -68,7 +68,7 @@ func (b *boot) serve() error {
 			b.resumeTracker.WakeIdle(b.ctx, b.sessMgr, func(id domain.SessionID) bool { return adoptedHosts[id] })
 			b.resumeTracker.NotifyRestart(b.ctx, b.reportSvc)
 		}()
-		startIdleCompaction(b.ctx, b.store, b.chatSvc, b.bgTasks, b.sessionSvc.AutoHandoffOrchestrator, b.lcStack.LCM.Nudge, b.sessMgr, b.log)
+		startIdleCompaction(b.ctx, b.store, b.chatSvc, b.bgTasks, b.sessionSvc.AutoHandoffOrchestrator, b.lcStack.LCM.Nudge, b.notificationWriter, b.sessMgr, b.log)
 		go func() {
 			// The session operation gate skips reconciliation in progress, so
 			// a slow provider reconnect must not stall hibernation of others.

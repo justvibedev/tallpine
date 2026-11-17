@@ -36,7 +36,7 @@ func IsLocalTarget(url string) bool { return domain.IsLocalReviewTarget(url) }
 // with nothing to review. The caller has already checked the worker has no
 // tracked PR.
 func LocalTarget(ctx stdctx.Context, worker domain.SessionRecord) (domain.PullRequest, bool, error) {
-	ws, branch := worker.Metadata.WorkspacePath, strings.TrimSpace(worker.Metadata.Branch)
+	ws, branch := worker.Metadata.WorkspacePath, LocalBranch(ctx, worker)
 	baseRef := strings.TrimSpace(worker.Metadata.DiffBaseRef)
 	if baseRef == "" {
 		baseRef = strings.TrimSpace(worker.Metadata.DiffBaseSHA)

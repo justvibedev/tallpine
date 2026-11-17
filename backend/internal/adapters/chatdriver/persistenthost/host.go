@@ -19,11 +19,22 @@ import (
 	"tallpine.eu/tallpine/backend/internal/hostsock"
 )
 
+// hostExitGrace is how long a start keeps polling after its own host exited and
+// no live process holds the launch lock, for a racing host to publish.
+var hostExitGrace = 3 * time.Second
+
+// startupTimeout bounds waiting for a previous controller to detach.
+var startupTimeout = 10 * time.Second
+
 const (
 	// ProtocolVersion fences daemon/host control-plane compatibility.
 	ProtocolVersion  = 1
 	maxDetachedBytes = 32 << 20
-	startupTimeout   = 10 * time.Second
+	// startupMaxWait caps how long a start keeps waiting for a host that is
+	// still launching. A busy machine can need far longer than ten seconds just
+	// to exec the host binary, and failing there makes chat unavailable while
+	// the host is about to come up.
+	startupMaxWait = 2 * time.Minute
 	// Host hello is local control-plane I/O and must not stall daemon recovery.
 	handshakeTimeout = time.Second
 	// A stopped provider gets providerStdinGrace (providerQuickGrace for a quick

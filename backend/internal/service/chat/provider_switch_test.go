@@ -45,7 +45,7 @@ func TestProviderSwitchPublishesApproximateBranch(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("record terminal request: %v", err)
 	}
-	if err := h.st.RecordTerminalTurnResponse(ctx, testSession, "terminal answer", earlier.Add(time.Minute)); err != nil {
+	if err := h.st.RecordTerminalTurnResponse(ctx, domain.TerminalTurn{SessionID: testSession}, "terminal answer", earlier.Add(time.Minute)); err != nil {
 		t.Fatalf("record terminal response: %v", err)
 	}
 

@@ -216,17 +216,27 @@ func (s *Service) retryUnsubmittedRun(ctx context.Context, notice *failureNotice
 	result, err := s.triggerWithOptions(retryCtx, run.SessionID, reviewcore.TriggerOptions{
 		Harness: run.Harness, Config: domain.AgentConfig{Model: run.Model},
 		Source: source, PRURL: run.PRURL, RetryOfRunID: run.ID,
+		Focus: run.Focus, FocusAuthor: run.FocusAuthor,
 	})
 	if err != nil {
 		slog.Default().WarnContext(ctx, "review retry after an unsubmitted pass failed", "session", run.SessionID, "run", run.ID, "err", err)
 		return false
 	}
+	if result.Queued {
+		return true // held for the machine and already parked: the retry is not final
+	}
 	if !result.Created && len(result.CreatedRuns) == 0 {
+		// The machine is busy: park the retry so it resumes when the machine is
+		// quiet, instead of announcing the failure as final.
+		if result.SkipReason == reviewcore.SkipMachineBusy {
+			q := domain.QueuedReviewTrigger{SessionID: run.SessionID, PRURL: run.PRURL, Harness: run.Harness, Model: run.Model, TriggerSource: source, Focus: run.Focus, FocusAuthor: run.FocusAuthor}
+			return s.engine.QueueRerun(ctx, q) == nil
+		}
 		// The reviewer is busy with another pass (for example the first of two
 		// dead passes on one worker): park this one, so it resumes when the
 		// reviewer is free and its failure is not announced as final.
 		if result.SkipReason == "" && s.reviewerBusyOnAnotherHead(ctx, run) {
-			q := domain.QueuedReviewTrigger{SessionID: run.SessionID, PRURL: run.PRURL, Harness: run.Harness, Model: run.Model, TriggerSource: source}
+			q := domain.QueuedReviewTrigger{SessionID: run.SessionID, PRURL: run.PRURL, Harness: run.Harness, Model: run.Model, TriggerSource: source, Focus: run.Focus, FocusAuthor: run.FocusAuthor}
 			if err := s.engine.QueueRerun(ctx, q); err == nil {
 				return true
 			}

@@ -157,7 +157,7 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sess, promptBytes, systemPromptBytes, err := c.Svc.Spawn(r.Context(), ports.SpawnConfig{BacklogContext: backlogItem.Context, ProjectID: in.ProjectID, IssueID: in.IssueID, ParentSessionID: in.ParentSessionID, LaneItemID: backlogItem.ParentID, TrackerProvider: in.TrackerProvider, Kind: in.Kind, Harness: in.Harness, Branch: in.Branch, RequestedMode: in.Mode, Prompt: in.Prompt, RequestedOutput: in.RequestedOutput, Role: in.Role, DisplayName: displayName, Attachments: attachments, AgentConfig: ports.AgentConfig{Model: in.Model, Effort: in.Effort, Permissions: in.ApprovalMode}, EffortOverride: strings.TrimSpace(in.Effort) != "", ClientRequestID: in.ClientRequestID, ClientRequestHash: requestHash})
+	sess, promptBytes, systemPromptBytes, err := c.Svc.Spawn(r.Context(), ports.SpawnConfig{CodeIntel: in.CodeIntel, BacklogContext: backlogItem.Context, ProjectID: in.ProjectID, IssueID: in.IssueID, ParentSessionID: in.ParentSessionID, LaneItemID: backlogItem.ParentID, TrackerProvider: in.TrackerProvider, Kind: in.Kind, Harness: in.Harness, Branch: in.Branch, RequestedMode: in.Mode, Prompt: in.Prompt, RequestedOutput: in.RequestedOutput, Role: in.Role, DisplayName: displayName, Attachments: attachments, AgentConfig: ports.AgentConfig{Model: in.Model, Effort: in.Effort, Permissions: in.ApprovalMode}, EffortOverride: strings.TrimSpace(in.Effort) != "", ClientRequestID: in.ClientRequestID, ClientRequestHash: requestHash})
 	if err != nil {
 		if backlogItem.PlanID != "" {
 			c.Backlog.ReleaseInPlace(r.Context(), backlogItem.PlanID, "implementer session did not start: "+err.Error())
@@ -177,6 +177,10 @@ func (c *SessionsController) spawn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	warnings = c.linkBacklogSession(r, backlogItem, sess.ID, string(in.ParentSessionID), warnings)
+	warnings = c.machineBusyWarning(r.Context(), warnings)
+	if in.CodeIntel && (sess.Role != "" || !domain.CodeIntelApplies(sess.Kind, sess.Harness)) {
+		warnings = append(warnings, fmt.Sprintf("--code-intel only applies to Claude Code workers; ignored for this %s session (%s)", sess.Kind, sess.Harness))
+	}
 	resp := SpawnSessionResponse{Session: c.view(r.Context(), r, sess), PromptBytes: promptBytes, SystemPromptBytes: systemPromptBytes}
 	if view, ok := c.compactionView(r.Context(), sess); ok {
 		resp.Compaction = &view

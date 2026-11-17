@@ -83,6 +83,10 @@ func TestWritersDescribeAgentAccess(t *testing.T) {
 		if s.Key == "project.planAutoApprove" {
 			orch = false // approves plans without the owner: a person's alone
 		}
+		if s.Key == "project.reviewerRules" || s.Key == "project.reviewerRulesFile" || s.Key == "project.claudePlugins.reviewer" ||
+			s.Key == "project.skillRoles.reviewer" || s.Key == "project.skillRoles.orchestrator" || s.Key == "project.skillRoles.all" || strings.HasPrefix(string(s.Key), "project.skillRoles.agent") {
+			orch = false // binds the reviewer of agents' work, or what steers it: a person's alone (B740)
+		}
 		if s.Key == "project.planInPlace" || s.Key == "project.eval" {
 			orch = false // denied to the own orchestrator; the creator may (checked below)
 			if !s.CanWrite(ActorCreatorOrchestrator) {

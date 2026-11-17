@@ -154,6 +154,30 @@ describe_verify_rc() {
     *) if [ "$n" -gt 128 ]; then echo "killed by SIG$(kill -l "$((n-128))" 2>/dev/null || echo "$((n-128))") (exit $n)"; else echo "exit $n"; fi ;;
   esac
 }
+# B752: wait (up to LOOP_QUIET_WAIT_MAX s, default 1800, 0 disables) until the 1-min load drops below the core
+# count, so a suite does not compete with agents' test runs. A load read failure never waits. Sets QUIET_NOTE.
+LOOP_LOAD_CMD="${LOOP_LOAD_CMD:-sysctl -n vm.loadavg | tr -d '{}' | awk '{print \$1}'}"
+LOOP_QUIET_POLL="${LOOP_QUIET_POLL:-30}"
+machine_load() { # prints "<load> <cores>"; non-zero when either cannot be read
+  local l c; l="$(bash -c "$LOOP_LOAD_CMD" 2>/dev/null)" || return 1
+  c="${LOOP_CORES:-$(sysctl -n hw.ncpu 2>/dev/null)}"
+  case "$l" in ''|*[!0-9.]*) return 1 ;; esac
+  case "$c" in ''|*[!0-9]*|0) return 1 ;; esac
+  echo "$l $c"
+}
+quiet_wait() {
+  QUIET_NOTE=""; local max="${LOOP_QUIET_WAIT_MAX:-1800}" waited=0 polls=0 r l c
+  [ "$max" -gt 0 ] 2>/dev/null || return 0
+  while :; do
+    r="$(machine_load)" || return 0
+    l="${r% *}"; c="${r#* }"
+    awk -v l="$l" -v c="$c" 'BEGIN{exit !(l >= c)}' || break
+    if [ "$waited" -ge "$max" ]; then echo "=== [$(date +%H:%M:%S)] machine still busy (load $l/$c cores) after ${waited}s: running anyway"; QUIET_NOTE=" [ran busy after ${waited}s wait]"; return 0; fi
+    echo "=== [$(date +%H:%M:%S)] machine busy (load $l/$c cores): waiting for a quiet machine (${waited}s of ${max}s)"
+    sleep "$LOOP_QUIET_POLL"; waited=$((waited + LOOP_QUIET_POLL)); polls=$((polls + 1))
+  done
+  if [ "$polls" -gt 0 ]; then echo "=== [$(date +%H:%M:%S)] machine quiet (load $l/$c cores) after ${waited}s"; QUIET_NOTE=" [waited ${waited}s for a quiet machine]"; fi
+}
 run_suite() {
   SUPERSEDED_NOW=0 # only a run that ends superseded may set it (early returns leave it 0)
   local sha="$1" s8="${1:0:8}"; local log="$OUT/local-ci-main-$s8.log" items="$OUT/local-ci-main-$s8-failures.txt" vlog="$H/tmp/verify.out"
@@ -167,6 +191,7 @@ run_suite() {
   if [ -z "$green" ] || [ ! -f "$nightly" ] || [ $(( $(date +%s) - $(stat -f %m "$nightly") )) -ge 86400 ]; then vargs=(); stamp=1; fi
   {
     echo "main head $sha"; cd "$WORK" || exit 1
+    quiet_wait; echo "$QUIET_NOTE" >"$H/tmp/quiet.note"
     echo "=== [$(date +%H:%M:%S)] npm-seed"
     npmseed && mobile_seed || { echo "--- npm-seed FAILED"; setup=npm-seed; }
     if [ -z "$setup" ]; then
@@ -192,7 +217,7 @@ run_suite() {
     done
     [ -n "$flaky" ] && { echo "## [flaky-retried] (failed first run, passed on retry)"; echo "$flaky"; flaky_detail "$vlog" 2>/dev/null; }
   } >"$items"
-  local note=""; [ -n "$flaky" ] && note=" [flaky-retried: $(echo "$flaky" | grep -c .)]"
+  local note; note="$(cat "$H/tmp/quiet.note" 2>/dev/null)"; [ -n "$flaky" ] && note="$note [flaky-retried: $(echo "$flaky" | grep -c .)]"
   note="$note$(sed -n 's/^verify-note: / [/p' "$vlog" 2>/dev/null | tail -1 | sed 's/$/]/')"
   if [ -z "$fails" ]; then printf 'main\t%s\tpass\tall jobs green%s\n' "$sha" "$note" >>"$TSV"
   else printf 'main\t%s\tfail\tmain debt (details in local-ci-main-%s-failures.txt): %s%s\n' "$sha" "$s8" "$(echo $fails | tr ' ' ',')" "$note" >>"$TSV"; fi

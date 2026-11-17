@@ -240,6 +240,11 @@ func TestAgentScopeOrchestratorIsBoundToItsProject(t *testing.T) {
 		{"PATCH", "/api/v1/settings/session-interface", 403},
 		{"PATCH", "/api/v1/settings/workflow-defaults", 403},
 		{"GET", "/api/v1/settings", 403},
+		// App-wide skills and custom skills are the owner's (B740).
+		{"GET", "/api/v1/settings/skills", 403},
+		{"POST", "/api/v1/settings/skills/custom", 403},
+		{"PUT", "/api/v1/settings/skills/custom/house", 403},
+		{"DELETE", "/api/v1/settings/skills/custom/house", 403},
 		// Settings by key pass the gate; the handler and settingswrite decide
 		// per project and key (B202).
 		{"GET", "/api/v1/settings/changes?project=app", 200},

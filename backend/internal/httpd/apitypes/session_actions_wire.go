@@ -97,4 +97,8 @@ type SendSessionMessageResponse struct {
 	// an in-chat question. A "delivered" message was steered into that turn; a
 	// "queued" one waits until the question is answered.
 	WaitingOnInput bool `json:"waitingOnInput,omitempty"`
+	// HeldUntil (RFC 3339) is set on a "queued" message that the target's
+	// usage-limit pause holds back: it runs after that time, or sooner once any
+	// session on the target's agent account completes a turn.
+	HeldUntil string `json:"heldUntil,omitempty"`
 }

@@ -42,6 +42,7 @@ import (
 	browsersvc "tallpine.eu/tallpine/backend/internal/service/browser"
 	chatsvc "tallpine.eu/tallpine/backend/internal/service/chat"
 	cleanup "tallpine.eu/tallpine/backend/internal/service/cleanup"
+	"tallpine.eu/tallpine/backend/internal/service/machineload"
 	notificationsvc "tallpine.eu/tallpine/backend/internal/service/notification"
 	prsvc "tallpine.eu/tallpine/backend/internal/service/pr"
 	projectsvc "tallpine.eu/tallpine/backend/internal/service/project"
@@ -96,6 +97,7 @@ type boot struct {
 	agentAccountSvc           *agentaccounts.Service
 	chatDrivers               *chatdriverregistry.Registry
 	settingsSvc               *settingssvc.Service
+	machineLoad               *machineload.Gate
 	sessMgr                   sessionLifecycle
 	turnNotifier              *turnnotify.Observer
 	workerJobs                *turnnotify.ProcessJobs

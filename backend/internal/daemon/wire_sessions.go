@@ -34,8 +34,9 @@ func (b *boot) wireSessions() error {
 		return err
 	}
 	wireProjectEnvEncryption(b.ctx, b.store, b.agentPolicySvc, b.cfg.DataDir, b.log)
+	b.machineLoad = newMachineLoadGate(b.store)
 	var wiredSessMgr sessionLifecycle
-	b.sessionSvc, b.reviewSvc, wiredSessMgr, err = startSession(b.ctx, b.cfg, b.runtimeAdapter, b.store, b.lcStack.LCM, b.lcStack.ArtifactVersions, b.messenger, b.notificationWriter, b.agents, b.agentSvc, b.managedPreview, b.browserBroker, b.browserAuthority, b.sessionTokens, chatLauncher{svc: b.chatSvc, policy: b.agentPolicySvc, persistentHostReconcileDone: b.persistentHostsReconciled}, b.reviewerChatsRecovered, b.settingsSvc, b.tracker, b.codexOperationGate, b.reviewers, b.reviewerAccounts, b.ghAccounts, b.log)
+	b.sessionSvc, b.reviewSvc, wiredSessMgr, err = startSession(b.ctx, b.cfg, b.runtimeAdapter, b.store, b.lcStack.LCM, b.lcStack.ArtifactVersions, b.messenger, b.notificationWriter, b.agents, b.agentSvc, b.managedPreview, b.browserBroker, b.browserAuthority, b.sessionTokens, chatLauncher{svc: b.chatSvc, policy: b.agentPolicySvc, persistentHostReconcileDone: b.persistentHostsReconciled}, b.reviewerChatsRecovered, b.settingsSvc, b.tracker, b.codexOperationGate, b.reviewers, b.reviewerAccounts, b.ghAccounts, b.gitCredentials(), b.machineLoad, b.log)
 	if err != nil {
 		b.stop()
 		b.lcStack.Stop()

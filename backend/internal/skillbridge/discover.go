@@ -60,6 +60,15 @@ type Options struct {
 	// file in the checkout is invisible to them. Nil treats everything as
 	// committed (no git, or nothing to check).
 	Committed func(rel string) bool
+	// CustomDir is the project's owner-managed custom skills directory
+	// (CustomDir), set by WithProject; empty skips the source.
+	CustomDir string
+}
+
+// WithProject adds project id's custom skills to the sources.
+func (o Options) WithProject(id string) Options {
+	o.CustomDir = CustomDir(o.DataDir, id)
+	return o
 }
 
 // Skill is one discovered skill. Path is the skill directory.
@@ -69,6 +78,9 @@ type Skill struct {
 	Scope       Scope
 	Convention  Convention
 	Path        string
+	// DeclaredName is the SKILL.md frontmatter name when it differs from the
+	// directory name; Codex keys a skill by it.
+	DeclaredName string
 	// Pending marks a repo skill that is in the checkout but not committed, so
 	// sessions (worktrees of a commit) do not get it yet.
 	Pending bool
@@ -86,6 +98,8 @@ type Collision struct {
 // source in precedence order (duplicates by name included); Winners holds one
 // per name.
 type Inventory struct {
+	// Workspace is the checkout the repo skills were found in.
+	Workspace    string
 	Skills       []Skill
 	Winners      []Skill
 	Collisions   []Collision
@@ -93,6 +107,8 @@ type Inventory struct {
 	// PendingCommit lists workspace-relative instruction files and skill
 	// directories that exist but are not committed.
 	PendingCommit []string
+	// Plugins are the Claude Code plugins of the account config (ScopePlugin).
+	Plugins []Plugin
 }
 
 // Instructions describes the project instruction files at the workspace root.
@@ -124,17 +140,17 @@ func sources(o Options) []source {
 		add(filepath.Join(o.Workspace, ".agents", "skills"), ScopeRepo, ConvAgents)
 		add(filepath.Join(o.Workspace, ".codex", "skills"), ScopeRepo, ConvCodex)
 	}
-	claude := o.ClaudeConfigDir
-	if claude == "" && o.Home != "" {
-		claude = filepath.Join(o.Home, ".claude")
-	}
-	if claude != "" {
+	if claude := o.claudeDir(); claude != "" {
 		add(filepath.Join(claude, "skills"), ScopeUser, ConvClaude)
 	}
 	if o.Home != "" {
 		add(filepath.Join(o.Home, ".agents", "skills"), ScopeUser, ConvAgents)
 		add(filepath.Join(o.Home, ".codex", "skills"), ScopeUser, ConvCodex)
 	}
+	add(o.CustomDir, ScopeCustom, ConvCustom)
+	// App-wide custom skills reach every project; a project's own custom
+	// skill of the same name wins.
+	add(AppCustomDir(o.DataDir), ScopeCustom, ConvCustomApp)
 	if o.DataDir != "" {
 		add(filepath.Join(o.DataDir, "skills"), ScopeTallpine, ConvTallpine)
 	}
@@ -156,7 +172,7 @@ func Native(harness string, s Scope, c Convention) bool {
 
 // Discover inventories skills and instruction files. It only reads.
 func Discover(o Options) Inventory {
-	var inv Inventory
+	inv := Inventory{Workspace: o.Workspace}
 	seen := map[string]Skill{}
 	for _, src := range sources(o) {
 		entries, err := os.ReadDir(src.root)
@@ -175,8 +191,11 @@ func Discover(o Options) Inventory {
 			if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
 				continue
 			}
-			_, desc := frontmatter(filepath.Join(dir, "SKILL.md"))
+			declared, desc := frontmatter(filepath.Join(dir, "SKILL.md"))
 			sk := Skill{Name: name, Description: desc, Scope: src.scope, Convention: src.conv, Path: dir}
+			if declared != name {
+				sk.DeclaredName = declared
+			}
 			if src.scope == ScopeRepo && o.Committed != nil {
 				if rel, err := filepath.Rel(o.Workspace, dir); err == nil && !o.Committed(filepath.ToSlash(rel)) {
 					sk.Pending = true
@@ -204,6 +223,7 @@ func Discover(o Options) Inventory {
 		}
 	}
 	inv.markPendingInstructions(o)
+	inv.Plugins = DiscoverPlugins(o)
 	return inv
 }
 
@@ -251,6 +271,11 @@ func frontmatter(path string) (name, desc string) {
 	if err != nil {
 		return "", ""
 	}
+	return frontmatterOf(b)
+}
+
+// frontmatterOf is frontmatter for SKILL.md contents already read.
+func frontmatterOf(b []byte) (name, desc string) {
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
 	if !strings.HasPrefix(s, "---\n") {
 		return "", ""

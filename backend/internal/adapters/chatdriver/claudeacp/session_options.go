@@ -65,7 +65,42 @@ func addRoleSettings(options map[string]any, cfg acpdriver.LaunchConfig) {
 		settings = map[string]any{}
 	}
 	for k, v := range role {
+		if k == "permissions" {
+			v = mergePermissions(settings[k], v)
+		}
 		settings[k] = v
 	}
 	options["settings"] = settings
+}
+
+// mergePermissions combines two permissions objects, joining their deny lists
+// so a role's rules (code intelligence mode) keep the protectState fence's.
+func mergePermissions(base, role any) any {
+	b, _ := base.(map[string]any)
+	r, ok := role.(map[string]any)
+	if b == nil || !ok {
+		return role
+	}
+	out := map[string]any{}
+	for k, v := range b {
+		out[k] = v
+	}
+	for k, v := range r {
+		out[k] = v
+	}
+	var deny []any
+	for _, src := range []map[string]any{b, r} {
+		switch list := src["deny"].(type) {
+		case []string:
+			for _, s := range list {
+				deny = append(deny, s)
+			}
+		case []any:
+			deny = append(deny, list...)
+		}
+	}
+	if len(deny) > 0 {
+		out["deny"] = deny
+	}
+	return out
 }

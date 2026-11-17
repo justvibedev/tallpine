@@ -225,7 +225,7 @@ func (m *Manager) restartRuntime(ctx context.Context, handle ports.RuntimeHandle
 
 // restorePromptFiles builds the system prompt and writes its file for a relaunch.
 func (m *Manager) restorePromptFiles(ctx context.Context, operation string, rec domain.SessionRecord, forceFresh bool) (systemPrompt, systemPromptFile string, err error) {
-	systemPrompt, err = m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, false)
+	systemPrompt, err = m.buildSystemPromptFor(ctx, rec.Kind, rec.ProjectID, rec.ID, rec.RequestedOutput, rec.Role, rec.Harness, false)
 	if err != nil {
 		return "", "", fmt.Errorf("%s %s: system prompt: %w", operation, rec.ID, err)
 	}

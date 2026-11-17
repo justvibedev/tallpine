@@ -43,16 +43,27 @@ func (s *Store) RecordTerminalTurnRequest(ctx context.Context, turn domain.Termi
 }
 
 // RecordTerminalTurnResponse closes the session's newest turn with the agent's
-// final message. A stop with no open turn has nothing to answer and is ignored.
-func (s *Store) RecordTerminalTurnResponse(ctx context.Context, id domain.SessionID, response string, at time.Time) error {
+// final message. A stop with no open turn keeps a non-empty answer as a turn of
+// its own, so a turn the agent started without a prompt hook is not lost.
+func (s *Store) RecordTerminalTurnResponse(ctx context.Context, turn domain.TerminalTurn, response string, at time.Time) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	if err := s.qw.CloseTerminalTurn(ctx, gen.CloseTerminalTurnParams{
-		AgentResponse: strings.TrimSpace(response), RespondedAt: sql.NullTime{Time: at, Valid: true}, SessionID: string(id),
-	}); err != nil {
-		return fmt.Errorf("record terminal turn response: %w", err)
-	}
-	return nil
+	response = strings.TrimSpace(response)
+	return s.inTx(ctx, "record terminal turn response", func(q *gen.Queries) error {
+		closed, err := q.CloseTerminalTurn(ctx, gen.CloseTerminalTurnParams{
+			AgentResponse: response, RespondedAt: sql.NullTime{Time: at, Valid: true}, SessionID: string(turn.SessionID),
+		})
+		if err != nil || closed > 0 || response == "" {
+			return err
+		}
+		if err := q.InsertAnsweredTerminalTurn(ctx, gen.InsertAnsweredTerminalTurnParams{
+			SessionID: string(turn.SessionID), Harness: string(turn.Harness), NativeSessionID: turn.NativeSessionID,
+			UserRequest: domain.UnpromptedTurnRequest, AgentResponse: response, At: at,
+		}); err != nil {
+			return err
+		}
+		return q.TrimTerminalTurns(ctx, gen.TrimTerminalTurnsParams{SessionID: string(turn.SessionID), Keep: domain.TerminalTurnRetention})
+	})
 }
 
 // ListTerminalTurns returns a session's stored terminal turns, oldest first.

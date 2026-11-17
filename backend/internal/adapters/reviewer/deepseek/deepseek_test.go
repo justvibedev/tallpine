@@ -37,7 +37,8 @@ func TestReviewCommandIsReadOnlyHeadlessLaunch(t *testing.T) {
 	fakeDSH(t)
 	dataDir := t.TempDir()
 	got, err := New().ReviewCommand(context.Background(), ports.ReviewInvocation{
-		ReviewerID: "review-w1", WorkspacePath: "/ws/w1", DataDir: dataDir, Prompt: "review it",
+		TaskPromptRoot: t.TempDir(),
+		ReviewerID:     "review-w1", WorkspacePath: "/ws/w1", DataDir: dataDir, Prompt: "review it",
 	})
 	if err != nil {
 		t.Fatalf("ReviewCommand: %v", err)
@@ -71,7 +72,7 @@ func TestReviewerIsTerminalOnly(t *testing.T) {
 
 func TestReviewCommandPinsSessionPermissionMode(t *testing.T) {
 	fakeDSH(t)
-	got, err := New().ReviewCommand(context.Background(), ports.ReviewInvocation{DataDir: t.TempDir(), Prompt: "p"})
+	got, err := New().ReviewCommand(context.Background(), ports.ReviewInvocation{TaskPromptRoot: t.TempDir(), DataDir: t.TempDir(), Prompt: "p"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +85,7 @@ func TestReviewCommandPinsSessionPermissionMode(t *testing.T) {
 func TestReviewRestoreCommandIsReadOnly(t *testing.T) {
 	fakeDSH(t)
 	got, ok, err := New().ReviewRestoreCommand(context.Background(), ports.ReviewInvocation{
+		TaskPromptRoot: t.TempDir(),
 		AgentSessionID: "ds-1", DataDir: t.TempDir(), RunID: "run-1", Prompt: "again",
 	})
 	if err != nil || !ok {
@@ -113,7 +115,7 @@ func TestReviewSubmissionPathMatchesCodex(t *testing.T) {
 	if err != nil || msg != "next review" {
 		t.Fatalf("message = %q err=%v", msg, err)
 	}
-	cmd, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{DataDir: t.TempDir(), Prompt: "submit via tallpine review submit", SystemPrompt: "review only"})
+	cmd, err := r.ReviewCommand(context.Background(), ports.ReviewInvocation{TaskPromptRoot: t.TempDir(), DataDir: t.TempDir(), Prompt: "submit via tallpine review submit", SystemPrompt: "review only"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/gitblob"
 	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
 )
 
@@ -600,24 +601,8 @@ func readWorktreeRevision(root, rel string) ([]byte, int64, bool, bool, error) {
 }
 
 func readGitRevision(ctx context.Context, root, spec string) ([]byte, int64, bool, bool, error) {
-	sizeOut, err := gitWorkspaceOutput(ctx, root, "cat-file", "-s", spec)
-	if err != nil {
-		//nolint:nilerr // A path missing from this comparison side is an absent revision.
-		return nil, 0, false, false, nil
-	}
-	size, err := strconv.ParseInt(strings.TrimSpace(sizeOut), 10, 64)
-	if err != nil {
-		return nil, 0, false, false, fmt.Errorf("parse workspace revision size: %w", err)
-	}
-	if size > maxWorkspaceRevisionBytes {
-		return nil, size, true, true, nil
-	}
-	out, err := gitWorkspaceOutput(ctx, root, "cat-file", "blob", spec)
-	if err != nil {
-		//nolint:nilerr // A disappearing object is surfaced as an absent stale side.
-		return nil, 0, false, false, nil
-	}
-	return []byte(out), size, true, false, nil
+	blob, err := gitblob.Read(ctx, root, spec, maxWorkspaceRevisionBytes)
+	return blob.Data, blob.Size, blob.Exists, blob.Truncated, err
 }
 
 // SearchWorkspaceFiles performs a bounded case-insensitive path search over

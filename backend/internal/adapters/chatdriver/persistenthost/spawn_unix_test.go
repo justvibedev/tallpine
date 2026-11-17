@@ -141,3 +141,100 @@ func TestSignalledHostStopsItsProvider(t *testing.T) {
 		t.Fatalf("descriptor after signalled exit: %v", err)
 	}
 }
+
+// A host that is slow to launch (a loaded machine) must still be attached once
+// it publishes, even past the quiet startupTimeout.
+func TestConnectOrStartWaitsForSlowLaunchingHost(t *testing.T) {
+	old := startupTimeout
+	startupTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { startupTimeout = old })
+	cfg := Config{
+		SessionID: "slow-host", DataDir: t.TempDir(), Workdir: t.TempDir(),
+		Env:  append(os.Environ(), "TALLPINE_CHAT_HOST_PROVIDER_HELPER=1", "TALLPINE_CHAT_HOST_TEST_DELAY=1500ms"),
+		Argv: []string{os.Args[0], "-test.run=TestProviderHelper"},
+	}
+	t.Cleanup(func() { _ = Shutdown(context.Background(), cfg.DataDir, cfg.SessionID) })
+	transport, err := ConnectOrStart(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("slow host start failed: %v", err)
+	}
+	_ = transport.Stdin.Close()
+}
+
+// A host that dies before publishing fails the start at once instead of
+// burning the whole wait.
+func TestConnectOrStartFailsFastWhenHostExits(t *testing.T) {
+	cfg := Config{
+		SessionID: "dead-host", DataDir: t.TempDir(), Workdir: t.TempDir(),
+		Env:  append(os.Environ(), "TALLPINE_CHAT_HOST_TEST_EXIT=1"),
+		Argv: []string{os.Args[0], "-test.run=TestProviderHelper"},
+	}
+	begin := time.Now()
+	if _, err := ConnectOrStart(context.Background(), cfg); err == nil {
+		t.Fatal("start succeeded although the host exited")
+	}
+	// Bounded well below startupMaxWait (a reverted loop waits the full 2 min);
+	// the bound includes exec time, so it must not be a tight budget.
+	if took := time.Since(begin); took > startupMaxWait/2 {
+		t.Fatalf("start took %s after the host exited", took)
+	}
+}
+
+// Two starters race: ours exits (lost the lock) while the winner publishes a
+// moment later. Our start must still attach to the winner.
+func TestConnectOrStartAttachesToRacingHostAfterOwnExit(t *testing.T) {
+	dataDir, workdir := t.TempDir(), t.TempDir()
+	base := Config{
+		SessionID: "race-host", DataDir: dataDir, Workdir: workdir,
+		Argv: []string{os.Args[0], "-test.run=TestProviderHelper"},
+	}
+	t.Cleanup(func() { _ = Shutdown(context.Background(), dataDir, base.SessionID) })
+	winner := base
+	winner.Env = append(os.Environ(), "TALLPINE_CHAT_HOST_PROVIDER_HELPER=1", "TALLPINE_CHAT_HOST_TEST_DELAY=300ms")
+	cmd := exec.Command(os.Args[0], hostArgs(winner)...) //nolint:gosec // test re-exec of itself as a chat host
+	cmd.Env = winner.Env
+	cmd.Dir = workdir
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = cmd.Wait() }()
+	loser := base
+	loser.Env = append(os.Environ(), "TALLPINE_CHAT_HOST_TEST_EXIT=1")
+	transport, err := ConnectOrStart(context.Background(), loser)
+	if err != nil {
+		t.Fatalf("start did not attach to the racing host: %v", err)
+	}
+	_ = transport.Stdin.Close()
+}
+
+// While a live process holds the launch lock (a racing host still starting),
+// a start whose own host exited keeps waiting past hostExitGrace.
+func TestConnectOrStartWaitsWhileLaunchLockHeld(t *testing.T) {
+	old := hostExitGrace
+	hostExitGrace = 50 * time.Millisecond
+	t.Cleanup(func() { hostExitGrace = old })
+	cfg := Config{
+		SessionID: "lock-held", DataDir: t.TempDir(), Workdir: t.TempDir(),
+		Env:  append(os.Environ(), "TALLPINE_CHAT_HOST_TEST_EXIT=1"),
+		Argv: []string{os.Args[0], "-test.run=TestProviderHelper"},
+	}
+	lock, err := lockPath(cfg.DataDir, cfg.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lock, fmt.Appendf(nil, "%d\n", os.Getpid()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const held = 1500 * time.Millisecond
+	time.AfterFunc(held, func() { _ = os.Remove(lock) })
+	begin := time.Now()
+	if _, err := ConnectOrStart(context.Background(), cfg); err == nil {
+		t.Fatal("start succeeded without any host")
+	}
+	if took := time.Since(begin); took < held-100*time.Millisecond {
+		t.Fatalf("start gave up after %s while a live process held the launch lock", took)
+	}
+}

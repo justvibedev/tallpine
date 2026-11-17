@@ -145,8 +145,15 @@ func (e *Engine) listLocked(ctx stdctx.Context, workerID domain.SessionID, selec
 	if err != nil {
 		return SessionReviews{}, err
 	}
+	heldReason := ""
+	if len(queued) > 0 {
+		if status, ok := e.MachineStatus(ctx); ok && status.Busy {
+			heldReason = status.Reason()
+		}
+	}
 	return SessionReviews{
 		Queued:                queued,
+		HeldReason:            heldReason,
 		ReviewerHandleID:      legacyReviewerHandle(reviewRow),
 		ReviewerHarness:       reviewerHarness,
 		ReviewerActivityState: reviewRow.ReviewerActivityState,

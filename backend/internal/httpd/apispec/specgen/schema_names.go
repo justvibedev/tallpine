@@ -4,6 +4,11 @@ package specgen
 // by projectOperations(). Add an entry when a new contract type is introduced;
 // the drift test fails until the spec is regenerated, which flags the gap.
 var schemaNames = map[string]string{ // #nosec G101 -- Public OpenAPI type names include reset-credit contracts; no credential value is stored here.
+	"ControllersProjectCustomSkill":                        "ProjectCustomSkill",
+	"ControllersAppSkillsResponse":                         "AppSkillsResponse",
+	"ControllersCreateProjectCustomSkillRequest":           "CreateProjectCustomSkillRequest",
+	"ControllersImportProjectCustomSkillRequest":           "ImportProjectCustomSkillRequest",
+	"ControllersUpdateProjectCustomSkillRequest":           "UpdateProjectCustomSkillRequest",
 	"ControllersProjectSkillOffer":                         "ProjectSkillOffer",
 	"ControllersProjectSkillOfferItem":                     "ProjectSkillOfferItem",
 	"ControllersApplyProjectSkillOfferResponse":            "ApplyProjectSkillOfferResponse",
@@ -24,6 +29,11 @@ var schemaNames = map[string]string{ // #nosec G101 -- Public OpenAPI type names
 	"ControllersProjectSkill":                              "ProjectSkill",
 	"ControllersProjectSkillHarness":                       "ProjectSkillHarness",
 	"ControllersProjectSkillCollision":                     "ProjectSkillCollision",
+	"ControllersProjectPlugin":                             "ProjectPlugin",
+	"ControllersProjectSkillAccess":                        "ProjectSkillAccess",
+	"ControllersProjectSkillRole":                          "ProjectSkillRole",
+	"ControllersProjectSkillEffect":                        "ProjectSkillEffect",
+	"DomainSkillRoles":                                     "SkillRoles",
 	"ControllersSessionPolicyDecisionResponse":             "SessionPolicyDecisionResponse",
 	"ControllersSessionCommitRequest":                      "SessionCommitRequest",
 	"ControllersSessionCommitResponse":                     "SessionCommitResponse",

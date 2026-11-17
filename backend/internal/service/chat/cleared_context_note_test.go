@@ -35,7 +35,7 @@ func TestClearedContextNoteRebriefsATerminalSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("record terminal request: %v", err)
 	}
-	if err := h.st.RecordTerminalTurnResponse(ctx, testSession, "noted", at.Add(time.Minute)); err != nil {
+	if err := h.st.RecordTerminalTurnResponse(ctx, domain.TerminalTurn{SessionID: testSession}, "noted", at.Add(time.Minute)); err != nil {
 		t.Fatalf("record terminal response: %v", err)
 	}
 

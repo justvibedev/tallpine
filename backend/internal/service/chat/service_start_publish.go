@@ -47,6 +47,7 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 	l.controller.onAsyncTasksGone = s.onAsyncTasksGone
 	l.controller.reportCoordinator = func() *reportsvc.Coordinator { return s.reports.Load() }
 	l.controller.onUsageLimitPaused = s.failoverPausedSession
+	l.controller.onModelTurnCompleted = s.wakeUsageLimitPaused
 	l.controller.compactLive = launchedCompactTokens(*l.cfg, l.liveReconnect)
 	l.controller.compactBaseline = projectCompactTokens(*l.cfg)
 	l.controller.startBaseline = l.cfg.AutoCompactBaseline
@@ -77,6 +78,13 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 				_ = cleanupUnpublishedConversation(l.conv, false)
 				return err
 			}
+		}
+	}
+	// A restart loses the in-memory pause wake. Re-arm it so both the reset-time
+	// wake and the same-account early lift still reach a paused session.
+	if controller.reviewID == "" {
+		if until, paused := controller.usageLimitPausedUntil(ctx); paused {
+			controller.armPauseWake(until)
 		}
 	}
 	return nil

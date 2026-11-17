@@ -11,7 +11,8 @@
 		"vite.main.config.ts",
 		"vite.preload.config.ts",
 		"vite.renderer.config.ts",
-		"playwright.config.ts"
+		"playwright.config.ts",
+		"src/main/dev-session-isolation.ts"
 	],
 	"references": [{ "path": "./tsconfig.shared.json" }]
 }

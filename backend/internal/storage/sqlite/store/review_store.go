@@ -263,6 +263,8 @@ func (s *Store) InsertReviewRun(ctx context.Context, r domain.ReviewRun) error {
 		AutoInjectReview: r.AutoInjectReview,
 		Model:            r.Model,
 		ModelReason:      r.ModelReason,
+		Focus:            r.Focus,
+		FocusAuthor:      string(r.FocusAuthor),
 	})
 	if isSQLiteUnique(err) {
 		return fmt.Errorf("insert review run for session %s pr %s sha %s: %w", r.SessionID, r.PRURL, r.TargetSHA, domain.ErrDuplicateReviewRun)
@@ -609,4 +611,14 @@ func (s *Store) ReviewBatchDispatched(ctx context.Context, reviewID, batchID str
 		return false, fmt.Errorf("review batch dispatched: %w", err)
 	}
 	return dispatched, nil
+}
+
+// CountRunningReviewers counts the reviewers with a running pass, across every
+// project: the machine-wide load the reviewer gate caps.
+func (s *Store) CountRunningReviewers(ctx context.Context) (int, error) {
+	n, err := s.qr.CountRunningReviewers(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count running reviewers: %w", err)
+	}
+	return int(n), nil
 }

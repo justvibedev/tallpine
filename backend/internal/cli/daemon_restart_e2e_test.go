@@ -175,11 +175,14 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 		t.Helper()
 		out := tallpine(nil, "spawn", "--project", "repo", "--kind", kind, "--mode", "chat", "--harness", "claude-code",
 			"--skip-agent-check", "--name", name, "--prompt", prompt)
-		f := strings.Fields(out)
-		if len(f) < 3 || f[0] != "spawned" {
-			t.Fatalf("spawn %s output %q", name, out)
+		// The helper merges stderr into out, so skip advisory warning lines.
+		for _, line := range strings.Split(out, "\n") {
+			if f := strings.Fields(line); len(f) >= 3 && f[0] == "spawned" {
+				return f[2]
+			}
 		}
-		return f[2]
+		t.Fatalf("spawn %s output %q", name, out)
+		return ""
 	}
 
 	stopDaemon := startDaemon()
@@ -279,7 +282,8 @@ func runDaemonRestartScenario(t *testing.T, manualResume bool, stall ...bool) {
 		// already done or in progress is the same outcome.
 		for _, id := range []string{orch, w1, w2} {
 			out, code := e.runEnv(t, environ, "session", "resume-agent", id)
-			if code != 0 && !strings.Contains(out, "AGENT_RESUME_IN_PROGRESS") && !strings.Contains(out, "AGENT_NOT_EXITED") {
+			if code != 0 && !strings.Contains(out, "AGENT_RESUME_IN_PROGRESS") &&
+				!strings.Contains(out, "AGENT_RESUME_RUNNING") && !strings.Contains(out, "AGENT_NOT_EXITED") {
 				t.Fatalf("tallpine session resume-agent %s: exit %d\n%s", id, code, out)
 			}
 		}

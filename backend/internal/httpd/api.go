@@ -35,8 +35,11 @@ type APIDeps struct {
 	Agents        controllers.AgentCatalog
 	CodexAccounts controllers.CodexAccountService
 	AgentAccounts controllers.AgentAccountService
-	AccountAdopt  *accountadopt.Service
-	Projects      projectsvc.Manager
+	// ClaudeBinary resolves the claude CLI for LSP plugin installs. Nil looks
+	// it up on PATH.
+	ClaudeBinary func(context.Context) (string, error)
+	AccountAdopt *accountadopt.Service
+	Projects     projectsvc.Manager
 	// DefaultBranch resolves the ref session worktrees start from (Settings >
 	// Skills commits pending agent files there). Optional.
 	DefaultBranch      controllers.DefaultBranchResolver
@@ -58,12 +61,14 @@ type APIDeps struct {
 	UsageLimits        controllers.UsageLimitReader
 	MessageSent        controllers.MessageSentFunc
 	// OwnerMessages backs `tallpine send --relay-owner-message`; nil refuses it.
-	OwnerMessages      controllers.OwnerMessageLookup
-	SessionSteps       controllers.SessionStepsReader
-	PRs                prsvc.ActionManager
-	Reviews            reviewsvc.Manager
-	Notifications      controllers.NotificationService
-	Reports            controllers.ReportService
+	OwnerMessages controllers.OwnerMessageLookup
+	SessionSteps  controllers.SessionStepsReader
+	PRs           prsvc.ActionManager
+	Reviews       reviewsvc.Manager
+	Notifications controllers.NotificationService
+	Reports       controllers.ReportService
+	// MachineLoad adds a busy-machine warning to spawn responses; nil adds none.
+	MachineLoad        controllers.MachineLoadChecker
 	NotificationStream controllers.NotificationStream
 	// ApprovalNotifier records the notification for an orchestrator-answered prompt.
 	ApprovalNotifier controllers.ApprovalNotifier
@@ -316,7 +321,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		sessionCommit:  &controllers.SessionCommitController{Svc: deps.SessionCommit},
 		sessionLand:    &controllers.SessionLandController{Svc: deps.SessionLand},
 		projectGitHub:  &controllers.ProjectGitHubAccountController{Checker: deps.GitHubAccountCheck},
-		projectSkills:  &controllers.ProjectSkillsController{Projects: deps.Projects, DefaultBranch: deps.DefaultBranch, GitCredentials: deps.GitHubCredentials},
+		projectSkills:  newProjectSkillsController(deps, cfg.DataDir),
 		agentPolicy:    &controllers.AgentPolicyController{Audit: deps.SettingsAudit, Svc: deps.AgentPolicy, Projects: deps.Projects, Decisions: deps.AgentPolicyDecisions},
 		artifactStore:  &controllers.ArtifactStorageController{Svc: deps.ArtifactStorage},
 		cleanup:        &controllers.CleanupController{Audit: deps.SettingsAudit, Svc: deps.Cleanup},

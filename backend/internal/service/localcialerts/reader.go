@@ -55,7 +55,9 @@ type Reader struct {
 	Interval time.Duration
 	Log      *slog.Logger
 
-	fresh bool // set by Start: the next Tick with a target runs baseline
+	// Offsets of directed alerts already sent while plain lines before them still wait for a target (B769).
+	sentDirect map[int]bool
+	fresh      bool // set by Start: the next Tick with a target runs baseline
 }
 
 func (r *Reader) alertsPath() string { return filepath.Join(r.Dir, "results", "alerts.tsv") }
@@ -96,11 +98,11 @@ func (r *Reader) Tick(ctx context.Context) error {
 	if !isDir(r.Dir) {
 		return nil
 	}
-	to, ok := r.target(ctx)
-	if !ok {
-		return nil
-	}
+	to, haveTarget := r.target(ctx)
 	if r.fresh {
+		if !haveTarget {
+			return nil
+		}
 		if stamped, err := r.baseline(); stamped || err != nil {
 			return err
 		}
@@ -110,17 +112,108 @@ func (r *Reader) Tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	msg, used := render(data)
-	if used == 0 && len(data) == readLimit {
-		used = len(data) // a line longer than one read would block every later alert: drop it
+	// Alerts go out in file order, the cursor advancing after each send, so a later failure never
+	// resends an earlier delivery. Lines marked for a live session (B769) go to it even when the
+	// notify-target is missing; plain lines wait for the target and hold the cursor, so a directed
+	// line behind them is remembered as sent instead.
+	off, committed, sent := 0, 0, false
+	advance := func(to int) error {
+		committed = to
+		for k := range r.sentDirect {
+			if k < start+to {
+				delete(r.sentDirect, k)
+			}
+		}
+		return r.writeCursor(start + to)
 	}
-	end := start + used
-	if msg != "" {
-		if err := r.Send(ctx, to, msg); err != nil {
-			return fmt.Errorf("send to %s: %w", to, err)
+	for off < len(data) {
+		nl := bytes.IndexByte(data[off:], '\n')
+		if nl < 0 {
+			break // an alert still being appended waits for the next tick
+		}
+		if live, text, ok := r.direct(ctx, string(data[off:off+nl])); ok {
+			if !r.sentDirect[start+off] {
+				if err := r.Send(ctx, live, Header+"\n"+text); err != nil {
+					return fmt.Errorf("send to %s: %w", live, err)
+				}
+				sent = true
+				if committed < off {
+					if r.sentDirect == nil {
+						r.sentDirect = map[int]bool{}
+					}
+					r.sentDirect[start+off] = true
+				}
+			}
+			off += nl + 1
+			if committed == off-nl-1 {
+				if err := advance(off); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if !haveTarget {
+			off += nl + 1 // waits for a target; the cursor stays before it
+			continue
+		}
+		end := r.plainEnd(ctx, data, off)
+		msg, used := render(data[off:end])
+		if used == 0 {
+			break
+		}
+		if msg != "" {
+			if err := r.Send(ctx, to, msg); err != nil {
+				return fmt.Errorf("send to %s: %w", to, err)
+			}
+			sent = true
+		}
+		off += used
+		if err := advance(off); err != nil {
+			return err
 		}
 	}
-	return r.writeCursor(end) // also with nothing new: the stamp says a reader runs
+	if committed == 0 && len(data) == readLimit && off == 0 {
+		committed = len(data) // a line longer than one read would block every later alert: drop it
+	}
+	if !haveTarget && !sent {
+		return nil
+	}
+	return r.writeCursor(start + committed) // also with nothing new: the stamp says a reader runs
+}
+
+// plainEnd is the offset where the run of plain lines starting at off ends: the next directed line or
+// the last complete line.
+func (r *Reader) plainEnd(ctx context.Context, data []byte, off int) int {
+	end := off
+	for end < len(data) {
+		nl := bytes.IndexByte(data[end:], '\n')
+		if nl < 0 {
+			break
+		}
+		if _, _, ok := r.direct(ctx, string(data[end:end+nl])); ok {
+			break
+		}
+		end += nl + 1
+	}
+	return end
+}
+
+// directPrefix marks an alert for one session instead of the notify-target: a --notify install
+// records "[to:<session>] ..." (B769). A session that is not live gets it at the notify-target.
+const directPrefix = "[to:"
+
+// direct reports the live session and the rendered line of a "<time>\t[to:<id>] <text>" alert.
+func (r *Reader) direct(ctx context.Context, line string) (domain.SessionID, string, bool) {
+	when, body, found := strings.Cut(strings.TrimRight(line, "\r"), "\t")
+	if !found || !strings.HasPrefix(body, directPrefix) || r.Target == nil {
+		return "", "", false
+	}
+	id, text, ok := strings.Cut(strings.TrimPrefix(body, directPrefix), "] ")
+	if !ok || id == "" {
+		return "", "", false
+	}
+	live, ok := r.Target(ctx, domain.SessionID(id))
+	return live, when + " " + text, ok
 }
 
 // baseline runs on the first Tick that has a target after Start. With no

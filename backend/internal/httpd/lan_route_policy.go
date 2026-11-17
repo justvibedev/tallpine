@@ -83,6 +83,8 @@ var lanRouteTable = []lanRouteRule{
 	// Sessions. Carve-outs first: credentials, policy and review-owner changes,
 	// and routes only an agent or the desktop uses.
 	loopback(anyMethod, "/api/v1/sessions/cleanup"),
+	loopback(anyMethod, "/api/v1/sessions/running-agents"),
+	loopback(anyMethod, "/api/v1/sessions/running-agents/**"),
 	mobile(readOnly, "/api/v1/sessions/*/browser/live"),
 	loopback(anyMethod, "/api/v1/sessions/*/github-credential"),
 	loopback(anyMethod, "/api/v1/sessions/*/commit"),

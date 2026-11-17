@@ -2181,6 +2181,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{id}/skills/custom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an owner-managed custom skill from SKILL.md text (user only) */
+        post: operations["createProjectCustomSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/skills/custom/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a custom skill's SKILL.md and file list */
+        get: operations["getProjectCustomSkill"];
+        /** Replace a custom skill's SKILL.md (user only) */
+        put: operations["updateProjectCustomSkill"];
+        post?: never;
+        /** Delete a custom skill (user only) */
+        delete: operations["deleteProjectCustomSkill"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/skills/custom/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a local skill directory as a custom skill, text-only: SKILL.md and Markdown references (user only) */
+        post: operations["importProjectCustomSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/skills/lsp/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the project's current or last LSP install job, with its output tail */
+        get: operations["getProjectLSPInstall"];
+        put?: never;
+        /** Install an LSP plugin or language server by catalog id; runs only the daemon's fixed commands, one install at a time per project */
+        post: operations["startProjectLSPInstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{id}/skills/offers/{offerId}/apply": {
         parameters: {
             query?: never;
@@ -5206,6 +5277,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sessions/running-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the sessions whose agent is still running */
+        get: operations["listRunningAgents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/running-agents/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop every running agent, keeping its session */
+        post: operations["stopAllAgents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -5341,6 +5446,76 @@ export interface paths {
         head?: never;
         /** Choose the default interface for new sessions */
         patch: operations["updateSessionInterface"];
+        trace?: never;
+    };
+    "/api/v1/settings/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the account's skills and the app-wide custom skills with their app-wide switch per role */
+        get: operations["getAppSkills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/skills/custom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an app-wide custom skill, seen by every project, from SKILL.md text (user only) */
+        post: operations["createAppCustomSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/skills/custom/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an app-wide custom skill's SKILL.md and file list */
+        get: operations["getAppCustomSkill"];
+        /** Replace an app-wide custom skill's SKILL.md (user only) */
+        put: operations["updateAppCustomSkill"];
+        post?: never;
+        /** Delete an app-wide custom skill (user only) */
+        delete: operations["deleteAppCustomSkill"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/skills/custom/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a local skill directory as an app-wide custom skill, text-only: SKILL.md and Markdown references (user only) */
+        post: operations["importAppCustomSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/settings/storage-compaction": {
@@ -6218,6 +6393,10 @@ export interface components {
             processCount: number;
             reviewers?: components["schemas"]["ControllersReviewerMemoryResponse"][];
             rssBytes: number;
+        };
+        AppSkillsResponse: {
+            harnesses: string[];
+            skills: components["schemas"]["ProjectSkill"][];
         };
         ApplyProjectSkillOfferResponse: {
             created: components["schemas"]["ProjectSkillCreated"][];
@@ -7345,6 +7524,52 @@ export interface components {
             /** @description Capability-bearing URL that serves the file from the workspace files origin. Opening it does not change the session preview. */
             url: string;
         };
+        ControllersProjectLSP: {
+            mismatches: components["schemas"]["ControllersProjectLSPMismatch"][];
+            recommendations: components["schemas"]["ControllersProjectLSPRecommendation"][];
+        };
+        ControllersProjectLSPInstallJob: {
+            command: string;
+            error?: string;
+            /** Format: date-time */
+            finishedAt?: null | string;
+            language: string;
+            output: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** @enum {string} */
+            state: "running" | "succeeded" | "failed";
+            /** @enum {string} */
+            target: "plugin" | "binary" | "go" | "all";
+        };
+        ControllersProjectLSPInstallRequest: {
+            language: string;
+            /** @enum {string} */
+            target: "plugin" | "binary" | "go" | "all";
+        };
+        ControllersProjectLSPInstallStatus: {
+            job?: components["schemas"]["ControllersProjectLSPInstallJob"];
+        };
+        ControllersProjectLSPMismatch: {
+            language: string;
+            pluginId: string;
+            roles: string[];
+        };
+        ControllersProjectLSPRecommendation: {
+            binary: string;
+            binaryInstall: string;
+            binaryInstallable: boolean;
+            binaryInstalled: boolean;
+            binaryProblem: string;
+            files: number;
+            language: string;
+            pluginId: string;
+            pluginInstall: string;
+            pluginInstalled: boolean;
+            roles: components["schemas"]["ProjectSkillRole"][];
+            toolchainInstall: string;
+            toolchainInstallable: boolean;
+        };
         ControllersReleaseBuildResponse: {
             log: string;
             pid: number;
@@ -7809,6 +8034,10 @@ export interface components {
         CreateConversationSideChatResponse: {
             side: components["schemas"]["SideConversation"];
         };
+        CreateProjectCustomSkillRequest: {
+            content: string;
+            name: string;
+        };
         CreateReportRequest: {
             /** @description Follow-up lines to file as inbox backlog items: at most 3, each 1-200 characters. */
             defer?: string[];
@@ -7951,6 +8180,9 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             effort?: string;
+            focus?: string;
+            /** @enum {string} */
+            focusAuthor?: "owner" | "orchestrator" | "worker";
             interfaceMode?: string;
             model?: string;
             /** Format: date-time */
@@ -8150,6 +8382,10 @@ export interface components {
             apiVersion: number;
             hostId: string;
         };
+        ImportProjectCustomSkillRequest: {
+            name: string;
+            source: string;
+        };
         ImportValidationInput: {
             /** @enum {string} */
             importKind: "project" | "workspace";
@@ -8312,6 +8548,8 @@ export interface components {
         };
         ListReviewsResponse: {
             activeReviewers: components["schemas"]["DomainReviewerSurface"][];
+            /** @description Why queued passes wait for the machine: machine busy (load X/Y cores, reviewers A/B). Empty when the machine is not holding them. */
+            heldReason?: string;
             queuedReviews: components["schemas"]["DomainQueuedReviewTrigger"][];
             /** @enum {string} */
             reviewerActivityState?: "active" | "idle" | "waiting_input" | "blocked" | "exited";
@@ -8869,6 +9107,7 @@ export interface components {
             orchestrator?: components["schemas"]["RoleOverride"];
             orchestratorIdleNudge?: boolean;
             orchestratorRules?: string;
+            orchestratorRulesFile?: string;
             planAutoApprove?: null | boolean;
             planInPlace?: boolean;
             planner?: components["schemas"]["RoleOverride"];
@@ -8880,8 +9119,11 @@ export interface components {
             };
             reportDigestCount?: number;
             reviewRisk?: components["schemas"]["DomainReviewRiskConfig"];
+            reviewerRules?: string;
+            reviewerRulesFile?: string;
             reviewers?: components["schemas"]["DomainReviewerConfig"][];
             sessionPrefix?: string;
+            skillRoles?: components["schemas"]["SkillRoles"];
             skillsDeselected?: string[];
             skillsOfferOff?: boolean;
             symlinks?: string[];
@@ -8889,6 +9131,14 @@ export interface components {
             trackerIntake?: components["schemas"]["TrackerIntakeConfig"];
             verifyCommand?: string;
             worker?: components["schemas"]["RoleOverride"];
+        };
+        ProjectCustomSkill: {
+            content: string;
+            description: string;
+            files: string[];
+            name: string;
+            path: string;
+            skipped: string[];
         };
         ProjectDefaultBranchCheckResponse: {
             defaultBranch: string;
@@ -8917,6 +9167,17 @@ export interface components {
         ProjectPlansResponse: {
             plans: components["schemas"]["ProjectPlan"][];
         };
+        ProjectPlugin: {
+            accountEnabled: boolean;
+            description: string;
+            id: string;
+            installed: boolean;
+            marketplace: string;
+            name: string;
+            path: string;
+            roles: components["schemas"]["ProjectSkillRole"][];
+            version: string;
+        };
         ProjectResponse: {
             project: components["schemas"]["Project"];
         };
@@ -8931,16 +9192,25 @@ export interface components {
             worker?: components["schemas"]["ProjectRoleSettingsPatch"];
         };
         ProjectSkill: {
+            access: components["schemas"]["ProjectSkillAccess"][];
             /** @enum {string} */
-            convention: "claude" | "agents" | "codex" | "tallpine";
+            convention: "claude" | "agents" | "codex" | "tallpine" | "custom" | "custom-app" | "reviewer-repo";
             description: string;
             deselected: boolean;
             harnesses: components["schemas"]["ProjectSkillHarness"][];
             name: string;
             path: string;
             removable: boolean;
+            roles: components["schemas"]["ProjectSkillRole"][];
             /** @enum {string} */
-            scope: "repo" | "user" | "tallpine";
+            scope: "repo" | "user" | "tallpine" | "custom" | "reviewer-repo";
+        };
+        ProjectSkillAccess: {
+            app: boolean;
+            default: boolean;
+            key: string;
+            on: boolean;
+            set: boolean;
         };
         ProjectSkillCollision: {
             loser: string;
@@ -8958,10 +9228,15 @@ export interface components {
             mode: "file" | "symlink" | "copy";
             path: string;
         };
+        ProjectSkillEffect: {
+            /** @enum {string} */
+            effect: "enforced" | "advisory" | "unsupported";
+            harness: string;
+        };
         ProjectSkillHarness: {
             harness: string;
             /** @enum {string} */
-            status: "native" | "pending" | "missing" | "shadowed" | "none" | "unverified";
+            status: "native" | "pending" | "missing" | "shadowed" | "none" | "unverified" | "listed";
         };
         ProjectSkillOffer: {
             harness: string;
@@ -8976,6 +9251,15 @@ export interface components {
             path: string;
             target?: string;
         };
+        ProjectSkillRole: {
+            app: boolean;
+            default: boolean;
+            effects: components["schemas"]["ProjectSkillEffect"][];
+            on: boolean;
+            /** @enum {string} */
+            role: "worker" | "orchestrator" | "reviewer";
+            set: boolean;
+        };
         ProjectSkillsResponse: {
             agentsMd: boolean;
             claudeMd: boolean;
@@ -8983,9 +9267,11 @@ export interface components {
             commitTarget?: components["schemas"]["ProjectSkillCommitTarget"];
             harnesses: string[];
             instructions: components["schemas"]["ProjectSkillHarness"][];
+            lsp: components["schemas"]["ControllersProjectLSP"];
             offers: components["schemas"]["ProjectSkillOffer"][];
             offersEnabled: boolean;
             pendingCommit: string[];
+            plugins: components["schemas"]["ProjectPlugin"][];
             projectId: string;
             skills: components["schemas"]["ProjectSkill"][];
             workspace: string;
@@ -9232,6 +9518,9 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             deliveredAt?: null | string;
+            focus?: string;
+            /** @enum {string} */
+            focusAuthor?: "owner" | "orchestrator" | "worker";
             githubReviewId: string;
             harness: string;
             id: string;
@@ -9269,6 +9558,9 @@ export interface components {
             ok: boolean;
             sessionId: string;
         };
+        RunningAgentsResponse: {
+            sessionIds: string[];
+        };
         SaveRenderArtifactRequest: {
             /** @description Name for the file. Characters a file system refuses are replaced. */
             title: string;
@@ -9304,6 +9596,7 @@ export interface components {
         };
         SendSessionMessageResponse: {
             deliveryId?: string;
+            heldUntil?: string;
             message: string;
             ok: boolean;
             /** @enum {string} */
@@ -10166,6 +10459,11 @@ export interface components {
             reportBatches: components["schemas"]["SilentFailuresReportIssue"][];
             turnFallbacks: components["schemas"]["SilentFailuresFallbackIssue"][];
         };
+        SkillRoles: {
+            [key: string]: {
+                [key: string]: boolean;
+            };
+        };
         SpawnOrchestratorRequest: {
             /** @enum {string} */
             approvalMode?: "default" | "accept-edits" | "auto" | "bypass-permissions";
@@ -10193,6 +10491,7 @@ export interface components {
             backlogRef?: string;
             branch?: string;
             clientRequestId?: string;
+            codeIntel?: boolean;
             displayName?: string;
             effort?: string;
             /** @enum {string} */
@@ -10329,6 +10628,11 @@ export interface components {
             /** @enum {string} */
             state?: "queued" | "running" | "completed" | "recovered" | "interrupted" | "failed";
             turnId?: string;
+        };
+        StopAllAgentsResponse: {
+            failures: string[];
+            ok: boolean;
+            stopped: string[];
         };
         StopBackgroundTaskRequest: {
             taskId: string;
@@ -10485,6 +10789,8 @@ export interface components {
             agentConfig?: components["schemas"]["AgentConfig"];
             /** @description Turn on the worker session's review auto-inject once a pass has started, so the reviewer's PR review comments reach the worker. */
             enableAutoInject?: boolean;
+            /** @description One-off review focus for this pass only, at most 2000 characters (400 when longer). It survives an automatic retry and a queued rerun, never a later pass. The reviewer frames it by who sent it, read from the credentials: a person's or the orchestrator's focus is checked first; a worker's is an untrusted hint that does not narrow the review. */
+            focus?: string;
             /** @enum {string} */
             harness?: "claude-code" | "codex" | "kiro" | "deepseek-harness";
             /** @description Commit SHA (full or abbreviated) the caller expects the PR to be at. The PR is refreshed from the provider first; 409 when its head differs, so a push Tallpine has not seen yet is never reviewed as the previous commit. */
@@ -10508,6 +10814,8 @@ export interface components {
             autoInjectEnabled: boolean;
             /** @description True when a new review pass was started; false when an existing run for the same commit was reused. */
             created: boolean;
+            /** @description Set when the pass was queued because the machine is busy: machine busy (load X/Y cores, reviewers A/B). */
+            heldReason?: string;
             /** @description True when the reviewer was busy on another head and the pass was queued to start once it is free; nothing was created yet. */
             queued: boolean;
             reviewerHandleId: string;
@@ -10625,6 +10933,9 @@ export interface components {
             /** @description Empty (Auto), a size from 50k to 1m (Claude Code runs anything under 100k as 100k), or a whole percent from 20% to 95% of the model window. */
             autoCompactWindow?: null | string;
             disabledModels?: null | string[];
+        };
+        UpdateProjectCustomSkillRequest: {
+            content: string;
         };
         UpdateProjectSettingsInput: {
             config: components["schemas"]["ProjectConfig"];
@@ -18189,6 +18500,466 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommitProjectSkillsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    createProjectCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectCustomSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getProjectCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+                /** @description Custom skill name (one lowercase path segment). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    updateProjectCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+                /** @description Custom skill name (one lowercase path segment). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProjectCustomSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    deleteProjectCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+                /** @description Custom skill name (one lowercase path segment). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    importProjectCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportProjectCustomSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getProjectLSPInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControllersProjectLSPInstallStatus"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    startProjectLSPInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project identifier (registry key). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControllersProjectLSPInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ControllersProjectLSPInstallStatus"];
                 };
             };
             /** @description Bad Request */
@@ -31350,6 +32121,91 @@ export interface operations {
             };
         };
     };
+    listRunningAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunningAgentsResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    stopAllAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopAllAgentsResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     getSettings: {
         parameters: {
             query?: never;
@@ -31765,6 +32621,370 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getAppSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSkillsResponse"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    createAppCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectCustomSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getAppCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Custom skill name (one lowercase path segment). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    updateAppCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Custom skill name (one lowercase path segment). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProjectCustomSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    deleteAppCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Custom skill name (one lowercase path segment). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    importAppCustomSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportProjectCustomSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectCustomSkill"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

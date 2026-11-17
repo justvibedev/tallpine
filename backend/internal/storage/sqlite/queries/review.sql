@@ -84,8 +84,8 @@ WHERE id = ?
     OR (? = '' AND reviewer_launch_id = ''));
 
 -- name: InsertReviewRun :exec
-INSERT INTO review_run (id, review_id, session_id, batch_id, harness, trigger_source, pr_url, target_sha, status, verdict, body, github_review_id, created_at, auto_inject_review, model, model_reason)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO review_run (id, review_id, session_id, batch_id, harness, trigger_source, pr_url, target_sha, status, verdict, body, github_review_id, created_at, auto_inject_review, model, model_reason, focus, focus_author)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateReviewRunResult :execrows
 UPDATE review_run SET status = ?, verdict = ?, body = ?, github_review_id = ?, auto_inject_review = ? WHERE id = ? AND status = 'running';
@@ -100,24 +100,28 @@ UPDATE review_run SET status = 'cancelled', body = ? WHERE session_id = ? AND st
 UPDATE review_run SET status = 'cancelled', body = ? WHERE session_id = ? AND harness = ? AND status = 'running' AND verdict = '';
 
 -- name: GetReviewRun :one
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE id = ?;
 
 -- name: GetReviewRunBySessionPRAndSHA :one
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND pr_url = ? AND target_sha = ? ORDER BY created_at DESC LIMIT 1;
 
 -- name: GetReviewRunBySessionPRSHAAndHarness :one
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND pr_url = ? AND target_sha = ? AND harness = ? ORDER BY created_at DESC LIMIT 1;
 
 -- name: ListReviewRunsBySession :many
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? ORDER BY created_at DESC;
 
 -- name: ListRunningReviewRunsBySession :many
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND status = 'running' AND verdict = '' ORDER BY created_at DESC;
+
+-- name: CountRunningReviewers :one
+-- Reviewers (one per worker and harness) with a pass running, across every project.
+SELECT COUNT(DISTINCT review_id) FROM review_run WHERE status = 'running' AND verdict = '';
 
 -- name: ListSessionsWithRunningReviewRuns :many
 SELECT DISTINCT session_id FROM review_run WHERE status = 'running' ORDER BY session_id;
@@ -132,14 +136,14 @@ ORDER BY r.session_id;
 -- name: ListUnnotifiedEndedReviewRuns :many
 -- Failed/cancelled passes and completed verdicts (approved or changes_requested) whose outcome has not been handled for
 -- notification yet, oldest first.
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE failure_notified_at IS NULL AND (status IN ('failed', 'cancelled') OR (status IN ('complete', 'delivered') AND verdict IN ('approved', 'changes_requested'))) ORDER BY created_at ASC, id ASC LIMIT ?;
 
 -- name: MarkReviewRunFailureNotified :execrows
 UPDATE review_run SET failure_notified_at = ? WHERE id = ? AND failure_notified_at IS NULL AND (status IN ('failed', 'cancelled') OR (status IN ('complete', 'delivered') AND verdict IN ('approved', 'changes_requested')));
 
 -- name: ListReviewRunsByBatch :many
-SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason
+SELECT id, review_id, session_id, harness, pr_url, target_sha, status, verdict, body, created_at, github_review_id, delivered_at, batch_id, auto_inject_review, trigger_source, model, failure_notified_at, model_reason, focus, focus_author
 FROM review_run WHERE session_id = ? AND batch_id = ? ORDER BY created_at ASC, id ASC;
 
 -- name: ListCurrentHeadReviewRunsBySession :many
@@ -242,3 +246,6 @@ SELECT EXISTS (
         WHERE busy.handled_by_review_id = sqlc.arg(review_id) AND busy.state = 'running'
     )
 ) AS dispatched;
+
+-- name: SetReviewRunFocus :execrows
+UPDATE review_run SET focus = ?, focus_author = ? WHERE id = ?;

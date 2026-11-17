@@ -231,6 +231,7 @@ type Controller struct {
 	onAccountChanged       func(domain.SessionID, string, domain.AgentHarness)
 	recheckAccount         func(domain.SessionID, domain.AgentHarness)
 	onUsageLimitPaused     func(domain.SessionID, domain.AgentHarness) // asks the service to fail over
+	onModelTurnCompleted   func(domain.SessionID, domain.AgentHarness) // lets siblings on the account re-check a usage-limit pause
 	pauseWake              *time.Timer                                 // guarded by mu; re-drains the queue after a usage-limit pause
 	transientRetry         transientRetryState                         // guarded by mu; the pending automatic retry (B682)
 	onAsyncTask            func(domain.SessionID, ports.ChatAsyncTask)

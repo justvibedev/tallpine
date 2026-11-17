@@ -45,6 +45,7 @@ func clearedNoter(conversations controllers.ConversationService) controllers.Cle
 func newSessionsController(cfg config.Config, deps APIDeps) *controllers.SessionsController {
 	return &controllers.SessionsController{
 		Routes:                   routeNoticer(deps.Reports),
+		MachineLoad:              deps.MachineLoad,
 		OwnerMessages:            deps.OwnerMessages,
 		Policy:                   policyDecider(deps.AgentPolicy),
 		Svc:                      deps.Sessions,

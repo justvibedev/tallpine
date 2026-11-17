@@ -38,16 +38,15 @@ func TestTerminalTurnsPairRequestsWithResponses(t *testing.T) {
 	respond := func(text string) {
 		t.Helper()
 		at = at.Add(time.Minute)
-		if err := s.RecordTerminalTurnResponse(ctx, session.ID, text, at); err != nil {
+		if err := s.RecordTerminalTurnResponse(ctx, domain.TerminalTurn{SessionID: session.ID}, text, at); err != nil {
 			t.Fatalf("record response %q: %v", text, err)
 		}
 	}
 
-	respond("a stop with no open turn is ignored")
 	request(domain.HarnessClaudeCode, "claude-1", "first ask")
 	request(domain.HarnessClaudeCode, "claude-1", "queued ask")
 	respond("first answer")
-	respond("a second stop does not overwrite a closed turn")
+	respond("first answer")
 	request(domain.HarnessCodex, "codex-1", "codex ask")
 
 	turns, err := s.ListTerminalTurns(ctx, session.ID)
@@ -85,7 +84,7 @@ func TestTerminalTurnsKeepOnlyTheNewest(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("record request %d: %v", index, err)
 		}
-		if err := s.RecordTerminalTurnResponse(ctx, session.ID, "done", at); err != nil {
+		if err := s.RecordTerminalTurnResponse(ctx, domain.TerminalTurn{SessionID: session.ID}, "done", at); err != nil {
 			t.Fatalf("record response %d: %v", index, err)
 		}
 	}
@@ -122,7 +121,7 @@ func TestTerminalTurnsJoinOnlyOnTheSameThread(t *testing.T) {
 	request(session.ID, "", "a request with no id joins the open turn")
 	request(other.ID, "thread-2", "another session never joins")
 	request(session.ID, "thread-2", "   ")
-	if err := s.RecordTerminalTurnResponse(ctx, other.ID, "  other answer  ", at); err != nil {
+	if err := s.RecordTerminalTurnResponse(ctx, domain.TerminalTurn{SessionID: other.ID}, "  other answer  ", at); err != nil {
 		t.Fatalf("record response: %v", err)
 	}
 
@@ -158,5 +157,25 @@ func TestTerminalTurnStopsGrowingPastItsCap(t *testing.T) {
 	turns, err := s.ListTerminalTurns(ctx, session.ID)
 	if err != nil || len(turns) != 2 {
 		t.Fatalf("turns = %d, %v; want the first two joined and the third on its own", len(turns), err)
+	}
+}
+
+func TestTerminalTurnKeepsAnAnswerWithNoPromptHook(t *testing.T) {
+	s, session := newTerminalTurnSession(t, "unprompted")
+	ctx := context.Background()
+	turn := domain.TerminalTurn{SessionID: session.ID, Harness: domain.HarnessClaudeCode}
+	at := time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)
+	for _, text := range []string{"woke from a monitor", "woke from a monitor", "   ", "later wakeup"} {
+		at = at.Add(time.Minute)
+		if err := s.RecordTerminalTurnResponse(ctx, turn, text, at); err != nil {
+			t.Fatalf("record response %q: %v", text, err)
+		}
+	}
+	turns, err := s.ListTerminalTurns(ctx, session.ID)
+	if err != nil || len(turns) != 2 {
+		t.Fatalf("turns = %+v, %v; want the two distinct answers, the repeat and the empty stop dropped", turns, err)
+	}
+	if turns[0].AgentResponse != "woke from a monitor" || turns[0].UserRequest != domain.UnpromptedTurnRequest || turns[1].AgentResponse != "later wakeup" {
+		t.Fatalf("turns = %+v", turns)
 	}
 }

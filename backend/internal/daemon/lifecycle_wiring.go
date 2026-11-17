@@ -309,7 +309,7 @@ func (m sessionLifecycleMessenger) Send(ctx context.Context, id domain.SessionID
 // (issue #2685). The returned service is mounted at httpd APIDeps.Sessions.
 // It also returns the manager so the caller can wire Reconcile into the boot
 // sequence.
-func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.Runtime, store *sqlite.Store, lcm *lifecycle.Manager, artifactVersions *artifactversions.Capturer, messenger ports.AgentMessenger, notifications notificationSink, agents ports.AgentResolver, agentReadiness ports.AgentReadinessProvider, previewLifecycle sessionmanager.PreviewLifecycle, browserLifecycle sessionmanager.BrowserLifecycle, browserCapabilities sessionmanager.BrowserCapabilityIssuer, sessionTokens *sessiontoken.Authority, chat sessionmanager.ChatLauncher, reviewerRecoveryDone <-chan struct{}, defaults sessionmanager.SessionModeDefaults, tracker ports.Tracker, codexOperationGate ports.CodexOperationGate, reviewers *reviewer.Resolver, reviewerAccounts *reviewcore.AccountEnvSlot, githubAccounts sessionmanager.GitHubAccountTokens, log *slog.Logger) (*sessionsvc.Service, reviewsvc.Manager, sessionLifecycle, error) {
+func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.Runtime, store *sqlite.Store, lcm *lifecycle.Manager, artifactVersions *artifactversions.Capturer, messenger ports.AgentMessenger, notifications notificationSink, agents ports.AgentResolver, agentReadiness ports.AgentReadinessProvider, previewLifecycle sessionmanager.PreviewLifecycle, browserLifecycle sessionmanager.BrowserLifecycle, browserCapabilities sessionmanager.BrowserCapabilityIssuer, sessionTokens *sessiontoken.Authority, chat sessionmanager.ChatLauncher, reviewerRecoveryDone <-chan struct{}, defaults sessionmanager.SessionModeDefaults, tracker ports.Tracker, codexOperationGate ports.CodexOperationGate, reviewers *reviewer.Resolver, reviewerAccounts *reviewcore.AccountEnvSlot, githubAccounts sessionmanager.GitHubAccountTokens, gitCredentials ports.ProjectGitCredentials, machineLoad reviewcore.MachineGate, log *slog.Logger) (*sessionsvc.Service, reviewsvc.Manager, sessionLifecycle, error) {
 	gitWS, err := gitworktree.New(gitworktree.Options{
 		// Per-session worktrees live under the data dir, so a single TALLPINE_DATA_DIR
 		// override moves all durable per-user state together.
@@ -386,31 +386,26 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 	if reviewerAccounts == nil {
 		reviewerAccounts = &reviewcore.AccountEnvSlot{}
 	}
-	// The engine reads a zero idle grace as its default; configured off is negative.
-	reviewIdleGrace := cfg.ReviewIdleGrace
-	if reviewIdleGrace == 0 {
-		reviewIdleGrace = -1
-	}
-	var reviewPlans reviewcore.PlanSource
-	if cfg.Planner {
-		reviewPlans = workerPlanSource{store: store}
-	}
 	reviewEngine := reviewcore.New(reviewcore.Deps{
-		Plans: reviewPlans,
+		Plans: reviewEnginePlans(cfg, store),
 		Items: workerPlanSource{store: store},
 		// The manager's installer gate is bound after the installer is built.
 		HarnessUse:      mgr,
+		MachineLoad:     machineLoad,
 		Store:           store,
 		Sessions:        store,
 		PRs:             store,
 		Projects:        store,
+		DefaultBranches: ws,
+		GitCredentials:  gitCredentials,
+		DataDir:         cfg.DataDir,
 		Launcher:        newReviewerLauncher(cfg, reviewers, runtime, store, sessionTokens, reviewerAccounts, githubAccounts, agents, agentReadiness, chat),
 		CompactDefaults: compactDefaultsOf(defaults),
 		ModelCatalog:    modelCatalogOf(agentReadiness),
 
 		ChatRecoveryDone: reviewerRecoveryDone,
 		PassDeadline:     cfg.ReviewPassDeadline,
-		IdleGrace:        reviewIdleGrace,
+		IdleGrace:        reviewEngineIdleGrace(cfg),
 	})
 	reviewOpts := []reviewsvc.Option{
 		reviewsvc.WithNotificationSink(notifications),

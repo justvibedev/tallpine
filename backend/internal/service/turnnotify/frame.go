@@ -1,9 +1,12 @@
 package turnnotify
 
 import (
+	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
+	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
 
@@ -46,4 +49,18 @@ func usageLimitDetail(until time.Time, auto bool) string {
 		out += "|auto"
 	}
 	return out
+}
+
+// framedExcerpt frames a worker's last message within n characters. When the
+// message does not fit whole (cut at the stored excerpt cap or by the report
+// limit) it ends with a visible marker, outside the frame, pointing at the
+// full text. A message that truly ends in "…" at exactly the cap is marked too;
+// that is harmless.
+func framedExcerpt(rec domain.SessionRecord, last string, n int) string {
+	whole := framedWithin(rec, last, 1<<20)
+	if utf8.RuneCountInString(whole) <= n && (utf8.RuneCountInString(last) < MaxExcerptCharacters || !strings.HasSuffix(last, "…")) {
+		return whole
+	}
+	marker := fmt.Sprintf(" [truncated, full: %s session history %s]", brand.CLIName, rec.ID)
+	return framedWithin(rec, truncate(last, MaxExcerptCharacters), n-utf8.RuneCountInString(marker)) + marker
 }

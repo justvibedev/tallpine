@@ -218,13 +218,11 @@ function useSettingsLayer(settingsModal: SettingsModal | null) {
 			if (displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "cues") {
 				return <CuesSettings projectId={displaySettings.projectId} onBusyChange={setCueBusy} />;
 			}
-			if (displaySettings?.scope === "project" && !remoteHostId && activeProjectSection === "skills") {
-				return <ProjectSkillsSettings projectId={displaySettings.projectId} />;
-			}
 			if (displaySettings?.scope === "project") {
 				const form = <ProjectSettingsForm projectId={displaySettings.projectId} hostId={remoteHostId} section={activeProjectSection as ProjectFormSection} onSaveState={setProjectSaveState} />;
 				// Setup/cleanup commands and environment variables keep their own editors and save buttons.
 				if (!remoteHostId && activeProjectSection === "repository") return <>{form}<ProjectScriptsSettings projectId={displaySettings.projectId} formId="project-scripts-form" onSaveState={setExtraSaveState} /></>;
+				if (!remoteHostId && activeProjectSection === "instructions") return <>{form}<ProjectSkillsSettings projectId={displaySettings.projectId} /></>;
 				if (!remoteHostId && activeProjectSection === "advanced") return <>{form}<ProjectEnvironmentSettings projectId={displaySettings.projectId} formId="project-environment-form" onSaveState={setExtraSaveState} /></>;
 				return form;
 			}
@@ -437,7 +435,7 @@ function ProjectSettingsModal({ layer, covered }: { layer: SettingsLayerState; c
 					aria-modal="true"
 					className={cn(
 						settingsDialogSurfaceClass,
-						"fixed left-1/2 top-1/2 z-overlay h-[min(40rem,calc(100vh-3rem))] w-(--size-settings-dialog-wide) max-h-none -translate-x-1/2 -translate-y-1/2 origin-center overflow-hidden p-0 animate-modal-in motion-reduce:animate-none sm:rounded-lg",
+						"fixed left-1/2 top-1/2 z-overlay h-[min(46rem,calc(100vh-3rem))] w-[min(var(--size-settings-dialog-wide),calc(100vw-3rem))] max-h-none -translate-x-1/2 -translate-y-1/2 origin-center overflow-hidden p-0 animate-modal-in motion-reduce:animate-none sm:rounded-lg",
 					)}
 					onOpenAutoFocus={(event) => {
 						// Land on the current section (or the first field), not the close button.
@@ -479,7 +477,7 @@ function ProjectSettingsModal({ layer, covered }: { layer: SettingsLayerState; c
 					ref={contentRef}
 				>
 					<div className="flex h-full min-h-0">
-						<aside className="flex w-48 shrink-0 flex-col border-r border-(--color-border-settings-dialog-header) bg-card">
+						<aside className="flex w-60 shrink-0 flex-col border-r border-(--color-border-settings-dialog-header) bg-card">
 							<p className="px-3 pb-1 pt-1.5 text-2xs font-medium tracking-normal text-muted-foreground/60">{t("shell.projectSettings")}</p>
 							<nav aria-label={t("settings.navSectionsAria")} className="flex flex-col gap-0.5 p-2 pt-0">
 								{layer.navItems.map(({ id, label, icon: Icon, active, disabled, onSelect }) => (

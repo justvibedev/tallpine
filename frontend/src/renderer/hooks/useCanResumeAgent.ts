@@ -5,7 +5,7 @@ import {
 } from "./useSessionInterfaceTransition";
 import { sessionAgentExited, type WorkspaceSession } from "../types/workspace";
 import { apiErrorMessage } from "../lib/api-client";
-import { clientForSessionHost } from "../lib/host-clients";
+import { postResumeAgent } from "../lib/resume-agent-request";
 
 const resumesInFlight = new Map<string, Promise<void>>();
 
@@ -16,9 +16,7 @@ const resumesInFlight = new Map<string, Promise<void>>();
  */
 export function resumeAgentOnOpen(sessionId: string): Promise<void> {
 	return resumeOnce(sessionId, async () => {
-		const { error, response } = await clientForSessionHost().POST("/api/v1/sessions/{sessionId}/resume-agent", {
-			params: { path: { sessionId } },
-		});
+		const { error, response } = await postResumeAgent(sessionId);
 		if (error) throw new Error(apiErrorMessage(error, `Failed to resume agent (${response.status})`));
 	});
 }

@@ -63,8 +63,11 @@ export function SettingsRow({
 	description,
 	children,
 	className,
+	stacked,
 	...rowProps
 }: Omit<ComponentPropsWithoutRef<"div">, "children"> & {
+	/** Put the control on its own full-width line under the label (multi-line fields). */
+	stacked?: boolean;
 	icon?: LucideIcon;
 	leading?: ReactNode;
 	label: ReactNode;
@@ -77,6 +80,7 @@ export function SettingsRow({
 			{...rowProps}
 			className={cn(
 				"settings-row-bar",
+				stacked && "flex-col items-stretch",
 				className,
 			)}
 		>
@@ -88,6 +92,7 @@ export function SettingsRow({
 				className={cn(
 					"flex max-w-[60%] shrink-0 items-center justify-end [--size-settings-inline-input-max-percent:100%] [--size-settings-row-value-max-percent:100%]",
 					description !== undefined && "self-center",
+					stacked && "max-w-full shrink self-stretch",
 				)}
 			>
 				{children}

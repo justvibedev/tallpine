@@ -33,6 +33,10 @@ type Deps struct {
 	Send func(ctx context.Context, to domain.SessionID, msg string) (bool, error)
 	Now  func() time.Time
 	Log  *slog.Logger
+	// Questions and Owner turn on the unanswered owner-question notice (B750);
+	// either nil leaves it off.
+	Questions QuestionStore
+	Owner     Owner
 }
 
 // Sweeper decides and sends idle nudges.
@@ -44,6 +48,11 @@ type Sweeper struct {
 	// or the intents change; the nudge's own turn does not end it.
 	// In memory: a daemon restart re-arms it and may send one extra nudge.
 	nudged map[domain.SessionID]int
+	// questions holds, per orchestrator, the reply the owner was notified of.
+	questions map[domain.SessionID]string
+	// cleared marks sessions whose owner-question notices are known resolved
+	// since start-up, so an answered reply resolves once, not every sweep.
+	cleared map[domain.SessionID]bool
 }
 
 // New returns a Sweeper.
@@ -54,10 +63,11 @@ func New(deps Deps) *Sweeper {
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
-	return &Sweeper{deps: deps, nudged: map[domain.SessionID]int{}}
+	return &Sweeper{deps: deps, nudged: map[domain.SessionID]int{}, questions: map[domain.SessionID]string{}, cleared: map[domain.SessionID]bool{}}
 }
 
-// Sweep nudges every live orchestrator that qualifies.
+// Sweep nudges every live orchestrator that qualifies and tells the owner of
+// any that went idle on an unanswered question.
 func (s *Sweeper) Sweep(ctx context.Context) error {
 	recs, err := s.deps.Store.ListLiveSessions(ctx)
 	if err != nil {
@@ -73,11 +83,24 @@ func (s *Sweeper) Sweep(ctx context.Context) error {
 		if err := s.maybe(ctx, rec); err != nil {
 			errs = append(errs, fmt.Errorf("idle nudge %s: %w", rec.ID, err))
 		}
+		if err := s.questionNotify(ctx, rec); err != nil {
+			errs = append(errs, fmt.Errorf("owner question %s: %w", rec.ID, err))
+		}
 	}
 	s.mu.Lock()
 	for id := range s.nudged {
 		if !live[id] {
 			delete(s.nudged, id)
+		}
+	}
+	for id := range s.questions {
+		if !live[id] {
+			delete(s.questions, id)
+		}
+	}
+	for id := range s.cleared {
+		if !live[id] {
+			delete(s.cleared, id)
 		}
 	}
 	s.mu.Unlock()

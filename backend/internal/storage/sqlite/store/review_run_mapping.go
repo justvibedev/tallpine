@@ -31,6 +31,8 @@ func reviewRunFromRow(r gen.ReviewRun) domain.ReviewRun {
 		CreatedAt:        r.CreatedAt,
 		DeliveredAt:      deliveredAt,
 		AutoInjectReview: r.AutoInjectReview,
+		Focus:            r.Focus,
+		FocusAuthor:      domain.ReviewFocusAuthor(r.FocusAuthor),
 	}
 	run.PostFailed = run.NotPostedToPR()
 	return run

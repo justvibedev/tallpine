@@ -16,13 +16,13 @@ func TestAgentMayOnlyTurnSecurityModeOn(t *testing.T) {
 	enabled, _ := reg.Lookup("policy.securityMode.enabled")
 	docker, _ := reg.Lookup("policy.securityMode.allowDocker")
 	cur := json.RawMessage(`false`)
-	if why := agentMayWrite(orch, enabled, json.RawMessage(`true`), json.RawMessage(`false`)); why == "" {
+	if why := agentMayWrite(orch, settingsreg.Default(), enabled, json.RawMessage(`true`), json.RawMessage(`false`)); why == "" {
 		t.Error("an agent turned Security mode off")
 	}
-	if why := agentMayWrite(orch, enabled, cur, json.RawMessage(`true`)); why != "" {
+	if why := agentMayWrite(orch, settingsreg.Default(), enabled, cur, json.RawMessage(`true`)); why != "" {
 		t.Errorf("an agent may turn it on: %s", why)
 	}
-	if why := agentMayWrite(orch, docker, cur, json.RawMessage(`true`)); why == "" {
+	if why := agentMayWrite(orch, settingsreg.Default(), docker, cur, json.RawMessage(`true`)); why == "" {
 		t.Error("an agent set allowDocker")
 	}
 }

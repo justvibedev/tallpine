@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -68,6 +69,21 @@ func isACPInternalError(err error) bool {
 func isACPRequestCancelled(err error) bool {
 	var requestErr *acpsdk.RequestError
 	return errors.As(err, &requestErr) && requestErr.Code == -32800
+}
+
+// initializeInterrupted classifies a handshake cut short: our own deadline or
+// cancellation, or the agent answering -32800 (a loaded machine where it gave
+// up on the request). Neither says the provider speaks another protocol, so
+// neither may read as ErrChatDriverIncompatible, which callers treat as
+// permanent. Nil means err is a real handshake failure.
+func initializeInterrupted(initCtx context.Context, err error) error {
+	if ctxErr := initCtx.Err(); ctxErr != nil {
+		return fmt.Errorf("ACP initialize: %w: %w", ctxErr, err)
+	}
+	if isACPRequestCancelled(err) {
+		return fmt.Errorf("ACP initialize: the agent cancelled the handshake: %w", err)
+	}
+	return nil
 }
 
 func normalizeACPError(operation string, err error) error {

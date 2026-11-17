@@ -10,14 +10,6 @@ import (
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
-// ResumeAgentWithMode replaces an exited agent inside its still-live session.
-// Unlike RestoreWithMode, it preserves the existing worktree and terminal
-// identity and never changes the durable terminated flag as an intermediate
-// step.
-func (m *Manager) ResumeAgentWithMode(ctx context.Context, id domain.SessionID) (result RestoreResult, err error) {
-	return m.resumeAgentWithMode(ctx, id, false)
-}
-
 // resumeAgentWithMode preserves strict native-history intent for automatic
 // retries, including update stops that have no stale-binary failure marker.
 func (m *Manager) resumeAgentWithMode(ctx context.Context, id domain.SessionID, requireNativeHistory bool) (result RestoreResult, err error) {

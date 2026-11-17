@@ -21,7 +21,7 @@ func (s *turnRecordingStore) RecordTerminalTurnRequest(_ context.Context, turn d
 	return nil
 }
 
-func (s *turnRecordingStore) RecordTerminalTurnResponse(_ context.Context, _ domain.SessionID, response string, _ time.Time) error {
+func (s *turnRecordingStore) RecordTerminalTurnResponse(_ context.Context, _ domain.TerminalTurn, response string, _ time.Time) error {
 	s.calls = append(s.calls, "response:"+response)
 	return nil
 }

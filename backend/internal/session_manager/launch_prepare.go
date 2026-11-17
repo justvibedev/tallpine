@@ -121,6 +121,7 @@ func (m *Manager) cleanupPreparedAgentWorkspaceStrict(ctx context.Context, agent
 }
 
 func (m *Manager) cleanupAgentWorkspace(ctx context.Context, rec domain.SessionRecord, workspacePath string) {
+	m.pruneClaudePlugins(ctx, rec, workspacePath)
 	agent, ok := m.agents.Agent(rec.Harness)
 	if !ok {
 		return

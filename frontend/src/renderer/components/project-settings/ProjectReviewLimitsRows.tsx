@@ -5,7 +5,7 @@ import { SettingsInlineInput, SettingsRow } from "../settings/SettingsRow";
 
 type Patch = (patch: Partial<ProjectLocalFieldsDraft>) => void;
 
-/** Reviews & PRs: when automatic review stops, and when a clean rebase keeps an approval. */
+/** Reviews & PRs: when automatic review stops, when a clean rebase keeps an approval (project review rules live on Instructions and skills). */
 export function ProjectReviewLimitsRows({ values, onChange }: { values: ProjectLocalFieldsDraft; onChange: Patch }) {
 	const { t } = useTranslation();
 	return (

@@ -54,6 +54,9 @@ type AgentLaunchOptions struct {
 	FastModeOff bool `json:"fastModeOff,omitempty"`
 	// Ultracode starts Claude Code with Ultracode on.
 	Ultracode bool `json:"ultracode,omitempty"`
+	// CodeIntel is code intelligence mode (`tallpine spawn --code-intel`): the
+	// worker's Claude settings deny shell grep and its prompt says to use LSP.
+	CodeIntel bool `json:"codeIntel,omitempty"`
 	// AutoCompactWindow is where the agent compacts on its own: "120k" (any 50k to 1m), "1m", or
 	// a percent of a fixed 1M tokens such as "40%" (see ResolveAutoCompactWindow).
 	AutoCompactWindow string `json:"autoCompactWindow,omitempty"`
@@ -73,6 +76,9 @@ type AgentLaunchOptions struct {
 	// AutoMemoryOff starts Claude Code with auto-memory off (the project's
 	// claudeAutoMemory setting for the session's role). Filled at launch.
 	AutoMemoryOff bool `json:"-"`
+	// Skills is the role's skill switches for this launch (SkillLaunch,
+	// encoded so the options stay comparable). Filled at launch, not stored.
+	Skills string `json:"-"`
 	// ShellOutputChars caps the shell output the agent reads inline (see
 	// ShellOutputLimit). Filled at launch; 0 leaves the harness default.
 	ShellOutputChars int `json:"-"`

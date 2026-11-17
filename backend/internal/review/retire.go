@@ -14,13 +14,20 @@ import (
 // tree (B493). A later trigger launches a fresh pane.
 const reviewerRetireGrace = 30 * time.Minute
 
+// approvedRetireGrace replaces the retire grace for a pane whose latest pass
+// approved (B754): the worker's next step is a merge, not a fix for the
+// reviewer to re-check, so keeping an idle agent for half an hour only holds
+// its memory. A later re-review still relaunches a fresh pane.
+const approvedRetireGrace = 5 * time.Minute
+
 // idleReviewerLister is the optional store surface RetireIdleReviewers needs.
 type idleReviewerLister interface {
 	ListSessionsWithIdleTerminalReviewers(ctx stdctx.Context, updatedBefore time.Time) ([]domain.SessionID, error)
 }
 
 // RetireIdleReviewers destroys terminal reviewer panes whose last pass ended
-// more than the retire grace ago and returns how many it reaped. Chat
+// more than the retire grace ago (the shorter approved grace when that pass
+// approved) and returns how many it reaped. Chat
 // reviewers and archived ones are not touched; a pane with a running pass is
 // never retired.
 func (e *Engine) RetireIdleReviewers(ctx stdctx.Context) (int, error) {
@@ -28,14 +35,15 @@ func (e *Engine) RetireIdleReviewers(ctx stdctx.Context) (int, error) {
 	if !ok || e.retireGrace <= 0 {
 		return 0, nil
 	}
-	cutoff := e.clock().Add(-e.retireGrace)
-	ids, err := lister.ListSessionsWithIdleTerminalReviewers(ctx, cutoff)
+	now := e.clock()
+	cutoffs := retireCutoffs{idle: now.Add(-e.retireGrace), approved: now.Add(-min(e.retireGrace, approvedRetireGrace))}
+	ids, err := lister.ListSessionsWithIdleTerminalReviewers(ctx, cutoffs.approved)
 	if err != nil {
 		return 0, err
 	}
 	retired := 0
 	for _, id := range ids {
-		n, err := e.retireIdleReviewersFor(ctx, id, cutoff)
+		n, err := e.retireIdleReviewersFor(ctx, id, cutoffs)
 		if err != nil {
 			slog.Warn("review: could not retire an idle reviewer", "session", id, "err", err)
 			continue
@@ -45,7 +53,45 @@ func (e *Engine) RetireIdleReviewers(ctx stdctx.Context) (int, error) {
 	return retired, nil
 }
 
-func (e *Engine) retireIdleReviewersFor(ctx stdctx.Context, id domain.SessionID, cutoff time.Time) (int, error) {
+// retireCutoffs holds the instants before which a terminal reviewer row counts
+// as idle: approved applies when the row's latest pass approved.
+type retireCutoffs struct {
+	idle, approved time.Time
+}
+
+// stale reports whether a row last touched at updated is past its cutoff.
+func (c retireCutoffs) stale(updated time.Time, approvedLast bool) bool {
+	if approvedLast {
+		return updated.Before(c.approved)
+	}
+	return updated.Before(c.idle)
+}
+
+// approvedLastRuns names the reviews whose every PR's latest verdict approved.
+// A review row carries a run per PR, and a batch inserts them with one
+// timestamp, so the row's single newest run says nothing about its other PRs.
+// Failed and cancelled runs carry no verdict and are skipped. runs come newest
+// first (ListReviewRunsBySession).
+func approvedLastRuns(runs []domain.ReviewRun) map[string]bool {
+	type prKey struct{ review, pr string }
+	seen := map[prKey]bool{}
+	approved := map[string]bool{}
+	for _, run := range runs {
+		if run.Status != domain.ReviewRunComplete && run.Status != domain.ReviewRunDelivered {
+			continue
+		}
+		key := prKey{run.ReviewID, run.PRURL}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		ok, known := approved[run.ReviewID]
+		approved[run.ReviewID] = (ok || !known) && run.Verdict == domain.VerdictApproved
+	}
+	return approved
+}
+
+func (e *Engine) retireIdleReviewersFor(ctx stdctx.Context, id domain.SessionID, cutoffs retireCutoffs) (int, error) {
 	unlock, ok := e.tryLockWorker(id)
 	if !ok {
 		return 0, nil
@@ -55,28 +101,32 @@ func (e *Engine) retireIdleReviewersFor(ctx stdctx.Context, id domain.SessionID,
 	if err != nil {
 		return 0, err
 	}
-	running, err := e.store.ListRunningReviewRunsBySession(ctx, id)
+	runs, err := e.store.ListReviewRunsBySession(ctx, id)
 	if err != nil {
 		return 0, err
 	}
 	// Any running pass keeps the worker's pane: the handle is shared by every
 	// harness row, so a stale row must not kill another row's live reviewer.
-	if len(running) > 0 {
-		return 0, nil
+	// Every running row counts, even one that already recorded a verdict.
+	for _, run := range runs {
+		if run.Status == domain.ReviewRunRunning {
+			return 0, nil
+		}
 	}
+	approvedLast := approvedLastRuns(runs)
 	// Decide per handle: destroy it only when every terminal row holding it is
 	// past the cutoff; a stale row that shares it with a fresher row just loses
 	// its handle.
 	fresh := map[string]bool{}
 	for _, review := range reviews {
-		if review.InterfaceMode != domain.ReviewerInterfaceChat && !review.IsArchived && review.ReviewerHandleID != "" && !review.UpdatedAt.Before(cutoff) {
+		if review.InterfaceMode != domain.ReviewerInterfaceChat && !review.IsArchived && review.ReviewerHandleID != "" && !cutoffs.stale(review.UpdatedAt, approvedLast[review.ID]) {
 			fresh[review.ReviewerHandleID] = true
 		}
 	}
 	n := 0
 	destroyed := map[string]bool{}
 	for _, review := range reviews {
-		if review.InterfaceMode == domain.ReviewerInterfaceChat || review.IsArchived || review.ReviewerHandleID == "" || !review.UpdatedAt.Before(cutoff) {
+		if review.InterfaceMode == domain.ReviewerInterfaceChat || review.IsArchived || review.ReviewerHandleID == "" || !cutoffs.stale(review.UpdatedAt, approvedLast[review.ID]) {
 			continue
 		}
 		h := review.ReviewerHandleID

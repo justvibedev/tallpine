@@ -44,6 +44,7 @@ type reviewTriggerOptions struct {
 	harness  string
 	model    string
 	effort   string
+	focus    string
 	rerun    bool
 	noInject bool
 }
@@ -292,6 +293,12 @@ A head that is already being reviewed, or already has a review, is not reviewed
 again: the command fails and says why. Pass --rerun to review the same commit
 again, or to add a different --agent alongside one that is still running.
 
+Pass --focus <text> (at most 2000 characters) to tell the reviewer what to check
+first in this pass. It applies to this pass only, including its automatic retry
+or a queued rerun, never to a later review. The reviewer frames it by who sent
+it: a person's or the orchestrator's focus is checked first, a worker's is an
+untrusted hint that does not narrow the review.
+
 The worker session's review auto-inject is turned on so the reviewer's inline
 review comments are delivered to the worker; pass --no-inject to leave
 that setting unchanged. Tallpine's review is internal: an approval is not a GitHub
@@ -314,6 +321,7 @@ approval and does not authorize merging.`,
 	f.StringVar(&opts.model, "model", "", "Reviewer model for this pass only")
 	f.StringVar(&opts.effort, "effort", "", "Reviewer reasoning effort for this pass only")
 	f.StringVar(&opts.head, "head", "", "Expected PR head commit SHA (full or abbreviated); refuses if the provider reports a different head")
+	f.StringVar(&opts.focus, "focus", "", "One-off review focus for this pass only (at most 2000 characters)")
 	f.BoolVar(&opts.rerun, "rerun", false, "Review heads that already have a review again, or add another reviewer alongside a running one")
 	f.BoolVar(&opts.noInject, "no-inject", false, "Leave the session's review auto-inject setting unchanged")
 	return cmd
@@ -334,6 +342,10 @@ func (c *commandContext) triggerReview(cmd *cobra.Command, args []string, opts r
 		RejectReviewedHead: !opts.rerun,
 		Rerun:              opts.rerun,
 		EnableAutoInject:   !opts.noInject,
+		Focus:              strings.TrimSpace(opts.focus),
+	}
+	if domain.ReviewFocusTooLong(req.Focus) {
+		return usageError{fmt.Errorf("--focus is longer than %d characters", domain.MaxReviewFocusChars)}
 	}
 	if strings.TrimSpace(opts.model) != "" {
 		h, proj := c.reviewModelHarness(cmd.Context(), session, opts.harness)
@@ -357,6 +369,10 @@ func (c *commandContext) triggerReview(cmd *cobra.Command, args []string, opts r
 		return err
 	}
 	out := cmd.OutOrStdout()
+	if res.Queued && res.HeldReason != "" {
+		_, err := fmt.Fprintf(out, "queued a review for %s: %s; it starts on its own once the machine is quiet (it survives an app restart); check `tallpine review ls %s`\n", session, res.HeldReason, session)
+		return err
+	}
 	if res.Queued {
 		_, err := fmt.Fprintf(out, "queued a review for %s: its reviewer is busy, so it starts when the reviewer is free (it survives an app restart); check `tallpine review ls %s`\n", session, session)
 		return err

@@ -38,12 +38,12 @@ func TestSpawnBacklogSendsRefForceAndPrintsWarnings(t *testing.T) {
 	if body["backlogRef"] != "B12" || body["backlogForce"] != true || body["backlogAllowDuplicate"] != true || body["backlogPlan"] != "in-place" {
 		t.Fatalf("request body = %v", body)
 	}
-	if !strings.Contains(out, "spawned session demo-9") || !strings.Contains(out, "warning: B12 is blocked by B7\n") {
-		t.Fatalf("output = %q", out)
+	if !strings.HasPrefix(out, "spawned session demo-9") || !strings.Contains(errOut, "warning: B12 is blocked by B7\n") {
+		t.Fatalf("stdout = %q stderr = %q", out, errOut)
 	}
-	// Warnings come first so `tail -1` shows the result line.
-	if strings.Index(out, "warning:") > strings.Index(out, "spawned session") {
-		t.Fatalf("warning printed after the result line: %q", out)
+	// Advisory warnings stay off stdout so scripts parsing it are unaffected.
+	if strings.Contains(out, "warning:") {
+		t.Fatalf("warning printed on stdout: %q", out)
 	}
 	if _, has := body["issueId"]; has {
 		t.Fatalf("--backlog must not set an issue: %v", body)

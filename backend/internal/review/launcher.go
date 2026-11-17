@@ -92,7 +92,22 @@ type LaunchSpec struct {
 	// item the worker builds (B205); empty when there is none.
 	PlanDecisions string
 	PlanFocus     []string
-	InterfaceMode domain.ReviewerInterfaceMode
+	// ReviewerRules are the project review rules (reviewerRules plus the
+	// reviewerRulesFile read from the default branch), already capped, and
+	// ReviewerRulesNote says when that file could not be read.
+	ReviewerRules     string
+	ReviewerRulesNote string
+	// AppReviewerRules are the app-wide review rules (app.reviewerRules),
+	// rendered before the project's.
+	AppReviewerRules string
+	// ReviewerSkills are the text-only skill copies switched on for the
+	// reviewer; ReviewerSkillsSkipped names every skill or file left out.
+	ReviewerSkills        []ReviewerSkill
+	ReviewerSkillsSkipped []string
+	// ReviewerSkillsDir is where the launcher copied ReviewerSkills for this
+	// pass (under the reviewer prompt root); set by prepareInvocation.
+	ReviewerSkillsDir string
+	InterfaceMode     domain.ReviewerInterfaceMode
 	// DeferInitialMessage starts the reviewer without dispatching its review
 	// prompt. The engine uses this while replacing a live reviewer so the old
 	// process can be stopped before the replacement receives executable work.

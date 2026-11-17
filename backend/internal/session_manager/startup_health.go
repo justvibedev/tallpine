@@ -98,8 +98,10 @@ var defaultStartupChatResumeDelays = []time.Duration{
 }
 
 // startupChatResumeTimeout bounds one resume attempt; a provider handshake that
-// hangs must not hold a worker slot forever.
-const startupChatResumeTimeout = 2 * time.Minute
+// hangs must not hold a worker slot forever. It matches a manual Resume's
+// budget: on a loaded machine after a restart the handshake alone can take a
+// minute and the history import's conversation read many seconds more.
+var startupChatResumeTimeout = manualResumeBudget
 
 // resumeStartupChats resumes Chats whose agents died with the previous daemon,
 // as the user's Resume would, so workers keep working and the orchestrator keeps
@@ -200,7 +202,13 @@ func (m *Manager) resumeStartupChatOnce(ctx context.Context, id domain.SessionID
 	}
 	attemptCtx, cancel := context.WithTimeout(ctx, startupChatResumeTimeout)
 	defer cancel()
-	err = m.autoResume(attemptCtx, id, false)
+	userOwned, err := m.autoResumeJoined(attemptCtx, id, false)
+	if err != nil && userOwned {
+		// The owner pressed Resume during this attempt and got its result;
+		// another automatic attempt now would only take the lock their next
+		// press needs.
+		return true, fmt.Errorf("left to the user's Resume: %w", err)
+	}
 	if err == nil || errors.Is(err, ErrTerminated) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrAgentNotExited) ||
 		errors.Is(err, ErrResumeModelDenied) {
 		// A denied model stays denied: retrying only loops. The session stays stopped.

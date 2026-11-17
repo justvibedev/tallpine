@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -107,7 +108,7 @@ func (c *SessionsController) send(w http.ResponseWriter, r *http.Request) {
 	if c.MessageSent != nil {
 		c.MessageSent(r.Context(), domain.SessionID(in.SenderSessionID), sessionID(r))
 	}
-	envelope.WriteJSON(w, http.StatusOK, SendSessionMessageResponse{OK: true, SessionID: sessionID(r), Message: message, Outcome: string(receipt.Outcome), DeliveryID: receipt.ID, WaitingOnInput: receipt.WaitingOnInput})
+	envelope.WriteJSON(w, http.StatusOK, SendSessionMessageResponse{OK: true, SessionID: sessionID(r), Message: message, Outcome: string(receipt.Outcome), DeliveryID: receipt.ID, WaitingOnInput: receipt.WaitingOnInput, HeldUntil: heldUntil(receipt)})
 }
 
 func (c *SessionsController) delegateTask(w http.ResponseWriter, r *http.Request) {
@@ -289,4 +290,12 @@ func agentClaimTakeoverGuard(agent requestscope.Agent) func(ports.ClaimOwner) er
 		return apierr.Forbidden("AGENT_SCOPE_FORBIDDEN",
 			"An agent session token cannot take a pull request from session "+string(owner.SessionID)+"; ask its project's orchestrator or the user")
 	}
+}
+
+// heldUntil renders the usage-limit hold on a queued message for the wire.
+func heldUntil(receipt ports.MessageReceipt) string {
+	if receipt.HeldUntil.IsZero() {
+		return ""
+	}
+	return receipt.HeldUntil.UTC().Format(time.RFC3339)
 }

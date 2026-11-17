@@ -227,7 +227,7 @@ done
   case "${command_name}" in install | rollback)
     if [[ ${#opt_notify[@]} -gt 0 ]]; then
       [[ -n "${opt_log}" ]] || die "--notify was removed: the daemon refuses a message sent from here (B631). Pass --log <path> and poll <path>.result instead"
-      warn "--notify is ignored (B631): poll $(result_path) for the outcome"
+      warn "--notify sends no message from here (B631): the outcome is recorded in alerts.tsv for the daemon to deliver; poll $(result_path) for the outcome"
     fi
     clear_result
     notify_armed=1 notify_what="${command_name}"; trap on_exit EXIT ;;

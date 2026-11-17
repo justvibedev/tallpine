@@ -281,5 +281,6 @@ func (b *boot) openStore() error {
 	// One-time cleanup: pre-launch-flag Tallpine hook entries left in workspace settings
 	// fail with "command not found" when the owner runs a plain agent there.
 	go stripStaleWorkspaceHooks(context.Background(), filepath.Join(b.cfg.DataDir, "worktrees"), b.log)
+	go pruneStalePluginInstalls(context.Background(), b.cfg.DataDir, b.store, b.log)
 	return nil
 }

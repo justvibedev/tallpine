@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -73,6 +74,7 @@ func (m *Manager) startTaskNaming(cfg ports.SpawnConfig, rec domain.SessionRecor
 			if err == nil {
 				name = parseTaskName(raw, fallback)
 			}
+			name.Slug = keepTitleVersions(cfg.DisplayName, cfg.KeepDisplayName, name.Slug, fallback.Slug)
 			m.logger.Info("task naming", "sessionID", rec.ID, "durationMs", time.Since(started).Milliseconds(), "generated", name.Title != "", "error", err)
 			if cfg.KeepDisplayName {
 				name.Title = ""
@@ -115,6 +117,24 @@ func parseTaskName(raw string, fallback generatedTaskName) generatedTaskName {
 		name.Slug = fallback.Slug
 	}
 	return name
+}
+
+// versionPattern matches a dotted version such as 0.13.18.
+var versionPattern = regexp.MustCompile(`\d+(?:\.\d+)+`)
+
+// keepTitleVersions returns the title-derived slug when an explicit title names
+// versions the generated slug dropped or changed (B739). The collision suffix
+// only appends "-N", so a wrong version comes from the model.
+func keepTitleVersions(title string, explicit bool, slug, titleSlug string) string {
+	if !explicit {
+		return slug
+	}
+	for _, v := range versionPattern.FindAllString(title, -1) {
+		if !strings.Contains(slug, strings.ReplaceAll(v, ".", "-")) {
+			return titleSlug
+		}
+	}
+	return slug
 }
 
 func taskSlug(value string) string {

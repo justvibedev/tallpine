@@ -73,8 +73,11 @@ func TestEveryProjectConfigFieldIsRegistered(t *testing.T) {
 			tag, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 			return tag == parent
 		})
+		// A map-typed field (claudePlugins) keys its nested settings by role.
+		isMap := ok && field.Type.Kind() == reflect.Map
 		if !ok || !slices.Contains(keysWithPrefix(ScopeProject, "project."), parent) ||
-			!slices.Contains(jsonFields(t, reflect.New(field.Type).Elem().Interface()), child) {
+			(!isMap && !slices.Contains(jsonFields(t, reflect.New(field.Type).Elem().Interface()), child)) ||
+			(isMap && !slices.Contains([]string{"orchestrator", "worker", "reviewer", "all", "agentClaudeCode", "agentCodex", "agentKiro", "agentDeepseek"}, child)) {
 			t.Errorf("project config: registry declares %q, which does not exist", k)
 		}
 	}
@@ -99,10 +102,14 @@ var snapshotKeys = map[string][]Key{
 	"ChatHibernation":            {"app.chatHibernation.enabled", "app.chatHibernation.workerIdleSeconds", "app.chatHibernation.orchestratorIdleSeconds"},
 	"VersionRefresh":             {"app.versionRefresh"},
 	"DynamicOrchestratorContext": {"app.dynamicOrchestratorContext"},
-	"WorkflowDefaults":           {"app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort", "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort"},
+	"WorkflowDefaults": {"app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort", "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort",
+		// The app-wide rules and skill switches live in the same stored object (B740).
+		"app.workerRules", "app.orchestratorRules", "app.reviewerRules", "app.skillRoles"},
 	"StorageCompaction":          {"app.storageCompaction"},
 	"ProviderEventRetentionDays": {"app.providerEventRetentionDays"},
 	"PeerCheck":                  {"app.daemon.peerCheck"},
+	"MachineMaxReviewers":        {"app.machineLoad.maxReviewers"},
+	"MachineLoadPercent":         {"app.machineLoad.loadPercent"},
 	"UpdatedAt":                  nil, // bookkeeping, not a setting
 }
 

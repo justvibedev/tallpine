@@ -117,6 +117,7 @@ type projectSetConfigOptions struct {
 	workerEffort       string
 	orchestratorEffort string
 	reviewerEffort     string
+	claudePlugins      []string
 	agentRules         string
 	agentRulesFile     string
 	orchestratorRules  string
@@ -238,6 +239,7 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 	f.StringVar(&opts.orchestratorAgent, "orchestrator-agent", "", "Harness override for orchestrator sessions")
 	f.StringVar(&opts.workerEffort, "worker-effort", "", "Reasoning effort for worker sessions (e.g. low, medium, high); empty clears it")
 	f.StringVar(&opts.orchestratorEffort, "orchestrator-effort", "", "Reasoning effort for orchestrator sessions (e.g. low, medium, high); empty clears it")
+	f.StringArrayVar(&opts.claudePlugins, "claude-plugin", nil, "Per-role Claude plugin switch role=id:on|off|unset (role: worker, orchestrator, reviewer; id: name@marketplace; repeatable); other plugins and config are kept")
 	f.StringVar(&opts.reviewerEffort, "reviewer-effort", "", "Reasoning effort for every configured reviewer (set --reviewer first); empty clears it")
 	f.StringVar(&opts.orchestratorResearchWindow, "orchestrator-research-window", "", "Compaction window of an orchestrator in research mode (`tallpine orchestrator research on`): a size from 50k to 1m or a percent of the model window; off disables research mode for the project; empty uses the default (250k)")
 	f.StringVar(&opts.orchestratorIdleCompact, "orchestrator-idle-compact", "", "Context size above which an idle orchestrator compacts between tasks: a percent of its compaction window, not the model window (20%-95%), a size from 50k to 1m, or off; empty uses the default (30%)")
@@ -291,7 +293,7 @@ var projectConfigFieldFlags = []string{
 	"default-branch", "canonical-repo-url", "github-user", "session-prefix", "default-session-mode", "model", "permission",
 	"worker-agent", "orchestrator-agent", "worker-effort", "orchestrator-effort", "reviewer-effort", "orchestrator-compact-window", "orchestrator-idle-compact", "orchestrator-research-window", "orchestrator-idle-action", "agent-rules", "agent-rules-file", "orchestrator-rules",
 	"env", "unset-env", "symlink", "post-create", "tracker-intake", "tracker-repo", "tracker-assignee", "reviewer",
-	"no-ci",
+	"no-ci", "claude-plugin",
 	"plan-auto-approve",
 	"plan-auto-approve-inherit", "plan-in-place",
 }
@@ -468,6 +470,11 @@ func (c *commandContext) mergeProjectConfigFlags(ctx context.Context, id string,
 	}
 	if changed("reviewer") {
 		setConfigReviewers(cfg, opts.reviewers)
+	}
+	if changed("claude-plugin") {
+		if err := setClaudePlugins(cfg, opts.claudePlugins); err != nil {
+			return nil, err
+		}
 	}
 	if changed("reviewer-effort") {
 		if err := setReviewerEffort(cfg, opts.reviewerEffort); err != nil {

@@ -229,3 +229,16 @@ func (s *Store) SessionAccountChangedSince(ctx context.Context, id domain.Sessio
 	}
 	return changed, nil
 }
+
+// AccountTurnCompletedSince reports whether any session on the same agent
+// account as id completed a model turn after since. Such a turn proves the
+// account's quota is usable again, ahead of the provider's stated reset.
+func (s *Store) AccountTurnCompletedSince(ctx context.Context, id domain.SessionID, since time.Time) (bool, error) {
+	done, err := s.qr.AccountTurnCompletedSince(ctx, gen.AccountTurnCompletedSinceParams{
+		SessionID: id, Since: sql.NullTime{Time: since, Valid: true},
+	})
+	if err != nil {
+		return false, fmt.Errorf("read account turn completions: %w", err)
+	}
+	return done, nil
+}

@@ -12,6 +12,16 @@ import (
 // optional running pass, and an engine whose clock is base+age.
 func retireFixture(t *testing.T, age time.Duration, withRunning bool) (*Engine, *fakeLauncher, domain.SessionRecord) {
 	t.Helper()
+	status, verdict := domain.ReviewRunComplete, domain.VerdictChangesRequested
+	if withRunning {
+		status, verdict = domain.ReviewRunRunning, domain.VerdictNone
+	}
+	return retireFixtureWithRun(t, age, status, verdict)
+}
+
+// retireFixtureWithRun is retireFixture with the pass's status and verdict.
+func retireFixtureWithRun(t *testing.T, age time.Duration, status domain.ReviewRunStatus, verdict domain.ReviewVerdict) (*Engine, *fakeLauncher, domain.SessionRecord) {
+	t.Helper()
 	ctx := context.Background()
 	st := newSQLiteReviewStore(t)
 	worker := liveWorker()
@@ -23,10 +33,6 @@ func retireFixture(t *testing.T, age time.Duration, withRunning bool) (*Engine, 
 		ReviewerActivityState: domain.ActivityIdle, CreatedAt: base, UpdatedAt: base,
 	}); err != nil {
 		t.Fatalf("upsert review: %v", err)
-	}
-	status, verdict := domain.ReviewRunComplete, domain.VerdictChangesRequested
-	if withRunning {
-		status, verdict = domain.ReviewRunRunning, domain.VerdictNone
 	}
 	if err := st.InsertReviewRun(ctx, domain.ReviewRun{
 		ID: "run-1", ReviewID: "rev-1", SessionID: worker.ID, Harness: domain.ReviewerClaudeCode,
@@ -109,5 +115,97 @@ func TestRetireIdleReviewersKeepsPaneSharedWithFresherRow(t *testing.T) {
 	got, ok, err := eng.store.GetReviewBySessionAndHarness(ctx, worker.ID, domain.ReviewerCodex)
 	if err != nil || !ok || got.ReviewerHandleID == "" {
 		t.Fatalf("fresh row handle = %q ok=%v err=%v, want kept", got.ReviewerHandleID, ok, err)
+	}
+}
+
+// B754: an approved pass leaves nothing for the reviewer to re-check, so its
+// pane is retired after the short approved grace instead of the full one.
+func TestRetireIdleReviewersReapsApprovedPaneAfterShortGrace(t *testing.T) {
+	eng, launcher, worker := retireFixtureWithRun(t, 2*approvedRetireGrace, domain.ReviewRunComplete, domain.VerdictApproved)
+	if n, err := eng.RetireIdleReviewers(context.Background()); err != nil || n != 1 {
+		t.Fatalf("RetireIdleReviewers = %d, %v; want 1, nil", n, err)
+	}
+	if !launcher.destroyed || handleOf(t, eng, worker) != "" {
+		t.Fatal("an approved pane idle past the approved grace must be destroyed and its handle cleared")
+	}
+}
+
+// The approval stays approved once delivered to the worker.
+func TestRetireIdleReviewersReapsDeliveredApprovedPane(t *testing.T) {
+	eng, launcher, _ := retireFixtureWithRun(t, 2*approvedRetireGrace, domain.ReviewRunDelivered, domain.VerdictApproved)
+	if n, err := eng.RetireIdleReviewers(context.Background()); err != nil || n != 1 || !launcher.destroyed {
+		t.Fatalf("RetireIdleReviewers = %d, %v, destroyed=%v; want 1, nil, true", n, err, launcher.destroyed)
+	}
+}
+
+func TestRetireIdleReviewersKeepsApprovedPaneWithinShortGrace(t *testing.T) {
+	eng, launcher, worker := retireFixtureWithRun(t, approvedRetireGrace/2, domain.ReviewRunComplete, domain.VerdictApproved)
+	if n, err := eng.RetireIdleReviewers(context.Background()); err != nil || n != 0 {
+		t.Fatalf("RetireIdleReviewers = %d, %v; want 0, nil", n, err)
+	}
+	if launcher.destroyed || handleOf(t, eng, worker) == "" {
+		t.Fatal("an approved pane inside the approved grace must be kept")
+	}
+}
+
+// A changes-requested pass keeps the pane for the full grace: the worker's
+// fix is about to be re-reviewed.
+func TestRetireIdleReviewersKeepsChangesRequestedPanePastShortGrace(t *testing.T) {
+	eng, launcher, worker := retireFixtureWithRun(t, 2*approvedRetireGrace, domain.ReviewRunComplete, domain.VerdictChangesRequested)
+	if n, err := eng.RetireIdleReviewers(context.Background()); err != nil || n != 0 {
+		t.Fatalf("RetireIdleReviewers = %d, %v; want 0, nil", n, err)
+	}
+	if launcher.destroyed || handleOf(t, eng, worker) == "" {
+		t.Fatal("a changes-requested pane must be kept for the full retire grace")
+	}
+}
+
+// insertRetireRun adds a completed pass on rev-1 for prURL, offset from the
+// fixture's base timestamp.
+func insertRetireRun(t *testing.T, eng *Engine, worker domain.SessionRecord, id, prURL string, verdict domain.ReviewVerdict, at time.Time) {
+	t.Helper()
+	if err := eng.store.InsertReviewRun(context.Background(), domain.ReviewRun{
+		ID: id, ReviewID: "rev-1", SessionID: worker.ID, Harness: domain.ReviewerClaudeCode,
+		PRURL: prURL, TargetSHA: "sha1", Status: domain.ReviewRunComplete, Verdict: verdict, CreatedAt: at,
+	}); err != nil {
+		t.Fatalf("insert run %s: %v", id, err)
+	}
+}
+
+func assertRetireKeeps(t *testing.T, eng *Engine, launcher *fakeLauncher, worker domain.SessionRecord) {
+	t.Helper()
+	if n, err := eng.RetireIdleReviewers(context.Background()); err != nil || n != 0 {
+		t.Fatalf("RetireIdleReviewers = %d, %v; want 0, nil", n, err)
+	}
+	if launcher.destroyed || handleOf(t, eng, worker) == "" {
+		t.Fatal("a pane with a PR still awaiting a fix must be kept for the full retire grace")
+	}
+}
+
+// A batch inserts one run per PR with the same timestamp: one approved PR must
+// not shorten the grace while another PR's changes are still requested.
+func TestRetireIdleReviewersKeepsMixedVerdictBatchPastShortGrace(t *testing.T) {
+	eng, launcher, worker := retireFixtureWithRun(t, 2*approvedRetireGrace, domain.ReviewRunComplete, domain.VerdictApproved)
+	base := eng.clock().Add(-2 * approvedRetireGrace)
+	insertRetireRun(t, eng, worker, "run-2", "https://github.com/o/r/pull/2", domain.VerdictChangesRequested, base)
+	assertRetireKeeps(t, eng, launcher, worker)
+}
+
+// A later approval of one PR does not settle an earlier changes-requested PR.
+func TestRetireIdleReviewersKeepsEarlierChangesRequestedPRPastShortGrace(t *testing.T) {
+	eng, launcher, worker := retireFixtureWithRun(t, 2*approvedRetireGrace, domain.ReviewRunComplete, domain.VerdictChangesRequested)
+	base := eng.clock().Add(-2 * approvedRetireGrace)
+	insertRetireRun(t, eng, worker, "run-2", "https://github.com/o/r/pull/2", domain.VerdictApproved, base.Add(time.Second))
+	assertRetireKeeps(t, eng, launcher, worker)
+}
+
+// A PR re-reviewed to approval no longer holds the pane: only each PR's latest
+// verdict counts.
+func TestRetireIdleReviewersReapsPaneOnceEveryPRApproved(t *testing.T) {
+	eng, launcher, worker := retireFixtureWithRun(t, 2*approvedRetireGrace, domain.ReviewRunComplete, domain.VerdictChangesRequested)
+	base := eng.clock().Add(-2 * approvedRetireGrace)
+	insertRetireRun(t, eng, worker, "run-2", "https://github.com/o/r/pull/1", domain.VerdictApproved, base.Add(time.Second))
+	if n, err := eng.RetireIdleReviewers(context.Background()); err != nil || n != 1 || !launcher.destroyed {
+		t.Fatalf("RetireIdleReviewers = %d, %v, destroyed=%v; want 1, nil, true", n, err, launcher.destroyed)
 	}
 }

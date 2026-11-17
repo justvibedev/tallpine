@@ -12,8 +12,10 @@ import (
 // delivery. It is a var only so e2e builds can shorten it (turn_fallback_e2e.go).
 var TurnFallbackDelay = time.Minute
 
-// TurnFallbackExcerptCharacters bounds persisted final-answer excerpts.
-const TurnFallbackExcerptCharacters = 500
+// TurnFallbackExcerptCharacters bounds persisted final-answer excerpts. The report text limit
+// (MaxReportTextCharacters) is the real ceiling once the notice's own words and
+// the untrusted frame are counted.
+const TurnFallbackExcerptCharacters = 800
 
 // ErrTurnFallbackInactive means a completion was already handled or superseded.
 var ErrTurnFallbackInactive = errors.New("turn fallback is no longer pending")

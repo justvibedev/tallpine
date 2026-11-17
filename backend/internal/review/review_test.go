@@ -202,6 +202,15 @@ func (f *fakeStore) ClearReviewerHandleByHarness(_ context.Context, _ domain.Ses
 	}
 	return nil
 }
+func (f *fakeStore) SetReviewRunFocus(_ context.Context, id, focus string, author domain.ReviewFocusAuthor) error {
+	for i := range f.runs {
+		if f.runs[i].ID == id {
+			f.runs[i].Focus, f.runs[i].FocusAuthor = focus, author
+		}
+	}
+	return nil
+}
+
 func (f *fakeStore) InsertReviewRun(_ context.Context, r domain.ReviewRun) error {
 	if f.insertErr != nil {
 		winner := r

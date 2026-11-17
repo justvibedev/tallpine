@@ -5539,6 +5539,380 @@ paths:
         sessions start from, pushing when they start from the remote
       tags:
       - projects
+  /api/v1/projects/{id}/skills/custom:
+    post:
+      operationId: createProjectCustomSkill
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectCustomSkillRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Create an owner-managed custom skill from SKILL.md text (user only)
+      tags:
+      - projects
+  /api/v1/projects/{id}/skills/custom/{name}:
+    delete:
+      operationId: deleteProjectCustomSkill
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      - description: Custom skill name (one lowercase path segment).
+        in: path
+        name: name
+        required: true
+        schema:
+          description: Custom skill name (one lowercase path segment).
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Delete a custom skill (user only)
+      tags:
+      - projects
+    get:
+      operationId: getProjectCustomSkill
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      - description: Custom skill name (one lowercase path segment).
+        in: path
+        name: name
+        required: true
+        schema:
+          description: Custom skill name (one lowercase path segment).
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read a custom skill's SKILL.md and file list
+      tags:
+      - projects
+    put:
+      operationId: updateProjectCustomSkill
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      - description: Custom skill name (one lowercase path segment).
+        in: path
+        name: name
+        required: true
+        schema:
+          description: Custom skill name (one lowercase path segment).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectCustomSkillRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Replace a custom skill's SKILL.md (user only)
+      tags:
+      - projects
+  /api/v1/projects/{id}/skills/custom/import:
+    post:
+      operationId: importProjectCustomSkill
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportProjectCustomSkillRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: 'Import a local skill directory as a custom skill, text-only: SKILL.md
+        and Markdown references (user only)'
+      tags:
+      - projects
+  /api/v1/projects/{id}/skills/lsp/install:
+    get:
+      operationId: getProjectLSPInstall
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControllersProjectLSPInstallStatus'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read the project's current or last LSP install job, with its output
+        tail
+      tags:
+      - projects
+    post:
+      operationId: startProjectLSPInstall
+      parameters:
+      - description: Project identifier (registry key).
+        in: path
+        name: id
+        required: true
+        schema:
+          description: Project identifier (registry key).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ControllersProjectLSPInstallRequest'
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControllersProjectLSPInstallStatus'
+          description: Accepted
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Install an LSP plugin or language server by catalog id; runs only the
+        daemon's fixed commands, one install at a time per project
+      tags:
+      - projects
   /api/v1/projects/{id}/skills/offers/{offerId}/apply:
     post:
       operationId: applyProjectSkillOffer
@@ -16718,6 +17092,62 @@ paths:
       summary: Clean up terminated session workspaces
       tags:
       - sessions
+  /api/v1/sessions/running-agents:
+    get:
+      operationId: listRunningAgents
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunningAgentsResponse'
+          description: OK
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the sessions whose agent is still running
+      tags:
+      - sessions
+  /api/v1/sessions/running-agents/stop:
+    post:
+      operationId: stopAllAgents
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopAllAgentsResponse'
+          description: OK
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Stop every running agent, keeping its session
+      tags:
+      - sessions
   /api/v1/settings:
     get:
       operationId: getSettings
@@ -17041,6 +17471,273 @@ paths:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
       summary: Choose the default interface for new sessions
+      tags:
+      - settings
+  /api/v1/settings/skills:
+    get:
+      operationId: getAppSkills
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppSkillsResponse'
+          description: OK
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the account's skills and the app-wide custom skills with their
+        app-wide switch per role
+      tags:
+      - settings
+  /api/v1/settings/skills/custom:
+    post:
+      operationId: createAppCustomSkill
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectCustomSkillRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Create an app-wide custom skill, seen by every project, from SKILL.md
+        text (user only)
+      tags:
+      - settings
+  /api/v1/settings/skills/custom/{name}:
+    delete:
+      operationId: deleteAppCustomSkill
+      parameters:
+      - description: Custom skill name (one lowercase path segment).
+        in: path
+        name: name
+        required: true
+        schema:
+          description: Custom skill name (one lowercase path segment).
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Delete an app-wide custom skill (user only)
+      tags:
+      - settings
+    get:
+      operationId: getAppCustomSkill
+      parameters:
+      - description: Custom skill name (one lowercase path segment).
+        in: path
+        name: name
+        required: true
+        schema:
+          description: Custom skill name (one lowercase path segment).
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Read an app-wide custom skill's SKILL.md and file list
+      tags:
+      - settings
+    put:
+      operationId: updateAppCustomSkill
+      parameters:
+      - description: Custom skill name (one lowercase path segment).
+        in: path
+        name: name
+        required: true
+        schema:
+          description: Custom skill name (one lowercase path segment).
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectCustomSkillRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Replace an app-wide custom skill's SKILL.md (user only)
+      tags:
+      - settings
+  /api/v1/settings/skills/custom/import:
+    post:
+      operationId: importAppCustomSkill
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportProjectCustomSkillRequest'
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCustomSkill'
+          description: Created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: 'Import a local skill directory as an app-wide custom skill, text-only:
+        SKILL.md and Markdown references (user only)'
       tags:
       - settings
   /api/v1/settings/storage-compaction:
@@ -19296,6 +19993,20 @@ components:
       - processCount
       - cpuPercent
       - cpuMeasured
+      type: object
+    AppSkillsResponse:
+      properties:
+        harnesses:
+          items:
+            type: string
+          type: array
+        skills:
+          items:
+            $ref: '#/components/schemas/ProjectSkill'
+          type: array
+      required:
+      - harnesses
+      - skills
       type: object
     ApplyProjectSkillOfferResponse:
       properties:
@@ -22088,6 +22799,139 @@ components:
       required:
       - url
       type: object
+    ControllersProjectLSP:
+      properties:
+        mismatches:
+          items:
+            $ref: '#/components/schemas/ControllersProjectLSPMismatch'
+          type: array
+        recommendations:
+          items:
+            $ref: '#/components/schemas/ControllersProjectLSPRecommendation'
+          type: array
+      required:
+      - recommendations
+      - mismatches
+      type: object
+    ControllersProjectLSPInstallJob:
+      properties:
+        command:
+          type: string
+        error:
+          type: string
+        finishedAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        language:
+          type: string
+        output:
+          type: string
+        startedAt:
+          format: date-time
+          type: string
+        state:
+          enum:
+          - running
+          - succeeded
+          - failed
+          type: string
+        target:
+          enum:
+          - plugin
+          - binary
+          - go
+          - all
+          type: string
+      required:
+      - language
+      - target
+      - state
+      - command
+      - output
+      - startedAt
+      type: object
+    ControllersProjectLSPInstallRequest:
+      properties:
+        language:
+          type: string
+        target:
+          enum:
+          - plugin
+          - binary
+          - go
+          - all
+          type: string
+      required:
+      - language
+      - target
+      type: object
+    ControllersProjectLSPInstallStatus:
+      properties:
+        job:
+          $ref: '#/components/schemas/ControllersProjectLSPInstallJob'
+      type: object
+    ControllersProjectLSPMismatch:
+      properties:
+        language:
+          type: string
+        pluginId:
+          type: string
+        roles:
+          items:
+            type: string
+          type: array
+      required:
+      - pluginId
+      - language
+      - roles
+      type: object
+    ControllersProjectLSPRecommendation:
+      properties:
+        binary:
+          type: string
+        binaryInstall:
+          type: string
+        binaryInstallable:
+          type: boolean
+        binaryInstalled:
+          type: boolean
+        binaryProblem:
+          type: string
+        files:
+          type: integer
+        language:
+          type: string
+        pluginId:
+          type: string
+        pluginInstall:
+          type: string
+        pluginInstalled:
+          type: boolean
+        roles:
+          items:
+            $ref: '#/components/schemas/ProjectSkillRole'
+          type: array
+        toolchainInstall:
+          type: string
+        toolchainInstallable:
+          type: boolean
+      required:
+      - language
+      - files
+      - pluginId
+      - pluginInstalled
+      - pluginInstall
+      - binary
+      - binaryInstalled
+      - binaryProblem
+      - binaryInstall
+      - binaryInstallable
+      - toolchainInstall
+      - toolchainInstallable
+      - roles
+      type: object
     ControllersReleaseBuildResponse:
       properties:
         log:
@@ -23272,6 +24116,16 @@ components:
       required:
       - side
       type: object
+    CreateProjectCustomSkillRequest:
+      properties:
+        content:
+          type: string
+        name:
+          type: string
+      required:
+      - name
+      - content
+      type: object
     CreateReportRequest:
       properties:
         defer:
@@ -23634,6 +24488,14 @@ components:
           format: date-time
           type: string
         effort:
+          type: string
+        focus:
+          type: string
+        focusAuthor:
+          enum:
+          - owner
+          - orchestrator
+          - worker
           type: string
         interfaceMode:
           type: string
@@ -24147,6 +25009,16 @@ components:
       - hostId
       - apiVersion
       type: object
+    ImportProjectCustomSkillRequest:
+      properties:
+        name:
+          type: string
+        source:
+          type: string
+      required:
+      - name
+      - source
+      type: object
     ImportValidationInput:
       properties:
         importKind:
@@ -24564,6 +25436,10 @@ components:
           items:
             $ref: '#/components/schemas/DomainReviewerSurface'
           type: array
+        heldReason:
+          description: 'Why queued passes wait for the machine: machine busy (load
+            X/Y cores, reviewers A/B). Empty when the machine is not holding them.'
+          type: string
         queuedReviews:
           items:
             $ref: '#/components/schemas/DomainQueuedReviewTrigger'
@@ -25926,6 +26802,8 @@ components:
           type: boolean
         orchestratorRules:
           type: string
+        orchestratorRulesFile:
+          type: string
         planAutoApprove:
           type:
           - "null"
@@ -25952,12 +26830,18 @@ components:
           type: integer
         reviewRisk:
           $ref: '#/components/schemas/DomainReviewRiskConfig'
+        reviewerRules:
+          type: string
+        reviewerRulesFile:
+          type: string
         reviewers:
           items:
             $ref: '#/components/schemas/DomainReviewerConfig'
           type: array
         sessionPrefix:
           type: string
+        skillRoles:
+          $ref: '#/components/schemas/SkillRoles'
         skillsDeselected:
           items:
             type: string
@@ -25978,6 +26862,32 @@ components:
           type: string
         worker:
           $ref: '#/components/schemas/RoleOverride'
+      type: object
+    ProjectCustomSkill:
+      properties:
+        content:
+          type: string
+        description:
+          type: string
+        files:
+          items:
+            type: string
+          type: array
+        name:
+          type: string
+        path:
+          type: string
+        skipped:
+          items:
+            type: string
+          type: array
+      required:
+      - name
+      - description
+      - path
+      - content
+      - files
+      - skipped
       type: object
     ProjectDefaultBranchCheckResponse:
       properties:
@@ -26056,6 +26966,39 @@ components:
       required:
       - plans
       type: object
+    ProjectPlugin:
+      properties:
+        accountEnabled:
+          type: boolean
+        description:
+          type: string
+        id:
+          type: string
+        installed:
+          type: boolean
+        marketplace:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        roles:
+          items:
+            $ref: '#/components/schemas/ProjectSkillRole'
+          type: array
+        version:
+          type: string
+      required:
+      - id
+      - name
+      - marketplace
+      - description
+      - version
+      - path
+      - installed
+      - accountEnabled
+      - roles
+      type: object
     ProjectResponse:
       properties:
         project:
@@ -26089,12 +27032,19 @@ components:
       type: object
     ProjectSkill:
       properties:
+        access:
+          items:
+            $ref: '#/components/schemas/ProjectSkillAccess'
+          type: array
         convention:
           enum:
           - claude
           - agents
           - codex
           - tallpine
+          - custom
+          - custom-app
+          - reviewer-repo
           type: string
         description:
           type: string
@@ -26110,11 +27060,17 @@ components:
           type: string
         removable:
           type: boolean
+        roles:
+          items:
+            $ref: '#/components/schemas/ProjectSkillRole'
+          type: array
         scope:
           enum:
           - repo
           - user
           - tallpine
+          - custom
+          - reviewer-repo
           type: string
       required:
       - name
@@ -26125,6 +27081,27 @@ components:
       - harnesses
       - deselected
       - removable
+      - roles
+      - access
+      type: object
+    ProjectSkillAccess:
+      properties:
+        app:
+          type: boolean
+        default:
+          type: boolean
+        key:
+          type: string
+        "on":
+          type: boolean
+        set:
+          type: boolean
+      required:
+      - key
+      - "on"
+      - set
+      - default
+      - app
       type: object
     ProjectSkillCollision:
       properties:
@@ -26169,6 +27146,20 @@ components:
       - path
       - mode
       type: object
+    ProjectSkillEffect:
+      properties:
+        effect:
+          enum:
+          - enforced
+          - advisory
+          - unsupported
+          type: string
+        harness:
+          type: string
+      required:
+      - harness
+      - effect
+      type: object
     ProjectSkillHarness:
       properties:
         harness:
@@ -26181,6 +27172,7 @@ components:
           - shadowed
           - none
           - unverified
+          - listed
           type: string
       required:
       - harness
@@ -26223,6 +27215,34 @@ components:
       - path
       - kind
       type: object
+    ProjectSkillRole:
+      properties:
+        app:
+          type: boolean
+        default:
+          type: boolean
+        effects:
+          items:
+            $ref: '#/components/schemas/ProjectSkillEffect'
+          type: array
+        "on":
+          type: boolean
+        role:
+          enum:
+          - worker
+          - orchestrator
+          - reviewer
+          type: string
+        set:
+          type: boolean
+      required:
+      - role
+      - "on"
+      - set
+      - default
+      - app
+      - effects
+      type: object
     ProjectSkillsResponse:
       properties:
         agentsMd:
@@ -26243,6 +27263,8 @@ components:
           items:
             $ref: '#/components/schemas/ProjectSkillHarness'
           type: array
+        lsp:
+          $ref: '#/components/schemas/ControllersProjectLSP'
         offers:
           items:
             $ref: '#/components/schemas/ProjectSkillOffer'
@@ -26252,6 +27274,10 @@ components:
         pendingCommit:
           items:
             type: string
+          type: array
+        plugins:
+          items:
+            $ref: '#/components/schemas/ProjectPlugin'
           type: array
         projectId:
           type: string
@@ -26273,6 +27299,8 @@ components:
       - pendingCommit
       - skills
       - collisions
+      - plugins
+      - lsp
       type: object
     ProjectSummary:
       properties:
@@ -26845,6 +27873,14 @@ components:
           type:
           - "null"
           - string
+        focus:
+          type: string
+        focusAuthor:
+          enum:
+          - owner
+          - orchestrator
+          - worker
+          type: string
         githubReviewId:
           type: string
         harness:
@@ -26942,6 +27978,15 @@ components:
       - ok
       - sessionId
       type: object
+    RunningAgentsResponse:
+      properties:
+        sessionIds:
+          items:
+            type: string
+          type: array
+      required:
+      - sessionIds
+      type: object
     SaveRenderArtifactRequest:
       properties:
         title:
@@ -27031,6 +28076,8 @@ components:
     SendSessionMessageResponse:
       properties:
         deliveryId:
+          type: string
+        heldUntil:
           type: string
         message:
           type: string
@@ -29227,6 +30274,12 @@ components:
       - reportBatches
       - turnFallbacks
       type: object
+    SkillRoles:
+      additionalProperties:
+        additionalProperties:
+          type: boolean
+        type: object
+      type: object
     SpawnOrchestratorRequest:
       properties:
         approvalMode:
@@ -29295,6 +30348,8 @@ components:
         clientRequestId:
           maxLength: 128
           type: string
+        codeIntel:
+          type: boolean
         displayName:
           maxLength: 100
           type: string
@@ -29636,6 +30691,23 @@ components:
       required:
       - outcome
       - duplicate
+      type: object
+    StopAllAgentsResponse:
+      properties:
+        failures:
+          items:
+            type: string
+          type: array
+        ok:
+          type: boolean
+        stopped:
+          items:
+            type: string
+          type: array
+      required:
+      - ok
+      - stopped
+      - failures
       type: object
     StopBackgroundTaskRequest:
       properties:
@@ -29982,6 +31054,13 @@ components:
           description: Turn on the worker session's review auto-inject once a pass
             has started, so the reviewer's PR review comments reach the worker.
           type: boolean
+        focus:
+          description: 'One-off review focus for this pass only, at most 2000 characters
+            (400 when longer). It survives an automatic retry and a queued rerun,
+            never a later pass. The reviewer frames it by who sent it, read from the
+            credentials: a person''s or the orchestrator''s focus is checked first;
+            a worker''s is an untrusted hint that does not narrow the review.'
+          type: string
         harness:
           enum:
           - claude-code
@@ -30033,6 +31112,10 @@ components:
           description: True when a new review pass was started; false when an existing
             run for the same commit was reused.
           type: boolean
+        heldReason:
+          description: 'Set when the pass was queued because the machine is busy:
+            machine busy (load X/Y cores, reviewers A/B).'
+          type: string
         queued:
           description: True when the reviewer was busy on another head and the pass
             was queued to start once it is free; nothing was created yet.
@@ -30385,6 +31468,13 @@ components:
           type:
           - "null"
           - array
+      type: object
+    UpdateProjectCustomSkillRequest:
+      properties:
+        content:
+          type: string
+      required:
+      - content
       type: object
     UpdateProjectSettingsInput:
       properties:

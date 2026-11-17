@@ -3,6 +3,7 @@ package settingswrite
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
@@ -12,6 +13,10 @@ import (
 
 // setWorkflowDefault writes one app-wide workflow default (B525).
 func (w *Writer) setWorkflowDefault(ctx context.Context, key settingsreg.Key, raw json.RawMessage, plan []planned) error {
+	// The app rules and skill switches (B740) live in the same stored object.
+	if !strings.HasPrefix(string(key), "app.workflowDefaults.") {
+		return w.setAppInstruction(ctx, key, raw)
+	}
 	setter, ok := w.AppSettings.(interface {
 		SetWorkflowDefaults(ctx context.Context, update settingssvc.WorkflowDefaultsUpdate) (settingssvc.Snapshot, error)
 	})
@@ -104,4 +109,36 @@ func fillRoleUpdate(agent **domain.AgentHarness, model, effort **string, role st
 	case prefix + "Effort":
 		setString(effort, raw)
 	}
+}
+
+// setAppInstruction writes one app-wide rules text or the app skill switches
+// (B740 a15); they live with the workflow defaults.
+func (w *Writer) setAppInstruction(ctx context.Context, key settingsreg.Key, raw json.RawMessage) error {
+	setter, ok := w.AppSettings.(interface {
+		SetWorkflowDefaults(ctx context.Context, update settingssvc.WorkflowDefaultsUpdate) (settingssvc.Snapshot, error)
+	})
+	if !ok {
+		return appError(ports.ErrChatUnsupported)
+	}
+	var update settingssvc.WorkflowDefaultsUpdate
+	if key == "app.skillRoles" {
+		var roles domain.SkillRoles
+		_ = json.Unmarshal(raw, &roles)
+		update.SkillRoles = &roles
+	} else {
+		var text string
+		_ = json.Unmarshal(raw, &text)
+		switch key {
+		case "app.workerRules":
+			update.WorkerRules = &text
+		case "app.orchestratorRules":
+			update.OrchestratorRules = &text
+		default:
+			update.ReviewerRules = &text
+		}
+	}
+	if _, err := setter.SetWorkflowDefaults(ctx, update); err != nil {
+		return appError(err)
+	}
+	return nil
 }

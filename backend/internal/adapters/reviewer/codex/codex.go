@@ -12,6 +12,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/brand"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
+	"tallpine.eu/tallpine/backend/pkg/agentruntime"
 )
 
 // Reviewer is the codex code-review adapter.
@@ -45,8 +46,8 @@ var _ ports.ReviewerChatProfile = (*Reviewer)(nil)
 // ReviewChatHarness selects Codex's typed app-server driver for review runs.
 func (r *Reviewer) ReviewChatHarness() domain.AgentHarness { return domain.HarnessCodex }
 
-// ReviewCommand launches the reviewer with an enforced read-only filesystem
-// sandbox. Auto approval lets the headless session request the narrowly needed
+// ReviewCommand launches the reviewer outside the checkout (codexReviewArgs)
+// with an enforced read-only filesystem sandbox. Auto approval lets the headless session request the narrowly needed
 // network access for posting the review and reporting its result.
 func (r *Reviewer) ReviewCommand(ctx context.Context, inv ports.ReviewInvocation) (ports.ReviewCommandSpec, error) {
 	argv, err := r.agent.GetLaunchCommand(ctx, ports.LaunchConfig{
@@ -62,11 +63,11 @@ func (r *Reviewer) ReviewCommand(ctx context.Context, inv ports.ReviewInvocation
 	if err != nil {
 		return ports.ReviewCommandSpec{}, err
 	}
-	extra, err := codexReadOnlyArgs(inv)
+	extra, cwd, err := codexReviewArgs(inv)
 	if err != nil {
 		return ports.ReviewCommandSpec{}, err
 	}
-	return ports.ReviewCommandSpec{Argv: insertBeforePrompt(argv, extra...)}, nil
+	return ports.ReviewCommandSpec{Argv: insertBeforePrompt(argv, extra...), WorkingDirectory: cwd}, nil
 }
 
 // ReviewRestoreCommand resumes the reviewer Codex conversation captured from
@@ -76,11 +77,12 @@ func (r *Reviewer) ReviewRestoreCommand(ctx context.Context, inv ports.ReviewInv
 	if err != nil || !ok {
 		return cmd, ok, err
 	}
-	extra, err := codexReadOnlyArgs(inv)
+	extra, cwd, err := codexReviewArgs(inv)
 	if err != nil {
 		return ports.ReviewCommandSpec{}, false, err
 	}
 	cmd.Argv = insertBeforeLastArg(cmd.Argv, extra...)
+	cmd.WorkingDirectory = cwd
 	return cmd, true, nil
 }
 
@@ -119,6 +121,28 @@ func insertBeforeLastArg(argv []string, extra ...string) []string {
 	out = append(out, argv[:len(argv)-1]...)
 	out = append(out, extra...)
 	return append(out, argv[len(argv)-1])
+}
+
+// codexReviewArgs is the read-only sandbox args plus the reviewer's neutral
+// working directory. Codex loads AGENTS.md and .agents/skills from its working
+// directory up to the git root, so the reviewer runs outside the PR checkout it
+// reviews; the read-only sandbox still reads the checkout by absolute path. -C
+// pins the directory for `codex resume` too, which would otherwise ask whether
+// to use the directory the conversation was recorded in. The directory is
+// marked trusted like a worker workspace, so the interactive TUI never stops at
+// the "Do you trust this directory?" dialog; it is empty and Tallpine-owned, so
+// trusting it loads no project config.
+func codexReviewArgs(inv ports.ReviewInvocation) ([]string, string, error) {
+	cwd, err := ports.ReviewerNeutralDir(inv.TaskPromptRoot, string(domain.ReviewerCodex))
+	if err != nil {
+		return nil, "", err
+	}
+	extra, err := codexReadOnlyArgs(inv)
+	if err != nil {
+		return nil, "", err
+	}
+	args := append([]string{"-C", cwd}, agentruntime.CodexWorkspaceTrustArgs(cwd)...)
+	return append(args, extra...), cwd, nil
 }
 
 func codexReadOnlyArgs(inv ports.ReviewInvocation) ([]string, error) {

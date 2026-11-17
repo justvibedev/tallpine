@@ -52,4 +52,46 @@ describe("createQuitConfirmController", () => {
 		expect(hidden.quit).toHaveBeenCalledOnce();
 		expect(hidden.requestConfirm).not.toHaveBeenCalled();
 	});
+
+	describe("B753: one confirmation when agents are running", () => {
+		const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+		function withAgents(running: boolean) {
+			const requestConfirm = vi.fn();
+			const quit = vi.fn();
+			const controller = createQuitConfirmController({
+				canConfirm: () => true,
+				requestConfirm,
+				quit,
+				quitWillAsk: async () => running,
+			});
+			return { controller, requestConfirm, quit };
+		}
+
+		it("⌘Q skips the shell's dialog when the quit will ask about running agents", async () => {
+			const { controller, requestConfirm, quit } = withAgents(true);
+			controller.menuQuit(true);
+			await flush();
+			expect(requestConfirm).not.toHaveBeenCalled();
+			expect(quit).toHaveBeenCalledOnce();
+		});
+
+		it("⌘Q still asks in the shell when no agent is running", async () => {
+			const { controller, requestConfirm, quit } = withAgents(false);
+			controller.menuQuit(true);
+			await flush();
+			expect(requestConfirm).toHaveBeenCalledOnce();
+			expect(quit).not.toHaveBeenCalled();
+			controller.resolve(true);
+			expect(quit).toHaveBeenCalledOnce();
+		});
+
+		it("a second ⌘Q while the check runs quits once", async () => {
+			const { controller, requestConfirm, quit } = withAgents(false);
+			controller.menuQuit(true);
+			controller.menuQuit(true);
+			await flush();
+			expect(quit).toHaveBeenCalledOnce();
+			expect(requestConfirm).not.toHaveBeenCalled();
+		});
+	});
 });

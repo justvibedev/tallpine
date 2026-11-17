@@ -12,6 +12,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/service/cleanup"
+	"tallpine.eu/tallpine/backend/internal/service/machineload"
 	settingssvc "tallpine.eu/tallpine/backend/internal/service/settings"
 )
 
@@ -66,6 +67,12 @@ func appSettings() []Setting {
 		{Key: "app.providerEventRetentionDays", Scope: ScopeApp, Kind: KindInt, Default: jsonOf(settingssvc.DefaultProviderEventRetentionDays),
 			Min: bound(settingssvc.MinProviderEventRetentionDays), Max: bound(settingssvc.MaxProviderEventRetentionDays),
 			Description: "Days provider events of a terminated session are kept while compaction is on.", Writers: user, MDMLockable: true},
+		{Key: "app.machineLoad.maxReviewers", Scope: ScopeApp, Kind: KindInt, Default: jsonOf(machineload.DefaultMaxReviewers), Min: bound(0), Max: bound(machineload.MaxReviewersCeiling),
+			Env: []string{machineload.EnvMaxReviewers}, EnvOverride: machineLimit(machineload.MaxReviewersCeiling),
+			Description: "Most native reviewers that may have a pass running at once on this machine, across every project. A new automatic or agent-requested review waits for a slot; your own manual review never waits. 0 turns the cap off.", Writers: user},
+		{Key: "app.machineLoad.loadPercent", Scope: ScopeApp, Kind: KindInt, Default: jsonOf(machineload.DefaultLoadPercent), Min: bound(0), Max: bound(machineload.LoadPercentCeiling),
+			Env: []string{machineload.EnvLoadPercent}, EnvOverride: machineLimit(machineload.LoadPercentCeiling),
+			Description: "One-minute load, as a percentage of this machine's cores, at or above which a new automatic or agent-requested review waits. Your own manual review never waits. 0 turns the load check off.", Writers: user},
 		{Key: "app.daemon.peerCheck", Scope: ScopeApp, Kind: KindEnum, Enum: []string{settingssvc.PeerCheckDefault, settingssvc.PeerCheckOff}, Default: jsonOf(settingssvc.PeerCheckDefault),
 			Description: "Whether the daemon refuses callers " + brand.ProductName + " did not start, on a signed macOS build. default refuses them; off lets any process holding a token in. Only the desktop app can change it.", Writers: user},
 	}
@@ -151,6 +158,17 @@ func cleanupSettings() []Setting {
 		})
 	}
 	return out
+}
+
+// machineLimit is the EnvOverride of a machine-load limit: a whole number in
+// [0, ceiling] forces that value; anything else leaves it to the user.
+func machineLimit(ceiling int) func(string) (json.RawMessage, bool) {
+	return func(text string) (json.RawMessage, bool) {
+		if n, ok := machineload.ParseLimit(text, ceiling); ok {
+			return jsonOf(n), true
+		}
+		return nil, false
+	}
 }
 
 // killSwitch is the EnvOverride of a setting whose variable can only turn it

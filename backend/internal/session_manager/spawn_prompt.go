@@ -66,9 +66,12 @@ func projectKindForSession(project domain.ProjectRecord, projectID domain.Projec
 // empty input box rather than receiving an auto-generated kickoff turn.
 func (m *Manager) buildSpawnTexts(ctx context.Context, cfg ports.SpawnConfig, sessionID domain.SessionID) (prompt, systemPrompt string, err error) {
 	prompt = buildPrompt(cfg)
-	systemPrompt, err = m.buildSystemPromptFor(ctx, cfg.Kind, cfg.ProjectID, sessionID, cfg.RequestedOutput, cfg.Role, domain.NormalizeSessionMode(cfg.RequestedMode) == domain.SessionModeChat)
+	systemPrompt, err = m.buildSystemPromptFor(ctx, cfg.Kind, cfg.ProjectID, sessionID, cfg.RequestedOutput, cfg.Role, cfg.Harness, domain.NormalizeSessionMode(cfg.RequestedMode) == domain.SessionModeChat)
 	if err != nil {
 		return "", "", err
+	}
+	if cfg.CodeIntel {
+		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n" + domain.CodeIntelPrompt)
 	}
 	return prompt, systemPrompt, nil
 }
@@ -81,13 +84,14 @@ func (m *Manager) buildSpawnTexts(ctx context.Context, cfg ports.SpawnConfig, se
 // agent runs as a chat session, the only mode with the html tools and tallpine render.
 // requestedOutput is the deliverable requested at spawn.
 func (m *Manager) buildSystemPrompt(ctx context.Context, kind domain.SessionKind, projectID domain.ProjectID, sessionID domain.SessionID, requestedOutput domain.RequestedOutput, chat bool) (string, error) {
-	return m.buildSystemPromptFor(ctx, kind, projectID, sessionID, requestedOutput, "", chat)
+	return m.buildSystemPromptFor(ctx, kind, projectID, sessionID, requestedOutput, "", "", chat)
 }
 
 // buildSystemPromptFor is buildSystemPrompt for a session with a special role:
 // a planner (B205) gets the planner section, and the artifact section is
-// replaced by it.
-func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionKind, projectID domain.ProjectID, sessionID domain.SessionID, requestedOutput domain.RequestedOutput, role domain.SessionRole, chat bool) (string, error) {
+// replaced by it. harness is the session's agent ("" when unknown), for the
+// agent-type skill switches.
+func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionKind, projectID domain.ProjectID, sessionID domain.SessionID, requestedOutput domain.RequestedOutput, role domain.SessionRole, harness domain.AgentHarness, chat bool) (string, error) {
 	project, err := m.loadProject(ctx, projectID)
 	if err != nil {
 		return "", err
@@ -100,10 +104,15 @@ func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionK
 	if kind == domain.KindOrchestrator {
 		cfg.Project.AvailableAgents = m.readyAgents()
 	}
+	app := m.workflowDefaults(ctx).AppInstructions
 
 	switch kind {
 	case domain.KindOrchestrator:
-		cfg.OrchestratorRules = project.Config.OrchestratorRules
+		rules, err := m.orchestratorProjectRules(sessionID, project)
+		if err != nil {
+			return "", err
+		}
+		cfg.AppRules, cfg.OrchestratorRules = m.layerRules(sessionID, project, app, domain.SkillRoleOrchestrator, rules, "orchestratorRules/orchestratorRulesFile")
 		if m.plannerEnabled {
 			cfg.AdditionalSections = append(cfg.AdditionalSections, fmt.Sprintf(plannerOrchestratorPrompt, plannerModeRule(m.planningModeFor(ctx, project.Config))))
 		}
@@ -124,7 +133,7 @@ func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionK
 		if err != nil {
 			return "", err
 		}
-		cfg.ProjectRules = rules
+		cfg.AppRules, cfg.ProjectRules = m.layerRules(sessionID, project, app, domain.SkillRoleWorker, rules, "agentRules/agentRulesFile")
 		cfg.VerifyCommand = project.Config.VerifyCommand
 	default:
 		return "", nil
@@ -138,6 +147,12 @@ func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionK
 		if workspacePrompt != "" {
 			cfg.AdditionalSections = append(cfg.AdditionalSections, workspacePrompt)
 		}
+	}
+	if section := skillsOffSection(project.Config, app.SkillRoles, kind, harness); section != "" {
+		cfg.AdditionalSections = append(cfg.AdditionalSections, section)
+	}
+	if section := m.skillsAvailableSection(project, app.SkillRoles, kind, harness); section != "" {
+		cfg.AdditionalSections = append(cfg.AdditionalSections, section)
 	}
 	if pointer := strings.TrimSpace(m.tallpineSkillPointer(chat)); pointer != "" {
 		cfg.AdditionalSections = append(cfg.AdditionalSections, pointer)
@@ -153,7 +168,11 @@ func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionK
 	} else if kind == domain.KindWorker && requestedOutput == domain.RequestedOutputArtifact {
 		cfg.AdditionalSections = append(cfg.AdditionalSections, artifactOutputPrompt)
 	}
-	return buildSystemPromptText(cfg), nil
+	text := buildSystemPromptText(cfg)
+	if kind == domain.KindWorker && role == "" && domain.CodeIntelApplies(kind, harness) && m.sessionLaunchOptions(ctx, sessionID).CodeIntel {
+		text = strings.TrimSpace(text + "\n\n" + domain.CodeIntelPrompt)
+	}
+	return text, nil
 }
 
 // workerProjectRules is the project rules section of a worker system prompt:
@@ -173,6 +192,35 @@ func (m *Manager) workerProjectRules(sessionID domain.SessionID, project domain.
 		m.logger.Warn("worker project rules over cap; truncated", "session", sessionID, "project", project.ID, "limitBytes", domain.MaxAgentRulesBytes)
 	}
 	return rules, nil
+}
+
+// orchestratorProjectRules is orchestratorRules plus orchestratorRulesFile,
+// read and capped like the worker rules.
+func (m *Manager) orchestratorProjectRules(sessionID domain.SessionID, project domain.ProjectRecord) (string, error) {
+	rules, truncated, err := buildProjectRules(projectRulesConfig{
+		ProjectPath:    project.Path,
+		AgentRules:     project.Config.OrchestratorRules,
+		AgentRulesFile: project.Config.OrchestratorRulesFile,
+		Key:            "orchestratorRules",
+	})
+	if err != nil {
+		return "", err
+	}
+	if truncated {
+		m.logger.Warn("orchestrator project rules over cap; truncated", "session", sessionID, "project", project.ID, "limitBytes", domain.MaxAgentRulesBytes)
+	}
+	return rules, nil
+}
+
+// layerRules puts the app-wide rules of role before the project's own
+// (B740 a15): each layer capped on its own, then both together, any cut
+// marked in the text and logged.
+func (m *Manager) layerRules(sessionID domain.SessionID, project domain.ProjectRecord, app domain.AppInstructions, role, rules, projectLabel string) (appRules, projectRules string) {
+	l := domain.LayerRules(role, app.RulesFor(role), rules, projectLabel)
+	if l.Capped {
+		m.logger.Warn("app and project rules over cap; truncated", "session", sessionID, "project", project.ID, "role", role, "limitBytes", domain.MaxLayeredRulesBytes)
+	}
+	return l.App, l.Project
 }
 
 // WorkerInstructions returns the project rules section a worker session

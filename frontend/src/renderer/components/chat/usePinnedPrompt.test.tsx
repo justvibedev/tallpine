@@ -97,4 +97,15 @@ describe("PinnedPrompt", () => {
 		expect(screen.getByTestId("pinned-prompt")).toHaveTextContent("second prompt");
 		expect(onJump).toHaveBeenCalledOnce();
 	});
+
+	it("is an opaque layer with a divider so content scrolling beneath never shows through", () => {
+		render(<PinnedPrompt text="second prompt" onJump={vi.fn()} />);
+		const cls = screen.getByTestId("pinned-prompt").className.split(/\s+/);
+		// Bound to the solid theme copies (opaque in light, dark and translucent-window modes), never a tinted token or alpha.
+		expect(cls).toContain("bg-[var(--solid-bg-tertiary,var(--color-bg-tertiary))]");
+		expect(cls).toContain("hover:bg-[var(--solid-bg-secondary,var(--color-bg-secondary))]");
+		expect(cls.some((c) => /^bg-[a-z-]+\/\d+$/.test(c) || c === "bg-raised" || c === "backdrop-blur")).toBe(false);
+		expect(cls).toContain("border-b");
+		expect(cls).toContain("shadow-sm");
+	});
 });

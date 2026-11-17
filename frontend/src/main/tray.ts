@@ -2,32 +2,16 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from "electron";
 import { PRODUCT_NAME } from "../shared/brand";
-// A tray-only catalog: importing the renderer's catalogs put every locale file
-// (1.3 MB) into main.js. Regenerate with `node scripts/sync-tray-catalog.mjs`.
-import { trayCatalogs, type TrayMessageKey } from "./tray-catalog.generated";
+import type { TrayMessageKey } from "./tray-catalog.generated";
+import { trayText } from "./tray-text";
 import type { AppLocale } from "../shared/ui-locale";
-
-type MessageKey = TrayMessageKey;
-type PluralMessageKey = TrayMessageKey extends infer Key extends string
-	? Key extends `${infer Base}_${"one" | "other"}`
-		? Base
-		: never
-	: never;
-
-function catalogFor(locale: AppLocale): Record<TrayMessageKey, string> {
-	return trayCatalogs[locale] ?? trayCatalogs.en;
-}
 import type { TrayAttentionState, TrayAttentionZone, TrayOpenSessionTarget, TraySessionEntry } from "../shared/tray";
 
 const MAX_MENU_SESSIONS = 8;
 
 const zoneRank: Record<TrayAttentionZone, number> = { merge: 0, action: 1 };
 
-const zoneLabelKey: Record<TrayAttentionZone, MessageKey> = { merge: "zone.merge", action: "zone.action" };
-
-function format(template: string, vars: Record<string, string | number>): string {
-	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => String(vars[key] ?? match));
-}
+const zoneLabelKey: Record<TrayAttentionZone, TrayMessageKey> = { merge: "zone.merge", action: "zone.action" };
 
 function trayIconPath(): string | undefined {
 	const candidate = app.isPackaged
@@ -47,6 +31,8 @@ export type TrayControllerOptions = {
 	focusWindow: () => void;
 	openSession: (target: TrayOpenSessionTarget) => void;
 	quitCompletely: () => void;
+	/** Stops every running agent, after asking. Absent hides the item. */
+	stopAllAgents?: () => void;
 	locale: AppLocale;
 };
 
@@ -59,17 +45,9 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
 
 	const tray = new Tray(icon);
 	let sessions: TraySessionEntry[] = [];
-	let catalog = catalogFor(options.locale);
-
-	const t = (key: MessageKey, vars?: Record<string, string | number>): string => {
-		const raw = catalog[key] ?? key;
-		return format(raw, { brand: PRODUCT_NAME, ...vars });
-	};
-
-	const tPlural = (base: PluralMessageKey, count: number): string => {
-		const key = (count === 1 ? `${base}_one` : `${base}_other`) as MessageKey;
-		return t(key, { count });
-	};
+	let text = trayText(options.locale);
+	const t: typeof text.t = (key, vars) => text.t(key, vars);
+	const tPlural: typeof text.plural = (base, count) => text.plural(base, count);
 
 	const sessionItem = (entry: TraySessionEntry): MenuItemConstructorOptions => {
 		const title = entry.title || t("tray.untitledSession");
@@ -110,6 +88,8 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
 		}
 		items.push({ type: "separator" });
 		items.push({ label: t("tray.show"), click: () => options.focusWindow() });
+		const { stopAllAgents } = options;
+		if (stopAllAgents) items.push({ label: t("tray.stopAgents"), click: () => stopAllAgents() });
 		items.push({ label: t("tray.quit"), click: () => options.quitCompletely() });
 		tray.setContextMenu(Menu.buildFromTemplate(items));
 	};
@@ -122,7 +102,7 @@ export function createTrayController(options: TrayControllerOptions): TrayContro
 			render();
 		},
 		setLocale(locale) {
-			catalog = catalogFor(locale);
+			text = trayText(locale);
 			render();
 		},
 		clear() {

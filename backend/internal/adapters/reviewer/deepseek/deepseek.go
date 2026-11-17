@@ -44,7 +44,8 @@ func (r *Reviewer) InvalidateBinaryResolution() {
 
 // ReviewCommand launches the worker's headless profile with the file sandbox
 // pinned to read-only (workeragent.ReadOnlyArgs) and the permission-mode env
-// set the same way, so the reviewer cannot write to the checkout.
+// set the same way, so the reviewer cannot write to the checkout, and runs it
+// outside the checkout (reviewerDir) so the PR head's agent config is not loaded.
 func (r *Reviewer) ReviewCommand(ctx context.Context, inv ports.ReviewInvocation) (ports.ReviewCommandSpec, error) {
 	argv, err := r.agent.GetLaunchCommand(ctx, ports.LaunchConfig{
 		Policy:           inv.Policy,
@@ -64,7 +65,11 @@ func (r *Reviewer) ReviewCommand(ctx context.Context, inv ports.ReviewInvocation
 	if err != nil {
 		return ports.ReviewCommandSpec{}, err
 	}
-	return ports.ReviewCommandSpec{Argv: insertBeforeLastArg(argv, extra...), Env: readOnlyEnv()}, nil
+	cwd, err := reviewerDir(inv)
+	if err != nil {
+		return ports.ReviewCommandSpec{}, err
+	}
+	return ports.ReviewCommandSpec{Argv: insertBeforeLastArg(argv, extra...), Env: readOnlyEnv(), WorkingDirectory: cwd}, nil
 }
 
 // ReviewRestoreCommand resumes a captured DeepSeek session read-only; ok is
@@ -78,8 +83,13 @@ func (r *Reviewer) ReviewRestoreCommand(ctx context.Context, inv ports.ReviewInv
 	if err != nil {
 		return ports.ReviewCommandSpec{}, false, err
 	}
+	cwd, err := reviewerDir(inv)
+	if err != nil {
+		return ports.ReviewCommandSpec{}, false, err
+	}
 	cmd.Argv = insertBeforeLastArg(cmd.Argv, extra...)
 	cmd.Env = readOnlyEnv()
+	cmd.WorkingDirectory = cwd
 	return cmd, true, nil
 }
 
@@ -91,6 +101,17 @@ func (r *Reviewer) ReviewMessage(_ context.Context, inv ports.ReviewInvocation) 
 // ReviewCancel interrupts the one-shot headless run with the terminal interrupt.
 func (r *Reviewer) ReviewCancel(context.Context) (ports.ReviewCancelSpec, error) {
 	return ports.ReviewCancelSpec{Mode: ports.ReviewCancelInterrupt, Interrupts: 2}, nil
+}
+
+// reviewerDir is the neutral working directory the reviewer runs in. dsh's
+// agent-instructions plugin loads AGENTS.md and CLAUDE.md from the project root
+// down to the session cwd (and nested ones only below that cwd), and its
+// skill-filesystem plugin scans <projectRoot>/.agents/skills and .dsh/skills,
+// so a reviewer started in the PR checkout would take instructions from the
+// head it reviews. dsh's read-only sandbox leaves reads unconfined, so the
+// reviewer still reads the checkout by absolute path.
+func reviewerDir(inv ports.ReviewInvocation) (string, error) {
+	return ports.ReviewerNeutralDir(inv.TaskPromptRoot, string(domain.ReviewerDeepSeek))
 }
 
 func readOnlyEnv() map[string]string {

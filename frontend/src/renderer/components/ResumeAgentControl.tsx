@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Play } from "lucide-react";
 import { tallpineBridge } from "../lib/bridge";
 import { apiErrorMessage } from "../lib/api-client";
-import { clientForSessionHost } from "../lib/host-clients";
+import { postResumeAgent } from "../lib/resume-agent-request";
 import { workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
 import { useCanResumeAgent } from "../hooks/useCanResumeAgent";
 import { usesPreviewWorkspaceData as usePreviewData } from "../lib/preview-mode";
@@ -36,9 +36,7 @@ export function ResumeAgentControl({
 		mutationKey: ["resume-agent", hostId ?? "local", session.id],
 		mutationFn: async () => {
 			if (usePreviewData) return;
-			const { data, error, response } = await clientForSessionHost(hostId).POST("/api/v1/sessions/{sessionId}/resume-agent", {
-				params: { path: { sessionId: session.id } },
-			});
+			const { data, error, response } = await postResumeAgent(session.id, hostId);
 			if (error) throw new Error(apiErrorMessage(error, `Failed to resume agent (${response.status})`));
 			return data;
 		},

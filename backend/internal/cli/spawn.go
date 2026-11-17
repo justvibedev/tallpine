@@ -47,6 +47,7 @@ type spawnOptions struct {
 	backlogForce    bool
 	plan            string
 	allowDuplicate  bool
+	codeIntel       bool
 }
 
 type spawnResult struct {
@@ -205,6 +206,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 				BacklogForce:          opts.backlogForce,
 				BacklogPlan:           opts.plan,
 				BacklogAllowDuplicate: opts.allowDuplicate,
+				CodeIntel:             opts.codeIntel,
 			}
 			var res spawnResult
 			if err := ctx.postSetupJSON(cmd.Context(), "sessions", req, &res); err != nil {
@@ -227,7 +229,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 				}
 			}
 			out := cmd.OutOrStdout()
-			if err := writeSpawnConfirmation(out, res, name, claimed); err != nil {
+			if err := writeSpawnConfirmation(out, cmd.ErrOrStderr(), res, name, claimed); err != nil {
 				return err
 			}
 			if opts.claimPR != "" {
@@ -258,6 +260,7 @@ func newSpawnCommand(ctx *commandContext) *cobra.Command {
 	f.StringVar(&opts.effort, "effort", "", "Reasoning effort override for this session only (e.g. low, medium, high); empty defers to the agent/model default")
 	f.StringVar(&opts.issue, "issue", "", "Issue id to associate with the session")
 	f.StringVar(&opts.backlog, "backlog", "", "Backlog item ref (e.g. B12) to work on: its title, note, done-when and agent notes join the task, and the session is linked to it")
+	f.BoolVar(&opts.codeIntel, "code-intel", false, "Code intelligence mode for a Claude Code worker: navigate Go/TS code with the LSP tool, with shell grep/rg and the Grep tool denied. Use for rename, refactor and interface implementation/caller work; other agents ignore it. Works with --backlog and --issue")
 	f.BoolVar(&opts.allowDuplicate, "allow-duplicate", false, "With --backlog, start the item even if a live session already holds it (--force does not imply this)")
 	f.StringVar(&opts.plan, "plan", "", "With --backlog, who plans an item that needs a plan: in-place (the spawned implementer writes the plan, waits read-only for approval, then builds; needs the project's planInPlace setting) or separate (a planner session via `tallpine plan start`). Default: follows the project's planInPlace setting")
 	f.BoolVar(&opts.backlogForce, "force", false, "With --backlog, start the item even if it is held or has an open blocker")

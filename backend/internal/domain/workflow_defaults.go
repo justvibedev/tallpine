@@ -33,6 +33,9 @@ type WorkflowDefaults struct {
 	OrchestratorAgent  AgentHarness `json:"orchestratorAgent,omitempty"`
 	OrchestratorModel  string       `json:"orchestratorModel,omitempty"`
 	OrchestratorEffort string       `json:"orchestratorEffort,omitempty"`
+	// AppInstructions are the app-wide rules and skill switches (B740), kept
+	// in the same stored object (its fields are inlined).
+	AppInstructions
 }
 
 // ApplyNewProjectRoles fills the worker and orchestrator agent, model and

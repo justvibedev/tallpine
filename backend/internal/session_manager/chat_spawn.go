@@ -136,7 +136,8 @@ func (m *Manager) launchChatController(ctx context.Context, in chatSpawn) (domai
 	// launch-only one PrepareControllerEnv returns, so it must carry them too.
 	// Pinned for any starting harness: a provider switch to Claude clones this
 	// env, and other drivers ignore the variable.
-	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, in.record.Kind, in.project.Config)
+	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, in.record.Kind, in.project.Config, m.workflowDefaults(ctx).SkillRoles, m.skillInventory(in.project.Path, in.project.Config.Env))
+	pinCodeIntel(env, in.cfg.CodeIntel)
 	if agent, ok := m.agents.Agent(in.cfg.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 		// Chat launches go through the same workspace preparation as terminal

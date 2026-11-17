@@ -180,7 +180,8 @@ func (m *Manager) freshLaunchOptions(ctx context.Context, harness domain.AgentHa
 		envWindow := harness == domain.HarnessClaudeCode && project.Env[contextwindow.ClaudeAutoCompactWindowEnv] != ""
 		options.AutoCompactWindow = domain.DefaultAutoCompactChoice(kind, project, harnessDefault, envWindow)
 	}
-	options.EnabledPlugins, options.AutoMemoryOff = project.ClaudeLaunchFor(domain.SessionRoleFor(kind))
+	_, options.AutoMemoryOff = project.ClaudeLaunchFor(domain.SessionRoleFor(kind))
+	options.Skills, options.EnabledPlugins = roleSkillLaunch(m.launchSkillInventory(m.projectPath(ctx, projectID), project.Env, harness), project, m.workflowDefaults(ctx).SkillRoles, kind, harness)
 	options.ShellOutputChars = domain.ShellOutputLimit(project.Env)
 	options = m.withModelWindow(ctx, harness, projectID, model, options)
 	// The baseline and the model window are read for any agent that takes a

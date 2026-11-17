@@ -5,10 +5,11 @@ import (
 	"io"
 )
 
-// writeSpawnConfirmation prints what the daemon answered a spawn with: its
-// warnings, the "spawned session" line (the display name, falling back to
+// writeSpawnConfirmation prints what the daemon answered a spawn with. Its
+// warnings are advisory and go to warnOut (stderr) so scripts parsing stdout
+// keep seeing the result first; out gets the "spawned session" line (the display name, falling back to
 // name, the status, the claimed PR and prompt sizes) and the compaction line.
-func writeSpawnConfirmation(out io.Writer, res spawnResult, name, claimed string) error {
+func writeSpawnConfirmation(out, warnOut io.Writer, res spawnResult, name, claimed string) error {
 	claimLabel := ""
 	if claimed != "" {
 		claimLabel = fmt.Sprintf(" (claimed %s)", claimed)
@@ -32,7 +33,7 @@ func writeSpawnConfirmation(out io.Writer, res spawnResult, name, claimed string
 		status = "starting"
 	}
 	for _, warning := range res.Warnings {
-		if _, err := fmt.Fprintf(out, "warning: %s\n", warning); err != nil {
+		if _, err := fmt.Fprintf(warnOut, "warning: %s\n", warning); err != nil {
 			return err
 		}
 	}

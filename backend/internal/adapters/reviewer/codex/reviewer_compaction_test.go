@@ -20,8 +20,9 @@ func TestReviewCommandCarriesTheCompactionWindow(t *testing.T) {
 	}
 	t.Setenv("PATH", binDir)
 	got, err := New().ReviewCommand(context.Background(), ports.ReviewInvocation{
-		Config: domain.AgentConfig{Launch: domain.AgentLaunchOptions{AutoCompactWindow: "20%", ModelContextWindow: 272_000}},
-		Prompt: "review it",
+		TaskPromptRoot: t.TempDir(),
+		Config:         domain.AgentConfig{Launch: domain.AgentLaunchOptions{AutoCompactWindow: "20%", ModelContextWindow: 272_000}},
+		Prompt:         "review it",
 	})
 	if err != nil {
 		t.Fatalf("ReviewCommand: %v", err)

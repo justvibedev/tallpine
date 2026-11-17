@@ -155,6 +155,7 @@ var sessionErrorRules = []sessionErrorRule{
 	{sessionmanager.ErrAgentExited, kindConflict, "AGENT_EXITED", "The agent process exited; relaunch it before sending another message", nil},
 	{sessionmanager.ErrAgentNotExited, kindConflict, "AGENT_NOT_EXITED", "The agent is still running; only exited agents can be resumed", nil},
 	{sessionmanager.ErrResumeInProgress, kindConflict, "AGENT_RESUME_IN_PROGRESS", "The agent is already being resumed", nil},
+	{sessionmanager.ErrResumeStillRunning, kindConflict, "AGENT_RESUME_RUNNING", "The agent is still resuming; press Resume again to keep waiting", nil},
 	{sessionmanager.ErrAgentExitInProgress, kindConflict, "AGENT_EXIT_IN_PROGRESS", "The agent is already exiting", nil},
 	{sessionmanager.ErrOperationInProgress, kindConflict, "", "", operationInProgressError},
 	{sessionmanager.ErrInterfaceTransitionInProgress, kindConflict, "INTERFACE_TRANSITION_IN_PROGRESS", "This session is already switching interfaces", nil},

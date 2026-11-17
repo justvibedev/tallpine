@@ -107,6 +107,11 @@ type ReviewRun struct {
 	// AutoInjectReview snapshots the session policy when this result is first
 	// recorded. Later toggle changes must not rewrite or deliver this run.
 	AutoInjectReview bool `json:"autoInjectReview"`
+	// Focus is the one-off review focus the requester gave for this pass
+	// (`tallpine review trigger --focus`); empty for a pass without one.
+	Focus string `json:"focus,omitempty"`
+	// FocusAuthor is who gave Focus, taken from the request's credentials.
+	FocusAuthor ReviewFocusAuthor `json:"focusAuthor,omitempty" enum:"owner,orchestrator,worker"`
 }
 
 // LocalReviewTargetPrefix starts the synthetic review key of a session branch
@@ -182,6 +187,10 @@ type QueuedReviewTrigger struct {
 	// Attempts counts failed starts; NextAttemptAt is the earliest next one.
 	Attempts      int       `json:"attempts"`
 	NextAttemptAt time.Time `json:"nextAttemptAt"`
+	// Focus and FocusAuthor are the requester's one-off review focus, kept so
+	// the pass gets it when it finally starts.
+	Focus       string            `json:"focus,omitempty"`
+	FocusAuthor ReviewFocusAuthor `json:"focusAuthor,omitempty" enum:"owner,orchestrator,worker"`
 }
 
 // CurrentHeadReviewRun is one Tallpine review pass recorded against a PR's current

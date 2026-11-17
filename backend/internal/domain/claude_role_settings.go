@@ -58,13 +58,25 @@ func SessionRoleFor(kind SessionKind) string {
 // ({"enabledPlugins":...,"autoMemoryEnabled":false}) the project's per-role
 // settings give a role, or "" when the role has none.
 func (c ProjectConfig) ClaudeRoleSettingsJSON(role string) string {
-	plugins, off := c.ClaudeLaunchFor(role)
+	plugins, _ := c.ClaudeLaunchFor(role)
+	return c.ClaudeRoleSettingsJSONWith(role, plugins, nil)
+}
+
+// ClaudeRoleSettingsJSONWith is ClaudeRoleSettingsJSON with the role's
+// resolved enabledPlugins override and switched-off skills (skillOverrides),
+// which need the skill inventory.
+func (c ProjectConfig) ClaudeRoleSettingsJSONWith(role, plugins string, skillsOff []string) string {
+	_, off := c.ClaudeLaunchFor(role)
 	settings := map[string]json.RawMessage{}
 	if plugins != "" {
 		settings["enabledPlugins"] = json.RawMessage(plugins)
 	}
 	if off {
 		settings["autoMemoryEnabled"] = json.RawMessage("false")
+	}
+	if overrides := ClaudeSkillOverrides(skillsOff); overrides != nil {
+		encoded, _ := json.Marshal(overrides)
+		settings["skillOverrides"] = encoded
 	}
 	if limit := ShellOutputLimit(c.Env); limit > 0 {
 		// Chat sessions take the shell output cap here; terminal launches take
@@ -76,4 +88,18 @@ func (c ProjectConfig) ClaudeRoleSettingsJSON(role string) string {
 	}
 	encoded, _ := json.Marshal(settings)
 	return string(encoded)
+}
+
+// ClaudeSkillOverrides is the Claude Code skillOverrides value hiding the off
+// skills, or nil for none. Claude Code 2.1 reads {name: "off"} (hidden from
+// the model and from /name), with --settings among its top-priority sources.
+func ClaudeSkillOverrides(off []string) map[string]string {
+	if len(off) == 0 {
+		return nil
+	}
+	overrides := make(map[string]string, len(off))
+	for _, name := range off {
+		overrides[name] = "off"
+	}
+	return overrides
 }

@@ -794,7 +794,12 @@ func Message(kind string, rec domain.SessionRecord, last string) string {
 		default:
 			b.WriteString(lastMessageLabel)
 		}
-		b.WriteString(framedWithin(rec, truncate(last, MaxExcerptCharacters), domain.MaxReportTextCharacters-utf8.RuneCountInString(b.String())))
+		room := domain.MaxReportTextCharacters - utf8.RuneCountInString(b.String())
+		if kind == KindStartFailed || kind == KindContextThrash {
+			b.WriteString(framedWithin(rec, truncate(last, MaxExcerptCharacters), room))
+		} else {
+			b.WriteString(framedExcerpt(rec, last, room))
+		}
 		// A label with nothing after it (no room for the frame) is noise.
 		if out := b.String(); strings.HasSuffix(out, lastMessageLabel) || strings.HasSuffix(out, "\nError: ") {
 			return truncate(strings.TrimRight(out, " "), domain.MaxReportTextCharacters)

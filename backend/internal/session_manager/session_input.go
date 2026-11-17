@@ -313,28 +313,6 @@ func (m *Manager) endAgentResume(id domain.SessionID) {
 // under the ~12 s a phone client allows a request.
 var resumeJoinWait = 8 * time.Second
 
-// autoResume is resumeAgentWithMode for automatic callers (wake, startup
-// recovery, version move); it marks the session so a concurrent user Resume
-// may join instead of failing.
-func (m *Manager) autoResume(ctx context.Context, id domain.SessionID, requireNativeHistory bool) error {
-	m.agentOpMu.Lock()
-	if m.autoResumes == nil {
-		m.autoResumes = make(map[domain.SessionID]int)
-	}
-	m.autoResumes[id]++
-	m.agentOpMu.Unlock()
-	defer func() {
-		m.agentOpMu.Lock()
-		m.autoResumes[id]--
-		if m.autoResumes[id] <= 0 {
-			delete(m.autoResumes, id)
-		}
-		m.agentOpMu.Unlock()
-	}()
-	_, err := m.resumeAgentWithMode(ctx, id, requireNativeHistory)
-	return err
-}
-
 // beginAgentResumeJoining is beginAgentResume that, when an automatic resume
 // or wake owns the session, waits (at most resumeJoinWait) for it and retries.
 // The caller then sees the finished launch (a live controller) and reports

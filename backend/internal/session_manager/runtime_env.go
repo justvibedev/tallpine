@@ -12,6 +12,7 @@ import (
 	"tallpine.eu/tallpine/backend/internal/agentlaunch"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
+	"tallpine.eu/tallpine/backend/internal/skillbridge"
 )
 
 // spawnEnv builds the runtime environment: the per-project env vars first, then
@@ -114,6 +115,7 @@ func (m *Manager) runtimeEnvBase(id domain.SessionID, project domain.ProjectID, 
 		m.applyEnvFilter(id, project, harness, env, caseInsensitive)
 		m.applyFenceGitConfigFor(id, harness, env)
 	}
+	agentlaunch.ApplyParallelismDefaults(env, projectEnv, os.Getenv, runtime.NumCPU(), caseInsensitive)
 	path, err := hookPATHForOS(m.executable, os.Getenv, projectEnv, m.dataDir, caseInsensitive)
 	if err != nil {
 		m.logger.Warn("session PATH not pinned to the daemon binary; `tallpine hooks` callbacks may resolve to a different tallpine and activity tracking will stall",
@@ -227,15 +229,25 @@ func pinPromptCacheTTL(env map[string]string, harness domain.AgentHarness, kind 
 }
 
 // pinClaudeRoleSettings hands a claude-code Chat session its role's plugin and
-// auto-memory overrides (claudePlugins, claudeAutoMemory); the chat driver
+// auto-memory overrides (claudePlugins, claudeAutoMemory) and its switched-off
+// skills (skillRoles, from inv); the chat driver
 // merges them into the session's SDK settings. A role with none sets nothing.
-func pinClaudeRoleSettings(env map[string]string, harness domain.AgentHarness, kind domain.SessionKind, cfg domain.ProjectConfig) {
+func pinClaudeRoleSettings(env map[string]string, harness domain.AgentHarness, kind domain.SessionKind, cfg domain.ProjectConfig, app domain.SkillRoles, inv skillbridge.Inventory) {
 	delete(env, domain.EnvClaudeRoleSettings)
 	if env == nil || harness != domain.HarnessClaudeCode {
 		return
 	}
-	if settings := cfg.ClaudeRoleSettingsJSON(domain.SessionRoleFor(kind)); settings != "" {
+	launch, plugins := skillbridge.RoleLaunch(inv, cfg, app, domain.SessionRoleFor(kind), string(domain.HarnessClaudeCode))
+	if settings := cfg.ClaudeRoleSettingsJSONWith(domain.SessionRoleFor(kind), plugins, launch.Off); settings != "" {
 		env[domain.EnvClaudeRoleSettings] = settings
+	}
+}
+
+// pinCodeIntel adds code intelligence mode's grep deny list to a Chat
+// session's pinned Claude role settings (see pinClaudeRoleSettings).
+func pinCodeIntel(env map[string]string, on bool) {
+	if env != nil && on {
+		env[domain.EnvClaudeRoleSettings] = domain.WithCodeIntelDeny(env[domain.EnvClaudeRoleSettings])
 	}
 }
 
@@ -306,7 +318,8 @@ func (m *Manager) prepareChatControllerEnv(
 	if err != nil {
 		return rec, nil, err
 	}
-	pinClaudeRoleSettings(env, harness, rec.Kind, project)
+	pinClaudeRoleSettings(env, harness, rec.Kind, project, m.workflowDefaults(ctx).SkillRoles, m.skillInventory(m.projectPath(ctx, rec.ProjectID), project.Env))
+	pinCodeIntel(env, harness == domain.HarnessClaudeCode && m.sessionLaunchOptions(ctx, rec.ID).CodeIntel)
 	rec, err = m.persistBrowserCapabilityVerifier(ctx, rec, expected, verifier)
 	if err != nil {
 		return rec, nil, fmt.Errorf("persist browser capability verifier: %w", err)

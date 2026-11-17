@@ -32,6 +32,8 @@ func (s settingsStore) GetAppSettings(ctx context.Context) (settingssvc.Snapshot
 		ChatHibernation:            row.ChatHibernation,
 		WorkflowDefaults:           row.WorkflowDefaults,
 		PeerCheck:                  row.PeerCheck,
+		MachineMaxReviewers:        row.MachineMaxReviewers,
+		MachineLoadPercent:         row.MachineLoadPercent,
 		UpdatedAt:                  row.UpdatedAt,
 	}, nil
 }
@@ -66,4 +68,8 @@ func (s settingsStore) SetHarnessDefault(ctx context.Context, agent domain.Agent
 
 func (s settingsStore) SetWorkflowDefaults(ctx context.Context, d domain.WorkflowDefaults, now time.Time) error {
 	return s.store.SetWorkflowDefaults(ctx, d, now)
+}
+
+func (s settingsStore) SetMachineLoad(ctx context.Context, maxReviewers, loadPercent int, now time.Time) error {
+	return s.store.SetMachineLoad(ctx, maxReviewers, loadPercent, now)
 }

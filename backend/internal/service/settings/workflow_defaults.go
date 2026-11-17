@@ -2,6 +2,9 @@ package settings
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -13,6 +16,10 @@ import (
 type workflowDefaultsStore interface {
 	SetWorkflowDefaults(ctx context.Context, d domain.WorkflowDefaults, now time.Time) error
 }
+
+// ErrInvalidAppInstructions refuses app rules over the cap or switches for an
+// unknown role.
+var ErrInvalidAppInstructions = errors.New("invalid app instructions")
 
 // WorkflowDefaultsUpdate changes any subset of the defaults; nil keeps a value.
 type WorkflowDefaultsUpdate struct {
@@ -31,6 +38,12 @@ type WorkflowDefaultsUpdate struct {
 	OrchestratorAgent  *domain.AgentHarness
 	OrchestratorModel  *string
 	OrchestratorEffort *string
+	// WorkerRules, OrchestratorRules and ReviewerRules set the app-wide rules
+	// of that role; SkillRoles replaces the app skill switches (B740).
+	WorkerRules       *string
+	OrchestratorRules *string
+	ReviewerRules     *string
+	SkillRoles        *domain.SkillRoles
 }
 
 // WorkflowDefaults reports the app-wide workflow defaults. An unreadable store
@@ -80,6 +93,10 @@ func (s *Service) SetWorkflowDefaults(ctx context.Context, update WorkflowDefaul
 	}
 	applyRoleDefault(&next.WorkerAgent, &next.WorkerModel, &next.WorkerEffort, update.WorkerAgent, update.WorkerModel, update.WorkerEffort)
 	applyRoleDefault(&next.OrchestratorAgent, &next.OrchestratorModel, &next.OrchestratorEffort, update.OrchestratorAgent, update.OrchestratorModel, update.OrchestratorEffort)
+	applyInstructions(&next.AppInstructions, update)
+	if err := next.Validate(); err != nil {
+		return Snapshot{}, fmt.Errorf("%w: %w", ErrInvalidAppInstructions, err)
+	}
 	if err := st.SetWorkflowDefaults(ctx, next.Normalized(), s.now()); err != nil {
 		return Snapshot{}, err
 	}
@@ -110,4 +127,34 @@ func applyRoleDefault(agent *domain.AgentHarness, model, effort *string, ua *dom
 	if *agent == "" {
 		*model, *effort = "", ""
 	}
+}
+
+// applyInstructions merges the app rules and skill switches of update.
+func applyInstructions(a *domain.AppInstructions, update WorkflowDefaultsUpdate) {
+	for _, f := range []struct {
+		dst *string
+		src *string
+	}{{&a.WorkerRules, update.WorkerRules}, {&a.OrchestratorRules, update.OrchestratorRules}, {&a.ReviewerRules, update.ReviewerRules}} {
+		if f.src != nil {
+			*f.dst = strings.TrimSpace(*f.src)
+		}
+	}
+	if update.SkillRoles != nil {
+		a.SkillRoles = pruneSkillRoles(*update.SkillRoles)
+	}
+}
+
+// pruneSkillRoles drops roles with no switches, so an emptied role reads back
+// as unset.
+func pruneSkillRoles(in domain.SkillRoles) domain.SkillRoles {
+	out := domain.SkillRoles{}
+	for role, skills := range in {
+		if len(skills) > 0 {
+			out[role] = skills
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

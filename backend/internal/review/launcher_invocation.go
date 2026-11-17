@@ -44,8 +44,6 @@ func (l *agentLauncher) prepareInvocation(ctx context.Context, spec LaunchSpec) 
 	if err := ctx.Err(); err != nil {
 		return ports.ReviewInvocation{}, err
 	}
-	inv := l.invocation(spec)
-	inv.Policy = l.decide(ctx, spec)
 	if strings.TrimSpace(l.dataDir) == "" {
 		return ports.ReviewInvocation{}, fmt.Errorf("reviewer prompt data directory is required")
 	}
@@ -57,6 +55,17 @@ func (l *agentLauncher) prepareInvocation(ctx context.Context, spec LaunchSpec) 
 	if err := os.MkdirAll(requestDir, 0o700); err != nil {
 		return ports.ReviewInvocation{}, fmt.Errorf("create reviewer prompt directory: %w", err)
 	}
+	// The skill copies sit beside the task file, so every harness that reads
+	// the task can read them; the task lists them by these paths.
+	spec.ReviewerSkillsDir = ""
+	if len(spec.ReviewerSkills) > 0 {
+		spec.ReviewerSkillsDir = reviewerSkillsDir(requestDir)
+	}
+	if err := writeReviewerSkills(reviewerSkillsDir(requestDir), spec.ReviewerSkills); err != nil {
+		return ports.ReviewInvocation{}, fmt.Errorf("write reviewer skills: %w", err)
+	}
+	inv := l.invocation(spec)
+	inv.Policy = l.decide(ctx, spec)
 	if err := ctx.Err(); err != nil {
 		return ports.ReviewInvocation{}, err
 	}

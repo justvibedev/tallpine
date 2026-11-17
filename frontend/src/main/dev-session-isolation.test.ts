@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { isolateDevSessionEnv } from "./dev-session-isolation";
+import { devProxyTarget, isolateDevSessionEnv } from "./dev-session-isolation";
 
 const homeDir = "/Users/dev";
 const real = path.join(homeDir, ".tallpine");
@@ -99,5 +99,31 @@ describe("isolateDevSessionEnv", () => {
 		expect(env.AO_SESSION_ID).toBeUndefined();
 		expect(env.TALLPINE_DATA_DIR).toBe(path.join(real, "data"));
 		expect(env.TALLPINE_TMUX_SOCKET_NAME).toBe("tallpine");
+	});
+});
+
+describe("devProxyTarget", () => {
+	const opts = { homeDir, checkoutDir: "/w/a/frontend" };
+
+	it("never targets the production port inside a session", () => {
+		const target = devProxyTarget(sessionEnv(), opts);
+		const env = sessionEnv();
+		const iso = isolateDevSessionEnv(env, { isPackaged: false, ...opts });
+		expect(target).toBe(`http://127.0.0.1:${iso?.port}`);
+		expect(target).not.toContain(":3101");
+	});
+
+	it("uses the dev port outside a session and honours an explicit override", () => {
+		expect(devProxyTarget({ PATH: "/usr/bin" }, opts)).toBe("http://127.0.0.1:3102");
+		expect(devProxyTarget({ TALLPINE_PORT: "4123" }, opts)).toBe("http://127.0.0.1:4123");
+		expect(devProxyTarget({ TALLPINE_DEV_API_TARGET: "http://x:1" }, opts)).toBe("http://x:1");
+	});
+});
+
+describe("provider home isolation", () => {
+	it("drops a CLAUDE_CONFIG_DIR that points at a real managed account", () => {
+		const env = sessionEnv({ CLAUDE_CONFIG_DIR: path.join(real, "data", "agent-accounts", "claude", "x") });
+		isolateDevSessionEnv(env, { isPackaged: false, homeDir, checkoutDir: "/w/a/frontend" });
+		expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
 	});
 });

@@ -18,8 +18,12 @@ import { AgentModelField, ProjectChatHibernationToggle, ProjectNoCIToggle, Proje
 import { SettingsOptionMenu } from "./settings/SettingsOptionMenu";
 import { AGENT_EFFORTS } from "../../shared/effort";
 import { Button } from "./ui/button";
+import type { components } from "../../api/schema";
 import type { ProjectLocalFieldsDraft } from "../lib/project-local-fields";
-import { ProjectAdvancedSection } from "./project-settings/ProjectAdvancedSection";
+import { InstructionsAndSkillsSkills } from "./project-settings/InstructionsAndSkillsSkills";
+import { InstructionsAndSkillsClaude } from "./project-settings/InstructionsAndSkillsClaude";
+import { InstructionsAndSkillsLsp } from "./project-settings/InstructionsAndSkillsLsp";
+import { InstructionsAndSkillsRules } from "./project-settings/InstructionsAndSkillsRules";
 import { ProjectReviewLimitsRows } from "./project-settings/ProjectReviewLimitsRows";
 import { ProjectSessionModeRow } from "./project-settings/ProjectSessionModeRow";
 import { ProjectWorkflowSection } from "./project-settings/ProjectWorkflowSection";
@@ -120,7 +124,7 @@ const roleFields: Record<ProjectSettingsRole, RoleFields> = {
 
 // Both persistence adapters render this page. Drafts, validation, autosave and
 // common controls live here so a UI change applies to local and Cloud projects.
-export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, initialValues, section, capabilities, details, workspaceRepos, repository, renderAgent, defaultReviewer = () => "", modelScope, modelHostId, autoReviewDescription, save, onSaveState, saveUnchanged = false, disabled = false, managedKeys, generalExtra, generalTop, securityExtra }: {
+export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, initialValues, section, capabilities, details, workspaceRepos, repository, renderAgent, defaultReviewer = () => "", modelScope, modelHostId, autoReviewDescription, save, onSaveState, saveUnchanged = false, disabled = false, managedKeys, generalExtra, generalTop, securityExtra, skills, lspProjectId }: {
 	initialValues: ProjectSettingsDraft;
 	section: SettingsSection;
 	capabilities: Capabilities;
@@ -144,6 +148,11 @@ export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, ini
 	githubProjectId?: string;
 	/** The Security page body (the project's Security mode switch). */
 	securityExtra?: ReactNode;
+	/** The account's Claude Code plugins for the Instructions and skills page; undefined while loading. */
+	/** The skills inventory (plugins and skills with their per-role switches). */
+	skills?: Pick<components["schemas"]["ProjectSkillsResponse"], "plugins" | "skills" | "lsp">;
+	/** The project whose LSP installs the Code intelligence tab runs; undefined shows the commands to copy only. */
+	lspProjectId?: string;
 	/** Rendered first on the General page; setDefaultBranch edits the draft so autosave persists it like a typed change. */
 	generalTop?: (api: { setDefaultBranch: (branch: string) => void }) => ReactNode;
 	/** Pauses autosave and submit, e.g. while the owning host is offline. */
@@ -315,7 +324,10 @@ export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, ini
 		workflow: <ProjectSettingsSection title={t("settings.project.workflow")} grouped><ProjectWorkflowSection values={draft} planAutoApprove={draft.planAutoApprove} inherit={workflowInherit} showPlanAutoApprove={capabilities.workflow} onChange={patch} onPlanAutoApprove={(planAutoApprove) => patch({ planAutoApprove })} /></ProjectSettingsSection>,
 		sessions: sessionsBlock,
 		security: <ProjectSettingsSection title={t("settings.security")} grouped>{securityExtra}</ProjectSettingsSection>,
-		advanced: <ProjectSettingsSection title={t("settings.advanced")} grouped><ProjectAdvancedSection values={draft} onChange={patch} /></ProjectSettingsSection>,
+		instructions: <><InstructionsAndSkillsRules values={draft} onChange={patch} /><InstructionsAndSkillsSkills values={draft} skills={skills?.skills} onChange={patch} /><InstructionsAndSkillsClaude values={draft} plugins={skills?.plugins} onChange={patch} /></>,
+		codeIntelligence: <InstructionsAndSkillsLsp values={draft} lsp={skills?.lsp} onChange={patch} projectId={lspProjectId} />,
+		// Advanced holds only the environment editor, which keeps its own form.
+		advanced: null,
 	};
 	return <ProjectSettingsFormView id="project-settings-form" className={`project-settings-form${capabilities.runtimeDefaults ? " cloud-project-settings-form" : ""}`} onSubmit={submit}>
 		<fieldset disabled={disabled || mutation.isPending} className="flex min-w-0 flex-col gap-(--size-settings-section-gap)">

@@ -119,6 +119,10 @@ var (
 	// ErrResumeInProgress prevents concurrent resume requests from replacing the
 	// same runtime twice.
 	ErrResumeInProgress = errors.New("session: agent resume already in progress")
+	// ErrResumeStillRunning answers a Resume whose request ended before the
+	// resume it started or joined finished. The resume keeps running; pressing
+	// Resume again joins it instead of starting another.
+	ErrResumeStillRunning = errors.New("session: agent is still resuming")
 	// ErrAwaitingDecision means the session is paused on a pending
 	// permission/approval dialog. Send refuses to paste into it: the runtime
 	// appends Enter after every paste, and an Enter into a decision dialog

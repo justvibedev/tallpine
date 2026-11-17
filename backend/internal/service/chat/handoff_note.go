@@ -107,6 +107,10 @@ func chatHandoffTurns(turns []domain.ConversationTurn, messages []domain.Convers
 		}
 	}
 	complete := make([]*exchange, 0, len(exchanges))
+	for _, answer := range unpromptedAnswers(messages) {
+		request := &domain.ConversationMessage{Sequence: answer.Sequence, Text: domain.UnpromptedTurnRequest, CreatedAt: answer.CreatedAt}
+		complete = append(complete, &exchange{user: request, assistant: answer})
+	}
 	for _, pair := range exchanges {
 		if pair.user != nil && pair.assistant != nil && strings.TrimSpace(pair.user.Text) != "" {
 			complete = append(complete, pair)
@@ -116,6 +120,46 @@ func chatHandoffTurns(turns []domain.ConversationTurn, messages []domain.Convers
 	out := make([]domain.HandoffTurn, 0, len(complete))
 	for _, pair := range complete {
 		out = append(out, domain.HandoffTurn{UserRequest: pair.user.Text, AgentResponse: pair.assistant.Text, At: pair.user.CreatedAt, Harness: answeredBy(pair.user.Sequence)})
+	}
+	return out
+}
+
+// unpromptedAnswers finds the assistant output no turn owns. After a turn
+// completes a provider can keep working (a monitor wakeup, a background task
+// finishing) and its messages carry no turn, so no completed turn lists them.
+// Each run of such output between two turns becomes one turn of its own: a
+// placeholder request and the run's last assistant message as the answer, which
+// this returns.
+func unpromptedAnswers(messages []domain.ConversationMessage) []*domain.ConversationMessage {
+	runs := map[int64]*domain.ConversationMessage{}
+	var order []int64
+	var owned []int64
+	for index := range messages {
+		if m := &messages[index]; m.TurnID != "" {
+			owned = append(owned, m.Sequence)
+		}
+	}
+	for index := range messages {
+		m := &messages[index]
+		if m.TurnID != "" || m.Role != domain.MessageRoleAssistant || strings.TrimSpace(m.Text) == "" {
+			continue
+		}
+		var run int64
+		for _, sequence := range owned {
+			if sequence < m.Sequence {
+				run = max(run, sequence)
+			}
+		}
+		if last := runs[run]; last == nil {
+			order = append(order, run)
+			runs[run] = m
+		} else if m.Sequence > last.Sequence {
+			runs[run] = m
+		}
+	}
+	out := make([]*domain.ConversationMessage, 0, len(order))
+	for _, run := range order {
+		out = append(out, runs[run])
 	}
 	return out
 }

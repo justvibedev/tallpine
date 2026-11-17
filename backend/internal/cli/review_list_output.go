@@ -14,7 +14,11 @@ import (
 func writeReviewList(cmd *cobra.Command, session string, res apitypes.ListReviewsResponse) error {
 	out := cmd.OutOrStdout()
 	for _, q := range res.QueuedReviews {
-		if _, err := fmt.Fprintf(out, "queued: %s review of %s waits for its reviewer to be free (attempts %d); `tallpine review cancel %s` withdraws it\n", q.Harness, q.PRURL, q.Attempts, session); err != nil {
+		wait := "its reviewer to be free"
+		if res.HeldReason != "" {
+			wait = "the machine to be quiet: " + res.HeldReason
+		}
+		if _, err := fmt.Fprintf(out, "queued: %s review of %s waits for %s (attempts %d); `tallpine review cancel %s` withdraws it\n", q.Harness, q.PRURL, wait, q.Attempts, session); err != nil {
 			return err
 		}
 	}

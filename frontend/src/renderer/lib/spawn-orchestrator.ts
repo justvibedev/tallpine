@@ -4,6 +4,7 @@ import { tallpineBridge } from "./bridge";
 import { resumeOnce } from "../hooks/useCanResumeAgent";
 import type { OrchestratorSpawnSource } from "./orchestrator-spawn-sources";
 import { clientForSessionHost } from "./host-clients";
+import { postResumeAgent } from "./resume-agent-request";
 import type { SessionMode } from "../types/conversation";
 
 // Every UI entry point that spawns an orchestrator: the board CTA, the topbar
@@ -110,9 +111,7 @@ export function resumeOrchestrator(sessionId: string, hostId?: string): Promise<
 }
 
 async function requestOrchestratorResume(sessionId: string, hostId?: string): Promise<void> {
-	const { data, error, response } = await clientForSessionHost(hostId).POST("/api/v1/sessions/{sessionId}/resume-agent", {
-		params: { path: { sessionId } },
-	});
+	const { data, error, response } = await postResumeAgent(sessionId, hostId);
 	if (error && apiErrorCode(error) !== "AGENT_NOT_EXITED") {
 		throw new Error(apiErrorMessage(error, `Could not resume the orchestrator (${response.status})`));
 	}

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useUiStore } from "../stores/ui-store";
 import type { ProjectSettingsSaveState } from "./ProjectSettingsForm";
-import { projectSettingsSections } from "./project-settings/projectSections";
+import { initialProjectSection, projectSettingsSections } from "./project-settings/projectSections";
 import { SettingsDialog } from "./SettingsPageTestHarness";
 
 const { postMock, cloudProjectsState, localWorkspacesState } = vi.hoisted(() => ({
@@ -157,6 +157,13 @@ describe("SettingsDialog", () => {
 		expect(scriptsSubmitted).not.toHaveBeenCalled();
 	});
 
+	it("replaces the Skills page with Instructions and skills, and old Skills links open it", () => {
+		const ids = projectSettingsSections(((k: string) => k) as never, false).map((s) => s.id);
+		expect(ids).toContain("instructions");
+		expect(ids).not.toContain("skills");
+		expect(initialProjectSection("skills", false)).toBe("instructions");
+	});
+
 	it("omits Reviews & PRs for scratch projects", () => {
 		const names = (scratch: boolean) => projectSettingsSections(((k: string) => k) as never, false, scratch).map((s) => s.id);
 		expect(names(false)).toContain("reviews");
@@ -166,7 +173,7 @@ describe("SettingsDialog", () => {
 	it("lists the local project sections in order", async () => {
 		useUiStore.getState().openProjectSettings("proj-1");
 		renderSettingsDialog();
-		const names = ["Details", "Repository & worktrees", "Agents", "Reviews & PRs", "Workflow", "Sessions", "Security", "Advanced"];
+		const names = ["Details", "Repository & worktrees", "Agents", "Instructions", "Reviews & PRs", "Workflow", "Sessions", "Security", "Advanced"];
 		const buttons = await Promise.all(names.map((name) => screen.findByRole("button", { name })));
 		buttons.slice(1).forEach((button, i) => expect(buttons[i].compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy());
 	});

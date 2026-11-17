@@ -7,7 +7,7 @@ description: Diagnose desktop, daemon, agent, session, GitHub, preview, and mobi
 
 The desktop app owns the local daemon. First quit completely and reopen Tallpine, then confirm the project and selected session still appear. On macOS, use the menu-bar tray's **Quit Tallpine Completely** action for this restart. The app discovers or restarts its daemon and reconnects live event and terminal streams.
 
-On macOS, closing the window or using **Quit / Cmd+Q** destroys the desktop window but leaves Tallpine in the Dock and menu-bar tray. Its daemon and enabled mobile/remote access keep running while the Mac stays awake and reachable. Click the Dock icon or **Show Tallpine** in the tray to reopen the window. Existing unsaved-draft warnings still apply; desktop browser previews and browser automation stop until the window reopens. Windows and Linux quit behavior is unchanged.
+On macOS, closing the window or using **Quit / Cmd+Q** destroys the desktop window but leaves Tallpine in the Dock and menu-bar tray. Its daemon and enabled mobile/remote access keep running while the Mac stays awake and reachable. Click the Dock icon or **Show Tallpine** in the tray to reopen the window. Existing unsaved-draft warnings still apply; desktop browser previews and browser automation stop until the window reopens. If agents are still running when you quit, Tallpine asks whether to Pause Agents, Stop Agents, Keep Running or Cancel. The tray's **Stop All Agents** stops every running agent after asking. Windows and Linux quit behavior is unchanged.
 
 If you use the optional CLI, `tallpine status` and `tallpine doctor` provide additional local diagnostics:
 

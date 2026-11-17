@@ -77,3 +77,16 @@ it("reports applied-but-uncommitted files as pending, not as seen", async () => 
 	expect(screen.getByText("Claude Code: not committed yet")).toBeInTheDocument();
 	expect(screen.getByRole("status")).toHaveTextContent("Not committed yet, so sessions can't see them: CLAUDE.md");
 });
+
+it("lists Tallpine's own skills in their own group, without harness visibility", async () => {
+	getMock.mockResolvedValue({ data: { ...response(), skills: [...response().skills,
+		{ name: "using-tallpine", description: "The CLI", scope: "tallpine", convention: "tallpine", path: "/data/skills/using-tallpine", harnesses: harness("missing", "missing") }] } });
+	renderPage();
+	const group = (await screen.findByText("Provided by Tallpine")).closest("section") as HTMLElement;
+	const row = within(group).getByText("using-tallpine").closest(".settings-row-bar") as HTMLElement;
+	expect(within(row).getByText("Every session")).toBeInTheDocument();
+	expect(within(row).queryByText(/can't see it/)).toBeNull();
+	const account = screen.getByText("From your account").closest("section") as HTMLElement;
+	expect(within(account).queryByText("using-tallpine")).toBeNull();
+	expect(within(account).getByText("cloudflare")).toBeInTheDocument();
+});

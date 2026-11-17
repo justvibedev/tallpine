@@ -16,9 +16,10 @@ func CountsTowardAutoRetryLimit(run domain.ReviewRun) bool {
 }
 
 // TransientAutoSkip reports whether an automatic trigger was skipped only
-// because the worker is busy right now, so the same pass can start later.
+// because the worker or the machine is busy right now, so the same pass can
+// start later.
 func TransientAutoSkip(reason string) bool {
-	return reason == "not_idle" || reason == "idle_threshold_not_met"
+	return reason == "not_idle" || reason == "idle_threshold_not_met" || reason == SkipMachineBusy
 }
 
 func autoReviewHeadBlocked(runs []domain.ReviewRun, prURL, targetSHA string, harness domain.ReviewerHarness) bool {
@@ -106,6 +107,15 @@ func (e *Engine) reviewLaunchSpec(
 	launchID string,
 ) LaunchSpec {
 	decisions, focus := e.planFor(ctx, worker.ID)
+	var rules, rulesNote string
+	var skills []ReviewerSkill
+	var skipped []string
+	app := e.appInstructions(ctx)
+	if project, base, ok := e.reviewBase(ctx, worker); ok {
+		rules, rulesNote = projectReviewerRules(ctx, project, base)
+		skills, skipped = e.reviewerSkillsFor(ctx, project, app.SkillRoles, harness, base)
+	}
+	layered := layerReviewerRules(app, rules)
 	return LaunchSpec{
 		RunID:           run.ID,
 		BatchID:         run.BatchID,
@@ -124,6 +134,13 @@ func (e *Engine) reviewLaunchSpec(
 		TaskContext:     taskContext(e.taskTextFor(ctx, worker)),
 		PlanDecisions:   decisions,
 		PlanFocus:       focus,
+
+		ReviewerRules:     layered.Project,
+		ReviewerRulesNote: rulesNote,
+		AppReviewerRules:  layered.App,
+
+		ReviewerSkills:        skills,
+		ReviewerSkillsSkipped: skipped,
 	}
 }
 
@@ -131,9 +148,11 @@ func reviewQueue(runs []domain.ReviewRun) []ports.ReviewTask {
 	queue := make([]ports.ReviewTask, 0, len(runs))
 	for _, run := range runs {
 		queue = append(queue, ports.ReviewTask{
-			RunID:     run.ID,
-			PRURL:     run.PRURL,
-			TargetSHA: run.TargetSHA,
+			RunID:       run.ID,
+			PRURL:       run.PRURL,
+			TargetSHA:   run.TargetSHA,
+			Focus:       run.Focus,
+			FocusAuthor: run.FocusAuthor,
 		})
 	}
 	return queue

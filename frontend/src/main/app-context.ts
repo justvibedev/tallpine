@@ -15,7 +15,7 @@ import type { DaemonStatus } from "../shared/daemon-status";
 import {
 type KeybindingOverrides
 } from "../shared/shortcuts";
-import { DEFAULT_TERMINAL_SHELL, type TerminalShellPreference } from "../shared/ui-locale";
+import { DEFAULT_TERMINAL_SHELL, type AppLocale, type TerminalShellPreference } from "../shared/ui-locale";
 import { BrowserProfileImportService } from "./browser-profile-import/service";
 import {
 type BrowserProfileIpc
@@ -114,6 +114,8 @@ export const ctx = {
 	// Memoize the in-flight resolution so concurrent/repeat awaits are cheap.
 	shellEnvPromise: (null) as Promise<void> | null,
 	terminalShellPreference: ({ ...DEFAULT_TERMINAL_SHELL }) as TerminalShellPreference,
+	// The UI locale, for the main process's own native dialogs.
+	uiLocale: "en" as AppLocale,
 	// The daemon spawn waits on this probe (0.2-2s), so start it with the process
 	// rather than after the window opens. Windows probes the shell chosen in UI
 	// settings, which are not loaded yet, so it still starts with the daemon.

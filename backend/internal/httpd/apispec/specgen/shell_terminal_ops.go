@@ -243,6 +243,36 @@ func shellTerminalOperationsPart1() []operation {
 			resps:   []respUnit{{http.StatusOK, controllers.RemoveProjectSkillResponse{}}, {http.StatusBadRequest, envelope.APIError{}}, {http.StatusNotFound, envelope.APIError{}}, {http.StatusConflict, envelope.APIError{}}, {http.StatusInternalServerError, envelope.APIError{}}, {http.StatusNotImplemented, envelope.APIError{}}},
 		},
 		{
+			method: http.MethodPost, path: "/api/v1/projects/{id}/skills/custom", id: "createProjectCustomSkill", tag: "projects",
+			pathParams: []any{controllers.ProjectIDParam{}}, reqBody: controllers.CreateProjectCustomSkillRequest{},
+			summary: "Create an owner-managed custom skill from SKILL.md text (user only)",
+			resps:   customSkillResps(http.StatusCreated),
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/projects/{id}/skills/custom/import", id: "importProjectCustomSkill", tag: "projects",
+			pathParams: []any{controllers.ProjectIDParam{}}, reqBody: controllers.ImportProjectCustomSkillRequest{},
+			summary: "Import a local skill directory as a custom skill, text-only: SKILL.md and Markdown references (user only)",
+			resps:   customSkillResps(http.StatusCreated),
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/projects/{id}/skills/custom/{name}", id: "getProjectCustomSkill", tag: "projects",
+			pathParams: []any{controllers.ProjectCustomSkillParam{}},
+			summary:    "Read a custom skill's SKILL.md and file list",
+			resps:      customSkillResps(http.StatusOK),
+		},
+		{
+			method: http.MethodPut, path: "/api/v1/projects/{id}/skills/custom/{name}", id: "updateProjectCustomSkill", tag: "projects",
+			pathParams: []any{controllers.ProjectCustomSkillParam{}}, reqBody: controllers.UpdateProjectCustomSkillRequest{},
+			summary: "Replace a custom skill's SKILL.md (user only)",
+			resps:   customSkillResps(http.StatusOK),
+		},
+		{
+			method: http.MethodDelete, path: "/api/v1/projects/{id}/skills/custom/{name}", id: "deleteProjectCustomSkill", tag: "projects",
+			pathParams: []any{controllers.ProjectCustomSkillParam{}},
+			summary:    "Delete a custom skill (user only)",
+			resps:      []respUnit{{http.StatusNoContent, nil}, {http.StatusBadRequest, envelope.APIError{}}, {http.StatusForbidden, envelope.APIError{}}, {http.StatusNotFound, envelope.APIError{}}, {http.StatusNotImplemented, envelope.APIError{}}},
+		},
+		{
 			method: http.MethodPost, path: "/api/v1/projects/{id}/skills/commit", id: "commitProjectSkills", tag: "projects",
 			pathParams: []any{controllers.ProjectIDParam{}}, reqBody: controllers.CommitProjectSkillsRequest{},
 			summary: "Commit created instruction files and skill links to the branch new sessions start from, pushing when they start from the remote",
@@ -388,4 +418,10 @@ func shellTerminalOperationsPart1() []operation {
 			},
 		},
 	}
+}
+
+// customSkillResps are the responses of a custom skill operation returning
+// the skill with ok.
+func customSkillResps(ok int) []respUnit {
+	return []respUnit{{ok, controllers.ProjectCustomSkill{}}, {http.StatusBadRequest, envelope.APIError{}}, {http.StatusForbidden, envelope.APIError{}}, {http.StatusNotFound, envelope.APIError{}}, {http.StatusConflict, envelope.APIError{}}, {http.StatusNotImplemented, envelope.APIError{}}}
 }

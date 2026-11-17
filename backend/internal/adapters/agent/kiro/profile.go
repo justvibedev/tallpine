@@ -5,14 +5,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
 
 // kiroSteeringResources makes repo rules load: a custom agent includes steering
 // only through resources. Tallpine's own rules stay in the agent prompt.
 var kiroSteeringResources = []string{"file://AGENTS.md", "file://.kiro/steering/**/*.md"}
+
+// kiroResources is the steering resources plus a skill:// resource for each
+// skill switched on for the session's role: a custom agent loads only the
+// skills its resources list, so the list is the role's allowlist.
+func kiroResources(launch domain.AgentLaunchOptions) []string {
+	return append(slices.Clone(kiroSteeringResources), launch.SkillLaunch().Resources...)
+}
 
 type kiroPermissionRule struct {
 	Capability string   `json:"capability"`
@@ -74,7 +83,7 @@ func setKiroAgentDefaults(topLevel map[string]json.RawMessage, systemPromptFile 
 		"mcpServers":     map[string]any{},
 		"tools":          []string{"*"},
 		"toolAliases":    map[string]any{},
-		"resources":      kiroSteeringResources,
+		"resources":      kiroResources(agentConfig.Launch),
 		"includeMcpJson": true,
 		// Managed: follows the session's permission mode on every install.
 		"permissions": map[string]any{"rules": kiroPermissionRules(agentConfig.Permissions)},

@@ -52,3 +52,22 @@
   kill -0 "${sp}" 2>/dev/null && { kill "${sp}"; echo "stray survived"; exit 1; }
   exit 0
 ) >"${T}/b469b.out" 2>&1 && ok "b469: a stray holding ao.db is swept before the db_holders check" || bad "b469 sweep: $(cat "${T}/b469b.out")"
+
+# B784: an app that ignores its first SIGTERM (stuck mid-quit) and exits on the second is quit by the repeat, not failed after the budget.
+(
+  d="${T}/b784"; mkdir -p "${d}/x.app/Contents/MacOS"
+  printf '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>fake784</string></dict></plist>\n' >"${d}/x.app/Contents/Info.plist"
+  printf '%s\n' '#!/bin/bash' 'n=0; trap '"'"'n=$((n+1)); [[ $n -ge 2 ]] && exit 0'"'"' TERM' 'while true; do sleep 0.1; done' >"${d}/x.app/Contents/MacOS/fake784"
+  chmod +x "${d}/x.app/Contents/MacOS/fake784"
+  "${d}/x.app/Contents/MacOS/fake784" &
+  sp=$!
+  sleep 0.5
+  # shellcheck source=/dev/null
+  . "${script_dir}/release-local.d/common.sh"; . "${script_dir}/release-local.d/daemons.sh"
+  export TALLPINE_RELEASE_QUIT_GRACE=1
+  app_path="${d}/x.app" run_file="${d}/none.json" data_dir="${d}" stop_timeout=6 cli_name=tallpine product_name=Fake
+  interrupt_point() { :; }; say() { :; }; warn() { echo "warn: $*"; }; die() { echo "die: $*"; kill -9 "${sp}" 2>/dev/null; exit 1; }
+  _stop_app_and_daemon || { kill -9 "${sp}" 2>/dev/null; exit 1; }
+  kill -0 "${sp}" 2>/dev/null && { kill -9 "${sp}"; echo "app survived"; exit 1; }
+  exit 0
+) >"${T}/b784.out" 2>&1 && ok "b784: a stuck quit is finished by a second SIGTERM" || bad "b784: $(cat "${T}/b784.out")"

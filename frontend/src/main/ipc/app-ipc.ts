@@ -248,6 +248,7 @@ export function registerAppIpc(): void {
 			const runFile = runFilePath();
 		const result = !runFile ? coerceUiSettings(settings) : await writeUiSettings(path.dirname(runFile), settings);
 		ctx.trayController?.setLocale(result.locale);
+		ctx.uiLocale = result.locale;
 		ctx.soundNotificationsEnabled = result.soundNotificationsEnabled;
 		ctx.terminalShellPreference = result.terminalShell;
 		ctx.shellEnvPromise = null;

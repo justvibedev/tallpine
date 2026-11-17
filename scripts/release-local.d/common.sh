@@ -70,6 +70,13 @@ pid_alive() { [[ "$1" =~ ^[0-9]+$ ]] && kill -0 "$1" 2>/dev/null; }
 # Poll count that spans <seconds> at the poll interval (TALLPINE_RELEASE_POLL, default 0.5s; tests shorten it).
 poll_budget() { awk -v s="$1" -v p="${TALLPINE_RELEASE_POLL:-0.5}" 'BEGIN { printf "%d", s / p + 0.999 }'; }
 
+# Seconds to wait for the first quit signal before repeating it (never more than half the budget).
+quit_grace() {
+  local g="${TALLPINE_RELEASE_QUIT_GRACE:-30}"
+  [[ "${g}" -gt $((stop_timeout / 2)) ]] && g=$((stop_timeout / 2))
+  printf '%s' "${g}"
+}
+
 wait_for_exit() {
   local pid="$1" budget="${2:-${stop_timeout}}" waited=0
   while pid_alive "${pid}"; do
@@ -216,8 +223,16 @@ _stop_app_and_daemon() {
     for pid in ${pids}; do kill -TERM "${pid}" 2>/dev/null || true; done
     interrupt_point quitting
     for pid in ${pids}; do
-      wait_for_exit "${pid}" ||
-        die "the app did not quit within ${stop_timeout}s (it may still be stopping agents or closing browser views); quit it from its menu and retry"
+      # B784: a first SIGTERM can leave the app stuck mid-quit (cleanup that never finishes) until
+      # the 90s budget ends, and a second SIGTERM then exits it at once: the app treats a signal
+      # during shutdown as "exit now". Send that second one after a grace period instead of
+      # waiting out the whole budget and failing.
+      wait_for_exit "${pid}" "$(quit_grace)" || {
+        warn "${product_name} (pid ${pid}) is still quitting after $(quit_grace)s; sending SIGTERM again to finish the quit"
+        kill -TERM "${pid}" 2>/dev/null || true
+        wait_for_exit "${pid}" "$((stop_timeout - $(quit_grace)))"
+      } ||
+        die "the quit was cancelled or timed out: ${product_name} is still running after ${stop_timeout}s (it may have been cancelled in its quit dialog, or still be stopping agents). Nothing was installed. Quit it from its menu and retry"
     done
   fi
 

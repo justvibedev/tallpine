@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/processalive"
@@ -29,6 +31,7 @@ func ConnectOrStart(ctx context.Context, cfg Config) (*Transport, error) {
 			// Desktop updater handoff can briefly start the replacement daemon
 			// before the old controller has detached. Wait for exclusive ownership;
 			// never turn that overlap into a competing provider process.
+			// startupTimeout only bounds this previous-controller wait.
 			deadline := time.Now().Add(startupTimeout)
 			for time.Now().Before(deadline) && processalive.Alive(d.PID) {
 				timer := time.NewTimer(20 * time.Millisecond)
@@ -79,14 +82,29 @@ func ConnectOrStart(ctx context.Context, cfg Config) (*Transport, error) {
 	if len(cfg.Argv) == 0 {
 		return nil, errors.New("chat host start requires provider argv")
 	}
-	if err := spawnDetached(ctx, cfg); err != nil {
+	exited, err := spawnDetached(ctx, cfg)
+	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(startupTimeout)
+	// Wait while the host process is alive (it may need far longer than
+	// startupTimeout just to launch on a loaded machine), up to startupMaxWait;
+	// after it exits, only hostExitGrace more.
+	start := time.Now()
+	var goneAt time.Time
 	var lastErr error
-	for time.Now().Before(deadline) {
+	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if goneAt.IsZero() {
+			select {
+			case <-exited:
+				goneAt = time.Now()
+			default:
+			}
+		}
+		if time.Since(start) >= startupMaxWait {
+			break
 		}
 		d, err := readDescriptor(cfg.DataDir, cfg.SessionID)
 		if err == nil {
@@ -100,6 +118,13 @@ func ConnectOrStart(ctx context.Context, cfg Config) (*Transport, error) {
 			lastErr = attachErr
 		} else {
 			lastErr = err
+		}
+		if !goneAt.IsZero() && time.Since(goneAt) >= hostExitGrace && !launchLockHeld(cfg) {
+			// Our host exited without publishing and no live process holds the
+			// launch lock: nobody is about to publish, so fail instead of burning
+			// the whole wait. While a racing starter's host holds the lock (ours
+			// lost it), keep waiting for it like for our own live host.
+			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -255,4 +280,19 @@ func shutdown(ctx context.Context, dataDir, sessionID string, quick bool) error 
 		case <-ticker.C:
 		}
 	}
+}
+
+// launchLockHeld reports whether a live process holds the session's host launch
+// lock, i.e. some host is starting and will publish a descriptor.
+func launchLockHeld(cfg Config) bool {
+	path, err := lockPath(cfg.DataDir, cfg.SessionID)
+	if err != nil {
+		return false
+	}
+	owner, err := os.ReadFile(path) //nolint:gosec // Tallpine-owned path derived from validated session id.
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(owner)))
+	return err == nil && pid > 0 && processalive.Alive(pid)
 }

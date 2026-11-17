@@ -14,7 +14,7 @@ import (
 
 const getAppSettings = `-- name: GetAppSettings :one
 
-SELECT id, default_session_mode, updated_at, cloud_offering, harness_defaults, version_refresh, storage_compaction, provider_event_retention_days, chat_hibernation, chat_hibernation_worker_idle_seconds, chat_hibernation_orchestrator_idle_seconds, agent_policy, review_defaults, dynamic_orchestrator_context, workflow_defaults, peer_check FROM app_settings WHERE id = 1
+SELECT id, default_session_mode, updated_at, cloud_offering, harness_defaults, version_refresh, storage_compaction, provider_event_retention_days, chat_hibernation, chat_hibernation_worker_idle_seconds, chat_hibernation_orchestrator_idle_seconds, agent_policy, review_defaults, dynamic_orchestrator_context, workflow_defaults, peer_check, machine_max_reviewers, machine_load_percent FROM app_settings WHERE id = 1
 `
 
 // Daemon-owned user preferences. One row, seeded by migration 0042, so a read
@@ -39,6 +39,8 @@ func (q *Queries) GetAppSettings(ctx context.Context) (AppSetting, error) {
 		&i.DynamicOrchestratorContext,
 		&i.WorkflowDefaults,
 		&i.PeerCheck,
+		&i.MachineMaxReviewers,
+		&i.MachineLoadPercent,
 	)
 	return i, err
 }
@@ -129,6 +131,25 @@ type SetHarnessDefaultParams struct {
 
 func (q *Queries) SetHarnessDefault(ctx context.Context, arg SetHarnessDefaultParams) error {
 	_, err := q.db.ExecContext(ctx, setHarnessDefault, arg.HarnessPath, arg.Config, arg.UpdatedAt)
+	return err
+}
+
+const setMachineLoad = `-- name: SetMachineLoad :exec
+UPDATE app_settings
+SET machine_max_reviewers = ?1,
+    machine_load_percent = ?2,
+    updated_at = ?3
+WHERE id = 1
+`
+
+type SetMachineLoadParams struct {
+	MaxReviewers int64
+	LoadPercent  int64
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) SetMachineLoad(ctx context.Context, arg SetMachineLoadParams) error {
+	_, err := q.db.ExecContext(ctx, setMachineLoad, arg.MaxReviewers, arg.LoadPercent, arg.UpdatedAt)
 	return err
 }
 

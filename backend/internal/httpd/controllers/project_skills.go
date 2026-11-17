@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -18,9 +19,9 @@ import (
 )
 
 // ProjectSkillsController serves the read-only inventory behind Settings >
-// Skills: every skill any harness convention offers for a project, where it
-// lives, and which harnesses see it. It scans with the same code the launch
-// path bridges with.
+// Instructions and skills: every skill any harness convention offers for a
+// project, where it lives, which harnesses see it, and the account's Claude
+// Code plugins. It scans with the same code the launch path bridges with.
 type ProjectSkillsController struct {
 	Projects AgentPolicyProjects
 	// DefaultBranch resolves the ref session worktrees start from, the same
@@ -29,6 +30,30 @@ type ProjectSkillsController struct {
 	// GitCredentials fetches and pushes as the project's GitHub account. Nil
 	// keeps the machine's git login.
 	GitCredentials ports.ProjectGitCredentials
+	// DataDir is the daemon data dir, whose skills Tallpine provides to every
+	// session. Empty leaves them out of the inventory.
+	DataDir string
+	// AppDefaults supplies the app-wide skill switches a project inherits
+	// (B740). Nil means none.
+	AppDefaults AppDefaultsReader
+	// LSPInstaller runs the fixed LSP install commands. Nil disables installs.
+	LSPInstaller *skillbridge.LSPInstaller
+	// ClaudeSessionEnv is the Claude account env new sessions launch with, so
+	// plugins install where they read them. Nil uses the project env alone.
+	ClaudeSessionEnv ClaudeSessionEnv
+}
+
+// AppDefaultsReader reads the app-wide workflow defaults.
+type AppDefaultsReader interface {
+	WorkflowDefaults(ctx context.Context) domain.WorkflowDefaults
+}
+
+// appSkillRoles is the app layer of the skill switches, nil without one.
+func (c *ProjectSkillsController) appSkillRoles(ctx context.Context) domain.SkillRoles {
+	if c.AppDefaults == nil {
+		return nil
+	}
+	return c.AppDefaults.WorkflowDefaults(ctx).SkillRoles
 }
 
 // ProjectSkillHarness is how one harness sees a skill or the instruction file:
@@ -36,15 +61,15 @@ type ProjectSkillsController struct {
 // with the same name wins), none (no instruction file) or unverified.
 type ProjectSkillHarness struct {
 	Harness string `json:"harness"`
-	Status  string `json:"status" enum:"native,pending,missing,shadowed,none,unverified"`
+	Status  string `json:"status" enum:"native,pending,missing,shadowed,none,unverified,listed"`
 }
 
 // ProjectSkill is one skill found for a project.
 type ProjectSkill struct {
 	Name        string                `json:"name"`
 	Description string                `json:"description"`
-	Scope       string                `json:"scope" enum:"repo,user,tallpine"`
-	Convention  string                `json:"convention" enum:"claude,agents,codex,tallpine"`
+	Scope       string                `json:"scope" enum:"repo,user,tallpine,custom,reviewer-repo"`
+	Convention  string                `json:"convention" enum:"claude,agents,codex,tallpine,custom,custom-app,reviewer-repo"`
 	Path        string                `json:"path"`
 	Harnesses   []ProjectSkillHarness `json:"harnesses"`
 	// Deselected is true when the user chose not to bridge this repo skill.
@@ -52,6 +77,61 @@ type ProjectSkill struct {
 	// Removable is true when Path is a link or copy the bridge created in the
 	// checkout (its source skill is a different folder).
 	Removable bool `json:"removable"`
+	// Roles are the skill's per-role switches (skillRoles) and what each does
+	// on every harness.
+	Roles []ProjectSkillRole `json:"roles"`
+	// Access is the master switch (key "all") and one switch per agent type
+	// (keys agentCodex etc.); off ones cut the skill off for every role.
+	Access []ProjectSkillAccess `json:"access"`
+}
+
+// ProjectSkillAccess is the master or an agent-type switch for a skill, with
+// the same On/Set/Default/App meaning as ProjectSkillRole. Unset means on.
+type ProjectSkillAccess struct {
+	Key     string `json:"key"`
+	On      bool   `json:"on"`
+	Set     bool   `json:"set"`
+	Default bool   `json:"default"`
+	App     bool   `json:"app"`
+}
+
+// ProjectSkillRole is one role's switch for a skill or plugin. On is the
+// resolved value; Set says this layer (the project, or the app on the app
+// page) chose it; Default is the value when unset, which a reset returns to:
+// the app switch when App is true, else the role default (reviewers default
+// off, B740 q1).
+type ProjectSkillRole struct {
+	Role    string `json:"role" enum:"worker,orchestrator,reviewer"`
+	On      bool   `json:"on"`
+	Set     bool   `json:"set"`
+	Default bool   `json:"default"`
+	// App says Default is the app-wide switch (the row follows the app default).
+	App     bool                 `json:"app"`
+	Effects []ProjectSkillEffect `json:"effects"`
+}
+
+// ProjectSkillEffect is what the switch does on one harness: enforced (the
+// launch hides an off skill), advisory (only the prompt says so) or
+// unsupported (the switch changes nothing there).
+type ProjectSkillEffect struct {
+	Harness string `json:"harness"`
+	Effect  string `json:"effect" enum:"enforced,advisory,unsupported"`
+}
+
+// ProjectPlugin is a Claude Code plugin from the account's Claude config. Its
+// per-role switches are the project's claudePlugins setting; a role without an
+// override keeps accountEnabled.
+type ProjectPlugin struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Marketplace    string `json:"marketplace"`
+	Description    string `json:"description"`
+	Version        string `json:"version"`
+	Path           string `json:"path"`
+	Installed      bool   `json:"installed"`
+	AccountEnabled bool   `json:"accountEnabled"`
+	// Roles are the plugin's per-role switches (claudePlugins).
+	Roles []ProjectSkillRole `json:"roles"`
 }
 
 // ProjectSkillCollision is a name clash: the winner is used, the loser is left alone.
@@ -116,6 +196,10 @@ type ProjectSkillsResponse struct {
 	PendingCommit []string                `json:"pendingCommit"`
 	Skills        []ProjectSkill          `json:"skills"`
 	Collisions    []ProjectSkillCollision `json:"collisions"`
+	// Plugins are the Claude Code plugins the account config offers.
+	Plugins []ProjectPlugin `json:"plugins"`
+	// LSP is the project's language-server plugin advice (recommendations and mismatches).
+	LSP ProjectLSP `json:"lsp"`
 	// CommitTarget is where "Commit" publishes pending files: the branch new
 	// sessions start from. Absent when it cannot be resolved.
 	CommitTarget *ProjectSkillCommitTarget `json:"commitTarget,omitempty"`
@@ -127,6 +211,9 @@ func (c *ProjectSkillsController) Register(r chi.Router) {
 	r.Post("/projects/{id}/skills/offers/{offerId}/apply", c.apply)
 	c.registerBranchCheck(r)
 	r.Post("/projects/{id}/skills/remove", c.remove)
+	c.registerCustom(r)
+	c.registerApp(r)
+	c.registerLSPInstall(r)
 	r.Post("/projects/{id}/skills/commit", c.commit)
 	r.Post("/projects/{id}/skills/push-branch", c.pushBranch)
 }
@@ -142,6 +229,11 @@ type projectScan struct {
 	baseBranch string
 	// deselected are skill names the user chose not to bridge.
 	deselected []string
+	// skillRoles and claudePlugins are the per-role switches.
+	skillRoles    domain.SkillRoles
+	claudePlugins map[string]map[string]bool
+	// appSkillRoles are the app-wide switches the project inherits.
+	appSkillRoles domain.SkillRoles
 }
 
 // scan resolves the project's checkout, its env and the harnesses it launches.
@@ -155,7 +247,7 @@ func (c *ProjectSkillsController) scan(w http.ResponseWriter, r *http.Request) (
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "PROJECT_DEGRADED", "project config could not be loaded", nil)
 		return projectScan{}, false
 	}
-	out := projectScan{id: domain.ProjectID(chi.URLParam(r, "id")), path: res.Project.Path, offersEnabled: true}
+	out := projectScan{id: domain.ProjectID(chi.URLParam(r, "id")), path: res.Project.Path, offersEnabled: true, appSkillRoles: c.appSkillRoles(r.Context())}
 	seen := map[string]bool{}
 	add := func(h string) {
 		if h != "" && !seen[h] {
@@ -168,6 +260,7 @@ func (c *ProjectSkillsController) scan(w http.ResponseWriter, r *http.Request) (
 		out.offersEnabled = !cfg.SkillsOfferOff
 		out.baseBranch = cfg.WorktreeBaseBranch()
 		out.deselected = cfg.SkillsDeselected
+		out.skillRoles, out.claudePlugins = cfg.SkillRoles, cfg.ClaudePlugins
 		add(string(cfg.Worker.Harness))
 		add(string(cfg.Orchestrator.Harness))
 	}
@@ -216,7 +309,7 @@ func (c *ProjectSkillsController) get(w http.ResponseWriter, r *http.Request) {
 	}
 	path, env, project, enabled := p.path, p.env, p.harnesses, p.offersEnabled
 	id := chi.URLParam(r, "id")
-	opts := skillbridge.OptionsFor("", path, env)
+	opts := skillbridge.OptionsFor(c.DataDir, path, env).WithProject(id)
 	opts.Committed = skillbridge.GitCommitted(path)
 	inv := skillbridge.Discover(opts)
 	harnesses := make([]string, 0, len(domain.AllHarnesses))
@@ -231,13 +324,19 @@ func (c *ProjectSkillsController) get(w http.ResponseWriter, r *http.Request) {
 		ProjectID: id, Workspace: path, Harnesses: project, OffersEnabled: enabled, PendingCommit: append([]string{}, inv.PendingCommit...),
 		Offers:   []ProjectSkillOffer{},
 		AgentsMd: inv.Instructions.AgentsMD, ClaudeMd: inv.Instructions.ClaudeMD,
-		Instructions: []ProjectSkillHarness{}, Skills: []ProjectSkill{}, Collisions: []ProjectSkillCollision{},
+		Instructions: []ProjectSkillHarness{}, Skills: []ProjectSkill{}, Collisions: []ProjectSkillCollision{}, Plugins: []ProjectPlugin{},
 	}
+	for _, pl := range inv.Plugins {
+		resp.Plugins = append(resp.Plugins, ProjectPlugin{ID: pl.ID, Name: pl.Name, Marketplace: pl.Marketplace, Description: pl.Description, Version: pl.Version, Path: pl.Path, Installed: pl.Installed, AccountEnabled: pl.AccountEnabled,
+			Roles: pluginRoles(p.claudePlugins, pl, harnesses)})
+	}
+	resp.LSP = lspAdvice(path, opts.Home, inv.Plugins, p.claudePlugins, harnesses, skillbridge.DetectLanguages, skillbridge.BinaryInstalled, skillbridge.BinaryProblem)
 	for _, h := range harnesses {
 		resp.Instructions = append(resp.Instructions, ProjectSkillHarness{Harness: h, Status: skillbridge.InstructionStatus(inv.Instructions, h)})
 	}
 	for i, s := range inv.Skills {
-		sk := ProjectSkill{Name: s.Name, Description: s.Description, Scope: string(s.Scope), Convention: string(s.Convention), Path: s.Path, Harnesses: []ProjectSkillHarness{}}
+		sk := ProjectSkill{Name: s.Name, Description: s.Description, Scope: string(s.Scope), Convention: string(s.Convention), Path: s.Path, Harnesses: []ProjectSkillHarness{},
+			Roles: skillRoles(inv, p.skillRoles, p.appSkillRoles, s, harnesses), Access: skillAccess(p.skillRoles, p.appSkillRoles, s.Name)}
 		if s.Scope == skillbridge.ScopeRepo {
 			sk.Deselected = slices.Contains(p.deselected, s.Name)
 			if rel, err := filepath.Rel(path, s.Path); err == nil {
@@ -256,6 +355,7 @@ func (c *ProjectSkillsController) get(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.Offers = append(resp.Offers, po)
 	}
+	resp.Skills = append(resp.Skills, c.reviewerRepoRows(r, p, harnesses)...)
 	sort.SliceStable(resp.Skills, func(a, b int) bool { return resp.Skills[a].Name < resp.Skills[b].Name })
 	for _, col := range inv.Collisions {
 		resp.Collisions = append(resp.Collisions, ProjectSkillCollision{Name: col.Name, Winner: col.Winner, Loser: col.Loser, Reason: col.Reason})

@@ -64,10 +64,33 @@ const NEEDS_YOU_MARKER = /^\s*(?:\*\*|__)?\s*needs you:/i;
 
 export const hasNeedsYouMarker = (text: string): boolean => NEEDS_YOU_MARKER.test(text);
 
+// "Result:" marks a reply that delivers a finished owner-requested analysis; it is shown in full but asks nothing (B772).
+const RESULT_MARKER = /^\s*(?:\*\*|__)?\s*result:/i;
+export const hasResultMarker = (text: string): boolean => RESULT_MARKER.test(text);
+
+const CODE_AND_LINKS = /```[\s\S]*?(?:```|$)|`[^`\n]*`|\]\([^)]*\)|\bhttps?:\/\/\S+/g;
+const QUESTION_MARK = /[?？](?=[\s"'”’)\]*_]|$)/;
+/** A next step that needs a yes, offered without a question mark ("Say "merge" and I land it."). */
+const OWNER_OFFER = /\b(?:want me to|shall i|should i|do you want|would you like|let me know (?:if|whether|when|which|what)|your call|ok to (?:land|merge|ship|release|proceed|go ahead)|say the word)\b|\bsay ["“'*]+[^"”'*\n]{1,24}["”'*]+/i;
+
 export function asksUser(text: string): boolean {
 	if (hasNeedsYouMarker(text)) return true;
-	const prose = text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]*`|\]\([^)]*\)|\bhttps?:\/\/\S+/g, " ");
-	return /[?？](?=[\s"'”’)\]*_]|$)/.test(prose);
+	return QUESTION_MARK.test(text.replace(CODE_AND_LINKS, " "));
+}
+
+/**
+ * True when a reply ends its turn on something the owner must answer: the
+ * "Needs you:" marker, a question in its last two paragraphs, or an offered
+ * next step that needs a yes (B750: "…Want me to land it?" with no marker and
+ * no ask). A question early in a long status is not the ending. Mirrors
+ * domain.AsksOwner in the daemon, which notifies the owner on the same rule;
+ * keep the two in step.
+ */
+export function asksOwnerAtEnd(text: string): boolean {
+	if (hasNeedsYouMarker(text)) return true;
+	const paragraphs = text.replace(CODE_AND_LINKS, " ").split(/\n[ \t]*\n/).filter((p) => p.trim() !== "");
+	const tail = paragraphs.slice(-2).join("\n\n");
+	return QUESTION_MARK.test(tail) || OWNER_OFFER.test(tail);
 }
 
 export function finalReply(items: readonly ConversationItem[]): ConversationMessage | undefined {
@@ -94,7 +117,15 @@ export function quietWorkerReply(items: readonly ConversationItem[]): Conversati
 	// Another project's orchestrator is a peer: the receiver's answer is its own message, not a footnote.
 	if (lead && workerUpdatesOf(lead).some((update) => update.fromOrchestrator)) return undefined;
 	const reply = finalReply(items);
-	return reply && !asksUser(reply.text) ? reply : undefined;
+	return reply && !hasResultMarker(reply.text) && !asksUser(reply.text) && !asksOwnerAtEnd(reply.text) ? reply : undefined;
+}
+
+/** Prose longer than this is an answer, not a "let me check" aside (B772). */
+const SUBSTANTIAL_TEXT = 280;
+
+/** An orchestrator message written before further tool calls that carries an answer, so folding it into "Worked for" would hide it from the owner. */
+export function isSubstantialAnswer(item: ConversationItem | undefined): boolean {
+	return item?.kind === "message" && item.role === "assistant" && item.text.trim().length >= SUBSTANTIAL_TEXT;
 }
 
 export interface WorkerUpdateIndex {

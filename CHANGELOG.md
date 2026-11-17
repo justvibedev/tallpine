@@ -4,6 +4,31 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.19]
+
+### Added
+- Project Settings > Instructions and skills page: per-skill master switch, per-role (orchestrator, worker, reviewer) and per-agent-type skill switches, and custom and reviewer-only skills (#1244, #1254).
+- Reviewer rules and `review --focus` to point a review at specific concerns.
+- Code intelligence tab and a one-time banner recommend the language-server plugin for each project's languages, with Install buttons for the plugin and server, install on enable, and a warning when a server is enabled but missing (#1250, #1253, #1256, #1257, #1262).
+- `spawn --code-intel` makes a Claude Code worker navigate code with the LSP tool, with grep turned off (#1264).
+- `set-config --claude-plugin` toggles Claude plugins per role (#1260).
+- Quitting with agents still running asks to Pause Agents, Stop Agents, Keep Running or Cancel, and the tray gains Stop All Agents (#1238).
+- The orchestrator's unanswered question is surfaced to the owner in chat (#1234).
+- Spawn warns when the machine is busy, and native reviewers wait on a machine-wide load gate (#1240, #1243).
+- Backlog PRs are checked against their backlog item before review (#1263).
+
+### Fixed
+- Chat shows finished-result replies and substantial pre-tool answers in full, and the pinned prompt bar is opaque (#1248, #1255).
+- Chat waits for a launching chat host, lifts the usage-limit pause when the account is usable again, reports held sends, and ignores sibling turns started before a quota refusal (#1246, #1247, #1251, #1258).
+- Review: Codex and DeepSeek reviewers run outside the PR checkout, a queued review keeps its agent/model/effort, review and land follow the worktree's session branch, and an approved reviewer pane is retired after 5 minutes (#1232, #1235, #1236, #1252).
+- Resume joins a running resume and outlives its request (#1237).
+- Settings dialog and Instructions and skills page layout fixes (#1241, #1242).
+- Local release says when a quit was cancelled and nothing installed, and repeats SIGTERM when the app is stuck mid-quit (#1245, #1261).
+- Stale installed-plugin entries are pruned on worktree cleanup (#1259).
+- Agents reuse an in-flight test run instead of starting a duplicate (#1249).
+- Worker reports are no longer truncated and history turns no longer go missing.
+- Session branch slugs keep an explicit title's versions (#1231).
+
 ## [0.13.18]
 
 ### Added
