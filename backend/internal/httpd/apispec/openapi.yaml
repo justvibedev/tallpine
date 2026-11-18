@@ -5822,97 +5822,6 @@ paths:
         and Markdown references (user only)'
       tags:
       - projects
-  /api/v1/projects/{id}/skills/lsp/install:
-    get:
-      operationId: getProjectLSPInstall
-      parameters:
-      - description: Project identifier (registry key).
-        in: path
-        name: id
-        required: true
-        schema:
-          description: Project identifier (registry key).
-          type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ControllersProjectLSPInstallStatus'
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-      summary: Read the project's current or last LSP install job, with its output
-        tail
-      tags:
-      - projects
-    post:
-      operationId: startProjectLSPInstall
-      parameters:
-      - description: Project identifier (registry key).
-        in: path
-        name: id
-        required: true
-        schema:
-          description: Project identifier (registry key).
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ControllersProjectLSPInstallRequest'
-        required: true
-      responses:
-        "202":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ControllersProjectLSPInstallStatus'
-          description: Accepted
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Bad Request
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Found
-        "409":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Conflict
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Internal Server Error
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/APIError'
-          description: Not Implemented
-      summary: Install an LSP plugin or language server by catalog id; runs only the
-        daemon's fixed commands, one install at a time per project
-      tags:
-      - projects
   /api/v1/projects/{id}/skills/offers/{offerId}/apply:
     post:
       operationId: applyProjectSkillOffer
@@ -22799,139 +22708,6 @@ components:
       required:
       - url
       type: object
-    ControllersProjectLSP:
-      properties:
-        mismatches:
-          items:
-            $ref: '#/components/schemas/ControllersProjectLSPMismatch'
-          type: array
-        recommendations:
-          items:
-            $ref: '#/components/schemas/ControllersProjectLSPRecommendation'
-          type: array
-      required:
-      - recommendations
-      - mismatches
-      type: object
-    ControllersProjectLSPInstallJob:
-      properties:
-        command:
-          type: string
-        error:
-          type: string
-        finishedAt:
-          format: date-time
-          type:
-          - "null"
-          - string
-        language:
-          type: string
-        output:
-          type: string
-        startedAt:
-          format: date-time
-          type: string
-        state:
-          enum:
-          - running
-          - succeeded
-          - failed
-          type: string
-        target:
-          enum:
-          - plugin
-          - binary
-          - go
-          - all
-          type: string
-      required:
-      - language
-      - target
-      - state
-      - command
-      - output
-      - startedAt
-      type: object
-    ControllersProjectLSPInstallRequest:
-      properties:
-        language:
-          type: string
-        target:
-          enum:
-          - plugin
-          - binary
-          - go
-          - all
-          type: string
-      required:
-      - language
-      - target
-      type: object
-    ControllersProjectLSPInstallStatus:
-      properties:
-        job:
-          $ref: '#/components/schemas/ControllersProjectLSPInstallJob'
-      type: object
-    ControllersProjectLSPMismatch:
-      properties:
-        language:
-          type: string
-        pluginId:
-          type: string
-        roles:
-          items:
-            type: string
-          type: array
-      required:
-      - pluginId
-      - language
-      - roles
-      type: object
-    ControllersProjectLSPRecommendation:
-      properties:
-        binary:
-          type: string
-        binaryInstall:
-          type: string
-        binaryInstallable:
-          type: boolean
-        binaryInstalled:
-          type: boolean
-        binaryProblem:
-          type: string
-        files:
-          type: integer
-        language:
-          type: string
-        pluginId:
-          type: string
-        pluginInstall:
-          type: string
-        pluginInstalled:
-          type: boolean
-        roles:
-          items:
-            $ref: '#/components/schemas/ProjectSkillRole'
-          type: array
-        toolchainInstall:
-          type: string
-        toolchainInstallable:
-          type: boolean
-      required:
-      - language
-      - files
-      - pluginId
-      - pluginInstalled
-      - pluginInstall
-      - binary
-      - binaryInstalled
-      - binaryProblem
-      - binaryInstall
-      - binaryInstallable
-      - toolchainInstall
-      - toolchainInstallable
-      - roles
-      type: object
     ControllersReleaseBuildResponse:
       properties:
         log:
@@ -23909,6 +23685,8 @@ components:
           type:
           - "null"
           - string
+        deliveredInTurnId:
+          type: string
         diff:
           $ref: '#/components/schemas/ConversationTurnDiffResponse'
         errorMessage:
@@ -27263,8 +27041,6 @@ components:
           items:
             $ref: '#/components/schemas/ProjectSkillHarness'
           type: array
-        lsp:
-          $ref: '#/components/schemas/ControllersProjectLSP'
         offers:
           items:
             $ref: '#/components/schemas/ProjectSkillOffer'
@@ -27300,7 +27076,6 @@ components:
       - skills
       - collisions
       - plugins
-      - lsp
       type: object
     ProjectSummary:
       properties:
@@ -30348,8 +30123,6 @@ components:
         clientRequestId:
           maxLength: 128
           type: string
-        codeIntel:
-          type: boolean
         displayName:
           maxLength: 100
           type: string

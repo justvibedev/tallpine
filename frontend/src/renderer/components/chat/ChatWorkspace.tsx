@@ -22,7 +22,7 @@ import { CHAT_FONT_SIZE_DEFAULT } from "./chat-workspace-constants";
 
 export { CONTINUE_STOPPED_TURN_PROMPT, continuableTurnId } from "./ChatWorkspaceProps";
 export type { ChatRetryControl, ChatWorkspaceProps } from "./ChatWorkspaceProps";
-export { promptSpacerHeight, promptTopInset } from "./timeline-groups";
+export { promptSpacerHeight, promptTopInset } from "./timeline-prompt-spacer";
 export { Timeline } from "./Timeline";
 import { ChatWorkspaceContent } from "./ChatWorkspaceContent";
 

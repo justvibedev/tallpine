@@ -113,6 +113,15 @@ function createWorkspaceStream(sessionId: string, queryClient: QueryClient, host
 		}, INVALIDATE_DEBOUNCE_MS);
 	};
 	const invalidate = () => scheduleInvalidation(ALL_QUERY_NAMES);
+	// Queries that loaded after this connection attempt began already hold current
+	// data; refetching them on connect would make the daemon serve the same page
+	// twice. Every attempt (including a reconnect) resets the mark, so data that
+	// changed during an outage is still refetched.
+	let attemptAt = Date.now();
+	const invalidateStale = () => scheduleInvalidation(ALL_QUERY_NAMES.filter((name) => {
+		const queries = queryClient.getQueryCache().findAll({ queryKey: queryPrefix(name) });
+		return !queries.length || queries.some((query) => query.state.dataUpdatedAt < attemptAt);
+	}));
 	const scheduleRetry = (generation: number) => {
 		if (stream.disposed || stream.retry) return;
 		stream.phase = "waiting";
@@ -200,6 +209,7 @@ function createWorkspaceStream(sessionId: string, queryClient: QueryClient, host
 
 		stream.sourceBaseUrl = baseUrl;
 		stream.phase = "connecting";
+		attemptAt = Date.now();
 		const generation = ++stream.generation;
 		try {
 			const source = openEventStream(
@@ -212,7 +222,7 @@ function createWorkspaceStream(sessionId: string, queryClient: QueryClient, host
 				stream.failures = 0;
 				stream.retries = 0;
 				setWorkspaceFileConnectionState(key, "connected");
-				invalidate();
+				invalidateStale();
 			};
 			source.onerror = () => {
 				if (stream.disposed || generation !== stream.generation || stream.source !== source) return;

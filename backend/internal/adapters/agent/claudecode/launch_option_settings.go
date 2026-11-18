@@ -2,7 +2,6 @@ package claudecode
 
 import (
 	"encoding/json"
-	"slices"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
 )
@@ -33,34 +32,4 @@ func addLaunchOptionSettings(settings map[string]any, options domain.AgentLaunch
 	if overrides := domain.ClaudeSkillOverrides(options.SkillLaunch().Off); overrides != nil {
 		settings["skillOverrides"] = overrides
 	}
-	if options.CodeIntel {
-		addCodeIntelDeny(settings)
-	}
-}
-
-// addCodeIntelDeny merges domain.CodeIntelDeny into settings' permissions.deny,
-// keeping the rules the protectState fence and the credential guard added.
-func addCodeIntelDeny(settings map[string]any) {
-	perms, _ := settings["permissions"].(map[string]any)
-	if perms == nil {
-		perms = map[string]any{}
-		settings["permissions"] = perms
-	}
-	var deny []string
-	switch cur := perms["deny"].(type) {
-	case []string:
-		deny = cur
-	case []any:
-		for _, v := range cur {
-			if s, ok := v.(string); ok {
-				deny = append(deny, s)
-			}
-		}
-	}
-	for _, rule := range domain.CodeIntelDeny {
-		if !slices.Contains(deny, rule) {
-			deny = append(deny, rule)
-		}
-	}
-	perms["deny"] = deny
 }

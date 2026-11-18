@@ -81,3 +81,54 @@ func (o *Observer) holdForOwnJob(id domain.SessionID, t *turn, gen uint64) bool 
 	t.timer = o.AfterFunc(o.NudgePoll, func() { o.idleElapsed(id, gen) })
 	return true
 }
+
+// holdChatFallback keeps a chat worker's plain turn_ended back while the worker
+// still runs its own background job, as holdForOwnJob does for a TUI turn
+// (B799): a chat turn's notice comes from its durable row, which skipped that
+// hold, so the orchestrator read "went idle" for a worker that was only
+// waiting on its test run. The job's completion wakes the worker, and that new
+// turn retires the row. Once the job ends the notice waits one more IdleDelay
+// for that wake-up turn. It returns how long to wait before checking again,
+// or 0 to deliver now; a job outliving NudgeMaxWait no longer holds it.
+func (o *Observer) holdChatFallback(ctx context.Context, f domain.TurnFallback, rec domain.SessionRecord, kind string) time.Duration {
+	if o.Jobs == nil || kind != KindTurnEnded || rec.Kind != domain.KindWorker {
+		return 0
+	}
+	now := o.Now()
+	if now.Sub(f.CompletedAt) >= o.NudgeMaxWait {
+		return 0
+	}
+	n, err := o.Jobs.RunningJobs(ctx, rec)
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if err == nil && n > 0 {
+		if o.jobHolds == nil {
+			o.jobHolds = map[string]time.Time{}
+		}
+		o.jobHolds[f.ID] = now
+		return o.NudgePoll
+	}
+	if seen, held := o.jobHolds[f.ID]; held && now.Sub(seen) < o.IdleDelay {
+		return o.IdleDelay - now.Sub(seen)
+	}
+	return 0
+}
+
+// pruneJobHolds forgets holds of rows no longer pending (delivered, or retired
+// by the worker's next turn).
+func (o *Observer) pruneJobHolds(pending []domain.TurnFallback) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.jobHolds) == 0 {
+		return
+	}
+	live := make(map[string]bool, len(pending))
+	for _, f := range pending {
+		live[f.ID] = true
+	}
+	for id := range o.jobHolds {
+		if !live[id] {
+			delete(o.jobHolds, id)
+		}
+	}
+}

@@ -21,12 +21,36 @@ function props(inspectorOpenRef: { current: boolean }, setHoveredMarker = vi.fn(
 	};
 }
 
+/** jsdom never matches :focus-visible; Chromium does for keyboard focus. */
+function keyboardFocus(track: HTMLElement) {
+	const matches = track.matches.bind(track);
+	vi.spyOn(track, "matches").mockImplementation((selector) => selector === ":focus-visible" || matches(selector));
+	fireEvent.focus(track);
+}
+
 describe("TimelineMinimap", () => {
-	it("focus selects a marker while the inspector is closed", () => {
+	it("keyboard focus selects a marker while the inspector is closed", () => {
+		const setHovered = vi.fn();
+		render(<TimelineMinimap {...props({ current: false }, setHovered)} />);
+		keyboardFocus(screen.getByTestId("chat-conversation-minimap"));
+		expect(setHovered).toHaveBeenCalledWith(0);
+	});
+
+	// B812: a click left the track focused; when the window regained focus the
+	// track got focus again and opened a card no pointer was there to close.
+	it("does not open the card for focus that is not keyboard focus", () => {
 		const setHovered = vi.fn();
 		render(<TimelineMinimap {...props({ current: false }, setHovered)} />);
 		fireEvent.focus(screen.getByTestId("chat-conversation-minimap"));
-		expect(setHovered).toHaveBeenCalledWith(0);
+		expect(setHovered).not.toHaveBeenCalled();
+	});
+
+	it("closes the card when the window loses focus", () => {
+		const setHovered = vi.fn();
+		render(<TimelineMinimap {...{ ...props({ current: false }, setHovered), hoveredMarker: 0 }} />);
+		expect(screen.getByRole("tooltip")).toBeInTheDocument();
+		fireEvent.blur(window);
+		expect(setHovered).toHaveBeenCalledWith(null);
 	});
 
 	it("reads the inspector ref at focus time, not the value from the last render", () => {
@@ -35,7 +59,7 @@ describe("TimelineMinimap", () => {
 		render(<TimelineMinimap {...props(ref, setHovered)} />);
 		// The inspector opens without re-rendering the Timeline.
 		ref.current = true;
-		fireEvent.focus(screen.getByTestId("chat-conversation-minimap"));
+		keyboardFocus(screen.getByTestId("chat-conversation-minimap"));
 		expect(setHovered).not.toHaveBeenCalled();
 	});
 });

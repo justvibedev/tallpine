@@ -125,11 +125,10 @@ func (s *Service) admitOpenedProvider(ctx context.Context, l *launch) error {
 		l.cfg.ProviderConversationID = ""
 	}
 	if l.liveReconnect {
-		if s.reader == nil {
-			_ = cleanupUnpublishedConversation(l.conv, false)
-			return fmt.Errorf("%w: durable conversation snapshot is unavailable", ports.ErrChatRecoveryInconclusive)
-		}
-		l.liveRows, err = s.reader.LoadConversationSnapshot(ctx, l.conversation.ID)
+		// Only the running turns matter here. The whole snapshot of a long
+		// conversation could outlast the recovery deadline on every attempt and
+		// leave the session without a controller (B810).
+		l.liveTurns, err = s.store.ListVisibleRunningTurns(ctx, l.conversation.ID)
 		if err != nil {
 			_ = cleanupUnpublishedConversation(l.conv, false)
 			return fmt.Errorf("%w: load live conversation before reconnect: %w", ports.ErrChatRecoveryInconclusive, err)
@@ -173,7 +172,7 @@ func (s *Service) claimControllerFence(ctx context.Context, l *launch) error {
 	}
 	reclaimedTurnID := ""
 	if l.liveReconnect {
-		if turn := liveTurnToRestore(l.liveRows.Turns); turn != nil {
+		if turn := liveTurnToRestore(l.liveTurns); turn != nil {
 			reclaimedTurnID = turn.ID
 		}
 	}
@@ -201,7 +200,7 @@ func (s *Service) settleLiveAndPlanBoundary(ctx context.Context, l *launch) erro
 		// A provider may have accepted a prompt before its ID could be bound.
 		// Its replayed events will be adopted separately; leave bound live work
 		// and queued intake intact while closing the unbound visible spinner.
-		for _, turn := range l.liveRows.Turns {
+		for _, turn := range l.liveTurns {
 			if turn.State != domain.TurnStateRunning || turn.ProviderTurnID != "" || turn.RolledBackAt != nil {
 				continue
 			}

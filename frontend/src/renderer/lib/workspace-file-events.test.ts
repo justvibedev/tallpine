@@ -65,11 +65,14 @@ class EventSourceStub {
 	}
 }
 
+let cachedQueries: { state: { dataUpdatedAt: number } }[] = [];
+
 function fakeQueryClient() {
-	return { getQueryData: vi.fn(), invalidateQueries: vi.fn() } as unknown as Parameters<typeof subscribeWorkspaceFileChanges>[1];
+	return { getQueryData: vi.fn(), invalidateQueries: vi.fn(), getQueryCache: () => ({ findAll: () => cachedQueries }) } as unknown as Parameters<typeof subscribeWorkspaceFileChanges>[1];
 }
 
 beforeEach(() => {
+	cachedQueries = [];
 	EventSourceStub.instances = [];
 	EventSourceStub.throwNext = false;
 	baseUrlListener = undefined;
@@ -96,6 +99,44 @@ afterEach(() => {
 });
 
 describe("subscribeWorkspaceFileChanges", () => {
+	it("refetches on reconnect a query that loaded before the new connection attempt", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000);
+		const queryClient = fakeQueryClient();
+		const stop = subscribeWorkspaceFileChanges("reconnect", queryClient);
+		const first = EventSourceStub.instances[0]!;
+		cachedQueries = [{ state: { dataUpdatedAt: 1_500 } }];
+		first.onopen?.();
+		vi.advanceTimersByTime(150);
+		expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+		first.readyState = 2;
+		first.onerror?.();
+		vi.advanceTimersByTime(60_000);
+		const second = EventSourceStub.instances[1]!;
+		expect(second).toBeDefined();
+		second.onopen?.();
+		vi.advanceTimersByTime(150);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["workspace-file-paths", "reconnect"] });
+		stop();
+	});
+
+	it("does not refetch on connect a query that loaded after the stream was created", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000);
+		const queryClient = fakeQueryClient();
+		const stop = subscribeWorkspaceFileChanges("open-dedupe", queryClient);
+		const source = EventSourceStub.instances[0]!;
+		cachedQueries = [{ state: { dataUpdatedAt: 1_500 } }];
+		source.onopen?.();
+		vi.advanceTimersByTime(150);
+		expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+		cachedQueries = [{ state: { dataUpdatedAt: 500 } }];
+		source.onopen?.();
+		vi.advanceTimersByTime(150);
+		expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["workspace-file-paths", "open-dedupe"] });
+		stop();
+	});
+
 	it("refreshes during continuous writes instead of waiting for the final event", () => {
 		vi.useFakeTimers();
 		const queryClient = fakeQueryClient();

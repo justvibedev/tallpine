@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SessionInspector } from "./SessionInspector";
-import { pr, session, sessionWithProvider, renderWithQuery, commonGetsResponder, approvedReview, failedReview, reviewState, mockCommonGets, installInspectorLifecycle } from "../test/session-inspector-fixtures";
+import { pr, session, sessionWithProvider, renderWithQuery, commonGetsResponder, approvedReview, failedReview, reviewState, mockCommonGets, installInspectorLifecycle, tabLabels } from "../test/session-inspector-fixtures";
 import { getMock, postMock, postCallsFor } from "../test/session-inspector-mocks";
 
 vi.mock("@tanstack/react-router", () => import("../test/session-inspector-mocks").then((m) => m.routerModule()));
@@ -814,10 +814,7 @@ describe("SessionInspector summary reviews", () => {
     await screen.findByRole("tab", { name: /Summary/ });
     expect(screen.queryByRole("tab", { name: /Reviews/ })).not.toBeInTheDocument();
     // No side chat view from the host (side chats off or unsupported): no tab.
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual([
-      "Summary",
-      "Files",
-    ]);
+    expect(tabLabels()).toEqual(["Summary", "Browser", "Files"]);
     expect(
       screen.queryByRole("switch", { name: "Automatically fix review comments" }),
     ).not.toBeInTheDocument();

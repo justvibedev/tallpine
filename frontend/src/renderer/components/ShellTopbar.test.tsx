@@ -85,6 +85,10 @@ vi.mock("../hooks/useHostConnection", async (importOriginal) => ({
 	useConnectedHosts: () => ["box-a"],
 }));
 vi.mock("./NewTaskDialog", () => ({ NewTaskDialog: () => null }));
+// The menu itself is covered in TopbarAccountMenu.test; here only its placement.
+vi.mock("./TopbarAccountMenu", () => ({
+	TopbarAccountMenu: ({ session }: { session: { id: string } }) => <span data-testid="topbar-account-stub">{session.id}</span>,
+}));
 vi.mock("./NotificationCenter", () => ({
 	NotificationCenter: () => <button aria-label="Notifications" type="button" />,
 }));
@@ -360,9 +364,23 @@ describe("ShellTopbar status pill", () => {
 		expect(localActions.contains(screen.getByRole("button", { name: "Open orchestrator" }))).toBe(false);
 	});
 
+	it("shows the AI account switcher first in a local session's actions (B797)", () => {
+		const view = renderTopbar(worker, true);
+		const actions = screen.getByTestId("workspace-topbar-actions");
+		expect(within(actions).getByTestId("topbar-account-stub")).toHaveTextContent("sess-1");
+		view.unmount();
+		renderTopbar(orchestrator, true);
+		const stub = screen.getByTestId("topbar-account-stub");
+		expect(stub).toHaveTextContent("orch-1");
+		// It leads the orchestrator's icon buttons.
+		expect(stub.compareDocumentPosition(screen.getByRole("button", { name: "New task" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
 	it("uses the same embedded actions for a remote session, routed to its host", async () => {
 		paramsMock.hostId = "box-a";
 		const view = renderTopbarSessions([{ ...worker, hostId: "box-a" }, { ...orchestrator, hostId: "box-a" }], worker.id, true);
+		// Accounts belong to the local daemon: a remote session has no switcher.
+		expect(screen.queryByTestId("topbar-account-stub")).not.toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Archive session" })).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: /open in.*editor/i })).not.toBeInTheDocument();
 		await userEvent.click(screen.getByRole("button", { name: "Open orchestrator" }));
@@ -509,34 +527,16 @@ describe("ShellTopbar orchestrator actions", () => {
 		expect(navigateMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("shows a clear Kanban button on embedded orchestrator sessions", async () => {
-		renderTopbar(orchestrator, true);
-
-		const kanbanButton = screen.getByRole("button", { name: "Open Kanban" });
-		expect(kanbanButton).toHaveTextContent("Open Kanban");
-		expect(kanbanButton).toHaveClass("topbar-control--feature");
-		expect(screen.queryByText("my-app")).not.toBeInTheDocument();
-		await userEvent.click(kanbanButton);
-		expect(navigateMock).toHaveBeenCalledWith({
-			to: "/projects/$projectId",
-			params: { projectId: "proj-1" },
-			search: { view: "board" },
-		});
-	});
-
-	it("opens the board from the Kanban button on the full orchestrator topbar", async () => {
-		renderTopbar(orchestrator);
-
-		const kanbanButton = screen.getByRole("button", { name: "Open Kanban" });
-		expect(kanbanButton).toHaveTextContent("Open Kanban");
-		expect(kanbanButton).toHaveClass("topbar-control--feature");
-		expect(screen.getByRole("button", { name: "New task" })).toHaveClass("bg-raised");
-		await userEvent.click(kanbanButton);
-		expect(navigateMock).toHaveBeenCalledWith({
-			to: "/projects/$projectId",
-			params: { projectId: "proj-1" },
-			search: { view: "board" },
-		});
+	it.each([true, false])("opens the board from compact icon buttons (embedded: %s)", async (embedded) => {
+		renderTopbar(orchestrator, embedded);
+		// Task, Lane and Kanban are icon buttons named by aria-label and tooltip, with no visible text.
+		for (const name of ["New task", "New lane…", "Open Kanban"]) {
+			expect(screen.getByRole("button", { name })).toHaveClass("topbar-control--icon");
+			expect(screen.getByRole("button", { name })).toHaveTextContent("");
+		}
+		if (embedded) expect(screen.queryByText("my-app")).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "Open Kanban" }));
+		expect(navigateMock).toHaveBeenCalledWith({ to: "/projects/$projectId", params: { projectId: "proj-1" }, search: { view: "board" } });
 	});
 
 	it("opens project settings instead of spawning when no orchestrator agent is configured", async () => {

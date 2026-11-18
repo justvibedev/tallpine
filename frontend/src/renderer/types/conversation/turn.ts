@@ -121,6 +121,11 @@ export interface ConversationTurn {
 	providerTurnId?: string;
 	/** Failed source whose durable prompt created this retry attempt. */
 	retryOfTurnId?: string;
+	/**
+	 * The turn whose input this queued message was batched into when it started.
+	 * That turn answers the message, so the transcript shows it there.
+	 */
+	deliveredInTurnId?: string;
 	/** A retry attempt exists, even if that child is outside the active branch. */
 	hasRetryAttempt?: boolean;
 	/** Durable human-prompt fact, independent of the loaded history page. */

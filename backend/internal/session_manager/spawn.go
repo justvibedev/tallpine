@@ -110,7 +110,6 @@ func (m *Manager) Spawn(ctx context.Context, cfg ports.SpawnConfig) (domain.Sess
 	if x := m.spawnPromotePreparation(ctx, st); x != nil {
 		return x.unpack()
 	}
-	m.persistCodeIntel(ctx, st)
 	// A speculative worktree may still be being created under this gate. Wait
 	// for it above without holding the gate, then serialize the remaining
 	// synchronous workspace lifecycle as before. Async Chat acquires it in its

@@ -23,6 +23,12 @@ describe("SidebarToggleButton", () => {
 	it("carries no notification badge; the count lives on the bell", () => {
 		renderToggle();
 		expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeInTheDocument();
+		expect(screen.queryByTestId("sidebar-toggle-browser-dot")).not.toBeInTheDocument();
+	});
+
+	it("carries the unseen-browser dot, since Browser is a panel tab (B797)", () => {
+		renderToggle({ dot: true });
+		expect(screen.getByTestId("sidebar-toggle-browser-dot")).toBeInTheDocument();
 	});
 
 	it("shows the shortcut in the tooltip while the aria-label stays plain", async () => {

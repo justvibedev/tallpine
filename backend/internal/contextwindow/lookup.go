@@ -32,7 +32,7 @@ func AutoCompactEnvKey(harness domain.AgentHarness) string {
 
 // CatalogReader reads the saved model catalog for a harness and project.
 type CatalogReader interface {
-	Models(ctx context.Context, agentID, scope string, refresh bool) (ports.AgentModelCatalog, error)
+	ModelCatalog(ctx context.Context, agentID, scope string, refresh bool) (ports.AgentModelCatalog, error)
 }
 
 // Lookup is the model's capacity and display name from the saved catalog (see
@@ -42,7 +42,7 @@ type CatalogReader interface {
 func Lookup(ctx context.Context, reader CatalogReader, harness, project, model string) (int64, string) {
 	var catalog ports.AgentModelCatalog
 	if reader != nil {
-		if saved, err := reader.Models(ctx, harness, project, false); err == nil {
+		if saved, err := reader.ModelCatalog(ctx, harness, project, false); err == nil {
 			catalog = saved
 		}
 	}

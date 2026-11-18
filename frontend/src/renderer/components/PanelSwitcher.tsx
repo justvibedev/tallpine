@@ -39,6 +39,7 @@ export function PanelSwitcher({
 	style?: CSSProperties;
 }) {
 	const { t } = useTranslation();
+	if (items.length === 0) return null;
 	return (
 		<div aria-label={t("panel.switcher")} className="flex items-center gap-1" data-testid="panel-switcher" role="group">
 			{items.map((item) => {

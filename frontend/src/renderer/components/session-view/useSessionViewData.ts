@@ -11,7 +11,7 @@ import { useSessionInterfaceSwitch } from "../../hooks/useSessionInterfaceSwitch
 import { canResumeAgent, resumeAgentOnOpen } from "../../hooks/useCanResumeAgent";
 import { useSessionGoneRedirect } from "../../hooks/useSessionGoneRedirect";
 import { useSessionInterfaceTransitionStatus } from "../../hooks/useSessionInterfaceTransition";
-import { conversationQueryKey } from "../../hooks/conversation";
+import { refreshConversation } from "../../hooks/conversation";
 import { discardCapturedPendingFileAttachments } from "../../hooks/useFileAttachments";
 import { useRemoteSessionProjectKind, useWorkspaceQuery, useWorkspaceSession, workspaceQueryKeyForHost } from "../../hooks/useWorkspaceQuery";
 import { apiErrorMessage } from "../../lib/api-client";
@@ -111,6 +111,8 @@ export function useSessionViewData(props: SessionViewProps) {
 	const theme = useResolvedTheme();
 	const browserOnly = Boolean(session && isOrchestratorSession(session));
 	const isInspectorOpen = useUiStore((state) => inspectorIsOpen(state.inspectorSessions, uiSessionId));
+	// Browser is a panel tab; while the panel is closed its unseen dot rides on the sidebar toggle.
+	const browserUnseen = useUiStore((state) => Boolean(state.inspectorSessions[uiSessionId]?.browserUnseen));
 	const [sideChatContainer, setSideChatContainer] = useState<HTMLDivElement | null>(null);
 	const sideChatsAvailable = useSideChatsAvailable(session, hostId);
 	const orchestratorPlan = useSessionPlan(browserOnly ? sessionId : undefined, hostId);
@@ -141,7 +143,7 @@ export function useSessionViewData(props: SessionViewProps) {
 		onSettled: async (_data, _error, id) => {
 			await Promise.all([
 				refreshWorkspaces(),
-				queryClient.invalidateQueries({ queryKey: conversationQueryKey(id) }),
+				refreshConversation(queryClient, id),
 			]);
 		},
 	});
@@ -335,6 +337,7 @@ export function useSessionViewData(props: SessionViewProps) {
 		inspectorView,
 		interfaceUi,
 		isInspectorOpen,
+		browserUnseen,
 		navigate,
 		previewBaselineRef,
 		queryClient,

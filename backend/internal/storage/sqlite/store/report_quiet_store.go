@@ -26,11 +26,14 @@ func (s *Store) FlushQuietReports(ctx context.Context, projectID domain.ProjectI
 // its session filed a later report of any state (B403). A daemon-synthesized
 // notice (turn_ended, usage_limited) never supersedes a worker-filed report:
 // it is filed moments after the worker's own report and carries less (B459).
+// Nor does one supersede a held turn_ended: each carries its own turn's last
+// message, and dropping the earlier one lost a worker's answer to the
+// orchestrator behind a later one-line acknowledgement (B799).
 func (s *Store) QuietReportState(ctx context.Context, id string) (quiet, superseded bool, err error) {
 	err = s.readDB.QueryRowContext(ctx, `SELECT
   EXISTS (SELECT 1 FROM report_quiet q WHERE q.report_id = r.id),
   EXISTS (SELECT 1 FROM reports n WHERE n.session_id = r.session_id AND n.id <> r.id
-          AND (r.synthesized = 1 OR n.synthesized = 0)
+          AND (n.synthesized = 0 OR (r.synthesized = 1 AND r.message NOT LIKE '[auto] turn_ended:%'))
           AND (n.created_at > r.created_at OR (n.created_at = r.created_at AND n.id > r.id)))
 FROM reports r WHERE r.id = ?1`, id).Scan(&quiet, &superseded)
 	if errors.Is(err, sql.ErrNoRows) {

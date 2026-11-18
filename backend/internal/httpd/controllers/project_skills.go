@@ -36,11 +36,6 @@ type ProjectSkillsController struct {
 	// AppDefaults supplies the app-wide skill switches a project inherits
 	// (B740). Nil means none.
 	AppDefaults AppDefaultsReader
-	// LSPInstaller runs the fixed LSP install commands. Nil disables installs.
-	LSPInstaller *skillbridge.LSPInstaller
-	// ClaudeSessionEnv is the Claude account env new sessions launch with, so
-	// plugins install where they read them. Nil uses the project env alone.
-	ClaudeSessionEnv ClaudeSessionEnv
 }
 
 // AppDefaultsReader reads the app-wide workflow defaults.
@@ -198,8 +193,6 @@ type ProjectSkillsResponse struct {
 	Collisions    []ProjectSkillCollision `json:"collisions"`
 	// Plugins are the Claude Code plugins the account config offers.
 	Plugins []ProjectPlugin `json:"plugins"`
-	// LSP is the project's language-server plugin advice (recommendations and mismatches).
-	LSP ProjectLSP `json:"lsp"`
 	// CommitTarget is where "Commit" publishes pending files: the branch new
 	// sessions start from. Absent when it cannot be resolved.
 	CommitTarget *ProjectSkillCommitTarget `json:"commitTarget,omitempty"`
@@ -213,7 +206,6 @@ func (c *ProjectSkillsController) Register(r chi.Router) {
 	r.Post("/projects/{id}/skills/remove", c.remove)
 	c.registerCustom(r)
 	c.registerApp(r)
-	c.registerLSPInstall(r)
 	r.Post("/projects/{id}/skills/commit", c.commit)
 	r.Post("/projects/{id}/skills/push-branch", c.pushBranch)
 }
@@ -330,7 +322,6 @@ func (c *ProjectSkillsController) get(w http.ResponseWriter, r *http.Request) {
 		resp.Plugins = append(resp.Plugins, ProjectPlugin{ID: pl.ID, Name: pl.Name, Marketplace: pl.Marketplace, Description: pl.Description, Version: pl.Version, Path: pl.Path, Installed: pl.Installed, AccountEnabled: pl.AccountEnabled,
 			Roles: pluginRoles(p.claudePlugins, pl, harnesses)})
 	}
-	resp.LSP = lspAdvice(path, opts.Home, inv.Plugins, p.claudePlugins, harnesses, skillbridge.DetectLanguages, skillbridge.BinaryInstalled, skillbridge.BinaryProblem)
 	for _, h := range harnesses {
 		resp.Instructions = append(resp.Instructions, ProjectSkillHarness{Harness: h, Status: skillbridge.InstructionStatus(inv.Instructions, h)})
 	}

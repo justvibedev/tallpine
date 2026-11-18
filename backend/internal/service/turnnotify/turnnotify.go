@@ -23,9 +23,6 @@ import (
 	reportsvc "tallpine.eu/tallpine/backend/internal/service/report"
 )
 
-// ChatQuietDelay is the quiet window of a synthesized chat turn_ended.
-const ChatQuietDelay = 2 * time.Minute
-
 // DefaultIdleDelay is how long a worker must stay idle after a turn ends,
 // without a new prompt or a tallpine report, before the orchestrator is told.
 var DefaultIdleDelay = domain.TurnFallbackDelay
@@ -167,6 +164,9 @@ type Observer struct {
 	wake   chan struct{}
 	// finishing holds turn-end text while its signal is being applied (B557).
 	finishing map[domain.SessionID]string
+	// jobHolds maps a held chat fallback row to when its worker's own job was
+	// last seen running (B799).
+	jobHolds map[string]time.Time
 }
 
 // Close stops all pending notifications and ignores later signals. The daemon
@@ -705,20 +705,6 @@ func (o *Observer) sendWithID(id domain.SessionID, kind, last, reportID string) 
 	if err != nil && !errors.Is(err, domain.ErrDuplicateReport) {
 		o.Log.Warn("turn notification failed", "session", id, "kind", kind, "err", err)
 	}
-}
-
-// quietPolicy is the one place a synthesized notice picks its quiet queueing,
-// shared by the live and durable (fallback row) paths. Only a plain turn end
-// or usage limit is an FYI; a chat one gets the short ChatQuietDelay window
-// instead of the report service's default (B255, B738).
-func quietPolicy(kind string, rec domain.SessionRecord) (quiet bool, quietFor time.Duration) {
-	if kind != KindTurnEnded && kind != KindUsageLimited {
-		return false, 0
-	}
-	if domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat {
-		return true, ChatQuietDelay
-	}
-	return true, 0
 }
 
 // maxReasonCharacters bounds an approval's stated reason and

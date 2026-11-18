@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	claudecodeagent "tallpine.eu/tallpine/backend/internal/adapters/agent/claudecode"
 	"tallpine.eu/tallpine/backend/internal/adapters/workspace/gitworktree"
 	"tallpine.eu/tallpine/backend/internal/browserruntime"
 	"tallpine.eu/tallpine/backend/internal/browserstream"
@@ -54,7 +53,6 @@ func (b *boot) wireHTTP() error {
 		Agents:               b.agentSvc,
 		CodexAccounts:        b.agentSvc.Codex(),
 		AgentAccounts:        b.agentAccountSvc,
-		ClaudeBinary:         claudecodeagent.ResolveClaudeBinary,
 		AccountAdopt:         b.accountAdoptSvc,
 		SystemChecks:         b.systemChecks,
 		Installer:            b.systemInstall,

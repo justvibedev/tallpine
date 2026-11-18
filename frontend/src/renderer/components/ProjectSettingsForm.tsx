@@ -46,7 +46,7 @@ type SettingsSaveResult = {
 };
 
 /** "general" and "agents" are the remote host pages; the rest are the local project pages. */
-export type ProjectSettingsSection = "general" | "agents" | "details" | "repository" | "instructions" | "codeIntelligence" | "reviews" | "workflow" | "sessions" | "security" | "advanced";
+export type ProjectSettingsSection = "general" | "agents" | "details" | "repository" | "instructions" | "reviews" | "workflow" | "sessions" | "security" | "advanced";
 export type ProjectSettingsSaveState = {
 	phase: "idle" | "pending" | "saving" | "saved" | "failed";
 	dirty?: boolean;
@@ -134,7 +134,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 	const setOrchestratorReplacementError = useUiStore((state) => state.setOrchestratorReplacementError);
 	const workspaceQuery = useQuery({ ...workspaceQueryOptions, enabled: !hostId });
 	// Instructions and skills lists the account's Claude plugins; the inventory below the form shares this query.
-	const skillsQuery = useQuery({ queryKey: projectSkillsQueryKey(projectId), queryFn: () => fetchProjectSkills(projectId), enabled: !hostId && (section === "instructions" || section === "codeIntelligence") });
+	const skillsQuery = useQuery({ queryKey: projectSkillsQueryKey(projectId), queryFn: () => fetchProjectSkills(projectId), enabled: !hostId && (section === "instructions") });
 	const remoteProjectQuery = useRemoteProjectQuery(hostId ?? "", projectId);
 	const managedKeys = useManagedLocks(projectId, !hostId);
 	const config = project.config ?? {};
@@ -335,7 +335,7 @@ function SettingsBody({ project, projectId, hostId, hostConnected, onSaved, sect
 		githubProjectId={hostId || isScratchProject ? undefined : projectId}
 		generalExtra={hostId ? undefined : <ProjectSettingsChanges projectId={projectId} />}
 		securityExtra={hostId ? undefined : <ProjectSecuritySection projectId={projectId} />}
-		skills={skillsQuery.data} lspProjectId={hostId ? undefined : projectId}
+		skills={skillsQuery.data}
 		generalTop={hostId || isScratchProject ? undefined : ({ setDefaultBranch }) => <DefaultBranchNotice projectId={projectId} onSwitch={setDefaultBranch} />}
 		capabilities={{ workflow: !isScratchProject, sessionPrefix: !isScratchProject, githubUser: !isScratchProject, intake: intakeVisible, reviewer: !isScratchProject, requiredAgents: true, noCI: !isScratchProject, planAutoApprove: true, chatHibernation: true, localFields: !hostId }}
 		details={[{ label: t("settings.project.path"), value: project.path, href: hostId ? undefined : `file://${encodeURI(project.path)}` }, { label: t("settings.project.repo"), value: project.repo || "—", href: project.repo ? repositoryHref(project.repo) : undefined }, ...(isScratchProject ? [] : [{ label: t("settings.project.githubAccount"), value: project.githubAccount || t("settings.project.githubAccountDefault") }])]}

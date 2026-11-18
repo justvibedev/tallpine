@@ -135,14 +135,14 @@ func (m *Manager) resolveAgentConfigStrict(ctx context.Context, decision agentpo
 	// live model discovery. Rediscover when the saved catalog cannot answer. A
 	// stale Claude catalog may still answer from its last-known-good entries;
 	// other stale, updating or failed catalogs are refreshed first.
-	catalog, err := m.modelCatalog.Models(ctx, string(cfg.Harness), string(cfg.ProjectID), false)
+	catalog, err := m.modelCatalog.ModelCatalog(ctx, string(cfg.Harness), string(cfg.ProjectID), false)
 	validationCatalog := catalog
 	if cfg.Harness == domain.HarnessClaudeCode && catalog.Stale {
 		validationCatalog.Stale = false
 		validationCatalog.RefreshState = "idle"
 	}
 	if err != nil || !savedCatalogCovers(validationCatalog, modelID, resolved.Effort) {
-		catalog, err = m.modelCatalog.Models(ctx, string(cfg.Harness), string(cfg.ProjectID), true)
+		catalog, err = m.modelCatalog.ModelCatalog(ctx, string(cfg.Harness), string(cfg.ProjectID), true)
 	}
 	if err != nil {
 		if modelChangedWithoutExplicitEffort {

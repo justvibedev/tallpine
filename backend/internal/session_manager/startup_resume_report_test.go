@@ -142,19 +142,20 @@ func TestStartupReattachReportDecisions(t *testing.T) {
 	permanent := errors.New("provider config broken")
 	for name, tc := range map[string]struct {
 		err        error
-		final      bool
+		report     bool
 		mutate     func(*domain.SessionRecord)
 		userOwned  bool
 		wantRetry  bool
 		wantReport bool
 	}{
 		"retryable with attempts left stays quiet": {err: inconclusive, wantRetry: true},
-		"retryable on the last attempt reports":    {err: inconclusive, final: true, wantReport: true},
-		"non-retryable reports at once":            {err: permanent, wantReport: true},
+		// B810: the end of the schedule reports once but never gives up.
+		"retryable on the last attempt reports and retries": {err: inconclusive, report: true, wantRetry: true, wantReport: true},
+		"non-retryable reports at once":                     {err: permanent, wantReport: true},
 		"user-stopped agent stays quiet": {err: permanent, mutate: func(r *domain.SessionRecord) {
 			r.Activity.State = domain.ActivityExited
 		}},
-		"user operation owns it stays quiet": {err: permanent, final: true, userOwned: true},
+		"user operation owns it stays quiet": {err: permanent, report: true, userOwned: true, wantRetry: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
@@ -173,7 +174,7 @@ func TestStartupReattachReportDecisions(t *testing.T) {
 				}
 				defer m.endAgentOperation(rec.ID, agentOperationReconcile)
 			}
-			retry := m.retryStartupChatCheck(ctx, rec.ID, tc.final)
+			retry := m.retryStartupChatCheck(ctx, rec.ID, tc.report)
 			if retry != tc.wantRetry {
 				t.Fatalf("retry = %v, want %v", retry, tc.wantRetry)
 			}

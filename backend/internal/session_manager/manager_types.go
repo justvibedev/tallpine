@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/attachmentstore"
+	"tallpine.eu/tallpine/backend/internal/contextwindow"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/sessionguard"
@@ -260,11 +261,9 @@ type Manager struct {
 	// defaults resolves the daemon-owned default session interface for a spawn
 	// that names no mode. Nil falls back to the compatibility default, so a build
 	// without it behaves exactly as before.
-	defaults     SessionModeDefaults
-	chat         ChatLauncher
-	modelCatalog interface {
-		Models(context.Context, string, string, bool) (ports.AgentModelCatalog, error)
-	}
+	defaults            SessionModeDefaults
+	chat                ChatLauncher
+	modelCatalog        contextwindow.CatalogReader
 	lcm                 lifecycleRecorder
 	preview             PreviewLifecycle
 	browser             BrowserLifecycle
@@ -341,6 +340,7 @@ type Manager struct {
 	statusReadinessNextSub      int
 	statusVerificationLimit     time.Duration
 	startupChatRetryDelays      []time.Duration
+	startupChatRetryMaxDelay    time.Duration
 	startupChatResumeDelays     []time.Duration
 	startupChatResumeSem        chan struct{}
 	startupChatResume           func(context.Context, domain.SessionID) (bool, error)

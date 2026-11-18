@@ -92,3 +92,42 @@ func TestReportStoreLatestHeldTurnEndedReport(t *testing.T) {
 	}
 	want("superseded by a worker report", "", false)
 }
+
+// B799: knivesvr-38 answered its orchestrator in one turn, then acknowledged
+// Tallpine's "review running" notice in the next. The second turn_ended
+// superseded the first, so the answer was dropped undelivered. A later
+// synthesized notice must not supersede a held turn_ended; only the worker's
+// own report does. Other held notices (usage_limited) still give way.
+func TestReportStoreQuietTurnEndedNotSupersededBySynthesized(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	seedProject(t, s, "tp")
+	sess, err := s.CreateSession(ctx, sampleRecord("tp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	mk := func(id, message string, at time.Time, synthesized bool) {
+		t.Helper()
+		rec := domain.ReportRecord{ID: id, SessionID: sess.ID, ProjectID: sess.ProjectID, Message: message, Synthesized: synthesized, CreatedAt: at, DeliveryState: domain.ReportPending, AvailableAt: at, RepeatCount: 1, Quiet: true}
+		if !synthesized {
+			rec.Message, rec.State, rec.Note = "", domain.ReportCheckpoint, message
+		}
+		if _, err := s.CreateReport(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("limit", "[auto] usage_limited: paused", now, true)
+	mk("answer", "[auto] turn_ended: Pushed. Neither concern applies.", now.Add(time.Minute), true)
+	mk("ack", "[auto] turn_ended: Understood. I won't push until the verdict arrives.", now.Add(2*time.Minute), true)
+	if q, sup, err := s.QuietReportState(ctx, "answer"); err != nil || !q || sup {
+		t.Fatalf("turn_ended answer superseded by a later turn_ended = %v %v %v", q, sup, err)
+	}
+	if _, sup, _ := s.QuietReportState(ctx, "limit"); !sup {
+		t.Fatal("usage_limited notice not superseded by a later notice")
+	}
+	mk("worker", "B40 ready", now.Add(3*time.Minute), false)
+	if _, sup, _ := s.QuietReportState(ctx, "answer"); !sup {
+		t.Fatal("turn_ended not superseded by the worker's own later report")
+	}
+}

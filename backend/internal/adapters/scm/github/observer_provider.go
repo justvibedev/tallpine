@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"time"
@@ -70,10 +69,10 @@ func (p *Provider) ListPRsByRepo(ctx context.Context, repo ports.SCMRepo, update
 		q.Set("direction", "desc")
 		q.Set("per_page", strconv.Itoa(perPage))
 		q.Set("page", strconv.Itoa(page))
-		if !updatedAfter.IsZero() {
-			q.Set("since", updatedAfter.UTC().Format(time.RFC3339Nano))
-		}
-		resp, err := p.clientFor(repo.Host).doREST(ctx, http.MethodGet, repoPath(repo.Owner, repo.Name, "pulls"), q, nil)
+		// The pulls endpoint ignores "since", so filtering and page-stop are
+		// client-side. The fetch bypasses the body cache: an advancing
+		// per-poll key would never hit and would pin ~MB bodies (B817).
+		resp, err := p.clientFor(repo.Host).doRESTWithETag(ctx, repoPath(repo.Owner, repo.Name, "pulls"), q, "")
 		if err != nil {
 			return nil, err
 		}
@@ -81,10 +80,16 @@ func (p *Provider) ListPRsByRepo(ctx context.Context, repo ports.SCMRepo, update
 		if err := json.Unmarshal(resp.Body, &pulls); err != nil {
 			return nil, fmt.Errorf("github scm: decode open PR list: %w", err)
 		}
+		stale := false
 		for _, pull := range pulls {
-			out = append(out, restListPullToSCM(pull))
+			obs := restListPullToSCM(pull)
+			if !updatedAfter.IsZero() && !obs.UpdatedAtProvider.IsZero() && obs.UpdatedAtProvider.Before(updatedAfter) {
+				stale = true // sorted by updated desc: nothing older matters
+				continue
+			}
+			out = append(out, obs)
 		}
-		if len(pulls) < perPage {
+		if stale || len(pulls) < perPage {
 			return out, nil
 		}
 	}

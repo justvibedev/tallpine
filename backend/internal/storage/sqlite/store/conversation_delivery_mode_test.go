@@ -69,6 +69,15 @@ func TestQueuedBatchRecordsDeliveryModeAndDelay(t *testing.T) {
 		if delay := completed.Sub(requested); gotMode != mode || delay < 88*time.Second || delay > 90*time.Second {
 			t.Fatalf("%s: delivery_mode=%q delay=%s", mode, gotMode, delay)
 		}
+		// B812: the transcript shows the message inside the turn that took it.
+		follower, err := s.TurnByID(ctx, batch[0].TurnID)
+		want := "running"
+		if mode == domain.DeliveryModeSteered {
+			want = "" // a steer keeps its own transcript entry in the turn it joined
+		}
+		if err != nil || follower.DeliveredInTurnID != want {
+			t.Fatalf("%s: deliveredInTurnId=%q err=%v, want the carrier turn", mode, follower.DeliveredInTurnID, err)
+		}
 		add(fmt.Sprint("next-", mode), 2*time.Second) // one more waiter for the next mode
 	}
 }

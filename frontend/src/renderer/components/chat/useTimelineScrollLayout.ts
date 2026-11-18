@@ -1,7 +1,8 @@
 import type { ChatDraftInlineEdit } from "../../lib/chat-drafts";
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useRef } from "react";
-import { TimelineGroup, groupHasHumanPrompt, promptSpacerHeight, promptTopInset } from "./timeline-groups";
+import { TimelineGroup, groupHasHumanPrompt } from "./timeline-groups";
+import { promptSpacerHeight, promptTopInset } from "./timeline-prompt-spacer";
 import { type ConversationSnapshot } from "../../types/conversation";
 import type { Dispatch, SetStateAction, RefObject } from "react";
 import { INITIAL_SNAP_MS } from "./timeline-constants";

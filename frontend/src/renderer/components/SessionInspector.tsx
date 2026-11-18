@@ -155,7 +155,7 @@ export const SessionInspector = memo(function SessionInspector({
 			label,
 		};
 	});
-	// The switcher owns Browser and Plan, in this order; the in-panel tab strip keeps the rest.
+	// The top-bar switcher owns Plan; the in-panel tab strip keeps the rest, Browser included.
 	const switcherItems: PanelSwitcherItem[] = PANEL_SWITCHER_VIEWS.flatMap((id) => {
 		const tab = tabs.find((entry) => entry.id === id);
 		if (!tab) return [];

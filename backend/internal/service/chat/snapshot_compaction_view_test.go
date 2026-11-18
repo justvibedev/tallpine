@@ -12,7 +12,7 @@ import (
 
 type emptyCatalog struct{}
 
-func (emptyCatalog) Models(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
+func (emptyCatalog) ModelCatalog(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
 	return ports.AgentModelCatalog{}, nil
 }
 

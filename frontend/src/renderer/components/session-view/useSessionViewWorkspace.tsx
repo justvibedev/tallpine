@@ -11,10 +11,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { useBrowserView } from "../../hooks/useBrowserView";
 import { useFileAnnotation } from "../../hooks/useFileAnnotation";
 import { adoptedShellHandle } from "../../hooks/useShellTerminals";
-import { conversationQueryKey } from "../../hooks/conversation";
-import { workspaceQueryKeyForHost } from "../../hooks/useWorkspaceQuery";
+import { useChatViewRegistration } from "./useChatViewRegistration";
 import { apiErrorMessage } from "../../lib/api-client";
-import { clientForSessionHost } from "../../lib/host-clients";
 import { isOrchestratorSession, sessionIsActive } from "../../types/workspace";
 import { terminalTargetBelongsToSession, type TerminalTarget } from "../../types/terminal";
 import { useUiStore, type InspectorView } from "../../stores/ui-store";
@@ -44,7 +42,6 @@ export function useSessionViewWorkspace(props: SessionViewProps, data: ReturnTyp
 		inspectorPanelVisible,
 		inspectorView,
 		interfaceUi,
-		queryClient,
 		remoteBase,
 		remoteSessionQuery,
 		reviewerChatId,
@@ -328,48 +325,7 @@ export function useSessionViewWorkspace(props: SessionViewProps, data: ReturnTyp
 				!shellTerminals.some((shell) => shell.handleId === activeShellTerminalHandleId))) &&
 		!reviewerChatId &&
 		!fileTabs.activePath;
-	useEffect(() => {
-		if (!chatViewActive) return;
-		const viewId = crypto.randomUUID();
-		let left = false;
-		let refreshed = false;
-		let pending = Promise.resolve();
-		const setViewActive = async (active: boolean) => {
-			try {
-				const { error } = await clientForSessionHost(hostId).POST("/api/v1/sessions/{sessionId}/chat-view", {
-					params: { path: { sessionId } },
-					body: { viewId, active },
-				});
-				if (error) throw error;
-				// Remote conversations already refresh every two seconds.
-				if (active && !left && !refreshed && !hostId) {
-					refreshed = true;
-					void queryClient.invalidateQueries({ queryKey: conversationQueryKey(sessionId, hostId) });
-					void queryClient.invalidateQueries({ queryKey: workspaceQueryKeyForHost(hostId) });
-				}
-			} finally {
-				// Release a late registration too; leaving must not wait on wake.
-				if (active && left) void setViewActive(false).catch(() => {});
-			}
-		};
-		const renewView = () => {
-			pending = pending.catch(() => {}).then(() => {
-				return left ? undefined : setViewActive(true);
-			});
-			return pending;
-		};
-		const refreshAfterWakeError = () => {
-			if (left || hostId) return;
-			void queryClient.invalidateQueries({ queryKey: conversationQueryKey(sessionId, hostId) });
-		};
-		void renewView().catch(refreshAfterWakeError);
-		const renewal = window.setInterval(() => { void renewView().catch(refreshAfterWakeError); }, 10_000);
-		return () => {
-			left = true;
-			window.clearInterval(renewal);
-			void setViewActive(false).catch(() => {});
-		};
-	}, [chatViewActive, hostId, queryClient, sessionId]);
+	useChatViewRegistration(sessionId, hostId, chatViewActive);
 	// A local session's tab menu holds the interface switch and, in a terminal, its agent.
 	const agentWorking = chatDraftBoundaries.length > 0 || session?.isTerminated === true ||
 		session?.activity?.state === "active" || session?.activity?.state === "waiting_input" || session?.activity?.state === "blocked";

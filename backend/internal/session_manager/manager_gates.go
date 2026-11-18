@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"tallpine.eu/tallpine/backend/internal/contextwindow"
 	"tallpine.eu/tallpine/backend/internal/domain"
 	"tallpine.eu/tallpine/backend/internal/ports"
 )
@@ -75,9 +76,7 @@ func (m *Manager) beginHarnessUse(harness domain.AgentHarness) (func(), error) {
 }
 
 // SetModelCatalog late-binds the catalog service after daemon construction.
-func (m *Manager) SetModelCatalog(catalog interface {
-	Models(context.Context, string, string, bool) (ports.AgentModelCatalog, error)
-}) {
+func (m *Manager) SetModelCatalog(catalog contextwindow.CatalogReader) {
 	m.modelCatalog = catalog
 }
 

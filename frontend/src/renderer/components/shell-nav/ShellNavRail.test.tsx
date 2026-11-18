@@ -62,7 +62,7 @@ describe("ShellNavRail", () => {
 		renderRail();
 		const rail = screen.getByRole("navigation", { name: "Main navigation" });
 		const names = within(rail).getAllByRole("button").map((button) => button.getAttribute("aria-label"));
-		expect(names).toEqual(["Go to home", "Sessions", "Automations", "Artifacts", "Backlog", "Inbox", "Terminals", "Expand navigation", "Connect a phone", "Settings"]);
+		expect(names).toEqual(["Go to home", "Sessions", "Automations", "Artifacts", "Backlog", "Inbox", "Expand navigation", "Connect a phone", "Settings"]);
 	});
 
 	it("puts the app logo (home) at the top of the rail, above every page icon", () => {
@@ -85,11 +85,15 @@ describe("ShellNavRail", () => {
 		["rail-artifacts", { to: "/artifacts" }],
 		["rail-backlog", { to: "/backlog" }],
 		["rail-inbox", { to: "/inbox" }],
-		["rail-terminals", { to: "/terminals" }],
 	])("%s navigates to its page", async (testId, target) => {
 		renderRail();
 		await userEvent.setup().click(screen.getByTestId(testId));
 		expect(navigateMock).toHaveBeenCalledWith(target);
+	});
+
+	it("has no Terminals entry: terminals open from the top bar", () => {
+		renderRail();
+		expect(screen.queryByTestId("rail-terminals")).toBeNull();
 	});
 
 	it("opens global settings and the Connections page in place", async () => {

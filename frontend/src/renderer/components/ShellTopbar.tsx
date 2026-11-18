@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Archive, CalendarClock, File, Folder, LayoutDashboard, ListTodo, Plus } from "lucide-react";
+import { Archive, CalendarClock, File, Folder, GitBranchPlus, LayoutDashboard, ListTodo, Plus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { ProjectBoardActions } from "./ProjectBoardActions";
 import { useBoardPresentation } from "../hooks/useBoardPresentation";
@@ -36,6 +36,8 @@ import { isLinuxPlatform, isMacPlatform, usesBoardActionsInPanel } from "../lib/
 import { cn } from "../lib/utils";
 import { useWindowFullScreen } from "../hooks/useWindowFullScreen";
 import { StatusPill } from "./StatusPill";
+import { TopbarTerminalButton } from "./TopbarTerminalButton";
+import { TopbarAccountMenu } from "./TopbarAccountMenu";
 import { TopbarActionError, TopbarButton, topbarHeaderClass, topbarProjectLabelClass } from "./TopbarButton";
 import { SessionArchiveDialog, type SessionArchiveChoice } from "./SessionArchiveDialog";
 import { TopbarOpenEditorButton } from "./TopbarOpenEditorButton";
@@ -238,11 +240,14 @@ export function ShellTopbar({
 				data-testid="workspace-topbar-actions"
 			>
 				{isProjectBoardRoute || isOrchestrator ? <ProjectTerminationFeedback projectId={projectId} hostId={hostId} /> : null}
+				{!hostId && !startingOrchestrator ? <TopbarTerminalButton projectId={projectId} style={noDragStyle} /> : null}
 				{!boardActionsInPanel && isProjectBoardRoute ? (
 					<ProjectBoardActions actions={projectActions} projectId={supportsProjectActions ? projectId : undefined} placement="header" quiet={showProjectEmpty} style={noDragStyle} />
 				) : null}
 				{isSessionRoute ? (
 					<>
+						{/* The session's AI account and the move to another one (local sessions only). */}
+						{session && !hostId ? <TopbarAccountMenu key={`account-${session.id}`} session={session} style={noDragStyle} /> : null}
 						{isOrchestrator ? (
 							<>
 								{sessionAction ? (
@@ -255,14 +260,12 @@ export function ShellTopbar({
 										<span className="inline-flex" style={noDragStyle}>
 											<TopbarButton
 												aria-label={t("shell.newTask")}
-												className="topbar-control--labeled"
-												data-priority="primary"
+												data-testid="topbar-new-task"
 												disabled={startingOrchestrator || isProjectRestarting || isProvisioning}
 												onClick={openNewTask}
-												variant="accent"
+												variant="icon"
 											>
 												<Plus className="size-icon-md" aria-hidden="true" />
-												<span data-compact-label>{t("newTask.task")}</span>
 											</TopbarButton>
 										</span>
 									</TooltipTrigger>
@@ -273,13 +276,12 @@ export function ShellTopbar({
 										<TooltipTrigger asChild>
 											<TopbarButton
 												aria-label={t("shell.newLane")}
-												className="topbar-control--labeled"
-												data-priority="primary"
+												data-testid="topbar-new-lane"
 												disabled={startingOrchestrator || isProjectRestarting || isProvisioning}
 												onClick={() => useUiStore.getState().requestLaneOrchestrator(projectId)}
+												variant="icon"
 											>
-												<Plus className="size-icon-md" aria-hidden="true" />
-												<span data-compact-label>{t("newTask.lane")}</span>
+												<GitBranchPlus className="size-icon-md" aria-hidden="true" />
 											</TopbarButton>
 										</TooltipTrigger>
 										<TooltipContent side="bottom">{t("shell.newLane")}</TooltipContent>
@@ -289,15 +291,13 @@ export function ShellTopbar({
 									<TooltipTrigger asChild>
 										<TopbarButton
 											aria-label={t("shell.openKanban")}
+											data-testid="topbar-open-kanban"
 											disabled={startingOrchestrator}
-											className="topbar-control--labeled"
-											data-priority="secondary"
 											onClick={openBoard}
 											style={noDragStyle}
-											variant="feature"
+											variant="icon"
 										>
 											<LayoutDashboard className="size-icon-md" aria-hidden="true" />
-											<span data-compact-label>{t("shell.openKanban")}</span>
 										</TopbarButton>
 									</TooltipTrigger>
 									<TooltipContent side="bottom">{t("shell.openKanban")}</TooltipContent>
@@ -374,14 +374,12 @@ export function ShellTopbar({
 									<span className="inline-flex" style={noDragStyle}>
 										<TopbarButton
 											aria-label={t("shell.openOrchestrator")}
-											className="topbar-control--labeled -mr-1"
-											data-priority="secondary"
+											data-testid="topbar-open-orchestrator"
 											disabled={isSpawning || isProjectRestarting || isProvisioning}
 											onClick={() => void openOrchestrator()}
-											variant="primary"
+											variant="icon"
 										>
 											<OrchestratorIcon className="size-icon-md" aria-hidden="true" />
-											<span data-compact-label>{t("shell.orchestrator")}</span>
 										</TopbarButton>
 									</span>
 								</TooltipTrigger>

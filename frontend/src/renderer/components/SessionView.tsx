@@ -53,6 +53,7 @@ export function SessionView(props: SessionViewProps) {
 		filesSplit,
 		interfaceUi,
 		isInspectorOpen,
+		browserUnseen,
 		remoteBase,
 		remoteSessionQuery,
 		session,
@@ -113,7 +114,7 @@ export function SessionView(props: SessionViewProps) {
 				<div className="session-pinned-actions" data-testid="session-pinned-actions" ref={pinnedActionsRef} style={noDragStyle}>
 					{/* The panel switcher renders here (left of the toggle) from SessionInspector, so the pair stays at the window's right edge open or closed. */}
 					<div className="flex items-center" ref={setSwitcherHost} />
-					<SidebarToggleButton open={isInspectorOpen} onClick={handleToggleInspector} style={noDragStyle} />
+					<SidebarToggleButton dot={browserUnseen && !isInspectorOpen} open={isInspectorOpen} onClick={handleToggleInspector} style={noDragStyle} />
 				</div>
 			) : null}
 			{interfaceUi.dialogs}

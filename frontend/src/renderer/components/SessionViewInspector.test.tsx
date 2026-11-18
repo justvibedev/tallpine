@@ -509,24 +509,6 @@ describe("SessionView", () => {
 		expect(useUiStore.getState().inspectorSessions["sess-1"]?.view).toBe("browser");
 	});
 
-	it("keeps one sidebar toggle at the far right of the top bar, open or closed, after the panel switcher", () => {
-		act(() => useUiStore.getState().setInspectorOpen("sess-1", true));
-		render(<SessionView sessionId="sess-1" />);
-		const pinned = screen.getByTestId("session-pinned-actions");
-		expect(screen.getAllByTestId("sidebar-toggle")).toHaveLength(1);
-		const toggle = within(pinned).getByTestId("sidebar-toggle");
-		expect(toggle).toHaveAttribute("aria-pressed", "true");
-		// The panel header no longer carries a toggle; the switcher slot precedes the toggle.
-		expect(within(screen.getByTestId("panel-inspector")).queryByTestId("sidebar-toggle")).toBeNull();
-		expect(pinned.lastElementChild).toBe(toggle);
-
-		fireEvent.click(toggle);
-
-		expect(inspectorOpen("sess-1")).toBe(false);
-		const closed = within(screen.getByTestId("session-pinned-actions")).getByTestId("sidebar-toggle");
-		expect(closed).toHaveAttribute("aria-pressed", "false");
-	});
-
 	it("keeps session chrome expanded when Browser is active", () => {
 		useUiStore.setState({
 			isSidebarOpen: true,

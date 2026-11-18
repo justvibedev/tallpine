@@ -82,7 +82,7 @@ export function SessionInspectorShellView({
 
 	return (
 		<aside className={inspectorShellClass} aria-label={ariaLabel}>
-			{/* The top-bar row. Browser and Plan switch from the pinned switcher at its right end; this row keeps only the tabs the switcher doesn't own. */}
+			{/* The top-bar row. Plan switches from the pinned switcher at its right end; this row keeps every tab the switcher doesn't own. */}
 			<div
 				className="session-inspector__topbar flex h-inspector-tabs shrink-0 items-center border-b border-border-strong pl-1"
 				data-testid="session-inspector-topbar"

@@ -867,7 +867,9 @@ WHERE conversation_turns.conversation_id = sqlc.arg(conversation_id)
 -- The running turns visible on the active branch, in the same order as the
 -- snapshot. Interrupt uses this exact projection when in-memory turn tracking
 -- has lost what the UI is showing; nested provider turns mean more than one row
--- can legitimately be running at once, and Stop must not leave one behind.
+-- can legitimately be running at once, and Stop must not leave one behind. A
+-- live reconnect reads it too: it needs only the running turns, and loading the
+-- whole history instead could outlast its recovery deadline (B810).
 -- name: ListVisibleRunningTurnsForConversation :many
 WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     SELECT conversations.active_branch_id, CAST(NULL AS INTEGER)
@@ -884,7 +886,7 @@ WITH RECURSIVE active_path(branch_id, max_sequence) AS (
     JOIN conversation_branches AS branch ON branch.id = path.branch_id
     WHERE branch.parent_branch_id IS NOT NULL
 )
-SELECT conversation_turns.provider_turn_id FROM conversation_turns
+SELECT conversation_turns.* FROM conversation_turns
 JOIN active_path AS path ON path.branch_id = conversation_turns.branch_id
 WHERE conversation_turns.conversation_id = sqlc.arg(conversation_id)
   AND conversation_turns.state = 'running'

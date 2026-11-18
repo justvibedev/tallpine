@@ -122,8 +122,14 @@ export function InspectorWithSwitcher(props: React.ComponentProps<typeof Session
   );
 }
 
-export const switcherLabels = () =>
-  within(screen.getByTestId("panel-switcher")).getAllByRole("button").map((button) => button.getAttribute("aria-label"));
+/** The in-panel tabs' names, left to right (inactive tabs show no visible label). */
+export const tabLabels = () => screen.getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"));
+
+/** The top-bar switcher's labels; an empty switcher renders nothing. */
+export const switcherLabels = () => {
+  const switcher = screen.queryByTestId("panel-switcher");
+  return switcher ? within(switcher).getAllByRole("button").map((button) => button.getAttribute("aria-label")) : [];
+};
 
 export function renderWithQuery(
   children: ReactNode,

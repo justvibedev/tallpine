@@ -2234,24 +2234,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{id}/skills/lsp/install": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read the project's current or last LSP install job, with its output tail */
-        get: operations["getProjectLSPInstall"];
-        put?: never;
-        /** Install an LSP plugin or language server by catalog id; runs only the daemon's fixed commands, one install at a time per project */
-        post: operations["startProjectLSPInstall"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/projects/{id}/skills/offers/{offerId}/apply": {
         parameters: {
             query?: never;
@@ -7524,52 +7506,6 @@ export interface components {
             /** @description Capability-bearing URL that serves the file from the workspace files origin. Opening it does not change the session preview. */
             url: string;
         };
-        ControllersProjectLSP: {
-            mismatches: components["schemas"]["ControllersProjectLSPMismatch"][];
-            recommendations: components["schemas"]["ControllersProjectLSPRecommendation"][];
-        };
-        ControllersProjectLSPInstallJob: {
-            command: string;
-            error?: string;
-            /** Format: date-time */
-            finishedAt?: null | string;
-            language: string;
-            output: string;
-            /** Format: date-time */
-            startedAt: string;
-            /** @enum {string} */
-            state: "running" | "succeeded" | "failed";
-            /** @enum {string} */
-            target: "plugin" | "binary" | "go" | "all";
-        };
-        ControllersProjectLSPInstallRequest: {
-            language: string;
-            /** @enum {string} */
-            target: "plugin" | "binary" | "go" | "all";
-        };
-        ControllersProjectLSPInstallStatus: {
-            job?: components["schemas"]["ControllersProjectLSPInstallJob"];
-        };
-        ControllersProjectLSPMismatch: {
-            language: string;
-            pluginId: string;
-            roles: string[];
-        };
-        ControllersProjectLSPRecommendation: {
-            binary: string;
-            binaryInstall: string;
-            binaryInstallable: boolean;
-            binaryInstalled: boolean;
-            binaryProblem: string;
-            files: number;
-            language: string;
-            pluginId: string;
-            pluginInstall: string;
-            pluginInstalled: boolean;
-            roles: components["schemas"]["ProjectSkillRole"][];
-            toolchainInstall: string;
-            toolchainInstallable: boolean;
-        };
         ControllersReleaseBuildResponse: {
             log: string;
             pid: number;
@@ -7944,6 +7880,7 @@ export interface components {
         ConversationTurnResponse: {
             autoRetry?: components["schemas"]["ControllersConversationTurnAutoRetryResponse"];
             completedAt?: null | string;
+            deliveredInTurnId?: string;
             diff?: components["schemas"]["ConversationTurnDiffResponse"];
             errorMessage?: string;
             hasHumanPrompt?: boolean;
@@ -9267,7 +9204,6 @@ export interface components {
             commitTarget?: components["schemas"]["ProjectSkillCommitTarget"];
             harnesses: string[];
             instructions: components["schemas"]["ProjectSkillHarness"][];
-            lsp: components["schemas"]["ControllersProjectLSP"];
             offers: components["schemas"]["ProjectSkillOffer"][];
             offersEnabled: boolean;
             pendingCommit: string[];
@@ -10491,7 +10427,6 @@ export interface components {
             backlogRef?: string;
             branch?: string;
             clientRequestId?: string;
-            codeIntel?: boolean;
             displayName?: string;
             effort?: string;
             /** @enum {string} */
@@ -18878,119 +18813,6 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-        };
-    };
-    getProjectLSPInstall: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project identifier (registry key). */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControllersProjectLSPInstallStatus"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-        };
-    };
-    startProjectLSPInstall: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Project identifier (registry key). */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ControllersProjectLSPInstallRequest"];
-            };
-        };
-        responses: {
-            /** @description Accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ControllersProjectLSPInstallStatus"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
                 headers: {
                     [name: string]: unknown;
                 };

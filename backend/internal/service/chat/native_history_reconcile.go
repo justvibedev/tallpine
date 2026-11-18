@@ -42,7 +42,9 @@ func nativeHistoryActivityFingerprint(
 	summary string,
 	detail []byte,
 ) string {
-	return string(kind) + "\x00" + string(status) + "\x00" + summary + "\x00" + string(detail)
+	// The detail digest, not the bytes: a history prune shortens old details and
+	// records the digest of the original, which a replay must still match.
+	return string(kind) + "\x00" + string(status) + "\x00" + summary + "\x00" + domain.ActivityDetailDigest(detail)
 }
 
 // mapNativeHistoryTurns identifies which durable Tallpine turn owns each raw replay

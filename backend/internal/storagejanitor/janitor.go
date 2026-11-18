@@ -1,8 +1,9 @@
 // Package storagejanitor keeps the SQLite provider-event archive bounded.
 //
-// It compacts streamed deltas of settled turns, deletes the provider events of
-// sessions terminated longer ago than the retention window, and runs SQLite's
-// cheap maintenance pragmas. Every unit of work is a small transaction followed
+// It compacts streamed deltas of settled turns, prunes each conversation's
+// history below its last settled compaction boundary (see history.go), deletes
+// the provider events of sessions terminated longer ago than the retention
+// window, and runs SQLite's cheap maintenance pragmas. Every unit of work is a small transaction followed
 // by a pause, so chat projection writes never queue behind it for long.
 //
 // The pacing adapts to the database and to the daemon's load: a batch is sized
@@ -98,6 +99,7 @@ type Store interface {
 	ExpiredSessionsWithProviderEvents(ctx context.Context, before time.Time, limit int64) ([]sqlitestore.ExpiredSession, error)
 	ExpireSessionProviderEvents(ctx context.Context, session domain.SessionID, after, limit int64, now time.Time) (sqlitestore.ProviderEventExpiry, error)
 	OptimizeStorage(ctx context.Context, maxVacuumPages int64) (sqlitestore.StorageMaintenance, error)
+	HistoryStore
 }
 
 // autoVacuumConverter is the optional store surface for converting a database
@@ -154,8 +156,9 @@ type Stats struct {
 	ExpiredDeleted int64
 	// ExpiredTombstoned counts expired rows kept as identity tombstones.
 	ExpiredTombstoned int64
-	Optimized         bool
-	FreedPages        int64
+	HistoryStats
+	Optimized  bool
+	FreedPages int64
 	// ForegroundWrites counts writer acquisitions since the previous pass,
 	// or -1 when that interval was not measured.
 	ForegroundWrites int64
@@ -290,18 +293,22 @@ func (j *Janitor) run(ctx context.Context) {
 		j.cfg.Logger.Warn("provider event archive maintenance failed", "err", err)
 		return
 	}
-	if stats.Deleted+stats.Tombstoned+stats.ExpiredDeleted+stats.ExpiredTombstoned > 0 || stats.FreedPages > 0 {
+	if stats.Deleted+stats.Tombstoned+stats.ExpiredDeleted+stats.ExpiredTombstoned > 0 ||
+		stats.HistoryDeleted+stats.HistoryTombstoned+stats.HistoryActivities > 0 || stats.FreedPages > 0 {
 		j.cfg.Logger.Info("provider event archive maintenance",
 			"deltasDeleted", stats.Deleted, "deltasTombstoned", stats.Tombstoned,
 			"expiredDeleted", stats.ExpiredDeleted, "expiredTombstoned", stats.ExpiredTombstoned,
+			"historyDeleted", stats.HistoryDeleted, "historyTombstoned", stats.HistoryTombstoned,
+			"historyActivities", stats.HistoryActivities,
 			"freedPages", stats.FreedPages, "batches", stats.Batches, "batchSize", stats.BatchSize,
 			"backoffs", stats.Backoffs, "foregroundWrites", stats.ForegroundWrites,
 			"elapsed", j.now().Sub(j.passStart).Round(time.Millisecond))
 	}
 }
 
-// RunOnce performs one bounded pass: compaction, then retention, then (at most
-// every OptimizeEvery) PRAGMA optimize and incremental vacuum.
+// RunOnce performs one bounded pass: compaction, then history pruning, then
+// retention, then (at most every OptimizeEvery) PRAGMA optimize and incremental
+// vacuum.
 func (j *Janitor) RunOnce(ctx context.Context) (Stats, error) {
 	var stats Stats
 	enabled, retention := j.policy(ctx)
@@ -318,6 +325,9 @@ func (j *Janitor) RunOnce(ctx context.Context) (Stats, error) {
 
 func (j *Janitor) pass(ctx context.Context, stats Stats, retention time.Duration) (Stats, error) {
 	if err := j.compact(ctx, &stats); err != nil {
+		return stats, err
+	}
+	if err := j.pruneHistory(ctx, &stats); err != nil {
 		return stats, err
 	}
 	if retention > 0 {
@@ -479,37 +489,6 @@ func (j *Janitor) compact(ctx context.Context, stats *Stats) error {
 				break
 			}
 			watermark, after = result.Watermark, result.Next
-		}
-		if !j.budgetLeft(stats) {
-			return nil
-		}
-	}
-	return nil
-}
-
-func (j *Janitor) expire(ctx context.Context, retention time.Duration, stats *Stats) error {
-	before := j.cfg.Clock().UTC().Add(-retention)
-	sessions, err := j.store.ExpiredSessionsWithProviderEvents(ctx, before, expiredSessionPage)
-	if err != nil {
-		return err
-	}
-	for _, session := range sessions {
-		after := session.ExpiredThroughID
-		for j.budgetLeft(stats) {
-			var result sqlitestore.ProviderEventExpiry
-			if err := j.paced(ctx, stats, func(limit int64) (sqlitestore.WriterHold, error) {
-				var err error
-				result, err = j.store.ExpireSessionProviderEvents(ctx, session.SessionID, after, limit, j.cfg.Clock().UTC())
-				return result.WriterHold, err
-			}); err != nil {
-				return err
-			}
-			stats.ExpiredDeleted += result.Deleted
-			stats.ExpiredTombstoned += result.Tombstoned
-			if result.Done {
-				break
-			}
-			after = result.Next
 		}
 		if !j.budgetLeft(stats) {
 			return nil

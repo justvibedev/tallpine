@@ -12,6 +12,23 @@ export function conversationQueryKey(sessionId: string, hostId?: string) {
 	return hostId ? (["remote-conversation", hostId, sessionId] as const) : ([...conversationQueryRoot, sessionId] as const);
 }
 
+/**
+ * Refresh a conversation after the daemon changed it. A snapshot fetched after
+ * `since` (the moment the change was requested) that already shows a live
+ * controller reflects the change, so refetching it would make the daemon serve
+ * the same page again on open. A snapshot taken mid-wake (hibernated,
+ * connecting) does not, and is refreshed.
+ */
+export function refreshConversation(queryClient: QueryClient, sessionId: string, hostId?: string, since?: number): Promise<void> {
+	const queryKey = conversationQueryKey(sessionId, hostId);
+	if (since !== undefined) {
+		const state = queryClient.getQueryState<InfiniteData<ConversationSnapshot>>(queryKey);
+		const controller = state?.data?.pages[0]?.controller.state;
+		if (state && state.dataUpdatedAt >= since && (controller === "ready" || controller === "busy")) return Promise.resolve();
+	}
+	return queryClient.invalidateQueries({ queryKey });
+}
+
 export function conversationModelsQueryKey(sessionId: string, hostId?: string) {
 	return hostId ? (["remote-conversation-models", hostId, sessionId] as const) : (["conversation-models", sessionId] as const);
 }

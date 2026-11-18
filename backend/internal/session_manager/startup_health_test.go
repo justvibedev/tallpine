@@ -266,30 +266,6 @@ func TestStartupChatCheckStaysCheckingWhileRetryPending(t *testing.T) {
 	waitFor(t, "ready readiness", func() bool { return m.SessionStatusReadiness(st.sessions[rec.ID]) == "ready" })
 }
 
-func TestStartupChatCheckRetryGivesUpAfterSchedule(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	m, st, _, _ := newLifecycleManager()
-	launcher := &flakyStartupLauncher{failures: -1, err: ports.ErrChatRecoveryInconclusive}
-	m.chat = launcher
-	m.startupChatRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
-	rec := startupChatRecord()
-	st.sessions[rec.ID] = rec
-	if err := m.ReconcileBackground(ctx); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "every scheduled retry", func() bool { return launcher.attemptCount() == 3 })
-	time.Sleep(20 * time.Millisecond)
-	if got := launcher.attemptCount(); got != 3 {
-		t.Fatalf("attempts = %d, want one per scheduled delay", got)
-	}
-	if got := m.SessionStatusReadiness(st.sessions[rec.ID]); got != "unavailable" {
-		t.Fatalf("readiness = %s, want unavailable so Resume is offered", got)
-	}
-}
-
 // Builds before background branch naming left this state; it is still rolled back.
 func TestStartupHealthCleansOnlyUncommittedSetup(t *testing.T) {
 	t.Parallel()

@@ -22,7 +22,6 @@ import type { components } from "../../api/schema";
 import type { ProjectLocalFieldsDraft } from "../lib/project-local-fields";
 import { InstructionsAndSkillsSkills } from "./project-settings/InstructionsAndSkillsSkills";
 import { InstructionsAndSkillsClaude } from "./project-settings/InstructionsAndSkillsClaude";
-import { InstructionsAndSkillsLsp } from "./project-settings/InstructionsAndSkillsLsp";
 import { InstructionsAndSkillsRules } from "./project-settings/InstructionsAndSkillsRules";
 import { ProjectReviewLimitsRows } from "./project-settings/ProjectReviewLimitsRows";
 import { ProjectSessionModeRow } from "./project-settings/ProjectSessionModeRow";
@@ -124,7 +123,7 @@ const roleFields: Record<ProjectSettingsRole, RoleFields> = {
 
 // Both persistence adapters render this page. Drafts, validation, autosave and
 // common controls live here so a UI change applies to local and Cloud projects.
-export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, initialValues, section, capabilities, details, workspaceRepos, repository, renderAgent, defaultReviewer = () => "", modelScope, modelHostId, autoReviewDescription, save, onSaveState, saveUnchanged = false, disabled = false, managedKeys, generalExtra, generalTop, securityExtra, skills, lspProjectId }: {
+export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, initialValues, section, capabilities, details, workspaceRepos, repository, renderAgent, defaultReviewer = () => "", modelScope, modelHostId, autoReviewDescription, save, onSaveState, saveUnchanged = false, disabled = false, managedKeys, generalExtra, generalTop, securityExtra, skills }: {
 	initialValues: ProjectSettingsDraft;
 	section: SettingsSection;
 	capabilities: Capabilities;
@@ -150,9 +149,7 @@ export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, ini
 	securityExtra?: ReactNode;
 	/** The account's Claude Code plugins for the Instructions and skills page; undefined while loading. */
 	/** The skills inventory (plugins and skills with their per-role switches). */
-	skills?: Pick<components["schemas"]["ProjectSkillsResponse"], "plugins" | "skills" | "lsp">;
-	/** The project whose LSP installs the Code intelligence tab runs; undefined shows the commands to copy only. */
-	lspProjectId?: string;
+	skills?: Pick<components["schemas"]["ProjectSkillsResponse"], "plugins" | "skills">;
 	/** Rendered first on the General page; setDefaultBranch edits the draft so autosave persists it like a typed change. */
 	generalTop?: (api: { setDefaultBranch: (branch: string) => void }) => ReactNode;
 	/** Pauses autosave and submit, e.g. while the owning host is offline. */
@@ -325,7 +322,6 @@ export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, ini
 		sessions: sessionsBlock,
 		security: <ProjectSettingsSection title={t("settings.security")} grouped>{securityExtra}</ProjectSettingsSection>,
 		instructions: <><InstructionsAndSkillsRules values={draft} onChange={patch} /><InstructionsAndSkillsSkills values={draft} skills={skills?.skills} onChange={patch} /><InstructionsAndSkillsClaude values={draft} plugins={skills?.plugins} onChange={patch} /></>,
-		codeIntelligence: <InstructionsAndSkillsLsp values={draft} lsp={skills?.lsp} onChange={patch} projectId={lspProjectId} />,
 		// Advanced holds only the environment editor, which keeps its own form.
 		advanced: null,
 	};

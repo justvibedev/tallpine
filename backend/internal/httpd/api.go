@@ -35,11 +35,8 @@ type APIDeps struct {
 	Agents        controllers.AgentCatalog
 	CodexAccounts controllers.CodexAccountService
 	AgentAccounts controllers.AgentAccountService
-	// ClaudeBinary resolves the claude CLI for LSP plugin installs. Nil looks
-	// it up on PATH.
-	ClaudeBinary func(context.Context) (string, error)
-	AccountAdopt *accountadopt.Service
-	Projects     projectsvc.Manager
+	AccountAdopt  *accountadopt.Service
+	Projects      projectsvc.Manager
 	// DefaultBranch resolves the ref session worktrees start from (Settings >
 	// Skills commits pending agent files there). Optional.
 	DefaultBranch      controllers.DefaultBranchResolver

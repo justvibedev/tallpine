@@ -17,7 +17,7 @@ func (f compactDefaultsFunc) AutoCompactDefault(_ stdctx.Context, h domain.Agent
 // codexCatalog is a saved Codex catalog with one 272k model.
 type codexCatalog struct{}
 
-func (codexCatalog) Models(_ stdctx.Context, agentID, _ string, _ bool) (ports.AgentModelCatalog, error) {
+func (codexCatalog) ModelCatalog(_ stdctx.Context, agentID, _ string, _ bool) (ports.AgentModelCatalog, error) {
 	if agentID != string(domain.HarnessCodex) {
 		return ports.AgentModelCatalog{}, nil
 	}

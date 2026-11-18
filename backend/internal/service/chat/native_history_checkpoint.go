@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"bytes"
 	"strings"
 	"time"
 
@@ -394,7 +393,8 @@ func (p nativeHistoryCheckpoint) highWaterMismatches(
 		if boundary.activityKind != "" &&
 			event.ActivityKind == boundary.activityKind &&
 			event.ActivityStatus == boundary.activityStatus &&
-			event.Summary == boundary.summary && bytes.Equal(event.Detail, boundary.detail) {
+			event.Summary == boundary.summary &&
+			domain.ActivityDetailDigest(event.Detail) == domain.ActivityDetailDigest(boundary.detail) {
 			matched = true
 		}
 		if matched {

@@ -1,4 +1,4 @@
-import { Bot, Code2, GitBranch, GitPullRequest, MessageSquare, MonitorCog, Play, Settings2, Shield, Sparkles, Workflow, type LucideIcon } from "lucide-react";
+import { Bot, GitBranch, GitPullRequest, MessageSquare, MonitorCog, Play, Settings2, Shield, Sparkles, Workflow, type LucideIcon } from "lucide-react";
 import type { TFunction } from "i18next";
 import type { ProjectSettingsSection } from "../../stores/settings-modal";
 
@@ -18,7 +18,6 @@ export function projectSettingsSections(t: TFunction, remote: boolean, scratch =
 		{ id: "repository", label: t("settings.project.nav.repository"), icon: GitBranch },
 		{ id: "agents", label: t("settings.project.agents"), icon: Bot },
 		{ id: "instructions", label: t("settings.project.nav.instructionsShort"), icon: Sparkles },
-		{ id: "codeIntelligence", label: t("settings.project.nav.codeIntelligence"), icon: Code2 },
 		{ id: "reviews", label: t("settings.project.nav.reviews"), icon: GitPullRequest },
 		{ id: "workflow", label: t("settings.project.workflow"), icon: Workflow },
 		{ id: "sessions", label: t("settings.sessions"), icon: MessageSquare },

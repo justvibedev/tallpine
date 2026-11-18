@@ -87,14 +87,12 @@ type Client struct {
 	etagOut  map[string]string // key (method+path+query) -> last-seen ETag
 	bodyOut  map[string][]byte // key -> last-seen body for 304 replay
 	cacheLRU []string          // insertion-order keys for FIFO eviction
+	cacheLen int               // total bytes of bodies held in bodyOut
 }
 
-// cacheMaxEntries caps the number of distinct (method,path,query) tuples
-// the in-memory ETag cache will track. A single Provider observes one PR
-// at a time today, but the follow-up poller will reuse one Provider for
-// the whole daemon — without a cap, long-running daemons would grow this
-// map forever.
-const cacheMaxEntries = 512
+// cacheMaxBytes caps the total body bytes held by the ETag cache so a few
+// large responses cannot pin hundreds of MB regardless of entry count.
+const cacheMaxBytes = 32 << 20
 
 // NewClient returns a Client. It is intentionally tolerant of nil
 // dependencies: production passes a TokenSource; tests sometimes leave it
@@ -238,7 +236,9 @@ func (c *Client) doREST(ctx context.Context, method, path string, q url.Values, 
 		newETag := resp.Header.Get("ETag")
 		if newETag != "" && newETag != prevETag {
 			c.mu.Lock()
-			c.etagOut[cacheKey] = newETag
+			if _, ok := c.bodyOut[cacheKey]; ok { // not evicted meanwhile
+				c.etagOut[cacheKey] = newETag
+			}
 			c.mu.Unlock()
 		}
 		return RESTResponse{StatusCode: resp.StatusCode, NotModified: true, ETag: newETag, Body: prevBody}, nil
@@ -400,26 +400,6 @@ func (c *Client) fetchPlainText(ctx context.Context, path string) ([]byte, error
 		return body, nil
 	}
 	return nil, classifyError(resp, body)
-}
-
-// storeCacheEntry records one (ETag, body) pair under cacheKey and evicts
-// the oldest entry once cacheMaxEntries is exceeded. FIFO is intentional:
-// the access pattern is "one PR per poll cycle"; an LRU would just add
-// bookkeeping without changing eviction order in practice.
-func (c *Client) storeCacheEntry(cacheKey, etag string, body []byte) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, exists := c.etagOut[cacheKey]; !exists {
-		c.cacheLRU = append(c.cacheLRU, cacheKey)
-	}
-	c.etagOut[cacheKey] = etag
-	c.bodyOut[cacheKey] = body
-	for len(c.cacheLRU) > cacheMaxEntries {
-		evict := c.cacheLRU[0]
-		c.cacheLRU = c.cacheLRU[1:]
-		delete(c.etagOut, evict)
-		delete(c.bodyOut, evict)
-	}
 }
 
 func (c *Client) authorize(ctx context.Context, req *http.Request) error {

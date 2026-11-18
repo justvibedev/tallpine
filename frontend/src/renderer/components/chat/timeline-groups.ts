@@ -17,6 +17,7 @@ import {
 	type TurnDiff,
 } from "../../types/conversation";
 import { itemKey } from "./timeline-echoes";
+import { timelineTurnOwner } from "./timeline-turn-owner";
 
 /**
  * Batch consecutive plain activities into a run.
@@ -227,31 +228,6 @@ export function retrySourceTurnIds(snapshot: ConversationSnapshot): Set<string> 
 	return sources;
 }
 
-/** How tall the trailing spacer must be to park `anchorOffset` near the top when scrolled to the end. */
-export function promptSpacerHeight({
-	viewportHeight,
-	contentHeightWithoutSpacer,
-	anchorOffset,
-	topInset = 12,
-}: {
-	viewportHeight: number;
-	contentHeightWithoutSpacer: number;
-	anchorOffset: number;
-	topInset?: number;
-}): number {
-	const afterAnchor = Math.max(0, contentHeightWithoutSpacer - anchorOffset);
-	return Math.max(0, Math.round(viewportHeight - topInset - afterAnchor));
-}
-
-/**
- * Leave a band of prior chat above the latest prompt (Cursor-style), not flush to
- * the top edge. Scales with the timeline viewport, with a floor so short panes
- * still keep a peek of history.
- */
-export function promptTopInset(viewportHeight: number): number {
-	return Math.max(80, Math.round(viewportHeight * 0.2));
-}
-
 /**
  * Group items by the turn that produced them, so a completed turn can be closed
  * off with its outcome.
@@ -266,16 +242,25 @@ export function promptTopInset(viewportHeight: number): number {
  * items inside a turn stay in sequence order. Nothing is re-derived: this is the
  * daemon's ordering, grouped.
  *
- * Items with no turn (an automation relay that arrived between turns) form their
- * own group and keep their sequence position.
+ * A message batched into another turn's input, and a Tallpine action recorded while
+ * a turn ran, join that turn's block (see timeline-turn-owner.ts).
+ *
+ * Other items with no turn (an automation relay that arrived between turns) form
+ * their own group and keep their sequence position.
  */
 export function groupByTurn(snapshot: ConversationSnapshot, hasPlanTab: boolean): TimelineGroup[] {
 	const byTurn = new Map(snapshot.turns.map((turn) => [turn.id, turn]));
 	const groups: TimelineGroup[] = [];
 	const groupForTurn = new Map<string, TimelineGroup>();
+	const ownerOf = timelineTurnOwner(snapshot);
+	// The group the previous item joined: only an item right after a loose one may
+	// share its group. The last group created is not that, once an earlier turn's
+	// block has taken items in between.
+	let previous: TimelineGroup | undefined;
 
 	for (const item of snapshot.items) {
-		if (item.turnId === undefined) {
+		const turnId = ownerOf(item);
+		if (turnId === undefined) {
 			// Consecutive turn-less items share one group rather than getting one each.
 			// A provider can run a turn Tallpine never dispatched — a compaction, or a turn
 			// resumed inside the provider's own history — and every item it emits then
@@ -283,33 +268,34 @@ export function groupByTurn(snapshot: ConversationSnapshot, hasPlanTab: boolean)
 			// adjacent activities, so a wall of tool calls stopped collapsing and the
 			// conversation turned back into a log. Grouping must not depend on
 			// correlation succeeding.
-			const last = groups.at(-1);
-			if (last && last.turnId === undefined) {
-				last.items.push(item);
+			if (previous && previous.turnId === undefined) {
+				previous.items.push(item);
 				continue;
 			}
-			groups.push({
+			previous = {
 				// A "Switched" line keeps its key from echo to the daemon's row, as its position changes.
 				key: item.id.startsWith("local-switch:") ? item.id : `loose-${item.sequence}`,
 				anchor: item.sequence,
 				items: [item],
-			});
+			};
+			groups.push(previous);
 			continue;
 		}
-		const existing = groupForTurn.get(item.turnId);
+		const existing = groupForTurn.get(turnId);
 		if (existing) {
 			existing.items.push(item);
+			previous = existing;
 			continue;
 		}
-		const group: TimelineGroup = {
+		previous = {
 			// A turn opened by a keyed human message keeps the key its echo had.
-			key: itemKey(item) === item.id ? `${item.turnId}-${item.sequence}` : itemKey(item),
-			turnId: item.turnId,
+			key: itemKey(item) === item.id ? `${turnId}-${item.sequence}` : itemKey(item),
+			turnId,
 			anchor: item.sequence,
 			items: [item],
 		};
-		groupForTurn.set(item.turnId, group);
-		groups.push(group);
+		groupForTurn.set(turnId, previous);
+		groups.push(previous);
 	}
 
 	groups.sort((a, b) => a.anchor - b.anchor);

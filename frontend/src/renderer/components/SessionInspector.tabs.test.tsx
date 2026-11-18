@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionInspector } from "./SessionInspector";
 import { sessionWorkspaceFilesQueryKey } from "../hooks/useSessionWorkspaceFiles";
 import { useUiStore } from "../stores/ui-store";
-import { pr, session, InspectorWithSwitcher, switcherLabels, renderWithQuery, reviewState, mockCommonGets, installInspectorLifecycle } from "../test/session-inspector-fixtures";
+import { pr, session, InspectorWithSwitcher, switcherLabels, tabLabels, renderWithQuery, reviewState, mockCommonGets, installInspectorLifecycle } from "../test/session-inspector-fixtures";
 import { getMock } from "../test/session-inspector-mocks";
 
 vi.mock("@tanstack/react-router", () => import("../test/session-inspector-mocks").then((m) => m.routerModule()));
@@ -19,25 +19,20 @@ installInspectorLifecycle();
 describe("SessionInspector tabs", () => {
   it("gives an orchestrator only a Browser tab (plus Plan when available)", () => {
     renderWithQuery(<InspectorWithSwitcher browserOnly session={session([], { kind: "orchestrator" })} />);
-    expect(switcherLabels()).toEqual(["Browser"]);
-    // The orchestrator has no in-panel tab strip at all.
-    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    // Browser lives in the panel's tab strip; the top-bar switcher only carries Plan.
+    expect(switcherLabels()).toEqual([]);
+    expect(tabLabels()).toEqual(["Browser"]);
     expect(screen.queryByRole("tab", { name: "Summary" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Files" })).not.toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Session inspector" }).querySelector(".session-inspector__body--browser")).toBeInTheDocument();
   });
 
-  it("closes an open panel from the active switcher icon and opens a closed one from it", async () => {
-    const onTogglePanel = vi.fn();
-    const view = renderWithQuery(<InspectorWithSwitcher session={session([])} onTogglePanel={onTogglePanel} view="browser" />);
-    await userEvent.click(screen.getByRole("button", { name: "Browser" }));
-    expect(onTogglePanel).toHaveBeenCalledTimes(1);
-    view.unmount();
-
-    const onToggleClosed = vi.fn();
-    renderWithQuery(<InspectorWithSwitcher panelOpen={false} session={session([])} onTogglePanel={onToggleClosed} view="browser" />);
-    await userEvent.click(screen.getByRole("button", { name: "Browser" }));
-    expect(onToggleClosed).toHaveBeenCalledTimes(1);
+  it("keeps Browser out of the top-bar switcher and offers it as a panel tab", async () => {
+    renderWithQuery(<InspectorWithSwitcher session={session([])} />);
+    expect(screen.queryByTestId("panel-switcher")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Browser" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Browser" }));
+    expect(screen.getByRole("tab", { name: "Browser" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("has no Backlog tab: Backlog is a page", () => {
@@ -47,7 +42,8 @@ describe("SessionInspector tabs", () => {
 
   it("keeps the same Browser-only inspector for a remote orchestrator", () => {
     renderWithQuery(<InspectorWithSwitcher browserOnly hostId="box-a" session={session([], { kind: "orchestrator", hostId: "box-a" })} />);
-    expect(switcherLabels()).toEqual(["Browser"]);
+    expect(switcherLabels()).toEqual([]);
+    expect(screen.getByRole("tab", { name: "Browser" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Files" })).not.toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Session inspector" }).querySelector(".session-inspector__body--browser")).toBeInTheDocument();
   });
@@ -55,7 +51,7 @@ describe("SessionInspector tabs", () => {
   it("gives the Browser viewport the full inspector body without the default content gutter", async () => {
     renderWithQuery(<InspectorWithSwitcher session={session([])} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Browser" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Browser" }));
 
     const body = screen
       .getByRole("complementary", { name: "Session inspector" })
@@ -93,19 +89,19 @@ describe("SessionInspector tabs", () => {
     const currentSession = session([]);
     const view = renderWithQuery(<InspectorWithSwitcher session={currentSession} />);
     expect(
-      screen.queryByTestId("panel-switcher-browser-dot"),
+      screen.queryByTestId("browser-unseen-indicator"),
     ).not.toBeInTheDocument();
     view.unmount();
 
     useUiStore.getState().setBrowserUnseen(currentSession.id, true);
     renderWithQuery(<InspectorWithSwitcher session={currentSession} />);
-    expect(screen.getByTestId("panel-switcher-browser-dot")).toBeInTheDocument();
+    expect(screen.getByTestId("browser-unseen-indicator")).toBeInTheDocument();
 
     act(() =>
       useUiStore.getState().setInspectorView(currentSession.id, "browser"),
     );
     expect(
-      screen.queryByTestId("panel-switcher-browser-dot"),
+      screen.queryByTestId("browser-unseen-indicator"),
     ).not.toBeInTheDocument();
   });
 
@@ -224,9 +220,8 @@ describe("SessionInspector tabs", () => {
   it("exposes Reviews after Summary and keeps review content out of Summary", async () => {
     mockCommonGets([], "", [reviewState(1, "needs_review")]);
     renderWithQuery(<SessionInspector session={session([pr(1, "open")])} sideChatView={<div />} />);
-    const tabs = screen.getAllByRole("tab").map((el) => el.textContent?.trim());
-    // Browser moved to the top-bar switcher.
-    expect(tabs).toEqual(["Summary", "Reviews", "Side chat", "Files"]);
+    // Browser is a panel tab again (B797); only the active tab shows its label.
+    expect(tabLabels()).toEqual(["Summary", "Reviews", "Browser", "Side chat", "Files"]);
     expect(screen.queryByText("Review controls")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "Reviews" }));

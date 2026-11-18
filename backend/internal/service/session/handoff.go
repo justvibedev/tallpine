@@ -53,7 +53,7 @@ func (s *Service) HandoffOrchestrator(ctx context.Context, id domain.SessionID, 
 		return domain.Session{}, apierr.Conflict("ORCHESTRATOR_AGENT_NOT_CONFIGURED",
 			"This project has no orchestrator agent configured; set one in the project settings before handing off", nil)
 	}
-	if strings.TrimSpace(notePath) == "" && !agentRunning(old) && newestNote(sessionartifacts.Resolve(s.dataDir, id, old.Metadata.ArtifactDir)) == "" {
+	if strings.TrimSpace(notePath) == "" && !s.agentCanWriteNote(old) && newestNote(sessionartifacts.Resolve(s.dataDir, id, old.Metadata.ArtifactDir)) == "" {
 		// Nobody can write the note: asking a stopped agent fails, and one whose
 		// saved conversation is gone never comes back to read it (B673). Seed
 		// the successor from the daemon's bootstrap note instead, as the idle
@@ -92,11 +92,13 @@ func (s *Service) HandoffOrchestrator(ctx context.Context, id domain.SessionID, 
 	return sess, nil
 }
 
-// agentRunning reports an orchestrator that can be asked to write its own state
-// note. A hibernated one counts: a send wakes it, and one whose wake fails is
-// left exited.
-func agentRunning(rec domain.SessionRecord) bool {
-	return rec.Activity.State != domain.ActivityExited
+// agentCanWriteNote reports an orchestrator that can be asked to write its own
+// state note. A hibernated one counts: a send wakes it, and one whose wake fails
+// is left exited. One this daemon could not reattach does not: it keeps its
+// last activity but has no controller, so a send fails and a handoff that
+// waited for its note was a dead end (B810).
+func (s *Service) agentCanWriteNote(rec domain.SessionRecord) bool {
+	return rec.Activity.State != domain.ActivityExited && s.statusReadiness(rec) != "unavailable"
 }
 
 // handoffNote returns the cleaned absolute path of an existing regular file

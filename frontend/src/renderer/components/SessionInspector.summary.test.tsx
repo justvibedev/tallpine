@@ -293,7 +293,8 @@ describe("SessionInspector Plan tab", () => {
       undefined,
       withPlan(orchestrator.id, true),
     );
-    expect(switcherLabels()).toEqual(["Browser", "Plan"]);
+    expect(switcherLabels()).toEqual(["Plan"]);
+    expect(screen.getByRole("tab", { name: "Browser" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Plan", pressed: true })).toBeInTheDocument();
     expect(screen.getByText("Ship it")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Files" })).not.toBeInTheDocument();

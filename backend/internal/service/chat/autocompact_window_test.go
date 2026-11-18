@@ -10,7 +10,7 @@ import (
 
 type windowCatalog map[string]int64
 
-func (c windowCatalog) Models(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
+func (c windowCatalog) ModelCatalog(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
 	var out ports.AgentModelCatalog
 	for id, window := range c {
 		out.Models = append(out.Models, ports.AgentModelInfo{ID: id, ContextWindow: window})

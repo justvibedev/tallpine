@@ -1,8 +1,9 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { openInspector, selectPanelView } from "./support/open-inspector";
 
-// The Browser panel's chrome is one toolbar row under the top bar; the panel
-// switcher lives in the top bar, so nothing may overlap at any panel width.
+// The Browser panel's chrome is one toolbar row under the panel's tab row; the
+// sidebar toggle (and the Plan switcher) live in the top bar, so nothing may
+// overlap at any panel width.
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -27,7 +28,7 @@ async function expectNoOverlap(page: Page) {
 		page.getByTestId("browser-address-bar"),
 		page.getByRole("button", { name: "Open new tab" }),
 		page.getByRole("button", { name: "Browser controls" }),
-		...(await page.getByTestId("panel-switcher").getByRole("button").all()),
+		page.locator("#inspector").getByRole("tab", { name: "Browser" }),
 		page.getByTestId("sidebar-toggle"),
 	];
 	const measured = await boxes(controls);
@@ -40,14 +41,14 @@ async function expectNoOverlap(page: Page) {
 	// The field is control height (28px), not the taller inspector-tabs height.
 	const field = await page.getByTestId("browser-address-bar").boundingBox();
 	expect(field?.height).toBeLessThanOrEqual(28.5);
-	// One row: the toolbar's controls share its vertical band, and the switcher sits above it.
+	// One row: the toolbar's controls share its vertical band, and the top-bar toggle sits above it.
 	const row = await toolbar.boundingBox();
-	const switcher = await page.getByTestId("panel-switcher").boundingBox();
-	if (!row || !switcher) throw new Error("toolbar or switcher not visible");
-	expect(switcher.y + switcher.height).toBeLessThanOrEqual(row.y + 0.5);
+	const toggle = await page.getByTestId("sidebar-toggle").boundingBox();
+	if (!row || !toggle) throw new Error("toolbar or sidebar toggle not visible");
+	expect(toggle.y + toggle.height).toBeLessThanOrEqual(row.y + 0.5);
 }
 
-test("@P0 browser toolbar is one row and clear of the top-bar switcher at every panel width", async ({ page }) => {
+test("@P0 browser toolbar is one row and clear of the top-bar controls at every panel width", async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 720 });
 	await page.goto("/#/projects/tallpine-demo/sessions/demo-working");
 	await openInspector(page);

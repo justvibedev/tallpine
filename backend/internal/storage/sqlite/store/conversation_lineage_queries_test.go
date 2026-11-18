@@ -250,17 +250,20 @@ func TestLineageTurnQueriesAreBoundByConversation(t *testing.T) {
 					t.Fatalf("%s: %v", name, err)
 				}
 
-				// Plan: the lineage lookups seek the conversation's own range.
+				// Plan: the lineage lookups seek the turn's own (turn_id, sequence) range.
 				plan := probe.plan(t)
-				for _, table := range []string{"lineage_message", "lineage_activity"} {
+				for table, index := range map[string]string{
+					"lineage_message":  "idx_conversation_messages_turn_sequence (turn_id=?",
+					"lineage_activity": "idx_conversation_activities_turn_sequence (turn_id=?",
+				} {
 					found := false
 					for _, line := range strings.Split(plan, "\n") {
 						if !strings.Contains(line, table) {
 							continue
 						}
 						found = true
-						if !strings.Contains(line, "conversation_id=?") || strings.Contains(line, "ANY(") || strings.HasPrefix(strings.TrimSpace(line), "SCAN") {
-							t.Errorf("%s does not seek by conversation_id: %q\nfull plan:\n%s", table, line, plan)
+						if !strings.Contains(line, index) || strings.Contains(line, "ANY(") || strings.HasPrefix(strings.TrimSpace(line), "SCAN") {
+							t.Errorf("%s does not seek by turn_id: %q\nfull plan:\n%s", table, line, plan)
 						}
 					}
 					if !found {

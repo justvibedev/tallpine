@@ -501,6 +501,15 @@ type ConversationEditDelivery struct {
 	ProviderWorkStarted int64
 }
 
+type ConversationHistoryRetention struct {
+	ConversationID             string
+	BoundaryEventID            int64
+	EventsPrunedThroughID      int64
+	ActivitiesPrunedThroughSeq int64
+	ActivitiesDoneBoundaryID   int64
+	UpdatedAt                  time.Time
+}
+
 type ConversationMessage struct {
 	ID                  string
 	ConversationID      string

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { CatalogTrans } from "../i18n";
 import { defaultShortcutBindings, shortcutBindingLabel } from "../../shared/shortcuts";
 import { useOverflowScroll } from "../hooks/useOverflowScroll";
-import { adoptedShellHandle, useCloseShellTerminal, useRenameShellTerminal, useShellTerminals } from "../hooks/useShellTerminals";
+import { selectedShellHandle, useCloseShellTerminal, useRenameShellTerminal, useShellTerminals } from "../hooks/useShellTerminals";
 import { useShell } from "../lib/shell-context";
 import { tallpineBridge } from "../lib/bridge";
 import { isMacPlatform } from "../lib/platform";
@@ -43,7 +43,7 @@ export function ShellTerminalsView() {
 	// tab (or a daemon-side exit pruning it) would otherwise leave the pane bound
 	// to a dead handle.
 	// A tab selected while it was pending follows it to the shell it became.
-	const selectedHandleId = activeHandleId ? (adoptedShellHandle(activeHandleId) ?? activeHandleId) : null;
+	const selectedHandleId = selectedShellHandle(activeHandleId);
 	const active = shellTerminals.find((s) => s.handleId === selectedHandleId);
 	const tabsOverflow = useOverflowScroll<HTMLDivElement>(shellTerminals.map((t) => t.handleId).join("|"));
 	const selectAdjacentTab = useCallback(

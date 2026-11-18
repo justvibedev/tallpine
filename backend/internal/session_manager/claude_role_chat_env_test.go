@@ -2,7 +2,6 @@ package sessionmanager
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -143,18 +142,5 @@ func TestPinClaudeRoleSettingsCapsShellOutput(t *testing.T) {
 	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, domain.KindWorker, cfg, nil, skillbridge.Inventory{})
 	if env[domain.EnvClaudeRoleSettings] != `{"bashOutputMaxChars":20000}` {
 		t.Fatalf("override env = %v", env)
-	}
-}
-
-func TestPinCodeIntel(t *testing.T) {
-	env := map[string]string{domain.EnvClaudeRoleSettings: `{"autoMemoryEnabled":false}`}
-	pinCodeIntel(env, false)
-	if env[domain.EnvClaudeRoleSettings] != `{"autoMemoryEnabled":false}` {
-		t.Fatalf("off changed env: %v", env)
-	}
-	pinCodeIntel(env, true)
-	got := env[domain.EnvClaudeRoleSettings]
-	if !strings.Contains(got, `"Bash(grep *)"`) || !strings.Contains(got, `autoMemoryEnabled`) {
-		t.Fatalf("env = %s", got)
 	}
 }

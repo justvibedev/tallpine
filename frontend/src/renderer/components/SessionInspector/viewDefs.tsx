@@ -6,8 +6,8 @@ import { ClipboardList, SearchCheck } from "lucide-react";
 import { type SessionPRSummary } from "../../hooks/useSessionScmSummary";
 import type { MessageKey } from "../../i18n";
 
-/** Views the top-bar switcher owns, left to right. */
-export const PANEL_SWITCHER_VIEWS: readonly InspectorView[] = ["browser", "plan"];
+/** Views the top-bar switcher owns, left to right. Browser lives in the panel's own tab strip. */
+export const PANEL_SWITCHER_VIEWS: readonly InspectorView[] = ["plan"];
 export const isMac = isMacPlatform();
 export const noDragStyle = isMac ? ({ WebkitAppRegion: "no-drag" } as CSSProperties) : undefined;
 

@@ -64,7 +64,7 @@ type fakeReader struct {
 	err     error
 }
 
-func (f fakeReader) Models(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
+func (f fakeReader) ModelCatalog(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
 	return f.catalog, f.err
 }
 

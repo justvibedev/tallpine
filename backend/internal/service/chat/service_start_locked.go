@@ -45,7 +45,7 @@ type launch struct {
 	conv           ports.ChatConversation
 	freshIfMissing bool
 	liveReconnect  bool
-	liveRows       ConversationRows
+	liveTurns      []domain.ConversationTurn
 
 	generation            string
 	providerBoundary      *domain.ConversationBranch

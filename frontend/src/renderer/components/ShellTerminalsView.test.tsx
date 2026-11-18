@@ -7,7 +7,7 @@ import { renderWithTooltip as render } from "../test/render-with-tooltip";
 const terminalMocks = vi.hoisted(() => ({ data: [] as unknown[], adopted: new Map<string, string>() }));
 
 vi.mock("../hooks/useShellTerminals", () => ({
-	adoptedShellHandle: (handleId: string) => terminalMocks.adopted.get(handleId),
+	selectedShellHandle: (handleId: string | null) => (handleId ? (terminalMocks.adopted.get(handleId) ?? handleId) : null),
 	useCloseShellTerminal: () => ({ mutate: vi.fn() }),
 	useRenameShellTerminal: () => ({ mutate: vi.fn() }),
 	useShellTerminals: () => ({ data: terminalMocks.data }),

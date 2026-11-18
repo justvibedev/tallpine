@@ -334,7 +334,7 @@ type tuningCatalog struct {
 	calls   *int
 }
 
-func (c tuningCatalog) Models(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
+func (c tuningCatalog) ModelCatalog(context.Context, string, string, bool) (ports.AgentModelCatalog, error) {
 	if c.calls != nil {
 		*c.calls++
 	}
@@ -407,7 +407,7 @@ type refreshRecordingCatalog struct {
 	refreshes    *[]bool
 }
 
-func (c refreshRecordingCatalog) Models(_ context.Context, _, _ string, refresh bool) (ports.AgentModelCatalog, error) {
+func (c refreshRecordingCatalog) ModelCatalog(_ context.Context, _, _ string, refresh bool) (ports.AgentModelCatalog, error) {
 	*c.refreshes = append(*c.refreshes, refresh)
 	if refresh {
 		return c.fresh, nil

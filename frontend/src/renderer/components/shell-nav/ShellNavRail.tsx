@@ -1,5 +1,5 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { CalendarClock, File, Inbox, ListTodo, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings, Smartphone, SquareTerminal } from "lucide-react";
+import { CalendarClock, File, Inbox, ListTodo, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings, Smartphone } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/utils";
@@ -100,7 +100,6 @@ export function ShellNavRail({
 			<RailButton expanded={expanded} active={section === "artifacts"} icon={<File aria-hidden="true" />} label={t("artifacts.title")} badge={badges.artifacts} onClick={() => openPage("/artifacts", "artifacts")} testId="rail-artifacts" />
 			<RailButton expanded={expanded} active={section === "backlog"} icon={<ListTodo aria-hidden="true" />} label={t("backlog.title")} onClick={() => openPage("/backlog", "backlog")} testId="rail-backlog" />
 			<RailButton expanded={expanded} active={section === "inbox"} icon={<Inbox aria-hidden="true" />} label={t("shellNav.inbox")} badge={badges.inbox} badgeTone="attention" onClick={() => openPage("/inbox", "inbox")} testId="rail-inbox" />
-			<RailButton expanded={expanded} active={section === "terminals"} icon={<SquareTerminal aria-hidden="true" />} label={t("shellNav.terminals")} onClick={() => openPage("/terminals", "terminals")} testId="rail-terminals" />
 			<div className={cn("mt-auto flex flex-col gap-1", expanded ? "items-stretch" : "items-center")}>
 				<RailButton expanded={expanded} ariaExpanded={expanded} icon={expanded ? <PanelLeftClose aria-hidden="true" /> : <PanelLeftOpen aria-hidden="true" />} label={expanded ? t("shellNav.collapse") : t("shellNav.expand")} onClick={toggleRailExpanded} testId="rail-toggle" />
 				<RailButton expanded={expanded} icon={<Smartphone aria-hidden="true" />} label={t("settings.connectMobile")} onClick={() => openGlobalSettings("connections")} testId="rail-mobile" />

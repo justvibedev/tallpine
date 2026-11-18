@@ -1,5 +1,6 @@
 import type { UseNavigateResult } from "@tanstack/react-router";
-import type { useOpenShellTerminal } from "../hooks/useShellTerminals";
+import { useQueryClient } from "@tanstack/react-query";
+import { selectedShellHandle, shellTerminalsQueryKey, type ShellTerminal, type useOpenShellTerminal } from "../hooks/useShellTerminals";
 import { useEffect } from "react";
 import { tallpineBridge } from "../lib/bridge";
 import { useUiStore } from "../stores/ui-store";
@@ -17,6 +18,7 @@ export function useShellNativeEvents({ navigate, requestCreateProjectFromPath, r
 	isTerminalsRoute: boolean;
 	navigateSession: (direction: 1 | -1, onlyNeedingAttention?: boolean) => void;
 }) {
+	const queryClient = useQueryClient();
 	// A folder was dropped on the app's taskbar icon/shortcut (main process,
 	// cold start or an already-running instance) — feeds the same drop flow as
 	// dragging a folder into the open window.
@@ -55,8 +57,15 @@ export function useShellNativeEvents({ navigate, requestCreateProjectFromPath, r
 		if (handledShellNonceRef.current === newShellTerminalNonce) return;
 		handledShellNonceRef.current = newShellTerminalNonce;
 		if (routeParams.hostId) return;
+		// On /terminals a new tab joins the selected tab's project, so adding tabs
+		// to a project's terminals keeps them in that project's directory.
+		const activeId = useUiStore.getState().activeShellTerminalHandleId;
+		const selectedId = selectedShellHandle(activeId);
+		const selectedProjectId = isTerminalsRoute
+			? queryClient.getQueryData<ShellTerminal[]>(shellTerminalsQueryKey)?.find((s) => s.handleId === selectedId)?.projectId
+			: undefined;
 		const shell = openShellTerminal.open({
-			projectId: scopedProjectId,
+			projectId: scopedProjectId ?? selectedProjectId,
 			sessionId: routeParams.sessionId,
 		});
 		if (!shell) return;
@@ -67,6 +76,8 @@ export function useShellNativeEvents({ navigate, requestCreateProjectFromPath, r
 	}, [
 		newShellTerminalNonce,
 		openShellTerminal,
+		queryClient,
+		isTerminalsRoute,
 		scopedProjectId,
 		routeParams.sessionId,
 		routeParams.hostId,

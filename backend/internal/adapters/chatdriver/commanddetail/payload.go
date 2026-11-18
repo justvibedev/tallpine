@@ -3,6 +3,8 @@ package commanddetail
 import (
 	"encoding/json"
 	"unicode/utf8"
+
+	"tallpine.eu/tallpine/backend/internal/textutil"
 )
 
 // MaxToolPayloadChars caps one tool call's arguments or result.
@@ -33,13 +35,8 @@ const MaxPatchChars = 16 * 1024
 // Head keeps at most limit bytes from the start of text, cut on a character
 // boundary so the kept part is still valid UTF-8.
 func Head(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	for limit > 0 && !utf8.RuneStart(text[limit]) {
-		limit--
-	}
-	return text[:limit]
+	head, _ := textutil.HeadBytes(text, limit)
+	return head
 }
 
 // TailChars keeps the last limit characters of text and reports whether it cut

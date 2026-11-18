@@ -92,6 +92,11 @@ export function adoptedShellHandle(handleId: string): string | undefined {
 	return adoptedShellHandles.get(handleId);
 }
 
+/** A tab selection, followed to the shell its pending tab became. */
+export function selectedShellHandle(handleId: string | null): string | null {
+	return handleId ? (adoptedShellHandle(handleId) ?? handleId) : null;
+}
+
 const isPendingShellHandle = (handleId: string) => handleId.startsWith(PENDING_SHELL_PREFIX);
 const hostKey = (hostId?: HostId) => (hostId && hostId !== LOCAL_HOST ? hostId : LOCAL_HOST);
 

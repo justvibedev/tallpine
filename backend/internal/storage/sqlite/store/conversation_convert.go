@@ -183,6 +183,11 @@ func turnToDomain(row gen.ConversationTurn) domain.ConversationTurn {
 	if row.RetryOfTurnID.Valid {
 		turn.RetryOfTurnID = row.RetryOfTurnID.String
 	}
+	// A steer has its own transcript entry inside the turn it joined; only a
+	// batch member needs pointing at the turn that answers it.
+	if row.PromotedToTurnID.Valid && row.DeliveryMode == domain.DeliveryModeBatched {
+		turn.DeliveredInTurnID = row.PromotedToTurnID.String
+	}
 	if row.StartedAt.Valid {
 		started := row.StartedAt.Time
 		turn.StartedAt = &started

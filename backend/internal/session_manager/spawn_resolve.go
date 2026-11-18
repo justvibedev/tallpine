@@ -72,8 +72,6 @@ func (m *Manager) spawnResolveHarness(ctx context.Context, st *spawnState) *spaw
 			cfg.Harness = resolved
 		}
 	}
-	// Code intelligence mode only changes Claude Code workers (not planners).
-	cfg.CodeIntel = cfg.CodeIntel && cfg.Role == "" && domain.CodeIntelApplies(cfg.Kind, cfg.Harness)
 	if cfg.Harness == "" && cfg.Kind == domain.KindOrchestrator {
 		// A freshly added project has no orchestrator agent configured; use the
 		// daemon default rather than failing (orchestrator new has no --harness).
@@ -198,7 +196,6 @@ func (m *Manager) spawnResolveModelAndMode(ctx context.Context, st *spawnState) 
 	if mode == domain.SessionModeTUI {
 		// A fresh terminal launch applies the Settings compaction default and
 		// the model window like a relaunch does.
-		adapterConfig.Launch.CodeIntel = cfg.CodeIntel
 		adapterConfig.Launch = m.freshLaunchOptions(ctx, cfg.Harness, cfg.Kind, cfg.ProjectID, project.Config, adapterConfig.Model, adapterConfig.Launch)
 	}
 	st.agentConfig = agentConfig

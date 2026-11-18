@@ -382,7 +382,6 @@ func awakeReconnectTarget(rec domain.SessionRecord, reconnectOnly bool, awakeTar
 func (m *Manager) chatRuntimeEnv(rec domain.SessionRecord, project domain.ProjectRecord) map[string]string {
 	env := m.runtimeEnv(rec.ID, rec.ProjectID, rec.IssueID, project.Config.Env)
 	pinClaudeRoleSettings(env, domain.HarnessClaudeCode, rec.Kind, project.Config, m.workflowDefaults(context.Background()).SkillRoles, m.skillInventory(project.Path, project.Config.Env)) // see spawnChat: session/new reads this env; any harness, for a later switch to Claude
-	pinCodeIntel(env, rec.Harness == domain.HarnessClaudeCode && m.sessionLaunchOptions(context.Background(), rec.ID).CodeIntel)
 	if agent, ok := m.agents.Agent(rec.Harness); ok {
 		m.augmentAgentRuntimeEnv(agent, env)
 	}

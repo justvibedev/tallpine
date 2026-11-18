@@ -72,7 +72,7 @@ func (s *Service) buildController(ctx context.Context, l *launch) error {
 		return fmt.Errorf("settle uncertain queued batch: %w", err)
 	}
 	if l.liveReconnect {
-		providerTurnID := l.controller.restoreLiveTurnOwnership(l.liveRows.Turns)
+		providerTurnID := l.controller.restoreLiveTurnOwnership(l.liveTurns)
 		if activator, ok := l.conv.(ports.ChatLiveReconnectActivator); ok {
 			if err := activator.ActivateLiveReconnect(ctx, providerTurnID); err != nil {
 				_ = cleanupUnpublishedConversation(l.conv, false)

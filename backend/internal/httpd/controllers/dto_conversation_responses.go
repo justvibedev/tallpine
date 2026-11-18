@@ -7,6 +7,9 @@ type ConversationTurnResponse struct {
 	ProviderTurnID string `json:"providerTurnId,omitempty"`
 	// RetryOfTurnID is the failed source whose durable prompt created this turn.
 	RetryOfTurnID string `json:"retryOfTurnId,omitempty"`
+	// DeliveredInTurnID names the turn whose input this queued message was batched
+	// into. The message belongs in that turn's transcript block.
+	DeliveredInTurnID string `json:"deliveredInTurnId,omitempty"`
 	// HasRetryAttempt remains true when the attempt is outside the active branch.
 	HasRetryAttempt bool `json:"hasRetryAttempt,omitempty"`
 	// HasHumanPrompt includes durable human prompts outside this timeline page.

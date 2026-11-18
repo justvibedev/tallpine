@@ -429,7 +429,8 @@ func (m *Manager) reconcileLivePass(ctx context.Context, recs []domain.SessionRe
 				retry := err != nil && domain.NormalizeSessionMode(rec.Mode) == domain.SessionModeChat &&
 					retryableStartupChatCheck(err) && len(m.startupChatRetryDelays) > 0
 				if !retry {
-					// A scheduled reattach keeps the session checking; its last attempt settles it.
+					// A scheduled reattach keeps the session checking until it
+					// reattaches or its schedule is spent; it then keeps retrying.
 					m.finishStatusRecovery(ctx, rec, err)
 					if err != nil {
 						m.reportStartupReattachFailed(ctx, rec, err)

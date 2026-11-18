@@ -48,6 +48,7 @@ import { LOCAL_HOST, refKey, sessionUiKey } from "../lib/hosts";
 import { useShellMaybe } from "../lib/shell-context";
 import { sessionNavigateTarget } from "../lib/navigate-to-session";
 import { ProjectTerminationFeedback } from "./ShellTopbar";
+import { TopbarTerminalButton } from "./TopbarTerminalButton";
 import { ProjectBoardActions } from "./ProjectBoardActions";
 import { useDiagnosticsEnabled, usePressureState, useSessionMemory } from "../hooks/useSessionMemory";
 import { AppMemoryIndicator } from "./session-memory/AppMemoryIndicator";
@@ -212,10 +213,16 @@ export function SessionsBoard({ projectId, hostId }: SessionsBoardProps) {
 		});
 	};
 
-	const actions = projectId && (!hostId || connected) ? (
+	const projectBoardActions = projectId && (!hostId || connected) ? (
 		<>
 			<ProjectTerminationFeedback projectId={projectId} hostId={hostId} />
 			<ProjectBoardActions actions={projectActions} projectId={projectId} placement="header" quiet={showProjectEmpty} />
+		</>
+	) : null;
+	const actions = projectBoardActions || !hostId ? (
+		<>
+			{hostId ? null : <TopbarTerminalButton projectId={projectId} />}
+			{projectBoardActions}
 		</>
 	) : undefined;
 

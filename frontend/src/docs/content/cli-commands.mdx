@@ -3158,7 +3158,6 @@ Flags:
       --backlog string             Backlog item ref (e.g. B12) to work on: its title, note, done-when and agent notes join the task, and the session is linked to it
       --branch string              Branch for git project sessions (default: tp/<session-id>/root; unsupported for standalone or Scratch sessions)
       --claim-pr string            Claim PR ownership metadata only for the spawned session; does not check out the PR branch
-      --code-intel                 Code intelligence mode for a Claude Code worker: navigate Go/TS code with the LSP tool, with shell grep/rg and the Grep tool denied. Use for rename, refactor and interface implementation/caller work; other agents ignore it. Works with --backlog and --issue
       --effort string              Reasoning effort override for this session only (e.g. low, medium, high); empty defers to the agent/model default
       --force                      With --backlog, start the item even if it is held or has an open blocker
       --harness string             Agent harness / --agent: claude-code, codex, kiro, deepseek-harness (default: project worker.agent; orchestrator spawns default to project orchestrator.agent; required if the project has none)

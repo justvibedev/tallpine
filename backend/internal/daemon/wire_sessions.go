@@ -238,12 +238,8 @@ func (b *boot) wireSessionManagerHooks() {
 			return wake.WakeHibernatedChat(wakeCtx, id)
 		})
 	}
-	if tunable, ok := b.sessMgr.(interface {
-		SetModelCatalog(interface {
-			Models(context.Context, string, string, bool) (ports.AgentModelCatalog, error)
-		})
-	}); ok {
-		tunable.SetModelCatalog(b.agentSvc)
+	if !wireSessionModelCatalog(b.sessMgr, b.agentSvc) {
+		b.log.Warn("session manager does not accept a model catalog; spawn --model and role defaults cannot be confirmed")
 	}
 }
 

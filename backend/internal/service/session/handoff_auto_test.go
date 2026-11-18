@@ -103,3 +103,33 @@ func TestHandoffOrchestratorWithoutANoteAsksALiveOrSleepingOrchestrator(t *testi
 		})
 	}
 }
+
+// unreattachedCommander reports what the manager reports for an agent the
+// daemon could not reattach after a restart.
+type unreattachedCommander struct{ *fakeCommander }
+
+func (unreattachedCommander) SessionStatusReadiness(domain.SessionRecord) string {
+	return "unavailable"
+}
+
+// B810: after a restart the reattach failed, so the orchestrator kept its idle
+// activity but had no controller. Handoff asked for its note, the UI then sent
+// it a message, and that failed with "no live chat controller": a dead end. It
+// cannot write a note, so the handoff seeds the successor from the bootstrap note.
+func TestHandoffOrchestratorWithoutANoteUsesTheBootstrapNoteWhenReattachFailed(t *testing.T) {
+	f := newHandoffFixture(t, domain.HarnessClaudeCode)
+	if err := os.Remove(f.note); err != nil {
+		t.Fatal(err)
+	}
+	f.svc.manager = unreattachedCommander{f.fc}
+	got, err := f.svc.HandoffOrchestrator(context.Background(), "mer-1", "")
+	if err != nil {
+		t.Fatalf("HandoffOrchestrator: %v", err)
+	}
+	if got.ID != "mer-2" || len(f.fc.retired) != 1 || f.fc.retired[0] != "mer-1" {
+		t.Fatalf("successor = %q, retired = %v; want mer-2 replacing mer-1", got.ID, f.fc.retired)
+	}
+	if !strings.Contains(f.fc.spawnedCfg.Prompt, "auto-handoff-") {
+		t.Fatalf("seed prompt = %q, want the bootstrap note", f.fc.spawnedCfg.Prompt)
+	}
+}

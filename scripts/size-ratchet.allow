@@ -70,7 +70,7 @@
 514 backend/internal/domain/projectconfig.go
 626 backend/internal/domain/session.go
 651 backend/internal/httpd/agent_scope.go
-568 backend/internal/httpd/api.go
+557 backend/internal/httpd/api.go
 579 backend/internal/httpd/auth_test.go
 527 backend/internal/httpd/controllers/codex_accounts_test.go
 522 backend/internal/httpd/controllers/conversation_history_test.go
@@ -214,7 +214,6 @@
 1015 backend/internal/session_manager/manager_send_test.go
 1102 backend/internal/session_manager/manager_spawn_failure_test.go
 1350 backend/internal/session_manager/manager_spawn_test.go
-503 backend/internal/session_manager/prompt.go
 1128 backend/internal/session_manager/provision_test.go
 601 backend/internal/session_manager/send_composer_guard_test.go
 652 backend/internal/session_manager/startup_health_test.go

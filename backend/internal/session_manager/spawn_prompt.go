@@ -70,9 +70,6 @@ func (m *Manager) buildSpawnTexts(ctx context.Context, cfg ports.SpawnConfig, se
 	if err != nil {
 		return "", "", err
 	}
-	if cfg.CodeIntel {
-		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n" + domain.CodeIntelPrompt)
-	}
 	return prompt, systemPrompt, nil
 }
 
@@ -168,11 +165,7 @@ func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionK
 	} else if kind == domain.KindWorker && requestedOutput == domain.RequestedOutputArtifact {
 		cfg.AdditionalSections = append(cfg.AdditionalSections, artifactOutputPrompt)
 	}
-	text := buildSystemPromptText(cfg)
-	if kind == domain.KindWorker && role == "" && domain.CodeIntelApplies(kind, harness) && m.sessionLaunchOptions(ctx, sessionID).CodeIntel {
-		text = strings.TrimSpace(text + "\n\n" + domain.CodeIntelPrompt)
-	}
-	return text, nil
+	return buildSystemPromptText(cfg), nil
 }
 
 // workerProjectRules is the project rules section of a worker system prompt:

@@ -29,6 +29,7 @@ type fakeStore struct {
 	// contendOn makes the batches with these call numbers (from 1) see a
 	// foreground write wait for the lock.
 	contendOn map[int]bool
+	history   *fakeHistory
 }
 
 func (f *fakeStore) batchCall(limit int64) sqlitestore.WriterHold {

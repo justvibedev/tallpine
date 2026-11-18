@@ -4,6 +4,26 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.20]
+
+### Added
+- AI account switcher in the top bar, and a compact icon-button session bar (#1267).
+- A Terminal button in the top bar opens the project's terminals, and the rail entry is gone (#1268).
+- Conversation history below settled compaction boundaries is pruned from storage (#1273).
+
+### Changed
+- The language-server features added in 0.13.19 are removed: the Code intelligence banner and settings tab, and `spawn --code-intel` (#1271).
+- Faster chat and context-window lookups through `turn_id` indexes (#1270).
+
+### Fixed
+- Idle chat workers now deliver their turn results, and results are held while the worker runs its own jobs (#1269).
+- Chat shows neutral loading copy and makes one first-load request per orchestrator open (#1272).
+- Chat reattach after a restart no longer dead-ends a project (#1275).
+- Batched prompts, action rows and the minimap card render in true order (#1276).
+- The model catalog is wired into the session manager again (#1274).
+- GitHub PR-list polls no longer fill the response cache (#1277).
+- Docs build no longer fails on a security check (next 16.4.5) (#1266).
+
 ## [0.13.19]
 
 ### Added

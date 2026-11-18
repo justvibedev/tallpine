@@ -392,6 +392,7 @@ func New(d Deps) *Manager {
 	m.statusRecoveries = make(map[domain.SessionID]statusRecovery)
 	m.statusVerificationLimit = statusVerificationLimit
 	m.startupChatRetryDelays = defaultStartupChatRetryDelays
+	m.startupChatRetryMaxDelay = defaultStartupChatRetryMaxDelay
 	m.startupChatResumeDelays = defaultStartupChatResumeDelays
 	m.startupChatResumeSem = make(chan struct{}, defaultStartupChatResumeWorkers)
 	m.startupChatResume = m.resumeStartupChatOnce

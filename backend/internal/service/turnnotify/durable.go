@@ -86,6 +86,7 @@ func (o *Observer) deliverPending(ctx context.Context) time.Duration {
 		o.Log.Warn("recover turn fallbacks", "err", err)
 		return 5 * time.Second
 	}
+	o.pruneJobHolds(pending)
 	for _, f := range pending {
 		if o.isClosed() || ctx.Err() != nil {
 			return next
@@ -113,6 +114,10 @@ func (o *Observer) deliverPending(ctx context.Context) time.Duration {
 		if until, auto, limited := domain.ParseUsageLimitFallbackExcerpt(f.Excerpt); limited {
 			kind = KindUsageLimited
 			message = Message(KindUsageLimited, rec, usageLimitDetail(until, auto))
+		}
+		if wait := o.holdChatFallback(ctx, f, rec, kind); wait > 0 {
+			next = min(next, wait)
+			continue
 		}
 		in := reportsvc.CreateInput{ID: f.ID, TurnFallbackID: f.ID, SessionID: f.SessionID, Message: message, Synthesized: true, Immediate: true}
 		in.Quiet, in.QuietFor = quietPolicy(kind, rec)

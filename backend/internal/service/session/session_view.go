@@ -76,12 +76,7 @@ func (s *Service) toSessionWithFacts(ctx context.Context, rec domain.SessionReco
 	// recomputed here so the API and Kanban see the same durable
 	// classification rather than a value that can differ read to read.
 	presentation := deriveKanbanPresentation(rec, prs, runs, interrupted, now, s.harnessSignals(rec.Harness))
-	readiness := "ready"
-	if recovery, ok := s.manager.(interface {
-		SessionStatusReadiness(domain.SessionRecord) string
-	}); ok {
-		readiness = recovery.SessionStatusReadiness(rec)
-	}
+	readiness := s.statusReadiness(rec)
 	unsupportedMessage := ""
 	if rec.Harness.IsUnsupported() {
 		unsupportedMessage = domain.UnsupportedHarnessMessage(rec.Harness)
@@ -155,4 +150,15 @@ func (s *Service) currentHeadReviewRuns(ctx context.Context, rec domain.SessionR
 		return nil, fmt.Errorf("review runs %s: %w", rec.ID, err)
 	}
 	return runs, nil
+}
+
+// statusReadiness is the manager's recovery observation of rec: "ready",
+// "checking", or "unavailable" when this daemon could not reattach its agent.
+func (s *Service) statusReadiness(rec domain.SessionRecord) string {
+	if recovery, ok := s.manager.(interface {
+		SessionStatusReadiness(domain.SessionRecord) string
+	}); ok {
+		return recovery.SessionStatusReadiness(rec)
+	}
+	return "ready"
 }

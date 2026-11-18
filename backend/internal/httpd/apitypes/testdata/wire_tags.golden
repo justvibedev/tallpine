@@ -123,7 +123,7 @@ SetReviewActivityRequest: agentSessionId,omitempty event,omitempty launchId,omit
 SettingValue: key locked lockedBy,omitempty source value writable
 SettingsChange: actor changedAt id key newValue oldValue projectId,omitempty
 SettingsValuesResponse: project,omitempty values
-SpawnSessionRequest: approvalMode,omitempty attachments,omitempty backlogAllowBlocked,omitempty backlogAllowDuplicate,omitempty backlogForce,omitempty backlogPlan,omitempty backlogRef,omitempty branch,omitempty clientRequestId,omitempty codeIntel,omitempty displayName,omitempty effort,omitempty harness,omitempty issueId,omitempty kind,omitempty mode,omitempty model,omitempty parentSessionId,omitempty projectId,omitempty prompt,omitempty requestedOutput,omitempty role,omitempty trackerProvider,omitempty
+SpawnSessionRequest: approvalMode,omitempty attachments,omitempty backlogAllowBlocked,omitempty backlogAllowDuplicate,omitempty backlogForce,omitempty backlogPlan,omitempty backlogRef,omitempty branch,omitempty clientRequestId,omitempty displayName,omitempty effort,omitempty harness,omitempty issueId,omitempty kind,omitempty mode,omitempty model,omitempty parentSessionId,omitempty projectId,omitempty prompt,omitempty requestedOutput,omitempty role,omitempty trackerProvider,omitempty
 StartBacklogRunRequest: refs,omitempty scope selection
 SteerConversationRequest: attachments,omitempty clientMessageId,omitempty recoverOnly,omitempty senderSessionId,omitempty text
 SteerOrSendConversationResponse: activityId,omitempty duplicate outcome providerTurnId,omitempty state,omitempty turnId,omitempty

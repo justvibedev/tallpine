@@ -243,14 +243,6 @@ func pinClaudeRoleSettings(env map[string]string, harness domain.AgentHarness, k
 	}
 }
 
-// pinCodeIntel adds code intelligence mode's grep deny list to a Chat
-// session's pinned Claude role settings (see pinClaudeRoleSettings).
-func pinCodeIntel(env map[string]string, on bool) {
-	if env != nil && on {
-		env[domain.EnvClaudeRoleSettings] = domain.WithCodeIntelDeny(env[domain.EnvClaudeRoleSettings])
-	}
-}
-
 func (m *Manager) launchRuntimeEnv(id domain.SessionID, project domain.ProjectID, issue domain.IssueID, projectEnv map[string]string) (map[string]string, string, error) {
 	return m.launchRuntimeEnvAs(id, project, issue, projectEnv, "")
 }
@@ -319,7 +311,6 @@ func (m *Manager) prepareChatControllerEnv(
 		return rec, nil, err
 	}
 	pinClaudeRoleSettings(env, harness, rec.Kind, project, m.workflowDefaults(ctx).SkillRoles, m.skillInventory(m.projectPath(ctx, rec.ProjectID), project.Env))
-	pinCodeIntel(env, harness == domain.HarnessClaudeCode && m.sessionLaunchOptions(ctx, rec.ID).CodeIntel)
 	rec, err = m.persistBrowserCapabilityVerifier(ctx, rec, expected, verifier)
 	if err != nil {
 		return rec, nil, fmt.Errorf("persist browser capability verifier: %w", err)

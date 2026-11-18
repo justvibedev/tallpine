@@ -44,7 +44,8 @@ WHERE conversation_turns.conversation_id = ?
   AND conversation_turns.promotion_started_at IS NULL
 ORDER BY conversation_turns.requested_at, conversation_turns.rowid
 LIMIT 1`, "c-1")
-	for _, want := range []string{"INDEX idx_conversation_turns_queued", "INDEX idx_conversation_messages_user_turn"} {
+	// idx_conversation_messages_turn_sequence now also covers the message seek.
+	for _, want := range []string{"INDEX idx_conversation_turns_queued", "INDEX idx_conversation_messages_"} {
 		if !strings.Contains(next, want) {
 			t.Fatalf("queue head does not use %s:\n%s", want, next)
 		}

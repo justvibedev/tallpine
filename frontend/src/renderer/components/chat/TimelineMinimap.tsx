@@ -1,4 +1,4 @@
-import type { KeyboardEventHandler, PointerEventHandler, RefObject, WheelEventHandler } from "react";
+import { useEffect, type KeyboardEventHandler, type PointerEventHandler, type RefObject, type WheelEventHandler } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/utils";
 import type { useTimelineMinimap } from "./useTimelineMinimap";
@@ -40,6 +40,14 @@ export function TimelineMinimap({
 }: TimelineMinimapProps) {
 	const { t } = useTranslation();
 	const inspectorOpen = inspectorOpenRef.current;
+	// Only the pointer leaving or the track blurring closes the card. Leaving the
+	// app does neither: the card stayed open over the transcript, and coming back
+	// re-focused the track, which reopened it with no pointer there to leave (B812).
+	useEffect(() => {
+		const close = () => setHoveredMarker(null);
+		window.addEventListener("blur", close);
+		return () => window.removeEventListener("blur", close);
+	}, [setHoveredMarker]);
 	return (
 		<>
 			<div
@@ -60,8 +68,12 @@ export function TimelineMinimap({
 				onPointerCancel={stopDrag}
 				onWheel={onWheel}
 				onKeyDown={onKeyDown}
-				onFocus={() => {
+				onFocus={(event) => {
 					if (!minimapEnabled || inspectorOpenRef.current || scrollbar.markers.length === 0) return;
+					// Focus opens the card for keyboard users. A click focuses the track too,
+					// and so does the window regaining focus; neither may open a card that only
+					// a pointer leaving the track would close.
+					if (!event.currentTarget.matches(":focus-visible")) return;
 					setHoveredMarker(
 						Math.min(
 							scrollbar.markers.length - 1,

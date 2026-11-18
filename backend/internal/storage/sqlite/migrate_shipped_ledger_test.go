@@ -271,4 +271,6 @@ var shippedMigrations = map[int64]string{
 	20261116100000000: "20261116100000000_review_focus.sql",
 	20261116110000000: "20261116110000000_app_settings_machine_load.sql",
 	20261116120000000: "20261116120000000_turn_fallback_excerpt_800.sql",
+	20261117100000000: "20261117100000000_conversation_turn_id_indexes.sql",
+	20261117110000000: "20261117110000000_conversation_history_retention.sql",
 }
