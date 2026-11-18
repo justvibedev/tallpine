@@ -5,6 +5,12 @@ description: Read current Tallpine product updates and release notes.
 
 Release notes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and are sourced from Tallpine's merged pull requests. Tallpine is a fork of Agent Orchestrator; notes from before the fork are upstream's.
 
+## [0.13.22]
+
+### Fixed
+- Local CI no longer delivers the same failure alert twice when delivery is unconfirmed (#1281).
+- Local CI treats network-only job failures as infrastructure problems instead of a red main, and `loop.sh --once <sha>` retests a single commit (#1282).
+
 ## [0.13.21]
 
 ### Fixed

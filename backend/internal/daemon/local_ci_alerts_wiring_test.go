@@ -2,10 +2,15 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/config"
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
+	"tallpine.eu/tallpine/backend/internal/service/localcialerts"
 )
 
 type fakeAlertSessions map[domain.SessionID]domain.SessionRecord
@@ -60,5 +65,46 @@ func TestLocalCIDir(t *testing.T) {
 		if got := localCIDir(c.cfg); got != c.want {
 			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
+	}
+}
+
+// B821: session.Send reports SESSION_DELIVERY_UNCONFIRMED after the alert was already
+// pasted into a busy orchestrator. The reader must count that as sent; otherwise the
+// cursor stays and the next tick delivers the same row again.
+func TestLocalCIAlertSendUnconfirmedIsNotRetried(t *testing.T) {
+	dir := t.TempDir()
+	results := filepath.Join(dir, "results")
+	if err := os.MkdirAll(results, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notify-target"), []byte("orch\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(results, "alerts.tsv"), []byte("2026-11-18T12:29:38Z\tcannot reach origin\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(results, "alerts.cursor"), []byte("0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sends := 0
+	reader := &localcialerts.Reader{
+		Dir:    dir,
+		Target: func(_ context.Context, id domain.SessionID) (domain.SessionID, bool) { return id, true },
+		Send: localCIAlertSend(func(context.Context, domain.SessionID, string) error {
+			sends++
+			return apierr.Conflict(deliveryUnconfirmedCode, "unconfirmed", nil)
+		}),
+	}
+	for i := 0; i < 3; i++ {
+		if err := reader.Tick(context.Background()); err != nil {
+			t.Fatalf("tick %d: %v", i, err)
+		}
+	}
+	if sends != 1 {
+		t.Fatalf("alert sent %d times, want 1", sends)
+	}
+	other := errors.New("tmux gone")
+	if err := localCIAlertSend(func(context.Context, domain.SessionID, string) error { return other })(context.Background(), "o", "m"); !errors.Is(err, other) {
+		t.Fatalf("real failure swallowed: %v", err)
 	}
 }

@@ -2,10 +2,12 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 
 	"tallpine.eu/tallpine/backend/internal/config"
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
 	"tallpine.eu/tallpine/backend/internal/service/localcialerts"
 )
 
@@ -25,9 +27,9 @@ func (b *boot) wireLocalCIAlerts() {
 	reader := &localcialerts.Reader{
 		Dir:    localCIDir(b.cfg),
 		Target: localCIAlertTarget(b.store, orchestratorPicker(b.store)),
-		Send: func(ctx context.Context, to domain.SessionID, msg string) error {
+		Send: localCIAlertSend(func(ctx context.Context, to domain.SessionID, msg string) error {
 			return b.sessionSvc.Send(ctx, to, msg, nil)
-		},
+		}),
 		Log: b.log,
 	}
 	done := reader.Start(b.ctx)
@@ -59,5 +61,23 @@ func localCIAlertTarget(store localCIAlertSessions, pick func(context.Context, d
 			return "", false
 		}
 		return pick(ctx, rec.ProjectID, "")
+	}
+}
+
+// deliveryUnconfirmedCode is the API code session.Send returns when the text was
+// written to the agent's terminal but no turn start was seen (a busy or queued
+// orchestrator). The message is delivered then; reporting it as a failure made the
+// reader keep its cursor and paste the same alert again on the next tick (B821).
+const deliveryUnconfirmedCode = "SESSION_DELIVERY_UNCONFIRMED"
+
+// localCIAlertSend treats an unconfirmed delivery as sent, so the cursor advances.
+func localCIAlertSend(send func(context.Context, domain.SessionID, string) error) func(context.Context, domain.SessionID, string) error {
+	return func(ctx context.Context, to domain.SessionID, msg string) error {
+		err := send(ctx, to, msg)
+		var api *apierr.Error
+		if errors.As(err, &api) && api.Code == deliveryUnconfirmedCode {
+			return nil
+		}
+		return err
 	}
 }

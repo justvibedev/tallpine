@@ -4,6 +4,12 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.22]
+
+### Fixed
+- Local CI no longer delivers the same failure alert twice when delivery is unconfirmed (#1281).
+- Local CI treats network-only job failures as infrastructure problems instead of a red main, and `loop.sh --once <sha>` retests a single commit (#1282).
+
 ## [0.13.21]
 
 ### Fixed

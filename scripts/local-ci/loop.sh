@@ -4,7 +4,10 @@
 # which a service manager runs. The loop only schedules: the gate itself is `scripts/verify --all`.
 #   loop.sh           loop forever: re-run whenever origin/main moves (poll every POLL s, default 120; a cheap git ls-remote decides whether to fetch)
 #   loop.sh --once    evaluate current origin/main once, even if already recorded; exits 1 if origin is unreachable
-# Appends "main\t<sha>\t<pass|fail|superseded>\t<summary>" to $OUT/local-ci.tsv; full log in
+#   loop.sh --once <sha>  retest that commit (any ancestor of origin/main, full or abbreviated sha), even if already recorded
+# A job that failed only on network errors (DNS, proxy.golang.org, timeouts) is recorded as "infra", not as main
+# debt; the loop re-runs an infra commit once $NET_PROBE_URL answers again (B819).
+# Appends "main\t<sha>\t<pass|fail|infra|superseded>\t<summary>" to $OUT/local-ci.tsv; full log in
 # $OUT/local-ci-main-<sha8>.log; itemised failures (and [flaky-retried] items) in
 # $OUT/local-ci-main-<sha8>-failures.txt.  Start with ~/.tallpine/local-ci/start.sh (detached, pid file).
 # GitHub access: $H/github-user (one login) pins the gh account for this repo; without it the loop uses the
@@ -70,6 +73,18 @@ mobile_seed() { # packages/mobile: npm ci (with patch-package postinstall) when 
 failed_jobs() { sed -n 's/^FAIL: //p' "$1" | tail -1; }
 flaky_items() { sed -n 's/^  flaky    //p' "$1"; }
 flaky_detail() { sed -n 's/^  flaky-detail | //p' "$1"; } # first-run assertion message + stack of each retried failure
+# B819: a job whose output shows only network trouble (no resolver, dial/timeouts, module proxy unreachable) says
+# nothing about main. Matches the failure signatures of 'go run pkg@version', npm and git.
+NET_ERR_RE='no such host|server misbehaving|dial tcp|i/o timeout|TLS handshake timeout|connection (refused|reset by peer)|network is unreachable|Temporary failure in name resolution|Could not resolve host|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNRESET|ECONNREFUSED|unrecognized import path|dial tcp: lookup'
+NET_PROBE_URL="${NET_PROBE_URL:-https://proxy.golang.org/}"
+# Only jobs that download tools at run time qualify: a test that itself talks to a socket must still fail main.
+job_is_infra() { case " go-lint sqlc-drift api-drift " in *" $2 "*) job_output "$1" "$2" | grep -qiE "$NET_ERR_RE" ;; *) return 1 ;; esac; } # job_is_infra <log> <job>
+net_ok() { curl -fsS -o /dev/null --max-time 8 "$NET_PROBE_URL" 2>/dev/null; }
+# needs_run <sha>: no row yet, or the newest row is infra and the network is back.
+needs_run() {
+  local last; last="$(grep "^main	$1	" "$TSV" 2>/dev/null | tail -1 | cut -f3)"
+  [ -z "$last" ] || { [ "$last" = infra ] && net_ok; }
+}
 job_output() { # job_output <log> <job>: that job's section of the verify output
   awk -v n="$2" '$0 == "=== " n {f=1; next} index($0, "--- " n " ") == 1 {f=0} f' "$1"
 }
@@ -205,8 +220,14 @@ run_suite() {
   [ "$stamp" = 1 ] && [ -z "$setup" ] && touch "$nightly"
   local fails flaky; fails="$setup"; flaky="$(flaky_items "$vlog" 2>/dev/null)"
   [ -n "$setup" ] || { fails="$(failed_jobs "$vlog")"; [ "$rc" -ne 0 ] && [ -z "$fails" ] && fails="verify-crashed"; }
+  # B819: a failed job that only shows network errors is infra, not main debt.
+  local infra="" real="" j
+  for j in $fails; do
+    if [ -z "$setup" ] && [ "$j" != verify-crashed ] && job_is_infra "$vlog" "$j"; then infra="$infra $j"; else real="$real $j"; fi
+  done
+  fails="${real# }"; infra="${infra# }"
   {
-    for j in $fails; do
+    for j in $fails $infra; do
       echo "## $j"
       case "$j" in
         go-test) job_output "$vlog" go-test | grep -E '^(--- FAIL|FAIL|panic)' | sort -u | head -40 ;;
@@ -219,7 +240,9 @@ run_suite() {
   } >"$items"
   local note; note="$(cat "$H/tmp/quiet.note" 2>/dev/null)"; [ -n "$flaky" ] && note="$note [flaky-retried: $(echo "$flaky" | grep -c .)]"
   note="$note$(sed -n 's/^verify-note: / [/p' "$vlog" 2>/dev/null | tail -1 | sed 's/$/]/')"
-  if [ -z "$fails" ]; then printf 'main\t%s\tpass\tall jobs green%s\n' "$sha" "$note" >>"$TSV"
+  [ -z "$infra" ] || note="$note [infra, network errors: $(echo $infra | tr ' ' ',')]"
+  if [ -z "$fails" ] && [ -n "$infra" ]; then printf 'main\t%s\tinfra\tnetwork failure, not tested (details in local-ci-main-%s-failures.txt): %s; retried when the network is back%s\n' "$sha" "$s8" "$(echo $infra | tr ' ' ',')" "$note" >>"$TSV"
+  elif [ -z "$fails" ]; then printf 'main\t%s\tpass\tall jobs green%s\n' "$sha" "$note" >>"$TSV"
   else printf 'main\t%s\tfail\tmain debt (details in local-ci-main-%s-failures.txt): %s%s\n' "$sha" "$s8" "$(echo $fails | tr ' ' ',')" "$note" >>"$TSV"; fi
 }
 
@@ -291,7 +314,7 @@ housekeeping_daily() {
 notify_orchestrators() {
   local sha="$1" row prev msg
   row="$(grep "^main	$sha	" "$TSV" | tail -1)"; [ -n "$row" ] || return 0
-  prev="$(grep '^main	' "$TSV" | grep -v "^main	$sha	" | grep -v '	superseded	' | tail -1 | cut -f3)"
+  prev="$(grep '^main	' "$TSV" | grep -v "^main	$sha	" | grep -vE '	(superseded|infra)	' | tail -1 | cut -f3)"
   case "$(echo "$row" | cut -f3)" in
     fail) msg="[local-ci] main ${sha:0:10} FAILED: $(echo "$row" | cut -f4). Log: $OUT/local-ci-main-${sha:0:8}.log" ;;
     pass) [ "$prev" = fail ] || return 0; msg="[local-ci] main ${sha:0:10} is green again (all jobs passed)." ;;
@@ -405,13 +428,18 @@ while true; do
   if [ ! -d "$WORK/.git" ] && ! ci_try clone -q "$REPO_URL" "$WORK"; then fetch_failed_tick "$1"; continue; fi
   remote=""; ! ci_try -C "$WORK" ls-remote origin refs/heads/main || remote="$(printf '%s' "$CI_OUT" | cut -f1)"
   if [ -z "$remote" ]; then fetch_failed_tick "$1"; continue; fi
-  if [ "$1" != "--once" ] && [ "$remote" = "$sha" ]; then
+  if [ "$1" != "--once" ] && [ "$remote" = "$sha" ] && ! needs_run "$sha"; then
     note_fetch_ok; security_weekly "$sha"; housekeeping_daily; sleep "$POLL"; continue
   fi
   if ! ci_try -C "$WORK" fetch -q origin main; then fetch_failed_tick "$1"; continue; fi
   note_fetch_ok
   sha="$(git -C "$WORK" rev-parse origin/main)"
-  if [ "$1" = "--once" ] || ! grep -q "^main	$sha	" "$TSV" 2>/dev/null; then
+  if [ "$1" = "--once" ] && [ -n "${2:-}" ]; then # retest one main commit
+    want="$(git -C "$WORK" rev-parse --verify -q "$2^{commit}")" || { ci_try -C "$WORK" fetch -q origin "$2" && want="$(git -C "$WORK" rev-parse --verify -q FETCH_HEAD^{commit})"; }
+    if [ -z "${want:-}" ] || ! git -C "$WORK" merge-base --is-ancestor "$want" "$sha" 2>/dev/null; then echo "retest: $2 is not a commit on origin/main" >&2; exit 1; fi
+    sha="$want"
+  fi
+  if [ "$1" = "--once" ] || needs_run "$sha"; then
     git -C "$WORK" checkout -q --force --detach "$sha" && git -C "$WORK" clean -qfdx -e node_modules
     warn_stale_install "$sha"
     gc_kb=$(du -sk "$H/gocache" 2>/dev/null | cut -f1); [ "${gc_kb:-0}" -gt 20971520 ] && { echo "[$(date)] gocache over 20G, clearing"; rm -rf "$H/gocache"; }

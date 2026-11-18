@@ -44,7 +44,7 @@
 # Environment:
 #   TALLPINE_RELEASE_CI_TSV          local CI results (default
 #                              ~/.tallpine/local-ci/results/local-ci.tsv), rows
-#                              "main<TAB><sha><TAB>pass|fail|superseded<TAB><summary>"
+#                              "main<TAB><sha><TAB>pass|fail|infra|superseded<TAB><summary>"
 #   TALLPINE_RELEASE_KEEP            rollback points / builds to keep (default 3)
 #   TALLPINE_RELEASE_STOP_TIMEOUT    seconds to wait for the app and daemon to exit
 #   TALLPINE_RELEASE_HEALTH_TIMEOUT  seconds to wait for /healthz and /readyz

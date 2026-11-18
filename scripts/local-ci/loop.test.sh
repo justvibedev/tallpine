@@ -275,6 +275,42 @@ seed_locks 1.0.1 2.0.0; expect_installs 4 "back on the last good lockfile after 
 ) >"$tmp/stale.out" 2>&1
 grep -q FAIL "$tmp/stale.out" && { fails=$((fails + 1)); cat "$tmp/stale.out"; }
 
+# B819: network-only failures of tool-downloading jobs are infra, not main debt; a SHA can be retested.
+cat >"$tmp/n.out" <<'OUT'
+=== sqlc-drift
+dial tcp: lookup proxy.golang.org: no such host
+--- sqlc-drift FAILED (1s)
+=== go-test
+dial tcp 127.0.0.1:1: connection refused
+--- go-test FAILED (1s)
+FAIL: sqlc-drift go-test
+OUT
+job_is_infra "$tmp/n.out" sqlc-drift || { fails=$((fails + 1)); echo "FAIL: sqlc-drift DNS failure not infra"; }
+job_is_infra "$tmp/n.out" go-test && { fails=$((fails + 1)); echo "FAIL: go-test network text classed as infra"; }
+TSV="$tmp/n.tsv"; printf 'main\taaa\tinfra\tx\nmain\tbbb\tfail\tx\nmain\tccc\tpass\tx\n' >"$TSV"
+NET_PROBE_URL="file:///dev/null" needs_run aaa || { fails=$((fails + 1)); echo "FAIL: infra sha not retried when network is up"; }
+NET_PROBE_URL="http://127.0.0.1:1/" needs_run aaa && { fails=$((fails + 1)); echo "FAIL: infra sha retried while network is down"; }
+NET_PROBE_URL="file:///dev/null" needs_run bbb && { fails=$((fails + 1)); echo "FAIL: failed sha retried"; }
+NET_PROBE_URL="file:///dev/null" needs_run ddd || { fails=$((fails + 1)); echo "FAIL: unseen sha not run"; }
+# run_suite end to end with a fake verify that fails only on DNS, then on a real error.
+nrepo="$tmp/nrepo"; mkdir -p "$nrepo/scripts"; git -C "$nrepo" init -q; git -C "$nrepo" config user.email t@t; git -C "$nrepo" config user.name t
+printf '#!/bin/bash\nprintf "=== sqlc-drift\\nno such host\\n--- sqlc-drift FAILED (1s)\\nFAIL: sqlc-drift\\n"; exit 1\n' >"$nrepo/scripts/verify"; chmod +x "$nrepo/scripts/verify"
+git -C "$nrepo" add -A; git -C "$nrepo" commit -qm n; nsha="$(git -C "$nrepo" rev-parse HEAD)"
+npmseed() { :; }; mobile_seed() { :; }; quiet_wait() { QUIET_NOTE=""; }
+WORK="$nrepo"; TSV="$tmp/nrun.tsv"; : >"$TSV"; mkdir -p "$H/tmp"
+run_suite "$nsha" >/dev/null 2>&1
+cut -f3 "$TSV" | grep -qx infra || { fails=$((fails + 1)); echo "FAIL: DNS-only failure not recorded as infra: $(cat "$TSV")"; }
+sed -i '' 's/no such host/real lint error/' "$nrepo/scripts/verify"
+run_suite "$nsha" >/dev/null 2>&1
+tail -1 "$TSV" | cut -f3 | grep -qx fail || { fails=$((fails + 1)); echo "FAIL: real failure not recorded as fail: $(cat "$TSV")"; }
+
+# B819: --once <sha> refuses a commit that is not on origin/main (exit 1, nothing evaluated).
+rdir="$tmp/remote.git"; git init -q --bare -b main "$rdir"; git clone -q "$rdir" "$tmp/retest-seed" 2>&1 | grep -v "empty repository"
+git -C "$tmp/retest-seed" -c user.email=t@t -c user.name=t commit -q --allow-empty -m a && git -C "$tmp/retest-seed" push -q origin HEAD:main
+rtdir="$tmp/ci3"; mkdir -p "$rtdir"; touch "$rtdir/housekeeping.stamp"
+( TALLPINE_LOCAL_CI_DIR="$rtdir" REPO_URL="$rdir" bash "$here/loop.sh" --once 1234567890abcdef1234567890abcdef12345678 >"$tmp/rt.out" 2>&1 ); rc=$?
+[ "$rc" = 1 ] && grep -q 'not a commit on origin/main' "$tmp/rt.out" || { fails=$((fails + 1)); echo "FAIL: --once <bad sha> rc $rc: $(cat "$tmp/rt.out")"; }
+
 # The live loop's scratch dir must be exactly as this test found it (not created, not recreated).
 [ "$(stat -f %i "$LIVE_SCRATCH" 2>/dev/null)" = "$live_before" ] || { fails=$((fails + 1)); echo "FAIL: the test touched the live scratch dir $LIVE_SCRATCH"; }
 

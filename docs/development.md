@@ -377,6 +377,10 @@ scripts/release-local install "<app>" --yes --log <install log> > <install log> 
   commit whose latest row in the local CI results
   (`~/.tallpine/local-ci/results/local-ci.tsv`, override with `TALLPINE_RELEASE_CI_TSV`) is
   not `pass`, unless you pass `--force`. It keeps the newest three build trees.
+  A commit whose CI row is `infra` (a tool-downloading job such as `sqlc-drift`
+  or `go-lint` failed only on network errors) was not tested and is not main
+  debt: the loop re-runs it once the network answers again. To retest a commit
+  by hand: `~/.tallpine/local-ci/loop.sh --once <sha>` (any commit on origin/main).
 - **`install <app>`** checks the bundle id, the build commit and its CI row,
   and refuses an app built from a dirty tree unless you pass `--force`. It
   refuses when another copy of the app (same bundle id, another path) is
