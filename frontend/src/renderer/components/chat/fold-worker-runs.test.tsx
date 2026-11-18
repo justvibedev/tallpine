@@ -43,6 +43,8 @@ describe("default view worker folding", () => {
 		["Needs you reply to an [auto] notice", group("nu2", [msg({ sequence: 3, origin: "automation", text: "[auto] worker idle" }), msg({ sequence: 4, role: "assistant", text: "**Needs you:** pick A or B" })])],
 		// B750 web-5: a full result ending on an offer, no marker, no ask.
 		["reply ending on a question to the owner", group("q", [msg({ sequence: 3, origin: "automation", text: "Reports since your previous turn:\n\n[done] [C](tallpine://sessions/p/p-1)\nok" }), msg({ sequence: 4, role: "assistant", text: "web-6 finished: PR #41 green, review approved.\n\nWant me to land it?" })])],
+		// B818: a Result: reply stays a full message even when more worker updates follow it.
+		["Result reply after tool calls", group("rs", [msg({ sequence: 3, origin: "automation", text: "Reports since your previous turn:\n\n[done] [C](tallpine://sessions/p/p-1)\nok" }), act_({ sequence: 4 }), msg({ sequence: 5, role: "assistant", text: "**Result:** 0.13.20 is public." })])],
 		["pending approval", group("ap", [act_({ sequence: 3, activityKind: "approval", status: "pending" })])],
 	])("a %s breaks the run and never folds", (_n, breaker) => {
 		const w3 = auto("w3", 10, "[auto] third");

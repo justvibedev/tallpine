@@ -4,6 +4,11 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.21]
+
+### Fixed
+- `Result:` replies in chat no longer fold into worker-update rows (#1279).
+
 ## [0.13.20]
 
 ### Added

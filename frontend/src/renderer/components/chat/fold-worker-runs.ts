@@ -1,6 +1,6 @@
 import { splitArtifacts, splitHeadline } from "@tallpine/shared/chat/automation/worker-reports";
 import type { ConversationItem } from "../../types/conversation";
-import { asksOwnerAtEnd, finalReply, isWorkerLead, workerUpdatesOf } from "./WorkerUpdates";
+import { asksOwnerAtEnd, finalReply, hasResultMarker, isWorkerLead, workerUpdatesOf } from "./WorkerUpdates";
 import { groupHasHumanPrompt, type TimelineGroup } from "./timeline-groups";
 
 /** Something the owner must act on stays visible whatever produced it. */
@@ -12,9 +12,12 @@ export function needsOwner(item: ConversationItem): boolean {
 
 const isAsk = (item: ConversationItem): boolean => item.kind === "activity" && item.detail?.event === "ask";
 
-/** A turn the owner must see: their own words, an ask, a reply that ends asking them something, a pending decision. */
+// A "Result:" reply is a finished analysis the owner asked for, so it must never fold into the worker-update row (B818).
+const isOwnerReply = (text: string): boolean => asksOwnerAtEnd(text) || hasResultMarker(text);
+
+/** A turn the owner must see: their own words, an ask, a reply that ends asking them something or delivers a "Result:", a pending decision. */
 export function isOwnerGroup(group: TimelineGroup): boolean {
-	return groupHasHumanPrompt(group) || group.items.some((item) => needsOwner(item) || isAsk(item)) || asksOwnerAtEnd(finalReply(group.items)?.text ?? "");
+	return groupHasHumanPrompt(group) || group.items.some((item) => needsOwner(item) || isAsk(item)) || isOwnerReply(finalReply(group.items)?.text ?? "");
 }
 
 const AUTO_PREFIX = /^\s*\[auto\]\s*/i;
