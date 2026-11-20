@@ -18,10 +18,10 @@ type HistoryStore interface {
 
 // HistoryStats reports one pass's history pruning.
 type HistoryStats struct {
-	// HistoryDeleted and HistoryTombstoned count provider events pruned below a
+	// HistoryDeleted and HistoryKeyed count provider events pruned below a
 	// compaction boundary; HistoryActivities counts activities shortened there.
 	HistoryDeleted    int64
-	HistoryTombstoned int64
+	HistoryKeyed      int64
 	HistoryActivities int64
 }
 
@@ -74,7 +74,7 @@ func (j *Janitor) pruneHistoryEvents(ctx context.Context, stats *Stats, conversa
 			return err
 		}
 		stats.HistoryDeleted += result.Deleted
-		stats.HistoryTombstoned += result.Tombstoned
+		stats.HistoryKeyed += result.Keyed
 		if result.Done {
 			return nil
 		}

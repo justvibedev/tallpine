@@ -11,10 +11,10 @@ import {
 } from "./ChatTimelineItems";
 import {
 	isTaskTitleUpdate,
+	hasHumanMessage,
 	isWorkerLead,
 	OrchestratorReply,
 	piggybackedUpdates,
-	isSubstantialAnswer,
 	quietWorkerReply,
 	renamedTitle,
 	TaskNamedLine,
@@ -33,7 +33,7 @@ import {
 } from "../../types/conversation";
 import { ChatWorkspaceProps, MessageEditDraft } from "./ChatWorkspaceProps";
 import { TimelineItem, TurnLiveStatus } from "./TimelineItem";
-import { TimelineGroup, TimelineRun, compactionRuns, isHumanRun, isNoticeRun, rendersNothing, runsOf } from "./timeline-groups";
+import { TimelineGroup, TimelineRun, compactionRuns, isHumanRun, isNoticeRun, keepsEarlyAnswer, rendersNothing, runsOf } from "./timeline-groups";
 
 /**
  * One turn, and the memo boundary that keeps a poll from re-rendering the whole
@@ -182,7 +182,7 @@ export const TurnGroup = memo(function TurnGroup({
 					|| isNoticeRun(run)
 					|| compaction.includes(run)
 					// Orchestrator chat: an answer written before more tool calls stays readable.
-					|| (workerUpdates === true && isSubstantialAnswer(run.items[0])),
+					|| keepsEarlyAnswer(run.items[0], workerUpdates),
 			)
 		: [];
 	const foldedRuns = workedRuns.filter((run) => !noticeRuns.includes(run) && !rendersNothing(run));
@@ -291,7 +291,7 @@ export const TurnGroup = memo(function TurnGroup({
 	// one line under the rows, with the work folded into it instead of "Worked for".
 	const quietReply = workerUpdates && outcome?.state === "completed" ? quietWorkerReply(group.items) : undefined;
 	// A worker turn the orchestrator only read has nothing to unfold; its duration alone is noise.
-	const onlyRead = workerUpdates && foldedRuns.length === 0 && !finalRun && isWorkerLead(group.items[0]);
+	const onlyRead = workerUpdates && foldedRuns.length === 0 && !finalRun && isWorkerLead(group.items[0]) && !hasHumanMessage(group.items);
 	const disclosureKey = `${group.key}:worked`;
 	if (!outcome) {
 		body.push(...workedRuns.flatMap(renderWorkerRun));

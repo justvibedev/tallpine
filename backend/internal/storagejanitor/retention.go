@@ -7,7 +7,7 @@ import (
 	sqlitestore "tallpine.eu/tallpine/backend/internal/storage/sqlite/store"
 )
 
-// expire deletes or tombstones the provider events of sessions terminated
+// expire deletes the provider events of sessions terminated
 // longer ago than the retention window, one session cursor at a time.
 func (j *Janitor) expire(ctx context.Context, retention time.Duration, stats *Stats) error {
 	before := j.cfg.Clock().UTC().Add(-retention)
@@ -27,7 +27,7 @@ func (j *Janitor) expire(ctx context.Context, retention time.Duration, stats *St
 				return err
 			}
 			stats.ExpiredDeleted += result.Deleted
-			stats.ExpiredTombstoned += result.Tombstoned
+			stats.ExpiredKeyed += result.Keyed
 			if result.Done {
 				break
 			}

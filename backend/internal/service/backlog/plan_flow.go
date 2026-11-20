@@ -42,6 +42,12 @@ type PlanApproveInput struct {
 	// owner's newest message in the project conversation. Required for an
 	// orchestrator, ignored for the owner.
 	OwnerMessage string
+	// Comment approves on the condition of an owner comment (B831): the
+	// approval is held until the planner accepts the comment.
+	Comment string
+	// held is the accepted comment whose approval now lands; its approver was
+	// checked when the owner commented.
+	held *domain.PlanComment
 }
 
 // errNoChange aborts a plan update that another writer made moot.
@@ -94,6 +100,14 @@ func (p *PlanService) SubmitQuestions(ctx context.Context, projectID domain.Proj
 		to = domain.PlanWriting
 	}
 	plan, err = p.transition(ctx, plan.ID, to, func(pl *domain.BacklogPlan) error {
+		if pl.Status == domain.PlanAwaitingApproval {
+			// Follow-up questions answer an owner comment on the submitted
+			// plan (B831); the answers so far were for the earlier questions.
+			if pl.ResolveComments(domain.PlanCommentQuestions, p.now().UTC()) == 0 {
+				return apierr.Conflict("PLAN_WRONG_STATE", "the plan is submitted: it takes new questions only to answer an owner comment", nil)
+			}
+			pl.Answers = nil
+		}
 		pl.Questions, pl.Assumptions = in.Questions, in.Assumptions
 		return nil
 	})
@@ -234,72 +248,6 @@ func hasAssumption(pl *domain.BacklogPlan, id string) bool {
 	return false
 }
 
-// answerRecord renders the questions and the answers as the text a planner reads.
-func answerRecord(pl domain.BacklogPlan) string {
-	var b strings.Builder
-	for _, q := range pl.Questions {
-		a := pl.Answers.Questions[q.ID]
-		answer := a.Other
-		if answer == "" {
-			for _, o := range q.Options {
-				if o.ID == a.Option {
-					answer = o.Label
-				}
-			}
-		}
-		fmt.Fprintf(&b, "- Q %s: %s\n  Answer: %s\n", q.ID, q.Text, answer)
-	}
-	for _, a := range pl.Assumptions {
-		if c, ok := pl.Answers.Corrections[a.ID]; ok {
-			fmt.Fprintf(&b, "- Assumption %s: %s\n  Correction: %s\n", a.ID, a.Text, c)
-		} else {
-			fmt.Fprintf(&b, "- Assumption %s: %s\n  Accepted.\n", a.ID, a.Text)
-		}
-	}
-	return b.String()
-}
-
-// deliverAnswers sends the answers to the plan's planner. When that session
-// has ended, a new planner is started with the record in its brief. It reports
-// whether it started a new one.
-func (p *PlanService) deliverAnswers(ctx context.Context, plan domain.BacklogPlan, item domain.BacklogItem, inPlace bool) (bool, error) {
-	record := answerRecord(plan)
-	msg := fmt.Sprintf("The owner answered. Write and submit the plan now with `tallpine plan submit %s`.\n\n%s", item.Ref(), record)
-	if plan.PlannerSessionID != "" {
-		delivered, err := p.sessions.SendToPlanner(ctx, plan.PlannerSessionID, msg)
-		if err == nil && delivered {
-			return false, nil
-		}
-		if err != nil {
-			p.log.Warn("send answers to planner", "plan", plan.ID, "session", plan.PlannerSessionID, "error", err)
-		}
-	}
-	spawn := PlannerSpawn{
-		ProjectID: plan.ProjectID, ItemID: item.ID, ItemRef: item.Ref(), PlanID: plan.ID,
-		DisplayName: "Plan " + item.Ref(), StarterSessionID: plan.NotifySessionID, Prompt: plannerTask(item, record, p.supersededBrief(ctx, item, plan.ID, maxPlanContextRunes)),
-	}
-	spawnFn := p.sessions.SpawnPlanner
-	if inPlace {
-		// The author ended: start the implementer again in place, never a planner.
-		spawn.DisplayName, spawn.LaneItemID, spawn.Prompt = item.Ref(), item.ParentID, strings.TrimSpace(p.inPlaceTask(ctx, item, record)+"\n\n"+p.supersededBrief(ctx, item, plan.ID, maxPlanContextRunes))
-		spawnFn = p.sessions.SpawnInPlace
-	}
-	sid, err := spawnFn(ctx, spawn)
-	if err != nil {
-		return false, err
-	}
-	if _, err := p.store.UpdateBacklogPlan(ctx, plan.ID, func(pl *domain.BacklogPlan) error {
-		pl.PlannerSessionID, pl.UpdatedAt = sid, p.now().UTC()
-		return nil
-	}); err != nil {
-		return true, err
-	}
-	if err := p.bl.LinkSession(ctx, item.ID, sid, "planner"); err != nil {
-		p.log.Warn("link planner session to item", "item", item.Ref(), "session", sid, "error", err)
-	}
-	return true, nil
-}
-
 // Submit stores the finished plan and asks for approval.
 func (p *PlanService) Submit(ctx context.Context, projectID domain.ProjectID, actor Actor, ref string, in PlanSubmitInput) (domain.BacklogPlan, error) {
 	plan, err := p.plannerPlan(ctx, projectID, actor, ref)
@@ -376,6 +324,9 @@ func (p *PlanService) Approve(ctx context.Context, projectID domain.ProjectID, a
 	if !decider(actor) {
 		return domain.BacklogPlan{}, notDecider()
 	}
+	if strings.TrimSpace(in.Comment) != "" {
+		return p.Comment(ctx, projectID, actor, ref, PlanCommentInput{Text: in.Comment, Approve: true, OwnerMessage: in.OwnerMessage})
+	}
 	return p.approve(ctx, projectID, actor, ref, in, "user")
 }
 
@@ -414,7 +365,10 @@ func (p *PlanService) approve(ctx context.Context, projectID domain.ProjectID, a
 	}
 	if open.Status == domain.PlanAwaitingApproval && item.ParentID == "" {
 		// Refuse before creating anything when the approval itself cannot land.
-		if actor.Kind == domain.BacklogOriginOrchestrator {
+		if err := approvalBlocked(open, in); err != nil {
+			return domain.BacklogPlan{}, err
+		}
+		if actor.Kind == domain.BacklogOriginOrchestrator && in.held == nil {
 			if _, err := p.verifyOwnerMessage(ctx, open, in.OwnerMessage); err != nil {
 				return domain.BacklogPlan{}, err
 			}
@@ -431,7 +385,12 @@ func (p *PlanService) approve(ctx context.Context, projectID domain.ProjectID, a
 		if pl.Status != domain.PlanAwaitingApproval {
 			return apierr.Conflict("PLAN_WRONG_STATE", fmt.Sprintf("the plan is %s: only a submitted plan can be approved", pl.Status), nil)
 		}
-		if actor.Kind == domain.BacklogOriginOrchestrator {
+		if err := approvalBlocked(*pl, in); err != nil {
+			return err
+		}
+		if in.held != nil {
+			by, msgID = in.held.By, in.held.OwnerMessageID
+		} else if actor.Kind == domain.BacklogOriginOrchestrator {
 			id, err := p.verifyOwnerMessage(ctx, *pl, in.OwnerMessage)
 			if err != nil {
 				return err
@@ -460,6 +419,12 @@ func (p *PlanService) approve(ctx context.Context, projectID domain.ProjectID, a
 
 // Replan supersedes the item's plan and starts a new one.
 func (p *PlanService) Replan(ctx context.Context, projectID domain.ProjectID, actor Actor, ref string) (domain.BacklogPlan, error) {
+	return p.ReplanWithComment(ctx, projectID, actor, ref, "")
+}
+
+// ReplanWithComment is Replan with the owner's comment as the new planner
+// run's instructions; the comment is stored on the new plan (B831).
+func (p *PlanService) ReplanWithComment(ctx context.Context, projectID domain.ProjectID, actor Actor, ref, comment string) (domain.BacklogPlan, error) {
 	if err := p.guard(); err != nil {
 		return domain.BacklogPlan{}, err
 	}
@@ -477,22 +442,32 @@ func (p *PlanService) Replan(ctx context.Context, projectID domain.ProjectID, ac
 	if err != nil {
 		return domain.BacklogPlan{}, err
 	}
+	if strings.TrimSpace(comment) != "" {
+		if err := domain.ValidatePlanComment(comment); err != nil {
+			return domain.BacklogPlan{}, invalidPlan(err)
+		}
+	}
 	if hasCur && p.isInPlace(ctx, cur) {
-		return p.replanInPlace(ctx, cur, item, actor)
+		plan, err := p.replanInPlace(ctx, cur, item, actor, replanInstructions(comment))
+		if err != nil {
+			return domain.BacklogPlan{}, err
+		}
+		return p.recordReplanComment(ctx, plan, actor, comment), nil
 	}
 	// An open plan blocks the new record (one open plan per item), so it is
 	// superseded first. An approved or failed plan stays in effect until the
 	// replacement's planner has started: a spawn failure must not lose approval.
 	if hasCur && cur.Status.Open() {
-		if _, err := p.transition(ctx, cur.ID, domain.PlanSuperseded, nil); err != nil {
+		if _, err := p.transition(ctx, cur.ID, domain.PlanSuperseded, supersedeComments(p.now().UTC())); err != nil {
 			return domain.BacklogPlan{}, err
 		}
 		p.stopPlanner(ctx, cur)
 	}
-	plan, _, err := p.startFor(ctx, item, actor, "", p.bl.planChildrenBrief(ctx, item), p.priorBrief(ctx, item, cur))
+	plan, _, err := p.startFor(ctx, item, actor, "", p.bl.planChildrenBrief(ctx, item), p.priorBrief(ctx, item, cur), replanInstructions(comment))
 	if err != nil {
 		return domain.BacklogPlan{}, err
 	}
+	plan = p.recordReplanComment(ctx, plan, actor, comment)
 	if hasCur && !cur.Status.Open() {
 		if _, err := p.transition(ctx, cur.ID, domain.PlanSuperseded, nil); err != nil {
 			return domain.BacklogPlan{}, err

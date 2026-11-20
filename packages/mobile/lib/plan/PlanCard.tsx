@@ -7,15 +7,15 @@ import { textSelectionColors } from "../textSelection";
 import { radius, space, type } from "../tokens";
 import { Button } from "../ui";
 import {
-	OTHER_OPTION, PLAN_STATUS_LABEL, acceptedAssumptionCount, chooseOption, correct, initialDraft, isComplete, isDefaults, optionLabel, planPhase,
+	OTHER_OPTION, PLAN_STATUS_LABEL, acceptedAssumptionCount, chooseOption, initialDraft, isComplete, isDefaults, optionLabel, planCommentState, planPhase,
 	toAnswersRequest, writeOther, type PlanAnswersRequest, type PlanDraft, type PlanView,
 } from "./planCardModel";
-import { PlanReader } from "./PlanReader";
+import { PlanAssumptions } from "./PlanAssumptions";
+import { PlanReviewBody, type PlanReviewActions } from "./PlanReviewBody";
 
-export type PlanCardActions = {
+export type PlanCardActions = PlanReviewActions & {
 	onAnswer: (request: PlanAnswersRequest) => void;
 	onDefaults: () => void;
-	onApprove: () => void;
 };
 
 /**
@@ -24,7 +24,7 @@ export type PlanCardActions = {
  * unless corrected, Approve, and an explicit "Go with defaults". Nothing times
  * out; waiting is the default.
  */
-export function PlanCard({ itemRef, itemTitle, plan, busy = false, error, onAnswer, onDefaults, onApprove }: PlanCardActions & {
+export function PlanCard({ itemRef, itemTitle, plan, busy = false, error, onAnswer, onDefaults, onApprove, onReplan, onComment }: PlanCardActions & {
 	itemRef: string; itemTitle: string; plan: PlanView; busy?: boolean; error?: string;
 }) {
 	const s = useThemedStyles(makeStyles);
@@ -35,19 +35,14 @@ export function PlanCard({ itemRef, itemTitle, plan, busy = false, error, onAnsw
 		<View style={s.card} testID="plan-card">
 			<View style={s.header}>
 				<Text style={s.title} numberOfLines={2}>{itemRef} {itemTitle}</Text>
-				<Text style={s.status}>{resetAt ? "Waiting for usage reset" : PLAN_STATUS_LABEL[phase]}</Text>
+				<Text style={s.status}>{resetAt ? "Waiting for usage reset" : phase === "review" && planCommentState(plan) !== "none" ? "Planner is answering your comment" : PLAN_STATUS_LABEL[phase]}</Text>
 			</View>
 			{phase === "drafting" || phase === "writing" ? (
 				<Text style={s.muted}>{resetAt ? `The planner hit its usage limit and picks the plan up again by itself at ${resetAt}.` : phase === "drafting" ? "The planner is reading the code." : "Writing the plan from your answers."}</Text>
 			) : null}
 			{phase === "answering" ? <AnsweringBody plan={plan} busy={busy} onSend={(draft) => onAnswer(toAnswersRequest(plan, draft))} onDefaults={onDefaults} /> : null}
 			{phase === "writing" && plan.answers ? <AnswerSummary plan={plan} /> : null}
-			{phase === "review" ? (
-				<>
-					<PlanReader plan={plan} />
-					<View style={s.footer}><Button title="Approve plan" icon="check" disabled={busy} loading={busy} onPress={onApprove} /></View>
-				</>
-			) : null}
+			{phase === "review" ? <PlanReviewBody plan={plan} busy={busy} onApprove={onApprove} onReplan={onReplan} onComment={onComment} /> : null}
 			{phase === "failed" ? <Text style={s.muted}>{plan.failure || "Planning failed."}</Text> : null}
 			{error ? <Text style={s.error} accessibilityRole="alert">{error}</Text> : null}
 		</View>
@@ -58,7 +53,6 @@ function AnsweringBody({ plan, busy, onSend, onDefaults }: { plan: PlanView; bus
 	const t = useTheme();
 	const s = useThemedStyles(makeStyles);
 	const [draft, setDraft] = useState<PlanDraft>(() => initialDraft(plan));
-	const [correcting, setCorrecting] = useState<string | null>(null);
 	const complete = isComplete(plan, draft);
 	const defaults = isDefaults(plan, draft);
 	const accepted = acceptedAssumptionCount(plan, draft);
@@ -107,38 +101,7 @@ function AnsweringBody({ plan, busy, onSend, onDefaults }: { plan: PlanView; bus
 					</View>
 				);
 			})}
-			{plan.assumptions.length > 0 ? (
-				<View style={s.question}>
-					<Text style={s.heading}>Assumptions (accepted unless you change them)</Text>
-					{plan.assumptions.map((a) => {
-						const corrected = draft.corrections[a.id];
-						const open = correcting === a.id;
-						return (
-							<View key={a.id} style={[s.assumption, a.scopeCut && corrected === undefined && s.scopeCut]}>
-								{a.scopeCut && corrected === undefined ? <Text style={s.scopeTag}>Drops or postpones scope</Text> : null}
-								<View style={s.assumptionRow}>
-									<Text style={[s.assumptionText, corrected !== undefined && s.struck]}>{a.text}</Text>
-									<Pressable accessibilityRole="button" accessibilityLabel={`Change: ${a.text}`} accessibilityState={{ expanded: open }} disabled={busy} onPress={() => setCorrecting(open ? null : a.id)} hitSlop={8}>
-										<Text style={s.link}>Change</Text>
-									</Pressable>
-								</View>
-								{open || corrected !== undefined ? (
-									<TextInput
-										accessibilityLabel={`Correction for ${a.text}`}
-										value={corrected ?? ""}
-										editable={!busy}
-										placeholder="What is true instead?"
-										placeholderTextColor={t.textTertiary}
-										{...textSelectionColors(t)}
-										onChangeText={(text) => setDraft((d) => correct(d, a.id, text))}
-										style={s.input}
-									/>
-								) : null}
-							</View>
-						);
-					})}
-				</View>
-			) : null}
+			<PlanAssumptions plan={plan} draft={draft} busy={busy} setDraft={setDraft} />
 			{plan.assumptions.length > 0 ? (
 				<Text style={s.acceptedNote}>
 					{accepted === 1 ? "1 assumption will be accepted as written" : `${accepted} assumptions will be accepted as written`}
@@ -183,7 +146,6 @@ const makeStyles = (t: Theme) =>
 		stack: { gap: space.lg },
 		question: { gap: space.xxs },
 		questionText: { color: t.textPrimary, fontSize: type.subheadline.fontSize, lineHeight: type.subheadline.lineHeight, fontWeight: "500" },
-		heading: { color: t.textSecondary, fontSize: type.caption1.fontSize, lineHeight: type.caption1.lineHeight, fontWeight: "600" },
 		option: { flexDirection: "row", alignItems: "center", gap: space.sm, minHeight: 44, paddingHorizontal: space.sm, borderRadius: radius.md },
 		optionSelected: { backgroundColor: t.bgElevatedHover },
 		radio: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: t.textTertiary },
@@ -191,13 +153,6 @@ const makeStyles = (t: Theme) =>
 		optionLabel: { flex: 1, color: t.textPrimary, fontSize: type.subheadline.fontSize, lineHeight: type.subheadline.lineHeight },
 		hint: { color: t.textTertiary, fontSize: type.caption1.fontSize },
 		input: { minHeight: 44, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: t.borderSubtle, paddingHorizontal: space.md, color: t.textPrimary, fontSize: type.subheadline.fontSize },
-		assumption: { gap: space.xxs },
-		scopeCut: { borderLeftWidth: 3, borderLeftColor: t.amber, paddingLeft: space.sm },
-		scopeTag: { color: t.amber, fontSize: type.footnote.fontSize, fontWeight: "600" },
 		acceptedNote: { color: t.textSecondary, fontSize: type.footnote.fontSize },
-		assumptionRow: { flexDirection: "row", alignItems: "flex-start", gap: space.sm },
-		assumptionText: { flex: 1, color: t.textPrimary, fontSize: type.subheadline.fontSize, lineHeight: type.subheadline.lineHeight },
-		struck: { textDecorationLine: "line-through", color: t.textSecondary },
-		link: { color: t.accent, fontSize: type.subheadline.fontSize },
 		footer: { flexDirection: "row", justifyContent: "flex-end", gap: space.sm },
 	});

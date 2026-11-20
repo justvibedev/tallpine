@@ -17,24 +17,29 @@ func DefaultTestParallelism(cores int) int {
 	return max(2, cores/4)
 }
 
-// ApplyParallelismDefaults sets GOMAXPROCS and TALLPINE_TEST_PARALLELISM in env
+// ApplyParallelismDefaults also caps Node runners (see applyNodeCaps) when
+// dataDir is set. It sets GOMAXPROCS and TALLPINE_TEST_PARALLELISM in env
 // when neither the project env nor the daemon env (getenv) defines them. A
 // project value is copied into env (the reserved-prefix merge drops it); a
 // daemon value is inherited as is, and a daemon TALLPINE_TEST_PARALLELISM also
 // feeds the GOMAXPROCS default.
-func ApplyParallelismDefaults(env, projectEnv map[string]string, getenv func(string) string, cores int, caseInsensitive bool) {
-	lookup := func(m map[string]string, key string) (string, bool) {
+func ApplyParallelismDefaults(env, projectEnv map[string]string, getenv func(string) string, cores int, caseInsensitive bool, dataDir string) {
+	find := func(m map[string]string, key string) (string, string, bool) {
 		if v, ok := m[key]; ok {
-			return v, true
+			return key, v, true
 		}
 		if caseInsensitive {
 			for k, v := range m {
 				if strings.EqualFold(k, key) {
-					return v, true
+					return k, v, true
 				}
 			}
 		}
-		return "", false
+		return "", "", false
+	}
+	lookup := func(m map[string]string, key string) (string, bool) {
+		_, v, ok := find(m, key)
+		return v, ok
 	}
 	var par string
 	if v, ok := lookup(env, EnvTestParallelism); ok {
@@ -48,6 +53,7 @@ func ApplyParallelismDefaults(env, projectEnv map[string]string, getenv func(str
 		par = strconv.Itoa(DefaultTestParallelism(cores))
 		env[EnvTestParallelism] = par
 	}
+	applyNodeCaps(env, projectEnv, getenv, par, dataDir, find)
 	if _, ok := lookup(env, EnvGOMAXPROCS); ok {
 		return
 	}

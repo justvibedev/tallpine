@@ -2,10 +2,12 @@ package backlog
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/httpd/apierr"
 )
 
 // PlanDiff names the paths that changed on the project's default branch since
@@ -73,13 +75,34 @@ func (p *PlanService) submitHead(ctx context.Context, projectID domain.ProjectID
 // content and the baseline rebased to the head resolved above.
 func (p *PlanService) storeSubmission(ctx context.Context, plan domain.BacklogPlan, in PlanSubmitInput) (domain.BacklogPlan, error) {
 	commit, branch := p.submitHead(ctx, plan.ProjectID)
-	return p.transition(ctx, plan.ID, domain.PlanAwaitingApproval, func(pl *domain.BacklogPlan) error {
+	store := func(pl *domain.BacklogPlan) {
 		pl.PlanMarkdown, pl.DecisionsMD, pl.PRSplit, pl.ReviewFocus = in.Plan, in.Decisions, in.PRs, in.Focus
 		if commit != "" {
 			pl.BaseCommit, pl.BaseBranch = commit, branch
 		}
+		// A revision answers the owner's pending comments; a held approval
+		// does not carry over to the revised plan (B831).
+		pl.ResolveComments(domain.PlanCommentRevised, p.now().UTC())
+	}
+	if plan.Status != domain.PlanAwaitingApproval {
+		return p.transition(ctx, plan.ID, domain.PlanAwaitingApproval, func(pl *domain.BacklogPlan) error {
+			store(pl)
+			return nil
+		})
+	}
+	// A submitted plan is submitted again only to answer an owner comment.
+	revised, err := p.store.UpdateBacklogPlan(ctx, plan.ID, func(pl *domain.BacklogPlan) error {
+		if pl.Status != domain.PlanAwaitingApproval || len(pl.PendingComments()) == 0 {
+			return apierr.Conflict("PLAN_WRONG_STATE", fmt.Sprintf("the plan is %s: it is submitted already", pl.Status), nil)
+		}
+		pl.UpdatedAt = p.now().UTC()
+		store(pl)
 		return nil
 	})
+	if err == nil {
+		p.changed(ctx, revised)
+	}
+	return revised, err
 }
 
 // staleSplit checks the plan's PR split against the default branch.

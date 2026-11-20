@@ -13,6 +13,7 @@ export const PLAN_PATHS = {
 	replan: `${API}/backlog/{ref}/plan/replan`,
 	cancel: `${API}/backlog/{ref}/plan/cancel`,
 	buildAnyway: `${API}/backlog/{ref}/plan/build-anyway`,
+	comment: `${API}/backlog/{ref}/plan/comment`,
 } as const;
 
 /** Fills a template's {projectId}/{ref}, URL-encoding each value. */

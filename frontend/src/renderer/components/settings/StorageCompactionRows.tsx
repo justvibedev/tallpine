@@ -19,7 +19,7 @@ export function StorageCompactionRows() {
 	const { update, saving, error } = useUpdateStorageCompaction();
 	const retentionLocked = useManagedLocks().has("app.providerEventRetentionDays");
 	const enabled = settings?.storageCompaction ?? false;
-	const days = String(settings?.providerEventRetentionDays ?? 14);
+	const days = String(settings?.providerEventRetentionDays ?? 7);
 	const options: SettingsOption<string>[] = RETENTION_DAYS.map((value) => ({
 		value,
 		label: t("settings.storageCompaction.retentionDays", { days: value }),

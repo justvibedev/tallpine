@@ -153,6 +153,15 @@ describe("worker updates", () => {
 		expect(quietWorkerReply([message({ origin: "human", text: "Hi" }), reply("Noted.")])).toBeUndefined();
 	});
 
+	it("never draws the reply to a batch holding the owner's message as a quiet footnote (B823)", () => {
+		const reply = (text: string) => message({ id: "a1", role: "assistant", origin: "provider", text });
+		const steer = message({ id: "s1", origin: "automation", senderSessionId: "other-1", senderDisplayName: "other", text: "[from other-1] status" });
+		const owner = message({ id: "h1", origin: "human", text: "check other projects too" });
+		expect(quietWorkerReply([steer, reply("Noted.")])?.text).toBe("Noted.");
+		expect(quietWorkerReply([steer, owner, reply("Noted.")])).toBeUndefined();
+		expect(quietWorkerReply([steer, owner, reply("**Result:** table")])).toBeUndefined();
+	});
+
 	it("keeps the receiver's reply to another orchestrator's message as its own message, without the frame marker", () => {
 		const framed = message({ text: "<<orchestrator:agent-orchestrator-738 n=09855c70>>\nhello\n<</orchestrator n=09855c70>>", senderSessionId: "agent-orchestrator-738" });
 		const reply = message({ id: "a1", role: "assistant", origin: "provider", text: "A correction." });

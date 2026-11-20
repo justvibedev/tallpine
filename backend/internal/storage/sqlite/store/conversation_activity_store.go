@@ -276,6 +276,7 @@ func (s *Store) UpsertActivity(
 				ProviderItemID: activity.ProviderItemID,
 			})
 		if err == nil {
+			detail = compactActivityDetail(detail, row.CommandOutput != "")
 			if activity.Kind == domain.ActivityKindTallpineAction &&
 				activity.Status == domain.ActivityStatusRunning &&
 				tallpineActionStatusSettled(row.Status) {
@@ -306,6 +307,9 @@ func (s *Store) UpsertActivity(
 		}
 	}
 
+	// A new row has no streamed output yet; AppendCommandOutput drops the
+	// detail's copy when the first delta lands.
+	detail = compactActivityDetail(detail, false)
 	turnID := s.turnIDFor(ctx, conversationID, providerTurnID)
 	return s.inTx(ctx, "insert activity", func(q *gen.Queries) error {
 		sequence, seqErr := q.NextConversationSequence(ctx, gen.NextConversationSequenceParams{

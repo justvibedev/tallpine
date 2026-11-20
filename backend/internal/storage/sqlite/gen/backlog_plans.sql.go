@@ -52,7 +52,7 @@ func (q *Queries) InsertBacklogPlan(ctx context.Context, arg InsertBacklogPlanPa
 }
 
 const selectBacklogPlan = `-- name: SelectBacklogPlan :one
-SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id FROM backlog_plans WHERE id = ?
+SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id, comments_json FROM backlog_plans WHERE id = ?
 `
 
 func (q *Queries) SelectBacklogPlan(ctx context.Context, id string) (BacklogPlan, error) {
@@ -83,12 +83,13 @@ func (q *Queries) SelectBacklogPlan(ctx context.Context, id string) (BacklogPlan
 		&i.Failure,
 		&i.ItemChangedAt,
 		&i.NotifySessionID,
+		&i.CommentsJson,
 	)
 	return i, err
 }
 
 const selectBacklogPlanByPlanner = `-- name: SelectBacklogPlanByPlanner :one
-SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id FROM backlog_plans WHERE planner_session_id = ? ORDER BY started_at DESC LIMIT 1
+SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id, comments_json FROM backlog_plans WHERE planner_session_id = ? ORDER BY started_at DESC LIMIT 1
 `
 
 func (q *Queries) SelectBacklogPlanByPlanner(ctx context.Context, plannerSessionID string) (BacklogPlan, error) {
@@ -119,6 +120,7 @@ func (q *Queries) SelectBacklogPlanByPlanner(ctx context.Context, plannerSession
 		&i.Failure,
 		&i.ItemChangedAt,
 		&i.NotifySessionID,
+		&i.CommentsJson,
 	)
 	return i, err
 }
@@ -151,7 +153,7 @@ func (q *Queries) SelectConversationMessageSource(ctx context.Context, id string
 }
 
 const selectCurrentBacklogPlanForItem = `-- name: SelectCurrentBacklogPlanForItem :one
-SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id FROM backlog_plans
+SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id, comments_json FROM backlog_plans
 WHERE item_id = ? AND status <> 'superseded'
 ORDER BY (status NOT IN ('approved', 'failed')) DESC, (status = 'approved') DESC, started_at DESC, id DESC LIMIT 1
 `
@@ -186,6 +188,7 @@ func (q *Queries) SelectCurrentBacklogPlanForItem(ctx context.Context, itemID st
 		&i.Failure,
 		&i.ItemChangedAt,
 		&i.NotifySessionID,
+		&i.CommentsJson,
 	)
 	return i, err
 }
@@ -210,7 +213,7 @@ func (q *Queries) SelectLatestHumanProjectMessage(ctx context.Context, projectID
 }
 
 const selectOpenBacklogPlanForItem = `-- name: SelectOpenBacklogPlanForItem :one
-SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id FROM backlog_plans
+SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id, comments_json FROM backlog_plans
 WHERE item_id = ? AND status NOT IN ('approved', 'superseded', 'failed')
 `
 
@@ -242,12 +245,13 @@ func (q *Queries) SelectOpenBacklogPlanForItem(ctx context.Context, itemID strin
 		&i.Failure,
 		&i.ItemChangedAt,
 		&i.NotifySessionID,
+		&i.CommentsJson,
 	)
 	return i, err
 }
 
 const selectOpenBacklogPlansForProject = `-- name: SelectOpenBacklogPlansForProject :many
-SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id FROM backlog_plans
+SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id, comments_json FROM backlog_plans
 WHERE project_id = ? AND status NOT IN ('approved', 'superseded')
 ORDER BY started_at, id
 `
@@ -286,6 +290,7 @@ func (q *Queries) SelectOpenBacklogPlansForProject(ctx context.Context, projectI
 			&i.Failure,
 			&i.ItemChangedAt,
 			&i.NotifySessionID,
+			&i.CommentsJson,
 		); err != nil {
 			return nil, err
 		}
@@ -301,7 +306,7 @@ func (q *Queries) SelectOpenBacklogPlansForProject(ctx context.Context, projectI
 }
 
 const selectSupersededBacklogPlansForItem = `-- name: SelectSupersededBacklogPlansForItem :many
-SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id FROM backlog_plans WHERE item_id = ? AND status = 'superseded' ORDER BY started_at DESC, id DESC
+SELECT id, project_id, item_id, status, planner_session_id, base_commit, base_branch, questions_json, assumptions_json, answers_json, plan_markdown, decisions_markdown, pr_split_json, review_focus_json, approved_by, approved_at, owner_message_id, build_anyway, item_updated_at_start, started_at, updated_at, failure, item_changed_at, notify_session_id, comments_json FROM backlog_plans WHERE item_id = ? AND status = 'superseded' ORDER BY started_at DESC, id DESC
 `
 
 func (q *Queries) SelectSupersededBacklogPlansForItem(ctx context.Context, itemID string) ([]BacklogPlan, error) {
@@ -338,6 +343,7 @@ func (q *Queries) SelectSupersededBacklogPlansForItem(ctx context.Context, itemI
 			&i.Failure,
 			&i.ItemChangedAt,
 			&i.NotifySessionID,
+			&i.CommentsJson,
 		); err != nil {
 			return nil, err
 		}
@@ -365,14 +371,15 @@ UPDATE backlog_plans SET
     decisions_markdown = ?9,
     pr_split_json = ?10,
     review_focus_json = ?11,
-    approved_by = ?12,
-    approved_at = ?13,
-    owner_message_id = ?14,
-    build_anyway = ?15,
-    item_changed_at = ?16,
-    updated_at = ?17,
-    failure = ?18
-WHERE id = ?19
+    comments_json = ?12,
+    approved_by = ?13,
+    approved_at = ?14,
+    owner_message_id = ?15,
+    build_anyway = ?16,
+    item_changed_at = ?17,
+    updated_at = ?18,
+    failure = ?19
+WHERE id = ?20
 `
 
 type UpdateBacklogPlanParams struct {
@@ -387,6 +394,7 @@ type UpdateBacklogPlanParams struct {
 	DecisionsMarkdown string
 	PRSplitJson       string
 	ReviewFocusJson   string
+	CommentsJson      string
 	ApprovedBy        string
 	ApprovedAt        sql.NullTime
 	OwnerMessageID    string
@@ -410,6 +418,7 @@ func (q *Queries) UpdateBacklogPlan(ctx context.Context, arg UpdateBacklogPlanPa
 		arg.DecisionsMarkdown,
 		arg.PRSplitJson,
 		arg.ReviewFocusJson,
+		arg.CommentsJson,
 		arg.ApprovedBy,
 		arg.ApprovedAt,
 		arg.OwnerMessageID,

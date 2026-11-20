@@ -4,7 +4,7 @@ import { startPlanPolling } from "./planPolling";
 import { userFacingError } from "../connectionError";
 import type { ServerConfig } from "../config";
 import { space } from "../tokens";
-import { acceptPlanDefaults, answerPlan, approvePlan, listProjectPlans } from "./planApi";
+import { acceptPlanDefaults, answerPlan, approvePlan, commentOnPlan, listProjectPlans, replanPlan } from "./planApi";
 import type { PlanAnswersRequest, PlanView, ProjectPlan } from "./planCardModel";
 import { PlanCard } from "./PlanCard";
 
@@ -40,10 +40,10 @@ export function LivePlanCard({ cfg, projectId, itemRef, itemTitle, plan, onChang
 }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string>();
-	const run = async (action: () => Promise<PlanView>) => {
+	const run = async (action: () => Promise<PlanView>, sent?: () => void) => {
 		setBusy(true);
 		setError(undefined);
-		try { await action(); } catch (e) { setError(userFacingError(e)); } finally { setBusy(false); onChanged(); }
+		try { await action(); sent?.(); } catch (e) { setError(userFacingError(e)); } finally { setBusy(false); onChanged(); }
 	};
 	return (
 		<PlanCard
@@ -54,7 +54,9 @@ export function LivePlanCard({ cfg, projectId, itemRef, itemTitle, plan, onChang
 			error={error}
 			onAnswer={(request: PlanAnswersRequest) => void run(() => answerPlan(cfg, projectId, itemRef, request))}
 			onDefaults={() => void run(() => acceptPlanDefaults(cfg, projectId, itemRef))}
-			onApprove={() => void run(() => approvePlan(cfg, projectId, itemRef))}
+			onApprove={(comment, sent) => void run(() => approvePlan(cfg, projectId, itemRef, comment), sent)}
+			onReplan={(comment, sent) => void run(() => replanPlan(cfg, projectId, itemRef, comment), sent)}
+			onComment={(text, sent) => void run(() => commentOnPlan(cfg, projectId, itemRef, text), sent)}
 		/>
 	);
 }

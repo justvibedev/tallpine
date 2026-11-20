@@ -127,23 +127,28 @@ func (p plannerSessions) SpawnPlanner(ctx context.Context, in backlogsvc.Planner
 		RequestedOutput: domain.RequestedOutputArtifact, Prompt: in.Prompt, DisplayName: in.DisplayName,
 		ParentSessionID: in.StarterSessionID,
 	}
-	sess, _, _, err := p.sessions.Spawn(ctx, cfg)
-	if errors.Is(err, sessionmanager.ErrMissingHarness) {
-		// No planner, orchestrator or worker override names a harness: inherit
-		// the live orchestrator's harness and model.
-		active := true
-		found, listErr := p.sessions.List(ctx, sessionsvc.ListFilter{ProjectID: in.ProjectID, Active: &active, OrchestratorOnly: true})
-		if listErr != nil || len(found) == 0 {
-			return "", err
-		}
-		cfg.Harness = found[0].Harness
-		cfg.AgentConfig.Model = found[0].Metadata.Model
-		sess, _, _, err = p.sessions.Spawn(ctx, cfg)
-	}
+	sess, err := spawnInheritingHarness(ctx, p.sessions, cfg)
 	if err != nil {
 		return "", err
 	}
 	return sess.ID, nil
+}
+
+// spawnInheritingHarness spawns cfg; when no planner, orchestrator or worker
+// override names a harness it inherits the live orchestrator's harness and model.
+func spawnInheritingHarness(ctx context.Context, sessions planSessions, cfg ports.SpawnConfig) (domain.Session, error) {
+	sess, _, _, err := sessions.Spawn(ctx, cfg)
+	if errors.Is(err, sessionmanager.ErrMissingHarness) {
+		active := true
+		found, listErr := sessions.List(ctx, sessionsvc.ListFilter{ProjectID: cfg.ProjectID, Active: &active, OrchestratorOnly: true})
+		if listErr != nil || len(found) == 0 {
+			return domain.Session{}, err
+		}
+		cfg.Harness = found[0].Harness
+		cfg.AgentConfig.Model = found[0].Metadata.Model
+		sess, _, _, err = sessions.Spawn(ctx, cfg)
+	}
+	return sess, err
 }
 
 // SpawnInPlace starts an ordinary implementer (role worker) that authors the

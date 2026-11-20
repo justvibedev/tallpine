@@ -22,7 +22,9 @@ func (b *boot) wireReview() error {
 
 	b.backlogSvc = backlogsvc.New(backlogsvc.Deps{Store: b.store, Logger: b.log})
 	b.planSvc = newPlanService(b.cfg, b.store, b.backlogSvc, b.sessionSvc, b.agentPolicySvc, b.notificationWriter)
-	b.askSvc = newAskService(b.store, b.chatSvc, b.sessionSvc, b.notificationWriter, b.log)
+	b.askSvc = newAskService(b.store, b.chatSvc, b.sessionSvc, b.notificationWriter, map[string]func(context.Context, domain.OwnerAsk) error{
+		domain.AskOriginContextHealth: newContextHealthHandler(b.store, b.backlogSvc, b.sessionSvc, b.log).Answered,
+	}, b.log)
 	// Ending a lane withdraws the open asks of its chat.
 	b.sessionSvc.SetLaneEndedHook(func(ctx context.Context, project domain.ProjectID, lane string) {
 		b.askSvc.WithdrawLane(ctx, project, lane)

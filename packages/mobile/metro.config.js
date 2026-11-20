@@ -20,6 +20,13 @@ const localModules = path.resolve(projectRoot, "node_modules");
 const config = getDefaultConfig(projectRoot);
 
 config.watchFolders = [workspaceRoot];
+
+// Homebrew watchman registers a macOS Files & Folders privacy entry per launch
+// context. One-shot runs (CI, tests, Tallpine workers) don't need it, so fall
+// back to Metro's node crawler there. Interactive `expo start` keeps watchman.
+if (process.env.CI || process.env.NODE_ENV === "test" || process.env.TALLPINE_SESSION_ID || process.env.TALLPINE_NO_WATCHMAN) {
+	config.resolver.useWatchman = false;
+}
 config.resolver.nodeModulesPaths = [localModules, path.resolve(workspaceRoot, "node_modules")];
 
 // @tallpine/shared is plain TypeScript source one level up (not an installed

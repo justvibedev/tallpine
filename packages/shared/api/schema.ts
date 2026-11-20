@@ -2582,6 +2582,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/backlog/{ref}/plan/accept-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Planner: accept the owner's pending comments as they are (lands an approval held on them) */
+        post: operations["acceptBacklogPlanComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/backlog/{ref}/plan/answers": {
         parameters: {
             query?: never;
@@ -2650,6 +2667,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/backlog/{ref}/plan/comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Comment on the whole submitted plan; its planner accepts it, revises the plan or asks follow-up questions */
+        post: operations["commentBacklogPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/backlog/{ref}/plan/defaults": {
         parameters: {
             query?: never;
@@ -2693,7 +2727,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Supersede the plan and plan again */
+        /** Supersede the plan and plan again; an optional comment becomes the new planner's instructions */
         post: operations["replanBacklogItem"];
         delete?: never;
         options?: never;
@@ -8875,12 +8909,34 @@ export interface components {
             relayed?: boolean;
         };
         PlanApproveRequest: {
+            /** @description Approve on the condition of this comment: the approval lands once the planner accepts it. Approve only. */
+            comment?: string;
             /** @description Owner chat message id, or last. Required for an orchestrator. */
             ownerMessage?: string;
         };
         PlanAssumption: {
             id: string;
             scopeCut?: boolean;
+            text: string;
+        };
+        PlanComment: {
+            /** @description Given with Approve: the approval lands once the planner accepts the comment. */
+            approve?: boolean;
+            /** Format: date-time */
+            at: string;
+            /** @description user, or orchestrator:<session id>. */
+            by: string;
+            id: string;
+            /** @enum {string} */
+            outcome: "pending" | "accepted" | "revised" | "questions" | "instructions" | "unanswered";
+            /** @description Given with Replan, as the new planner run's instructions. */
+            replan?: boolean;
+            /** Format: date-time */
+            resolvedAt?: null | string;
+            text: string;
+        };
+        PlanCommentRequest: {
+            /** @description The owner's comment on the whole plan. */
             text: string;
         };
         PlanDefaultsRequest: {
@@ -8913,6 +8969,10 @@ export interface components {
             assumptions: components["schemas"]["PlanAssumption"][];
             questions: components["schemas"]["PlanQuestion"][];
         };
+        PlanReplanRequest: {
+            /** @description The owner's comment, passed to the new planner as its instructions and stored on the new plan. */
+            comment?: string;
+        };
         PlanSubmitRequest: {
             /** @description Decisions table markdown. */
             decisions: string;
@@ -8931,6 +8991,8 @@ export interface components {
             baseBranch?: string;
             baseCommit?: string;
             buildAnyway?: boolean;
+            /** @description The owner's comments on the whole plan, oldest first. */
+            comments: components["schemas"]["PlanComment"][];
             decisionsMarkdown?: string;
             failure?: string;
             id: string;
@@ -9030,6 +9092,9 @@ export interface components {
             };
             cloneWorktreeInclude?: boolean;
             containerReap?: components["schemas"]["ContainerReapConfig"];
+            contextBudgetTokens?: number;
+            contextHealth?: boolean;
+            contextMemoryBudgetTokens?: number;
             defaultBranch?: string;
             /** @enum {string} */
             defaultSessionMode?: "chat" | "tui";
@@ -20965,6 +21030,85 @@ export interface operations {
             };
         };
     };
+    acceptBacklogPlanComment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project that owns the backlog. */
+                projectId: string;
+                /** @description Item ref (B12 or 12) or item id. */
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     answerBacklogPlan: {
         parameters: {
             query?: never;
@@ -21293,6 +21437,89 @@ export interface operations {
             };
         };
     };
+    commentBacklogPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project that owns the backlog. */
+                projectId: string;
+                /** @description Item ref (B12 or 12) or item id. */
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanCommentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanEnvelope"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
     acceptBacklogPlanDefaults: {
         parameters: {
             query?: never;
@@ -21471,7 +21698,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanReplanRequest"];
+            };
+        };
         responses: {
             /** @description Created */
             201: {

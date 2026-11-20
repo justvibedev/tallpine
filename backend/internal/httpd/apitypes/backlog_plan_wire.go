@@ -27,6 +27,18 @@ type PlanAssumptionDTO struct {
 	ScopeCut bool   `json:"scopeCut,omitempty"`
 }
 
+// PlanCommentDTO is an owner comment on a whole plan and what the planner made of it (B831).
+type PlanCommentDTO struct {
+	ID         string     `json:"id"`
+	Text       string     `json:"text"`
+	By         string     `json:"by" description:"user, or orchestrator:<session id>."`
+	Approve    bool       `json:"approve,omitempty" description:"Given with Approve: the approval lands once the planner accepts the comment."`
+	Replan     bool       `json:"replan,omitempty" description:"Given with Replan, as the new planner run's instructions."`
+	Outcome    string     `json:"outcome" enum:"pending,accepted,revised,questions,instructions,unanswered"`
+	At         time.Time  `json:"at"`
+	ResolvedAt *time.Time `json:"resolvedAt,omitempty"`
+}
+
 // PlanOptionDTO is one answer choice of a plan question.
 type PlanOptionDTO struct {
 	ID    string `json:"id"`
@@ -69,6 +81,7 @@ type PlanView struct {
 	DecisionsMarkdown string              `json:"decisionsMarkdown,omitempty"`
 	PRSplit           []PlanPRDTO         `json:"prSplit"`
 	ReviewFocus       []string            `json:"reviewFocus"`
+	Comments          []PlanCommentDTO    `json:"comments" description:"The owner's comments on the whole plan, oldest first."`
 	ApprovedBy        string              `json:"approvedBy,omitempty"`
 	ApprovedAt        *time.Time          `json:"approvedAt,omitempty"`
 	BuildAnyway       bool                `json:"buildAnyway,omitempty"`

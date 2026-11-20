@@ -129,7 +129,7 @@ func TestRuntimeEnvWindowsRemovesCaseVariantsOfProtectedVariables(t *testing.T) 
 	t.Cleanup(func() { envKeysCaseInsensitive = previous })
 
 	manager := &Manager{
-		dataDir:     `C:\tallpine`,
+		dataDir:     t.TempDir(),
 		runFilePath: daemonRunFile,
 		executable:  func() (string, error) { return fakeDaemonExe(t), nil },
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -163,7 +163,7 @@ func TestRuntimeEnvWindowsRemovesCaseVariantsOfProtectedVariables(t *testing.T) 
 	if env["PATH"] == "" {
 		t.Fatalf("PATH was not pinned: %v", env)
 	}
-	if env[EnvSessionID] != "mer-1" || env[EnvProjectID] != "mer" || env[EnvIssueID] != "issue-9" || env[EnvDataDir] != `C:\tallpine` {
+	if env[EnvSessionID] != "mer-1" || env[EnvProjectID] != "mer" || env[EnvIssueID] != "issue-9" || env[EnvDataDir] != manager.dataDir {
 		t.Fatalf("protected Tallpine env = %v", env)
 	}
 	if env[EnvRunFile] != daemonRunFile || env[EnvBrowserRuntimeToken] != "" || env[EnvBrowserRuntimeTokenStdin] != "" {

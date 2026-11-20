@@ -16,14 +16,15 @@ import (
 // anchors an ask on the asking turn; owner answers go to the live orchestrator
 // of the ask's project and lane as the owner's own message; a new ask becomes
 // one critical owner notification.
-func newAskService(store *sqlite.Store, anchor asksvc.Anchorer, sessions backlogRunSessions, owner planOwner, log *slog.Logger) *asksvc.Service {
+func newAskService(store *sqlite.Store, anchor asksvc.Anchorer, sessions backlogRunSessions, owner planOwner, handlers map[string]func(context.Context, domain.OwnerAsk) error, log *slog.Logger) *asksvc.Service {
 	d := asksvc.Deps{Store: store, Anchor: anchor, Log: log}
 	if sessions != nil {
 		d.Router = askRouter{sessions: sessions, pick: orchestratorPicker(store)}
 	}
 	if owner != nil {
-		d.Notifier = askNotifier{owner: owner}
+		d.Notifier = askNotifier{owner: owner, pick: orchestratorPicker(store)}
 	}
+	d.AnswerHandlers = handlers
 	return asksvc.New(d)
 }
 
@@ -46,7 +47,12 @@ func (r askRouter) SendOwnerReply(ctx context.Context, project domain.ProjectID,
 
 // askNotifier files one plan_waiting-kind notification per new ask (the
 // critical urgency of a waiting plan) and resolves it once the ask closes.
-type askNotifier struct{ owner planOwner }
+type askNotifier struct {
+	owner planOwner
+	// pick finds the project's orchestrator, whose session a daemon ask's
+	// notification hangs on: a notification needs a session row.
+	pick func(context.Context, domain.ProjectID, string) (domain.SessionID, bool)
+}
 
 func (n askNotifier) Opened(ctx context.Context, a domain.OwnerAsk) {
 	prefix := domain.AskSourcePrefix
@@ -57,10 +63,17 @@ func (n askNotifier) Opened(ctx context.Context, a domain.OwnerAsk) {
 	if utf8.RuneCountInString(body) > 200 {
 		body = string([]rune(body)[:200]) + "…"
 	}
+	title, sid := "Your orchestrator has a question ("+a.Ref+")", a.SessionID
+	if a.FiledByDaemon() {
+		title = "Tallpine has a question (" + a.Ref + ")"
+		var ok bool
+		if sid, ok = n.pick(ctx, a.ProjectID, ""); !ok {
+			return // no session to hang the notification on: the card still shows in chat
+		}
+	}
 	if err := n.owner.Notify(ctx, ports.NotificationIntent{
-		Type: domain.NotificationPlanWaiting, SessionID: a.SessionID, ProjectID: a.ProjectID,
-		SourceKey: prefix + a.ID,
-		Title:     "Your orchestrator has a question (" + a.Ref + ")", Body: body,
+		Type: domain.NotificationPlanWaiting, SessionID: sid, ProjectID: a.ProjectID,
+		SourceKey: prefix + a.ID, Title: title, Body: body,
 	}); err != nil {
 		slog.Warn("could not notify the owner of an ask", "ask", a.ID, "error", err)
 	}

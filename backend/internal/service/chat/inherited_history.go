@@ -102,7 +102,11 @@ func omitCopiedPrefix(events, mapped []ports.ChatEvent, rows ConversationRows) [
 			messages[fingerprint]++
 		}
 		if event.Kind == ports.ChatEventActivityCompleted {
-			replayActivities[nativeHistoryActivityFingerprint(event.ActivityKind, event.ActivityStatus, event.Summary, event.Detail)]++
+			var stored map[string]int
+			if candidate != nil {
+				stored = candidate.activities
+			}
+			replayActivities[nativeHistoryReplayActivityFingerprint(event, stored)]++
 		}
 		if event.Kind != ports.ChatEventTurnCompleted {
 			continue

@@ -37,6 +37,7 @@ UPDATE backlog_plans SET
     decisions_markdown = sqlc.arg(decisions_markdown),
     pr_split_json = sqlc.arg(pr_split_json),
     review_focus_json = sqlc.arg(review_focus_json),
+    comments_json = sqlc.arg(comments_json),
     approved_by = sqlc.arg(approved_by),
     approved_at = sqlc.arg(approved_at),
     owner_message_id = sqlc.arg(owner_message_id),

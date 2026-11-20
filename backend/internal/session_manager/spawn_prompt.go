@@ -73,6 +73,13 @@ func (m *Manager) buildSpawnTexts(ctx context.Context, cfg ports.SpawnConfig, se
 	return prompt, systemPrompt, nil
 }
 
+// TallpinePrompt renders the system prompt a new session of the given kind and
+// harness of the project would get, for measurement (context health). Nothing
+// is spawned or stored.
+func (m *Manager) TallpinePrompt(ctx context.Context, projectID domain.ProjectID, kind domain.SessionKind, harness domain.AgentHarness) (string, error) {
+	return m.buildSystemPromptFor(ctx, kind, projectID, "", "", "", harness, true)
+}
+
 // buildSystemPrompt derives the standing instructions for a session of the
 // given kind from current store state. Restore recomputes them through here
 // rather than persisting them, so a restored worker points at the orchestrator
@@ -92,6 +99,9 @@ func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionK
 	project, err := m.loadProject(ctx, projectID)
 	if err != nil {
 		return "", err
+	}
+	if kind == domain.KindWorker && role == domain.SessionRoleContextAnalyst {
+		return buildSystemPromptText(systemPromptConfig{Role: sessionPromptRoleContextAnalyst, Project: promptProjectContext(projectID, project)}), nil
 	}
 	cfg := systemPromptConfig{
 		Role:       promptRoleForKind(kind),
@@ -157,7 +167,7 @@ func (m *Manager) buildSystemPromptFor(ctx context.Context, kind domain.SessionK
 	if artifactPrompt := strings.TrimSpace(m.artifactPrompt(sessionID, chat)); artifactPrompt != "" {
 		cfg.AdditionalSections = append(cfg.AdditionalSections, artifactPrompt)
 	}
-	if kind == domain.KindWorker && role != domain.SessionRolePlanner && m.plannerEnabled {
+	if kind == domain.KindWorker && role == "" && m.plannerEnabled {
 		cfg.AdditionalSections = append(cfg.AdditionalSections, plannerWorkerPrompt)
 	}
 	if kind == domain.KindWorker && role == domain.SessionRolePlanner {

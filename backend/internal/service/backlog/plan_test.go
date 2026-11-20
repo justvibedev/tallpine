@@ -22,6 +22,8 @@ type planStore struct {
 	messages map[string]store.PlanMessageSource
 	latest   string
 	latestAt time.Time
+	// failApproval, when set, refuses any write that would approve a plan.
+	failApproval error
 }
 
 func (s *planStore) BacklogPlanMessageSource(_ context.Context, id string) (store.PlanMessageSource, bool, error) {
@@ -127,23 +129,6 @@ func goodSubmit() backlog.PlanSubmitInput {
 	}
 }
 
-// toApproval drives a plan to awaiting_approval.
-func (e *planEnv) toApproval() domain.BacklogPlan {
-	e.t.Helper()
-	p := e.mustStart()
-	if _, err := e.plans.SubmitQuestions(e.ctx, "p1", e.planner(p), e.item.Ref(), goodQuestions()); err != nil {
-		e.t.Fatal(err)
-	}
-	if _, err := e.plans.Defaults(e.ctx, "p1", owner, e.item.Ref(), false); err != nil {
-		e.t.Fatal(err)
-	}
-	p, err := e.plans.Submit(e.ctx, "p1", e.planner(p), e.item.Ref(), goodSubmit())
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	return p
-}
-
 func TestPlan_RejectsSixQuestions(t *testing.T) {
 	e := newPlanEnv(t, true)
 	p := e.mustStart()
@@ -210,6 +195,7 @@ func TestPlan_StateTransitions(t *testing.T) {
 		{domain.PlanDrafting, domain.PlanAwaitingAnswers}, {domain.PlanDrafting, domain.PlanWriting},
 		{domain.PlanAwaitingAnswers, domain.PlanWriting}, {domain.PlanWriting, domain.PlanAwaitingApproval},
 		{domain.PlanAwaitingApproval, domain.PlanApproved}, {domain.PlanApproved, domain.PlanSuperseded}, {domain.PlanFailed, domain.PlanSuperseded},
+		{domain.PlanAwaitingApproval, domain.PlanAwaitingAnswers}, // follow-up questions on an owner comment (B831)
 	} {
 		allowed[tr] = true
 	}
@@ -409,7 +395,7 @@ func TestPlan_AnswerToEndedPlannerSpawnsNewOne(t *testing.T) {
 	if len(e.sessions.spawned) != 2 || cur.PlannerSessionID == p.PlannerSessionID || cur.PlannerSessionID == "" {
 		t.Fatalf("planner = %q after respawn (was %q), spawns %d; got status %s", cur.PlannerSessionID, p.PlannerSessionID, len(e.sessions.spawned), got.Status)
 	}
-	if !strings.Contains(e.sessions.spawned[1].Prompt, "Who pays?") || !strings.Contains(e.sessions.spawned[1].Prompt, "do not ask again") {
+	if strings.Count(e.sessions.spawned[1].Prompt, "Who pays?") != 1 || !strings.Contains(e.sessions.spawned[1].Prompt, "do not ask again") {
 		t.Fatalf("new planner's brief lacks the record: %q", e.sessions.spawned[1].Prompt)
 	}
 }

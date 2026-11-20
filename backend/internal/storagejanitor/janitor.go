@@ -3,7 +3,8 @@
 // It compacts streamed deltas of settled turns, prunes each conversation's
 // history below its last settled compaction boundary (see history.go), deletes
 // the provider events of sessions terminated longer ago than the retention
-// window, and runs SQLite's cheap maintenance pragmas. Every unit of work is a small transaction followed
+// window, repacks the archive's half-empty pages (see repack.go), and runs
+// SQLite's cheap maintenance pragmas. Every unit of work is a small transaction followed
 // by a pause, so chat projection writes never queue behind it for long.
 //
 // The pacing adapts to the database and to the daemon's load: a batch is sized
@@ -96,10 +97,13 @@ const (
 type Store interface {
 	ProviderEventCompactionCandidates(ctx context.Context) ([]sqlitestore.ConversationCompactionCandidate, error)
 	CompactProviderEvents(ctx context.Context, conversationID string, watermark, after, limit int64, now time.Time) (sqlitestore.ProviderEventCompaction, error)
+	ProviderEventHoldMark(ctx context.Context, conversationID string) (sqlitestore.ProviderEventHoldMark, error)
 	ExpiredSessionsWithProviderEvents(ctx context.Context, before time.Time, limit int64) ([]sqlitestore.ExpiredSession, error)
 	ExpireSessionProviderEvents(ctx context.Context, session domain.SessionID, after, limit int64, now time.Time) (sqlitestore.ProviderEventExpiry, error)
 	OptimizeStorage(ctx context.Context, maxVacuumPages int64) (sqlitestore.StorageMaintenance, error)
 	HistoryStore
+	RepackStore
+	ActivityDetailStore
 }
 
 // autoVacuumConverter is the optional store surface for converting a database
@@ -135,6 +139,7 @@ type Config struct {
 	ConversionWriteGrace time.Duration
 	OptimizeEvery        time.Duration
 	VacuumPages          int64
+	Repack               RepackConfig
 	Clock                func() time.Time
 	Logger               *slog.Logger
 }
@@ -150,13 +155,18 @@ type Stats struct {
 	// writer lock, each of which lengthened the following pause.
 	Backoffs int
 	// BatchSize is the adapted batch size at the end of the pass.
-	BatchSize      int64
-	Deleted        int64
-	Tombstoned     int64
+	BatchSize int64
+	Deleted   int64
+	Keyed     int64
+	// HoldsSkipped counts conversations left alone because nothing their
+	// held deltas wait for changed since the pass that held them.
+	HoldsSkipped   int
 	ExpiredDeleted int64
-	// ExpiredTombstoned counts expired rows kept as identity tombstones.
-	ExpiredTombstoned int64
+	// ExpiredKeyed counts expired rows whose identity was kept as a key.
+	ExpiredKeyed int64
 	HistoryStats
+	RepackStats
+	ActivityDetailStats
 	Optimized  bool
 	FreedPages int64
 	// ForegroundWrites counts writer acquisitions since the previous pass,
@@ -182,13 +192,16 @@ type Janitor struct {
 	sleepFn   func(ctx context.Context, d time.Duration) bool
 	// Auto-vacuum conversion state: the acquisitions count when the last
 	// pass ended, consecutive quiet intervals, and the last attempt.
-	converter      autoVacuumConverter
-	converted      bool
-	lastAcquired   uint64
-	measuredWrites bool
-	quietPasses    int
-	lastConversion time.Time
-	skipLogged     bool
+	converter       autoVacuumConverter
+	converted       bool
+	lastAcquired    uint64
+	measuredWrites  bool
+	quietPasses     int
+	lastConversion  time.Time
+	skipLogged      bool
+	repackState     repackState
+	activityDetails activityDetailState
+	holds           holds
 }
 
 // New builds a janitor.
@@ -249,6 +262,7 @@ func New(store Store, policy Policy, cfg Config) *Janitor {
 	if cfg.VacuumPages <= 0 {
 		cfg.VacuumPages = DefaultVacuumPages
 	}
+	cfg.Repack = cfg.Repack.withDefaults()
 	if cfg.Clock == nil {
 		cfg.Clock = time.Now
 	}
@@ -293,13 +307,14 @@ func (j *Janitor) run(ctx context.Context) {
 		j.cfg.Logger.Warn("provider event archive maintenance failed", "err", err)
 		return
 	}
-	if stats.Deleted+stats.Tombstoned+stats.ExpiredDeleted+stats.ExpiredTombstoned > 0 ||
-		stats.HistoryDeleted+stats.HistoryTombstoned+stats.HistoryActivities > 0 || stats.FreedPages > 0 {
+	if stats.Deleted+stats.Keyed+stats.ExpiredDeleted+stats.ExpiredKeyed > 0 ||
+		stats.HistoryDeleted+stats.HistoryKeyed+stats.HistoryActivities+stats.Repacked+stats.TombstonesSwept+stats.ActivityDetailsCompacted > 0 || stats.FreedPages > 0 {
 		j.cfg.Logger.Info("provider event archive maintenance",
-			"deltasDeleted", stats.Deleted, "deltasTombstoned", stats.Tombstoned,
-			"expiredDeleted", stats.ExpiredDeleted, "expiredTombstoned", stats.ExpiredTombstoned,
-			"historyDeleted", stats.HistoryDeleted, "historyTombstoned", stats.HistoryTombstoned,
-			"historyActivities", stats.HistoryActivities,
+			"deltasDeleted", stats.Deleted, "deltasKeyed", stats.Keyed,
+			"expiredDeleted", stats.ExpiredDeleted, "expiredKeyed", stats.ExpiredKeyed,
+			"historyDeleted", stats.HistoryDeleted, "historyKeyed", stats.HistoryKeyed,
+			"historyActivities", stats.HistoryActivities, "repacked", stats.Repacked, "tombstonesSwept", stats.TombstonesSwept,
+			"activityDetailsCompacted", stats.ActivityDetailsCompacted,
 			"freedPages", stats.FreedPages, "batches", stats.Batches, "batchSize", stats.BatchSize,
 			"backoffs", stats.Backoffs, "foregroundWrites", stats.ForegroundWrites,
 			"elapsed", j.now().Sub(j.passStart).Round(time.Millisecond))
@@ -307,8 +322,9 @@ func (j *Janitor) run(ctx context.Context) {
 }
 
 // RunOnce performs one bounded pass: compaction, then history pruning, then
-// retention, then (at most every OptimizeEvery) PRAGMA optimize and incremental
-// vacuum.
+// retention, then the archive repack (see repack.go), then the activity detail
+// backfill (see activity_details.go), then (at most every
+// OptimizeEvery) PRAGMA optimize and incremental vacuum.
 func (j *Janitor) RunOnce(ctx context.Context) (Stats, error) {
 	var stats Stats
 	enabled, retention := j.policy(ctx)
@@ -335,6 +351,10 @@ func (j *Janitor) pass(ctx context.Context, stats Stats, retention time.Duration
 			return stats, err
 		}
 	}
+	if err := j.repack(ctx, &stats); err != nil {
+		return stats, err
+	}
+	j.compactActivityDetails(ctx, &stats)
 	if now := j.cfg.Clock(); j.lastOptimize.IsZero() || now.Sub(j.lastOptimize) >= j.cfg.OptimizeEvery {
 		if err := j.optimize(ctx, &stats); err != nil {
 			return stats, err
@@ -361,69 +381,6 @@ func (j *Janitor) markPassEnd() {
 	if j.converter != nil {
 		j.lastAcquired, j.measuredWrites = j.converter.WriterAcquisitions(), true
 	}
-}
-
-// maybeConvert switches an old database to incremental auto-vacuum once the
-// archive backlog is gone (no point rewriting rows about to be deleted; a pass
-// that finishes its work within budget only has the steady trickle of sessions
-// crossing the retention window left) and the daemon has been quiet for
-// QuietPasses intervals in a row.
-func (j *Janitor) maybeConvert(ctx context.Context, stats *Stats) error {
-	if j.converter == nil || j.converted {
-		return nil
-	}
-	quiet := stats.ForegroundWrites >= 0 && stats.ForegroundWrites <= int64(j.cfg.QuietWrites)
-	drained := !stats.OutOfBudget
-	if !quiet || !drained {
-		j.quietPasses = 0
-		return nil
-	}
-	j.quietPasses++
-	now := j.cfg.Clock()
-	if j.quietPasses < j.cfg.QuietPasses || (!j.lastConversion.IsZero() && now.Sub(j.lastConversion) < j.cfg.ConversionRetry) {
-		return nil
-	}
-	done, err := j.converter.IncrementalAutoVacuum(ctx)
-	if err != nil {
-		return err
-	}
-	if done {
-		j.converted = true
-		return nil
-	}
-	j.lastConversion = now
-	j.cfg.Logger.Info("converting the database to incremental auto-vacuum; a write that waits longer than writeGrace interrupts it, after the VACUUM phase in progress",
-		"writeGrace", j.cfg.ConversionWriteGrace, "maxLiveBytes", j.cfg.ConversionMaxLive)
-	result, err := j.converter.ConvertToIncrementalAutoVacuum(ctx, sqlitestore.AutoVacuumConversionOptions{
-		MaxLiveBytes: j.cfg.ConversionMaxLive,
-		WriteGrace:   j.cfg.ConversionWriteGrace,
-		Progress: func(p sqlitestore.AutoVacuumProgress) {
-			j.cfg.Logger.Info("auto-vacuum conversion in progress",
-				"elapsed", p.Elapsed.Round(time.Second), "liveBytes", p.LiveBytes, "walBytes", p.WALBytes)
-		},
-	})
-	stats.Conversion = &result
-	switch {
-	case err != nil:
-		return err
-	case result.Converted:
-		j.converted = true
-		j.cfg.Logger.Info("database converted to incremental auto-vacuum",
-			"elapsed", result.Elapsed.Round(time.Millisecond), "bytesBefore", result.FileBytes, "bytesAfter", result.AfterBytes)
-	case result.Interrupted:
-		j.cfg.Logger.Info("auto-vacuum conversion gave way to a write; the database is unchanged and the conversion will retry",
-			"elapsed", result.Elapsed.Round(time.Millisecond), "retryAfter", j.cfg.ConversionRetry)
-	case result.Skipped != "":
-		// Too large or too little disk rarely changes within the hour; say
-		// so once rather than every retry.
-		if !j.skipLogged {
-			j.skipLogged = true
-			j.cfg.Logger.Warn("auto-vacuum conversion skipped; freed pages stay in the file until it can run",
-				"reason", result.Skipped, "liveBytes", result.LiveBytes, "fileBytes", result.FileBytes)
-		}
-	}
-	j.quietPasses = 0
-	return nil
 }
 
 func (j *Janitor) budgetLeft(stats *Stats) bool {
@@ -463,36 +420,6 @@ func (j *Janitor) paced(ctx context.Context, stats *Stats, batch func(limit int6
 	}
 	if !j.sleepFn(ctx, max(j.cfg.Pause, time.Duration(j.cfg.HoldRatio)*held)+j.backoff) {
 		return ctx.Err()
-	}
-	return nil
-}
-
-func (j *Janitor) compact(ctx context.Context, stats *Stats) error {
-	candidates, err := j.store.ProviderEventCompactionCandidates(ctx)
-	if err != nil {
-		return err
-	}
-	for _, candidate := range candidates {
-		watermark, after := candidate.CompactedThroughID, candidate.CompactedThroughID
-		for j.budgetLeft(stats) {
-			var result sqlitestore.ProviderEventCompaction
-			if err := j.paced(ctx, stats, func(limit int64) (sqlitestore.WriterHold, error) {
-				var err error
-				result, err = j.store.CompactProviderEvents(ctx, candidate.ConversationID, watermark, after, limit, j.cfg.Clock().UTC())
-				return result.WriterHold, err
-			}); err != nil {
-				return err
-			}
-			stats.Deleted += result.Deleted
-			stats.Tombstoned += result.Tombstoned
-			if result.Done {
-				break
-			}
-			watermark, after = result.Watermark, result.Next
-		}
-		if !j.budgetLeft(stats) {
-			return nil
-		}
 	}
 	return nil
 }

@@ -11,6 +11,9 @@ type PlanAnswersDTO = apitypes.PlanAnswersDTO
 // PlanAssumptionDTO aliases apitypes.PlanAssumptionDTO.
 type PlanAssumptionDTO = apitypes.PlanAssumptionDTO
 
+// PlanCommentDTO aliases apitypes.PlanCommentDTO.
+type PlanCommentDTO = apitypes.PlanCommentDTO
+
 // PlanOptionDTO aliases apitypes.PlanOptionDTO.
 type PlanOptionDTO = apitypes.PlanOptionDTO
 

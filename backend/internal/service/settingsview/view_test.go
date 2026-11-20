@@ -83,7 +83,7 @@ func TestAppValuesSourcesLocksAndCoverage(t *testing.T) {
 	if v := got["app.storageCompaction"]; v.Source != SourceUser || string(v.Value) != "false" || !slices.Contains(v.Writable, settingsreg.ActorUser) {
 		t.Errorf("storageCompaction = %+v", v)
 	}
-	if v := got["app.providerEventRetentionDays"]; v.Source != SourceDefault || string(v.Value) != "14" {
+	if v := got["app.providerEventRetentionDays"]; v.Source != SourceDefault || string(v.Value) != "7" {
 		t.Errorf("retention = %+v", v)
 	}
 	if v := got["app.versionRefresh"]; !v.Locked || v.LockedBy != "TALLPINE_VERSION_REFRESH" || v.Source != SourceEnv ||

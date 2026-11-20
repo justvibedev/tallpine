@@ -21,7 +21,9 @@ type BacklogPlanService interface {
 	ListOpen(ctx context.Context, projectID domain.ProjectID) ([]backlogsvc.ProjectPlan, error)
 	Start(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string) (domain.BacklogPlan, bool, error)
 	Cancel(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string) (domain.BacklogPlan, error)
-	Replan(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string) (domain.BacklogPlan, error)
+	ReplanWithComment(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref, comment string) (domain.BacklogPlan, error)
+	Comment(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string, in backlogsvc.PlanCommentInput) (domain.BacklogPlan, error)
+	AcceptComments(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string) (domain.BacklogPlan, error)
 	SubmitQuestions(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string, in backlogsvc.PlanQuestionsInput) (domain.BacklogPlan, error)
 	Submit(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string, in backlogsvc.PlanSubmitInput) (domain.BacklogPlan, error)
 	Answer(ctx context.Context, projectID domain.ProjectID, actor backlogsvc.Actor, ref string, in backlogsvc.PlanAnswerInput) (domain.BacklogPlan, error)
@@ -68,6 +70,8 @@ func (c *BacklogPlanController) Register(r chi.Router) {
 	r.Post("/projects/{projectId}/backlog/{ref}/plan/defaults", c.defaults)
 	r.Post("/projects/{projectId}/backlog/{ref}/plan/approve", c.approve)
 	r.Post("/projects/{projectId}/backlog/{ref}/plan/build-anyway", c.buildAnyway)
+	r.Post("/projects/{projectId}/backlog/{ref}/plan/comment", c.comment)
+	r.Post("/projects/{projectId}/backlog/{ref}/plan/accept-comment", c.acceptComment)
 }
 
 // guard answers 501 when unwired and 404 while the switch is off, before any
@@ -148,8 +152,35 @@ func (c *BacklogPlanController) replan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, err := c.Svc.Replan(r.Context(), project, backlogActor(r), ref)
+	// The body is optional: a replan without a comment sends none.
+	var req PlanReplanRequest
+	if r.ContentLength != 0 && !decodeBacklogBody(w, r, &req) {
+		return
+	}
+	p, err := c.Svc.ReplanWithComment(r.Context(), project, backlogActor(r), ref, req.Comment)
 	c.writePlan(w, r, http.StatusCreated, p, err)
+}
+
+func (c *BacklogPlanController) comment(w http.ResponseWriter, r *http.Request) {
+	project, ref, ok := c.guard(w, r, "POST", planBase+"/comment")
+	if !ok {
+		return
+	}
+	var req PlanCommentRequest
+	if !decodeBacklogBody(w, r, &req) {
+		return
+	}
+	p, err := c.Svc.Comment(r.Context(), project, backlogActor(r), ref, backlogsvc.PlanCommentInput{Text: req.Text})
+	c.writePlan(w, r, http.StatusOK, p, err)
+}
+
+func (c *BacklogPlanController) acceptComment(w http.ResponseWriter, r *http.Request) {
+	project, ref, ok := c.guard(w, r, "POST", planBase+"/accept-comment")
+	if !ok {
+		return
+	}
+	p, err := c.Svc.AcceptComments(r.Context(), project, backlogActor(r), ref)
+	c.writePlan(w, r, http.StatusOK, p, err)
 }
 
 func (c *BacklogPlanController) cancel(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +265,7 @@ func (c *BacklogPlanController) approve(w http.ResponseWriter, r *http.Request) 
 	if !decodeBacklogBody(w, r, &req) {
 		return
 	}
-	p, err := c.Svc.Approve(r.Context(), project, backlogActor(r), ref, backlogsvc.PlanApproveInput{OwnerMessage: req.OwnerMessage})
+	p, err := c.Svc.Approve(r.Context(), project, backlogActor(r), ref, backlogsvc.PlanApproveInput{OwnerMessage: req.OwnerMessage, Comment: req.Comment})
 	c.writePlan(w, r, http.StatusOK, p, err)
 }
 

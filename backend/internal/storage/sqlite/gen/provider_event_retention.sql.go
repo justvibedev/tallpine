@@ -37,6 +37,34 @@ func (q *Queries) DeleteProviderEventsByID(ctx context.Context, ids []int64) (in
 	return result.RowsAffected()
 }
 
+const keepProviderEventKeysByID = `-- name: KeepProviderEventKeysByID :execrows
+INSERT OR IGNORE INTO conversation_provider_event_keys (conversation_id, provider_event_id)
+SELECT conversation_id, provider_event_id FROM conversation_provider_events
+WHERE id IN (/*SLICE:ids*/?) AND provider_event_id <> ''
+`
+
+// A removed row with a replayable identity leaves the identity behind before
+// it is deleted: InsertConversationProviderEvent must still refuse a replay of
+// it, or a replayed delta would append its text to the settled message a
+// second time.
+func (q *Queries) KeepProviderEventKeysByID(ctx context.Context, ids []int64) (int64, error) {
+	query := keepProviderEventKeysByID
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	result, err := q.db.ExecContext(ctx, query, queryParams...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const latestProviderTurnCompletedID = `-- name: LatestProviderTurnCompletedID :one
 SELECT CAST(COALESCE(MAX(e.id), 0) AS INTEGER) AS id
 FROM conversation_branches b
@@ -179,7 +207,8 @@ SELECT e.id,
                LIMIT 1
            ), '')
            ELSE ''
-       END AS TEXT) AS turn_state
+       END AS TEXT) AS turn_state,
+       CAST(COALESCE((SELECT s.is_terminated FROM sessions s WHERE s.id = e.session_id), 0) AS INTEGER) AS session_terminated
 FROM conversation_provider_events e
 WHERE e.conversation_id = ?1
   AND e.id > ?2
@@ -194,18 +223,20 @@ type SelectProviderEventsForCompactionParams struct {
 }
 
 type SelectProviderEventsForCompactionRow struct {
-	ID              int64
-	Method          string
-	ProviderEventID string
-	Compacted       int64
-	ProviderTurnID  string
-	TurnState       string
+	ID                int64
+	Method            string
+	ProviderEventID   string
+	Compacted         int64
+	ProviderTurnID    string
+	TurnState         string
+	SessionTerminated int64
 }
 
 // One window of a conversation's archive above the watermark. Streamed deltas
 // carry the provider turn they belong to and that turn's projected state; any
 // other row reports empty strings, which the janitor keeps. A delta already
-// reduced to '{}' reports compacted = 1. Only delta payloads are read, so a
+// reduced to '{}' reports compacted = 1. session_terminated reports that the
+// session that wrote the row is terminated, so its persistent host is gone. Only delta payloads are read, so a
 // window never pulls a large activity payload off its overflow pages.
 func (q *Queries) SelectProviderEventsForCompaction(ctx context.Context, arg SelectProviderEventsForCompactionParams) ([]SelectProviderEventsForCompactionRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectProviderEventsForCompaction, arg.ConversationID, arg.AfterID, arg.PageLimit)
@@ -223,6 +254,7 @@ func (q *Queries) SelectProviderEventsForCompaction(ctx context.Context, arg Sel
 			&i.Compacted,
 			&i.ProviderTurnID,
 			&i.TurnState,
+			&i.SessionTerminated,
 		); err != nil {
 			return nil, err
 		}
@@ -238,7 +270,7 @@ func (q *Queries) SelectProviderEventsForCompaction(ctx context.Context, arg Sel
 }
 
 const selectSessionProviderEventsForRetention = `-- name: SelectSessionProviderEventsForRetention :many
-SELECT e.id, e.provider_event_id
+SELECT e.id, e.conversation_id, e.provider_event_id
 FROM conversation_provider_events e
 WHERE e.session_id = ?1
   AND e.id > ?2
@@ -254,6 +286,7 @@ type SelectSessionProviderEventsForRetentionParams struct {
 
 type SelectSessionProviderEventsForRetentionRow struct {
 	ID              int64
+	ConversationID  string
 	ProviderEventID string
 }
 
@@ -267,7 +300,7 @@ func (q *Queries) SelectSessionProviderEventsForRetention(ctx context.Context, a
 	items := []SelectSessionProviderEventsForRetentionRow{}
 	for rows.Next() {
 		var i SelectSessionProviderEventsForRetentionRow
-		if err := rows.Scan(&i.ID, &i.ProviderEventID); err != nil {
+		if err := rows.Scan(&i.ID, &i.ConversationID, &i.ProviderEventID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -279,32 +312,6 @@ func (q *Queries) SelectSessionProviderEventsForRetention(ctx context.Context, a
 		return nil, err
 	}
 	return items, nil
-}
-
-const tombstoneProviderEventsByID = `-- name: TombstoneProviderEventsByID :execrows
-UPDATE conversation_provider_events SET payload_json = '{}'
-WHERE id IN (/*SLICE:ids*/?) AND payload_json <> '{}'
-`
-
-// A delta with a native identity keeps its row as a tombstone: the dedupe
-// index must still reject a replay of that identity, or a replayed delta would
-// append its text to the settled message a second time.
-func (q *Queries) TombstoneProviderEventsByID(ctx context.Context, ids []int64) (int64, error) {
-	query := tombstoneProviderEventsByID
-	var queryParams []interface{}
-	if len(ids) > 0 {
-		for _, v := range ids {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
-	}
-	result, err := q.db.ExecContext(ctx, query, queryParams...)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const upsertProviderEventCompactionWatermark = `-- name: UpsertProviderEventCompactionWatermark :exec

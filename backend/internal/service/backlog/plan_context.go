@@ -25,11 +25,13 @@ func planSpawnContext(plan domain.BacklogPlan, itemRef string) string {
 	return out + "\n\nFull plan: tallpine plan show " + itemRef
 }
 
-// writePlanDecisionsAndSplit renders the decisions table and PR-split entries.
+// writePlanDecisionsAndSplit renders the decisions table, the owner's comments
+// and the PR-split entries.
 func writePlanDecisionsAndSplit(b *strings.Builder, plan domain.BacklogPlan) {
 	if d := strings.TrimSpace(plan.DecisionsMD); d != "" {
 		fmt.Fprintf(b, "\nDecisions:\n%s\n", d)
 	}
+	writePlanComments(b, plan)
 	if len(plan.PRSplit) > 0 {
 		b.WriteString("\nPR split:\n")
 		for i, pr := range plan.PRSplit {

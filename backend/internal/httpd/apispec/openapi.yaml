@@ -7627,6 +7627,71 @@ paths:
       summary: Start planning an item (Plan now); an open plan is returned as is
       tags:
       - backlog
+  /api/v1/projects/{projectId}/backlog/{ref}/plan/accept-comment:
+    post:
+      operationId: acceptBacklogPlanComment
+      parameters:
+      - description: Project that owns the backlog.
+        in: path
+        name: projectId
+        required: true
+        schema:
+          description: Project that owns the backlog.
+          type: string
+      - description: Item ref (B12 or 12) or item id.
+        in: path
+        name: ref
+        required: true
+        schema:
+          description: Item ref (B12 or 12) or item id.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanEnvelope'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: 'Planner: accept the owner''s pending comments as they are (lands an
+        approval held on them)'
+      tags:
+      - backlog
   /api/v1/projects/{projectId}/backlog/{ref}/plan/answers:
     post:
       operationId: answerBacklogPlan
@@ -7902,6 +7967,77 @@ paths:
         stays open
       tags:
       - backlog
+  /api/v1/projects/{projectId}/backlog/{ref}/plan/comment:
+    post:
+      operationId: commentBacklogPlan
+      parameters:
+      - description: Project that owns the backlog.
+        in: path
+        name: projectId
+        required: true
+        schema:
+          description: Project that owns the backlog.
+          type: string
+      - description: Item ref (B12 or 12) or item id.
+        in: path
+        name: ref
+        required: true
+        schema:
+          description: Item ref (B12 or 12) or item id.
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanCommentRequest'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanEnvelope'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Conflict
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Comment on the whole submitted plan; its planner accepts it, revises
+        the plan or asks follow-up questions
+      tags:
+      - backlog
   /api/v1/projects/{projectId}/backlog/{ref}/plan/defaults:
     post:
       operationId: acceptBacklogPlanDefaults
@@ -8060,6 +8196,12 @@ paths:
         schema:
           description: Item ref (B12 or 12) or item id.
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanReplanRequest'
+        required: true
       responses:
         "201":
           content:
@@ -8103,7 +8245,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/APIError'
           description: Not Implemented
-      summary: Supersede the plan and plan again
+      summary: Supersede the plan and plan again; an optional comment becomes the
+        new planner's instructions
       tags:
       - backlog
   /api/v1/projects/{projectId}/backlog/{ref}/plan/submit:
@@ -26170,6 +26313,10 @@ components:
       type: object
     PlanApproveRequest:
       properties:
+        comment:
+          description: 'Approve on the condition of this comment: the approval lands
+            once the planner accepts it. Approve only.'
+          type: string
         ownerMessage:
           description: Owner chat message id, or last. Required for an orchestrator.
           type: string
@@ -26184,6 +26331,54 @@ components:
           type: string
       required:
       - id
+      - text
+      type: object
+    PlanComment:
+      properties:
+        approve:
+          description: 'Given with Approve: the approval lands once the planner accepts
+            the comment.'
+          type: boolean
+        at:
+          format: date-time
+          type: string
+        by:
+          description: user, or orchestrator:<session id>.
+          type: string
+        id:
+          type: string
+        outcome:
+          enum:
+          - pending
+          - accepted
+          - revised
+          - questions
+          - instructions
+          - unanswered
+          type: string
+        replan:
+          description: Given with Replan, as the new planner run's instructions.
+          type: boolean
+        resolvedAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        text:
+          type: string
+      required:
+      - id
+      - text
+      - by
+      - outcome
+      - at
+      type: object
+    PlanCommentRequest:
+      properties:
+        text:
+          description: The owner's comment on the whole plan.
+          type: string
+      required:
       - text
       type: object
     PlanDefaultsRequest:
@@ -26266,6 +26461,13 @@ components:
       - questions
       - assumptions
       type: object
+    PlanReplanRequest:
+      properties:
+        comment:
+          description: The owner's comment, passed to the new planner as its instructions
+            and stored on the new plan.
+          type: string
+      type: object
     PlanSubmitRequest:
       properties:
         decisions:
@@ -26309,6 +26511,11 @@ components:
           type: string
         buildAnyway:
           type: boolean
+        comments:
+          description: The owner's comments on the whole plan, oldest first.
+          items:
+            $ref: '#/components/schemas/PlanComment'
+          type: array
         decisionsMarkdown:
           type: string
         failure:
@@ -26376,6 +26583,7 @@ components:
       - assumptions
       - prSplit
       - reviewFocus
+      - comments
       - startedAt
       - updatedAt
       type: object
@@ -26553,6 +26761,12 @@ components:
           type: boolean
         containerReap:
           $ref: '#/components/schemas/ContainerReapConfig'
+        contextBudgetTokens:
+          type: integer
+        contextHealth:
+          type: boolean
+        contextMemoryBudgetTokens:
+          type: integer
         defaultBranch:
           type: string
         defaultSessionMode:

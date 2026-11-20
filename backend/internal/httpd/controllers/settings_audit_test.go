@@ -190,7 +190,7 @@ func TestSettingsAudit_AppRoutes(t *testing.T) {
 	want := map[string][2]string{
 		"app.versionRefresh":                    {"true", "false"},
 		"app.chatHibernation.workerIdleSeconds": {"1200", "600"},
-		"app.providerEventRetentionDays":        {"14", "30"},
+		"app.providerEventRetentionDays":        {"7", "30"},
 		"app.defaultSessionMode":                {`"chat"`, `"tui"`},
 		"policy.permissionCap.max":              {"null", `"auto"`},
 		"app.cleanup.automatic":                 {"true", "false"},

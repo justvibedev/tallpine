@@ -75,3 +75,20 @@ func (f *fakeSessions) SendToPlanner(_ context.Context, id domain.SessionID, msg
 	f.sent = append(f.sent, msg)
 	return true, nil
 }
+
+// toApproval drives a plan to awaiting_approval.
+func (e *planEnv) toApproval() domain.BacklogPlan {
+	e.t.Helper()
+	p := e.mustStart()
+	if _, err := e.plans.SubmitQuestions(e.ctx, "p1", e.planner(p), e.item.Ref(), goodQuestions()); err != nil {
+		e.t.Fatal(err)
+	}
+	if _, err := e.plans.Defaults(e.ctx, "p1", owner, e.item.Ref(), false); err != nil {
+		e.t.Fatal(err)
+	}
+	p, err := e.plans.Submit(e.ctx, "p1", e.planner(p), e.item.Ref(), goodSubmit())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return p
+}

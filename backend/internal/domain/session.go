@@ -93,17 +93,6 @@ type RequestedOutput string
 // artifact directory instead of a pull request.
 const RequestedOutputArtifact RequestedOutput = "artifact"
 
-// SessionRole marks a worker session with a special job. Empty is an ordinary
-// worker. A planner is a read-only worker that explores and writes a plan; its
-// done report completes the plan, not the backlog item it is linked to.
-type SessionRole string
-
-// SessionRolePlanner is the read-only planning worker (B205).
-const SessionRolePlanner SessionRole = "planner"
-
-// Valid reports whether r is empty or a known role.
-func (r SessionRole) Valid() bool { return r == "" || r == SessionRolePlanner }
-
 // Valid reports whether k is empty or a known output kind.
 func (k RequestedOutput) Valid() bool {
 	return k == "" || k == RequestedOutputArtifact

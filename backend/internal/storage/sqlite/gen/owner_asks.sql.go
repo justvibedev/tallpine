@@ -12,7 +12,7 @@ import (
 )
 
 const getOwnerAskByID = `-- name: GetOwnerAskByID :one
-SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at FROM owner_asks WHERE id = ?
+SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at, origin FROM owner_asks WHERE id = ?
 `
 
 func (q *Queries) GetOwnerAskByID(ctx context.Context, id string) (OwnerAsk, error) {
@@ -40,12 +40,13 @@ func (q *Queries) GetOwnerAskByID(ctx context.Context, id string) (OwnerAsk, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AnsweredAt,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const getOwnerAskByRef = `-- name: GetOwnerAskByRef :one
-SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at FROM owner_asks WHERE project_id = ? AND seq = ?
+SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at, origin FROM owner_asks WHERE project_id = ? AND seq = ?
 `
 
 type GetOwnerAskByRefParams struct {
@@ -78,6 +79,7 @@ func (q *Queries) GetOwnerAskByRef(ctx context.Context, arg GetOwnerAskByRefPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AnsweredAt,
+		&i.Origin,
 	)
 	return i, err
 }
@@ -86,8 +88,8 @@ const insertOwnerAsk = `-- name: InsertOwnerAsk :exec
 INSERT INTO owner_asks (
     id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about,
     state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id,
-    created_at, updated_at, answered_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    created_at, updated_at, answered_at, origin
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertOwnerAskParams struct {
@@ -112,6 +114,7 @@ type InsertOwnerAskParams struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	AnsweredAt       sql.NullTime
+	Origin           string
 }
 
 func (q *Queries) InsertOwnerAsk(ctx context.Context, arg InsertOwnerAskParams) error {
@@ -137,12 +140,13 @@ func (q *Queries) InsertOwnerAsk(ctx context.Context, arg InsertOwnerAskParams) 
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.AnsweredAt,
+		arg.Origin,
 	)
 	return err
 }
 
 const listOpenOwnerAsks = `-- name: ListOpenOwnerAsks :many
-SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at FROM owner_asks WHERE project_id = ? AND state = 'open' ORDER BY seq
+SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at, origin FROM owner_asks WHERE project_id = ? AND state = 'open' ORDER BY seq
 `
 
 func (q *Queries) ListOpenOwnerAsks(ctx context.Context, projectID string) ([]OwnerAsk, error) {
@@ -176,6 +180,7 @@ func (q *Queries) ListOpenOwnerAsks(ctx context.Context, projectID string) ([]Ow
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AnsweredAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -191,7 +196,7 @@ func (q *Queries) ListOpenOwnerAsks(ctx context.Context, projectID string) ([]Ow
 }
 
 const listOwnerAsks = `-- name: ListOwnerAsks :many
-SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at FROM owner_asks WHERE project_id = ? ORDER BY seq
+SELECT id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about, state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id, created_at, updated_at, answered_at, origin FROM owner_asks WHERE project_id = ? ORDER BY seq
 `
 
 func (q *Queries) ListOwnerAsks(ctx context.Context, projectID string) ([]OwnerAsk, error) {
@@ -225,6 +230,7 @@ func (q *Queries) ListOwnerAsks(ctx context.Context, projectID string) ([]OwnerA
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AnsweredAt,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}

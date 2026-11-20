@@ -39,6 +39,15 @@ func (p *PlanService) SessionEnded(ctx context.Context, sessionID domain.Session
 // failEndedAuthor marks a plan failed when its author ended while drafting or
 // writing, and tells the orchestrator once.
 func (p *PlanService) failEndedAuthor(ctx context.Context, plan domain.BacklogPlan, sessionID domain.SessionID, who string) {
+	if plan.Status == domain.PlanAwaitingApproval && len(plan.PendingComments()) > 0 {
+		// Nobody answers the owner's comment now: it stops holding the plan,
+		// and a held approval is dropped, so the owner decides again (B831).
+		p.resolveComments(ctx, plan.ID, domain.PlanCommentUnanswered)
+		p.alertOwner(ctx, plan)
+		ir := p.itemRef(ctx, plan)
+		p.notifyOrchestrator(ctx, plan, fmt.Sprintf("The %s for %s ended without answering the owner's comment. The plan waits for the owner again; do not approve without the owner's word.", who, ir))
+		return
+	}
 	if plan.Status != domain.PlanDrafting && plan.Status != domain.PlanWriting {
 		return
 	}

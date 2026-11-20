@@ -45,13 +45,16 @@ func (s *Store) CreateOwnerAsk(ctx context.Context, a domain.OwnerAsk, check fun
 		if err != nil {
 			return err
 		}
-		return q.InsertOwnerAsk(ctx, gen.InsertOwnerAskParams{
+		if err := q.InsertOwnerAsk(ctx, gen.InsertOwnerAskParams{
 			ID: a.ID, ProjectID: string(a.ProjectID), Seq: seq, Lane: a.Lane, LaneRef: a.LaneRef, SessionID: string(a.SessionID),
 			Text: a.Text, Reason: a.Reason, OptionsJson: string(opts), Recommended: a.Recommended, About: a.About,
 			State: string(a.State), ReaskOf: a.ReaskOf, ReaskReason: a.ReaskReason,
 			AnchorTurnID: a.AnchorTurnID, AnchorActivityID: a.AnchorActivityID,
-			CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
-		})
+			CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt, Origin: a.Origin,
+		}); err != nil {
+			return err
+		}
+		return nil
 	})
 	return a, err
 }
@@ -145,10 +148,13 @@ func asksFromRows(rows []gen.OwnerAsk) ([]domain.OwnerAsk, error) {
 func askFromRow(r gen.OwnerAsk) (domain.OwnerAsk, error) {
 	a := domain.OwnerAsk{
 		ID: r.ID, ProjectID: domain.ProjectID(r.ProjectID), Ref: "Q" + strconv.FormatInt(r.Seq, 10), Lane: r.Lane, LaneRef: r.LaneRef,
-		SessionID: domain.SessionID(r.SessionID), Text: r.Text, Reason: r.Reason, Recommended: r.Recommended,
+		SessionID: domain.SessionID(r.SessionID), Origin: r.Origin, Text: r.Text, Reason: r.Reason, Recommended: r.Recommended,
 		About: r.About, State: domain.AskState(r.State), ReaskOf: r.ReaskOf, ReaskReason: r.ReaskReason,
 		WithdrawReason: r.WithdrawReason, AnchorTurnID: r.AnchorTurnID, AnchorActivityID: r.AnchorActivityID,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+	if a.Origin == "" {
+		a.Origin = domain.AskOriginOrchestrator
 	}
 	if r.AnsweredAt.Valid {
 		a.AnsweredAt = r.AnsweredAt.Time

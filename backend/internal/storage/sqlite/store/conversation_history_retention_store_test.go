@@ -78,7 +78,7 @@ func recordCompaction(t *testing.T, s *sqlite.Store, conversation string, sessio
 
 // pruneHistoryAll runs the janitor's history step to completion with the given
 // batch size and reports what it did.
-func pruneHistoryAll(t *testing.T, s *sqlite.Store, batch int64) (deleted, tombstoned, activities int64) {
+func pruneHistoryAll(t *testing.T, s *sqlite.Store, batch int64) (deleted, keyed, activities int64) {
 	t.Helper()
 	ctx := context.Background()
 	candidates, err := s.HistoryRetentionCandidates(ctx)
@@ -98,7 +98,7 @@ func pruneHistoryAll(t *testing.T, s *sqlite.Store, batch int64) (deleted, tombs
 			if err != nil {
 				t.Fatal(err)
 			}
-			deleted, tombstoned, after = deleted+result.Deleted, tombstoned+result.Tombstoned, result.Next
+			deleted, keyed, after = deleted+result.Deleted, keyed+result.Keyed, result.Next
 			if result.Done {
 				break
 			}
@@ -119,7 +119,7 @@ func pruneHistoryAll(t *testing.T, s *sqlite.Store, batch int64) (deleted, tombs
 			watermark, after = result.Watermark, result.Next
 		}
 	}
-	return deleted, tombstoned, activities
+	return deleted, keyed, activities
 }
 
 type archivedRow struct{ id, method, payload string }
@@ -176,28 +176,30 @@ func TestHistoryBelowSettledCompactionIsPruned(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			deleted, tombstoned, activities := pruneHistoryAll(t, s, batch)
+			deleted, keyed, activities := pruneHistoryAll(t, s, batch)
 			// Below the boundary: acp-host turn.started, activity.started and
 			// message.completed plus the identity-less output delta are deleted;
-			// the acp-history row a native replay can re-send is tombstoned.
-			if deleted != 4 || tombstoned != 1 || activities != 1 {
-				t.Fatalf("pruned deleted=%d tombstoned=%d activities=%d, want 4/1/1", deleted, tombstoned, activities)
+			// the acp-history row a native replay can re-send leaves its key.
+			if deleted != 4 || keyed != 1 || activities != 1 {
+				t.Fatalf("pruned deleted=%d keyed=%d activities=%d, want 4/1/1", deleted, keyed, activities)
+			}
+			if keys, err := s.ProviderEventKeysForTest(ctx, conversation); err != nil || !reflect.DeepEqual(keys, []string{"acp-history:t1"}) {
+				t.Fatalf("identity keys = %v err=%v, want only acp-history:t1", keys, err)
 			}
 
 			rows := archiveRows(t, s, conversation)
 			want := []archivedRow{
-				{"acp-history:t1", "activity.completed", "{}"},
 				{"acp-host:launch-1:t1-3", "turn.completed", `{"kind":"turn.completed","providerTurnId":"t1","turnState":"completed"}`},
 				{"acp-host:launch-1:compact", "thread.compacted", `{"kind":"thread.compacted"}`},
 			}
-			if !reflect.DeepEqual(rows[:3], want) {
-				t.Fatalf("archive below boundary = %+v\nwant %+v", rows[:3], want)
+			if !reflect.DeepEqual(rows[:2], want) {
+				t.Fatalf("archive below boundary = %+v\nwant %+v", rows[:2], want)
 			}
-			// Above the boundary nothing changed: t2's seven rows are whole.
-			if len(rows) != 3+6 {
-				t.Fatalf("archive rows = %d, want 3 kept below the boundary and t2's 6", len(rows))
+			// Above the boundary nothing changed: t2's rows are whole.
+			if len(rows) != 2+6 {
+				t.Fatalf("archive rows = %d, want 2 kept below the boundary and t2's 6", len(rows))
 			}
-			for _, row := range rows[3:] {
+			for _, row := range rows[2:] {
 				if row.payload == "{}" {
 					t.Fatalf("event above the boundary was pruned: %+v", row)
 				}
@@ -219,9 +221,11 @@ func TestHistoryBelowSettledCompactionIsPruned(t *testing.T) {
 			if err := json.Unmarshal(old.Detail, &detail); err != nil {
 				t.Fatal(err)
 			}
-			if detail["command"] != "go test ./..." || detail["exitCode"] != float64(0) || detail["outputTruncated"] != true ||
-				detail[domain.ActivityDetailOriginalDigestKey] == nil || len(detail["output"].(string)) != sqlitestore.HistoryPruneKeepBytes {
-				t.Fatalf("t1 detail = %v", detail)
+			// The completion snapshot's output copy was never stored: the
+			// streamed column above carries it (B842), so the detail is small
+			// and pruning leaves it whole.
+			if want := map[string]any{"command": "go test ./...", "exitCode": float64(0)}; !reflect.DeepEqual(detail, want) {
+				t.Fatalf("t1 detail = %v, want %v", detail, want)
 			}
 			if old.Summary != "Run tests" || old.Status != domain.ActivityStatusCompleted {
 				t.Fatalf("t1 activity lost its summary or status: %+v", old)
@@ -246,7 +250,7 @@ func TestHistoryBelowSettledCompactionIsPruned(t *testing.T) {
 }
 
 // A native-history import re-sends acp-history identities. After pruning, the
-// tombstone must still reject them, or the activity would be imported again.
+// identity key must still reject them, or the activity would be imported again.
 func TestReplayAfterHistoryPruneIsStillDeduplicated(t *testing.T) {
 	s, session, conversation := conversationFixture(t)
 	recordTurn(t, s, conversation, session, "t1", histClock)

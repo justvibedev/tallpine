@@ -8,7 +8,7 @@ export function planFixture(over: Partial<PlanView> = {}): PlanView {
 			{ id: "q2", text: "Backfill?", recommended: "no", options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }] },
 		],
 		assumptions: [{ id: "a1", text: "No new dependency" }, { id: "a2", text: "English only" }],
-		prSplit: [], reviewFocus: [],
+		prSplit: [], reviewFocus: [], comments: [],
 		...over,
 	};
 }

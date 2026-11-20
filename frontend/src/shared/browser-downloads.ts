@@ -1,5 +1,6 @@
 // "blocked" is a download Chromium tried to start that is waiting for the user
-// to allow it. No bytes have been saved for it.
+// to allow it. Its bytes stay in Tallpine's private staging folder, never in
+// Downloads, until the user allows it.
 export type BrowserDownloadStatus =
 	| "blocked"
 	| "progressing"

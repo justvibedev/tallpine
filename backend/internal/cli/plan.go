@@ -26,11 +26,12 @@ func newPlanCommand(ctx *commandContext) *cobra.Command {
 		Short: "Plan before build: a read-only planner asks, the owner answers and approves",
 		Long: "A planner session explores the repo, submits at most 5 questions (each with a recommended answer) and a list of one-line assumptions, " +
 			"then writes the plan after the owner answers. The plan is stored on the backlog item; the implementer builds from it. " +
-			"Needs TALLPINE_PLANNER on the daemon. Planner: `questions`, `submit`. Orchestrator and owner: the rest.",
+			"Needs TALLPINE_PLANNER on the daemon. Planner: `questions`, `submit`, `accept-comment`. Orchestrator and owner: the rest.",
 	}
 	cmd.AddCommand(
 		newPlanShowCommand(ctx), newPlanActionCommand(ctx, "start", "Start a planner for an item (Plan now)", ""),
-		newPlanActionCommand(ctx, "replan", "Supersede the plan and plan again", "replan"),
+		newPlanReplanCommand(ctx), newPlanCommentCommand(ctx),
+		newPlanActionCommand(ctx, "accept-comment", "Planner: accept the owner's pending comment as is (an approval held on it lands)", "accept-comment"),
 		newPlanActionCommand(ctx, "cancel", "Drop the plan that waits on the owner and stop its planner; the item stays open", "cancel"),
 		newPlanQuestionsCommand(ctx), newPlanSubmitCommand(ctx), newPlanAnswerCommand(ctx),
 		newPlanDefaultsCommand(ctx), newPlanApproveCommand(ctx, "approve", "Approve the submitted plan"),
@@ -143,6 +144,7 @@ func writePlanText(w io.Writer, p apitypes.PlanView) error {
 		}
 		b.WriteString("\n")
 	}
+	writePlanComments(&b, p)
 	if p.DecisionsMarkdown != "" {
 		fmt.Fprintf(&b, "\nDecisions:\n%s\n", p.DecisionsMarkdown)
 	}
@@ -349,7 +351,7 @@ func newPlanDefaultsCommand(ctx *commandContext) *cobra.Command {
 }
 
 func newPlanApproveCommand(ctx *commandContext, name, short string) *cobra.Command {
-	var project, ownerMessage string
+	var project, ownerMessage, comment string
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use: name + " <ref> [--owner-message <id>|last]", Short: short,
@@ -362,7 +364,11 @@ func newPlanApproveCommand(ctx *commandContext, name, short string) *cobra.Comma
 				return err
 			}
 			var out planEnvelopeDTO
-			if err := ctx.postJSON(cmd.Context(), path, map[string]any{"ownerMessage": ownerMessage}, &out); err != nil {
+			body := map[string]any{"ownerMessage": ownerMessage}
+			if comment != "" {
+				body["comment"] = comment
+			}
+			if err := ctx.postJSON(cmd.Context(), path, body, &out); err != nil {
 				return err
 			}
 			return printPlan(cmd.OutOrStdout(), out.Plan, asJSON)
@@ -370,6 +376,9 @@ func newPlanApproveCommand(ctx *commandContext, name, short string) *cobra.Comma
 	}
 	addBacklogProjectFlag(cmd, &project, &asJSON)
 	cmd.Flags().StringVar(&ownerMessage, "owner-message", "", "The owner's chat message that approves (id, or last), or an owner-answered ask as <ref>:<option id> (Q2:build-anyway); required for an agent")
+	if name == "approve" {
+		cmd.Flags().StringVar(&comment, "comment", "", "Approve on the condition of the owner's comment: the approval lands once the planner accepts it")
+	}
 	return cmd
 }
 

@@ -165,7 +165,7 @@ func TestCodexReviewerEnvUnchangedByAccounts(t *testing.T) {
 		}
 		out := map[string]string{}
 		for k, v := range rt.createCfg.Env {
-			if k != "PATH" && k != "TALLPINE_DATA_DIR" && !slices.Contains(reviewerTempKeys, k) && k != sessionscratch.TempPrefixEnv {
+			if k != "PATH" && k != "TALLPINE_DATA_DIR" && k != "NODE_OPTIONS" && !slices.Contains(reviewerTempKeys, k) && k != sessionscratch.TempPrefixEnv {
 				out[k] = v
 			}
 		}

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -394,7 +395,7 @@ func (p nativeHistoryCheckpoint) highWaterMismatches(
 			event.ActivityKind == boundary.activityKind &&
 			event.ActivityStatus == boundary.activityStatus &&
 			event.Summary == boundary.summary &&
-			domain.ActivityDetailDigest(event.Detail) == domain.ActivityDetailDigest(boundary.detail) {
+			slices.Contains(domain.ReplayActivityDetailDigests(event.Detail), domain.ActivityDetailDigest(boundary.detail)) {
 			matched = true
 		}
 		if matched {

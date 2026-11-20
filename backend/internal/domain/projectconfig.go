@@ -139,6 +139,19 @@ type ProjectConfig struct {
 	// default.
 	OrchestratorIdleNudge bool `json:"orchestratorIdleNudge,omitempty"`
 
+	// ContextHealth turns on the daily check of what every session of the
+	// project loads on start: the instruction files (CLAUDE.md / AGENTS.md and
+	// their @imports) on the default branch, skills, and the Claude orchestrator
+	// memory. A finding becomes one owner card; the daemon handles the answer
+	// (B825). It replaces contextBudgetCheck. Off by default.
+	ContextHealth bool `json:"contextHealth,omitempty"`
+	// ContextBudgetTokens is the estimated-token budget for the instruction
+	// files; zero means DefaultContextBudgetTokens.
+	ContextBudgetTokens int `json:"contextBudgetTokens,omitempty"`
+	// ContextMemoryBudgetTokens is the budget for the Claude orchestrator memory
+	// index (MEMORY.md); zero means DefaultContextMemoryBudgetTokens.
+	ContextMemoryBudgetTokens int `json:"contextMemoryBudgetTokens,omitempty"`
+
 	// TerminateOnPRMerge is the default for each new worker's own
 	// terminate-on-merge flag: when set, a worker ends once its PRs are merged
 	// and none is open. Copied at spawn like AutoReview; nil is on (B407).

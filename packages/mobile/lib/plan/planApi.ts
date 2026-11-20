@@ -1,4 +1,5 @@
 import { PLAN_PATHS, isPlannerOff, planPath } from "@tallpine/shared/api/plan";
+import { commentBody } from "@tallpine/shared/plan/plan-comments";
 import { ApiError, req } from "../api";
 import type { ServerConfig } from "../config";
 import type { PlanAnswersRequest, PlanView, ProjectPlan } from "./planCardModel";
@@ -33,4 +34,9 @@ async function post(cfg: ServerConfig, path: string, body: unknown): Promise<Pla
 
 export const answerPlan = (cfg: ServerConfig, projectId: string, ref: string, body: PlanAnswersRequest) => post(cfg, planPath(PLAN_PATHS.answers, projectId, ref), body);
 export const acceptPlanDefaults = (cfg: ServerConfig, projectId: string, ref: string) => post(cfg, planPath(PLAN_PATHS.defaults, projectId, ref), {});
-export const approvePlan = (cfg: ServerConfig, projectId: string, ref: string) => post(cfg, planPath(PLAN_PATHS.approve, projectId, ref), {});
+/** With a comment the approval waits until the planner accepts it (B831). */
+export const approvePlan = (cfg: ServerConfig, projectId: string, ref: string, comment?: string) => post(cfg, planPath(PLAN_PATHS.approve, projectId, ref), commentBody(comment));
+/** Plans again; a comment becomes the new planner's instructions. */
+export const replanPlan = (cfg: ServerConfig, projectId: string, ref: string, comment?: string) => post(cfg, planPath(PLAN_PATHS.replan, projectId, ref), commentBody(comment));
+/** A comment on the whole submitted plan; its planner answers it. */
+export const commentOnPlan = (cfg: ServerConfig, projectId: string, ref: string, text: string) => post(cfg, planPath(PLAN_PATHS.comment, projectId, ref), { text: text.trim() });

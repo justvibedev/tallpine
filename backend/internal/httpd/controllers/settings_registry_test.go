@@ -81,7 +81,7 @@ func TestSettingsSchemaAPI_ListsTheRegistry(t *testing.T) {
 	for _, s := range got.Settings {
 		byKey[s.Key] = s
 	}
-	if r := byKey["app.providerEventRetentionDays"]; r.Kind != "int" || *r.Min != 1 || *r.Max != 3650 || r.Default != float64(14) {
+	if r := byKey["app.providerEventRetentionDays"]; r.Kind != "int" || *r.Min != 1 || *r.Max != 3650 || r.Default != float64(7) {
 		t.Errorf("retention = %+v", r)
 	}
 	if r := byKey["project.agentRules"]; !slices.Contains(r.Writers, "orchestrator") || r.MaxBytes == 0 || !r.Nullable {

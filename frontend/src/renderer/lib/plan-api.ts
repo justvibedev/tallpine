@@ -1,5 +1,6 @@
 import type { components } from "../../api/schema";
 import { PLAN_PATHS, isPlannerOff } from "@tallpine/shared/api/plan";
+import { commentBody } from "@tallpine/shared/plan/plan-comments";
 import { apiClient, apiErrorMessage } from "./api-client";
 
 export type PlanView = components["schemas"]["PlanView"];
@@ -35,8 +36,9 @@ export async function acceptPlanDefaults(projectId: string, ref: string): Promis
 	return data.plan;
 }
 
-export async function approvePlan(projectId: string, ref: string): Promise<PlanView> {
-	const { data, error } = await apiClient.POST(PLAN_PATHS.approve, { ...at(projectId, ref), body: {} });
+/** Approves the plan; with a comment the approval waits until the planner accepts it. */
+export async function approvePlan(projectId: string, ref: string, comment?: string): Promise<PlanView> {
+	const { data, error } = await apiClient.POST(PLAN_PATHS.approve, { ...at(projectId, ref), body: commentBody(comment) });
 	if (error || !data) fail(error);
 	return data.plan;
 }
@@ -47,8 +49,16 @@ export async function startPlan(projectId: string, ref: string): Promise<PlanVie
 	return data.plan;
 }
 
-export async function replanItem(projectId: string, ref: string): Promise<PlanView> {
-	const { data, error } = await apiClient.POST(PLAN_PATHS.replan, at(projectId, ref));
+/** Plans again; a comment becomes the new planner's instructions. */
+export async function replanItem(projectId: string, ref: string, comment?: string): Promise<PlanView> {
+	const { data, error } = await apiClient.POST(PLAN_PATHS.replan, { ...at(projectId, ref), body: commentBody(comment) });
+	if (error || !data) fail(error);
+	return data.plan;
+}
+
+/** Comments on the whole submitted plan; its planner answers. */
+export async function commentOnPlan(projectId: string, ref: string, text: string): Promise<PlanView> {
+	const { data, error } = await apiClient.POST(PLAN_PATHS.comment, { ...at(projectId, ref), body: { text: text.trim() } });
 	if (error || !data) fail(error);
 	return data.plan;
 }

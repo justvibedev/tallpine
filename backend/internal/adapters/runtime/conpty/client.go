@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"strings"
 	"syscall"
@@ -214,7 +215,7 @@ func clientReadOutput(ctx context.Context, addr string, lines int, requestType, 
 //
 //   - alive==true,  transientErr==nil: a valid MsgStatusRes was received.
 //   - alive==false, transientErr==nil: the host is DEFINITIVELY gone (the dial
-//     was refused: nothing is listening on the loopback addr).
+//     was refused, or its Unix socket file no longer exists; see isHostGone).
 //   - alive==false, transientErr!=nil: a TRANSIENT probe failure (network
 //     timeout, or any connected-then-failed I/O error). The reaper records this
 //     as ProbeFailed and retries instead of reaping a possibly-live session.
@@ -241,12 +242,13 @@ func clientStatusContext(ctx context.Context, addr string) (status StatusPayload
 			return StatusPayload{}, false, ctxErr
 		}
 		// A dial timeout is transient (the loopback hiccupped). A refused
-		// connection means nothing is listening -> definitively gone. Any
-		// other dial failure is treated as transient ("when unsure, retry").
+		// connection or a vanished socket means nothing is listening ->
+		// definitively gone. Any other dial failure is treated as transient
+		// ("when unsure, retry").
 		if isTimeout(err) {
 			return StatusPayload{}, false, err
 		}
-		if isConnRefused(err) {
+		if isHostGone(addr, err) {
 			return StatusPayload{}, false, nil
 		}
 		return StatusPayload{}, false, err
@@ -336,13 +338,26 @@ func isConnRefused(err error) bool {
 	return errors.Is(err, wsaeconnrefused)
 }
 
-// clientKill sends MsgKillReq. Connection refused is idempotent success because
-// the host is already absent; other transport failures are preserved so
+// isHostGone reports a dial failure that proves no host can answer at addr.
+// Besides a refused connection, a "unix:" host's socket file being absent is
+// final: every host binds a fresh random socket name before publishing it, and
+// removes that file when it shuts down (SIGTERM, MsgKillReq), so a missing path
+// never comes back. Before this, ENOENT counted as transient and a reviewer
+// whose pty-host had been terminated failed every later trigger (B843).
+func isHostGone(addr string, err error) bool {
+	if isConnRefused(err) {
+		return true
+	}
+	return hostsock.IsUnix(addr) && errors.Is(err, fs.ErrNotExist)
+}
+
+// clientKill sends MsgKillReq. Connection refused or a vanished socket is
+// idempotent success because the host is already absent; other transport failures are preserved so
 // Destroy can combine them with its final PID evidence.
 func clientKill(addr string) error {
 	conn, err := dialHost(addr, isAliveTimeout)
 	if err != nil {
-		if isConnRefused(err) {
+		if isHostGone(addr, err) {
 			return nil
 		}
 		return fmt.Errorf("dial pty-host for kill: %w", err)

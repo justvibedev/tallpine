@@ -129,6 +129,8 @@ func buildSystemPromptText(cfg systemPromptConfig) string {
 		if cmd := strings.TrimSpace(cfg.VerifyCommand); cmd != "" {
 			sections = append(sections, "## Verification Before Push\nBefore pushing, run `"+cmd+"` in your workspace and make sure it passes. Tallpine does not run it for you.")
 		}
+	case sessionPromptRoleContextAnalyst:
+		sections = append(sections, contextAnalystPrompt, testParallelismPrompt())
 	default:
 		return ""
 	}

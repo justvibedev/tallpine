@@ -201,15 +201,20 @@ func TestCompactingSettledTurnsKeepsRenderedHistory(t *testing.T) {
 			}
 
 			methods := archiveMethods(t, s, conversation)
-			// Identity-less deltas are gone; identity-bearing ones are '{}'
-			// tombstones; everything else is untouched.
-			for _, payload := range append(append(methods["message.delta"], methods["command.output.delta"]...), methods["reasoning.delta"]...) {
-				if payload != "{}" {
-					t.Errorf("delta survived compaction: %s", payload)
+			// Every settled delta row is gone; the identity-bearing ones left
+			// their identity as a key; everything else is untouched.
+			for _, method := range []string{"message.delta", "command.output.delta", "reasoning.delta"} {
+				if got := len(methods[method]); got != 0 {
+					t.Errorf("%s rows = %d after compaction, want 0", method, got)
 				}
 			}
-			if got := len(methods["message.delta"]); got != 4 {
-				t.Errorf("message.delta rows = %d, want 4 identity tombstones (2 per turn)", got)
+			keys, err := s.ProviderEventKeysForTest(ctx, conversation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"t1:delta:0", "t1:delta:2", "t1:out:0", "t1:out:1", "t2:delta:0", "t2:delta:2", "t2:out:0", "t2:out:1"}
+			if !reflect.DeepEqual(keys, want) {
+				t.Errorf("identity keys = %v, want %v", keys, want)
 			}
 			if got := len(methods["reasoning.delta"]); got != 0 {
 				t.Errorf("identity-less reasoning.delta rows = %d, want 0", got)
@@ -282,10 +287,8 @@ func TestCompactionWaitsForRunningTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	compactAll(t, s, conversation, 1000)
-	for _, payload := range archiveMethods(t, s, conversation)["message.delta"] {
-		if payload != "{}" {
-			t.Fatalf("delta of the settled turn survived: %s", payload)
-		}
+	if left := archiveMethods(t, s, conversation)["message.delta"]; len(left) != 0 {
+		t.Fatalf("deltas of the settled turn survived: %v", left)
 	}
 	candidates, err = s.ProviderEventCompactionCandidates(ctx)
 	if err != nil || len(candidates) != 0 {
@@ -293,50 +296,9 @@ func TestCompactionWaitsForRunningTurn(t *testing.T) {
 	}
 }
 
-func expireAll(t *testing.T, s *sqlite.Store, before time.Time, batch int64) (deleted, tombstoned int64) {
-	t.Helper()
-	ctx := context.Background()
-	expired, err := s.ExpiredSessionsWithProviderEvents(ctx, before, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, session := range expired {
-		after := session.ExpiredThroughID
-		for range 1000 {
-			result, err := s.ExpireSessionProviderEvents(ctx, session.SessionID, after, batch, histClock)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result.Deleted+result.Tombstoned > batch {
-				t.Fatalf("one window expired %d rows, want at most %d", result.Deleted+result.Tombstoned, batch)
-			}
-			deleted += result.Deleted
-			tombstoned += result.Tombstoned
-			after = result.Next
-			if result.Done {
-				break
-			}
-		}
-	}
-	return deleted, tombstoned
-}
-
-func terminate(t *testing.T, s *sqlite.Store, session domain.SessionID, at time.Time) {
-	t.Helper()
-	rec, _, err := s.GetSession(context.Background(), session)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec.IsTerminated = true
-	rec.UpdatedAt = at
-	if err := s.UpdateSession(context.Background(), rec); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // Retention expires the provider events of a session terminated before the
-// cutoff, in bounded windows: rows without a native identity are deleted, rows
-// with one are kept as '{}' tombstones. Nothing of a live or recently ended
+// cutoff, in bounded windows: every row is deleted, and a row with a replayable
+// identity keeps it as a key. Nothing of a live or recently ended
 // session is touched, and the rendered history never changes.
 func TestRetentionExpiresProviderEventsOfLongTerminatedSessions(t *testing.T) {
 	s, session, conversation := conversationFixture(t)
@@ -356,16 +318,16 @@ func TestRetentionExpiresProviderEventsOfLongTerminatedSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deleted, tombstoned := expireAll(t, s, now.Add(-24*time.Hour), 4)
-	if deleted == 0 || tombstoned == 0 {
-		t.Fatalf("retention deleted %d and tombstoned %d rows, want both", deleted, tombstoned)
+	deleted, keyed := expireAll(t, s, now.Add(-24*time.Hour), 4)
+	if deleted == 0 || keyed == 0 {
+		t.Fatalf("retention deleted %d rows and kept %d keys, want both", deleted, keyed)
 	}
-	for method, payloads := range archiveMethods(t, s, conversation) {
-		for _, payload := range payloads {
-			if payload != "{}" {
-				t.Errorf("%s kept its payload after expiry: %s", method, payload)
-			}
-		}
+	if left := archiveMethods(t, s, conversation); len(left) != 0 {
+		t.Errorf("archive rows left after expiry: %v", left)
+	}
+	keys, err := s.ProviderEventKeysForTest(ctx, conversation)
+	if err != nil || int64(len(keys)) != keyed {
+		t.Fatalf("keys = %v err=%v, want the %d kept identities", keys, err, keyed)
 	}
 	if expired, err := s.ExpiredSessionsWithProviderEvents(ctx, now.Add(-24*time.Hour), 10); err != nil || len(expired) != 0 {
 		t.Fatalf("fully expired session still listed: %v err=%v", expired, err)
@@ -380,7 +342,7 @@ func TestRetentionExpiresProviderEventsOfLongTerminatedSessions(t *testing.T) {
 }
 
 // A session restored after retention replays its native history with the same
-// stable identities. The tombstones must still reject every one of them, or
+// stable identities. The identity keys must still reject every one of them, or
 // messages and activity text would be imported a second time. Newer events of
 // the restored session are expired once it is past retention again.
 func TestReplayAfterRetentionIsStillDeduplicated(t *testing.T) {
@@ -443,8 +405,8 @@ func TestReplayAfterRetentionIsStillDeduplicated(t *testing.T) {
 	if err != nil || len(expired) != 1 || expired[0].ExpiredThroughID == 0 {
 		t.Fatalf("expired = %+v err=%v, want the session resuming at its cursor", expired, err)
 	}
-	if deleted, tombstoned := expireAll(t, s, now.Add(-14*24*time.Hour), 1000); deleted != 1 || tombstoned != 0 {
-		t.Fatalf("second expiry deleted %d and tombstoned %d, want only the new row", deleted, tombstoned)
+	if deleted, keyed := expireAll(t, s, now.Add(-14*24*time.Hour), 1000); deleted != 1 || keyed != 0 {
+		t.Fatalf("second expiry deleted %d and kept %d keys, want only the new row", deleted, keyed)
 	}
 }
 

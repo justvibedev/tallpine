@@ -9,6 +9,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	resendSettle, resendPollStep = 0, 0
 	ports.SetDefaultGit(gitcli.New())
 	testenv.Main(m)
 }

@@ -38,6 +38,17 @@ type PlanSubmitRequest struct {
 // PlanApproveRequest approves a plan. An orchestrator names the owner's message.
 type PlanApproveRequest struct {
 	OwnerMessage string `json:"ownerMessage,omitempty" description:"Owner chat message id, or last. Required for an orchestrator."`
+	Comment      string `json:"comment,omitempty" description:"Approve on the condition of this comment: the approval lands once the planner accepts it. Approve only."`
+}
+
+// PlanCommentRequest comments on the whole submitted plan; the planner answers it.
+type PlanCommentRequest struct {
+	Text string `json:"text" description:"The owner's comment on the whole plan."`
+}
+
+// PlanReplanRequest optionally carries the owner's instructions for the new planner run.
+type PlanReplanRequest struct {
+	Comment string `json:"comment,omitempty" description:"The owner's comment, passed to the new planner as its instructions and stored on the new plan."`
 }
 
 // ProjectPlanDTO is a plan with the backlog item it belongs to.
@@ -60,6 +71,18 @@ func planView(p domain.BacklogPlan) PlanView {
 		BaseCommit: p.BaseCommit, BaseBranch: p.BaseBranch, PlanMarkdown: p.PlanMarkdown, DecisionsMarkdown: p.DecisionsMD,
 		ApprovedBy: p.ApprovedBy, BuildAnyway: p.BuildAnyway, StartedAt: p.StartedAt, UpdatedAt: p.UpdatedAt, Failure: p.Failure, ItemChanged: !p.ItemChangedAt.IsZero(),
 		Questions: []PlanQuestionDTO{}, Assumptions: []PlanAssumptionDTO{}, PRSplit: []PlanPRDTO{}, ReviewFocus: append([]string{}, p.ReviewFocus...),
+		Comments: []PlanCommentDTO{},
+	}
+	for _, c := range p.Comments {
+		dto := PlanCommentDTO{ID: c.ID, Text: c.Text, By: c.By, Approve: c.Approve, Replan: c.Replan, Outcome: string(c.Outcome), At: c.At}
+		if c.Pending() {
+			dto.Outcome = "pending"
+		}
+		if !c.ResolvedAt.IsZero() {
+			t := c.ResolvedAt
+			dto.ResolvedAt = &t
+		}
+		v.Comments = append(v.Comments, dto)
 	}
 	if !p.ApprovedAt.IsZero() {
 		t := p.ApprovedAt

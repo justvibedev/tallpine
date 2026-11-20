@@ -12,8 +12,9 @@ import (
 // Provider-event archive compaction and retention.
 //
 // The archive is written once per provider event and read back only to
-// deduplicate replays (the unique provider_event_id index) and to prove a turn
-// completed (SelectVerifiedAuthenticationTurn reads turn.completed). The
+// deduplicate replays (the unique provider_event_id index, and the identity
+// keys of removed rows), to prove a turn completed (SelectVerifiedAuthenticationTurn
+// reads turn.completed) and to find compaction boundaries. The
 // timeline renders from the projected messages, activities and turns, never
 // from the archive. Streamed deltas are therefore dead weight once their turn
 // has settled: the message or activity they were folded into holds the text.
@@ -32,9 +33,11 @@ type ConversationCompactionCandidate struct {
 // ProviderEventCompaction reports one compaction window.
 type ProviderEventCompaction struct {
 	WriterHold
-	Scanned    int
-	Deleted    int64
-	Tombstoned int64
+	Scanned int
+	// Deleted counts rows removed without a key; Keyed counts rows removed
+	// whose identity was kept in conversation_provider_event_keys.
+	Deleted int64
+	Keyed   int64
 	// Watermark is the conversation's persisted compaction watermark after the
 	// window: every row at or below it is done. A held delta keeps it below
 	// itself.
@@ -46,6 +49,9 @@ type ProviderEventCompaction struct {
 	// Done reports that the window reached the end of the conversation's
 	// archive.
 	Done bool
+	// Holding reports that a delta below Next is still held, so the watermark
+	// stays behind it and the conversation stays a candidate.
+	Holding bool
 }
 
 // streamedDeltaMethod reports the archive methods that carry only streamed text
@@ -82,11 +88,13 @@ func (s *Store) ProviderEventCompactionCandidates(ctx context.Context) ([]Conver
 // watermark stays where it is.
 //
 // A streamed delta whose turn has settled is removed. A delta with no native
-// identity is deleted. A delta with one is reduced to a '{}' tombstone instead:
-// the identity must stay in the dedupe index, because a persistent host replays
-// an unacknowledged prompt from its start and a native-history import replays
-// with stable identities, and a delta let through again would append its text
-// to the settled message a second time.
+// identity is deleted. A delta with one keeps its identity as a key (see
+// retireProviderEvents): a native-history import replays with stable
+// identities, and a delta let through again would append its text to the
+// settled message a second time. A persistent host's delta (acp-host:...) is
+// held instead until a later turn.started proves the host got Tallpine's
+// acknowledgement and will not replay it, or its session is terminated, which
+// destroys the host; it is then deleted without a key.
 //
 // A delta of a turn Tallpine has no row for (a nested provider thread, or a turn from
 // before a restart) counts as settled once any later turn.completed is archived
@@ -128,20 +136,23 @@ func (s *Store) compactProviderEventsLocked(
 		}
 		result.Scanned = len(rows)
 		if len(rows) == 0 {
-			result.Done = true
+			result.Done, result.Holding = true, watermark < after
 			return nil
 		}
 		latestCompleted, err := q.LatestProviderTurnCompletedID(ctx, conversationID)
 		if err != nil {
 			return err
 		}
-		var deletes, tombstones []int64
+		latestStarted, err := q.LatestProviderTurnStartedID(ctx, conversationID)
+		if err != nil {
+			return err
+		}
+		var retired []retiredEvent
 		remove := func(row gen.SelectProviderEventsForCompactionRow) {
-			if row.ProviderEventID == "" {
-				deletes = append(deletes, row.ID)
-			} else {
-				tombstones = append(tombstones, row.ID)
-			}
+			retired = append(retired, retiredEvent{
+				ID: row.ID, ConversationID: conversationID, ProviderEventID: row.ProviderEventID,
+				SessionTerminated: row.SessionTerminated != 0,
+			})
 		}
 		var held int64
 		for _, row := range rows {
@@ -149,7 +160,15 @@ func (s *Store) compactProviderEventsLocked(
 				continue
 			}
 			state := domain.TurnState(row.TurnState)
-			if state.Terminal() || (state == "" && row.ID < latestCompleted) {
+			settled := state.Terminal() || (state == "" && row.ID < latestCompleted)
+			// A persistent host replays a settled prompt until Tallpine's
+			// acknowledgement reaches it. A later turn.started proves it did:
+			// the ACP driver archives turn.started before the host takes the
+			// next prompt, and a live reconnect acknowledges the pending
+			// result before sending one. Terminating the session destroys the
+			// host, so its deltas cannot be replayed either.
+			hostDone := row.ID < latestStarted || row.SessionTerminated != 0
+			if settled && (!persistentHostEvent(row.ProviderEventID) || hostDone) {
 				remove(row)
 				continue
 			}
@@ -167,15 +186,10 @@ func (s *Store) compactProviderEventsLocked(
 			result.Watermark = result.Next
 		}
 		result.Done = int64(len(rows)) < limit
-		if len(deletes) > 0 {
-			if result.Deleted, err = q.DeleteProviderEventsByID(ctx, deletes); err != nil {
-				return err
-			}
-		}
-		if len(tombstones) > 0 {
-			if result.Tombstoned, err = q.TombstoneProviderEventsByID(ctx, tombstones); err != nil {
-				return err
-			}
+		result.Holding = result.Watermark < result.Next
+		known := map[string]int64{conversationID: latestStarted}
+		if result.Deleted, result.Keyed, err = retireProviderEvents(ctx, q, retired, known); err != nil {
+			return err
 		}
 		if result.Watermark > watermark {
 			return q.UpsertProviderEventCompactionWatermark(ctx, gen.UpsertProviderEventCompactionWatermarkParams{
@@ -199,8 +213,8 @@ type ExpiredSession struct {
 // ProviderEventExpiry reports one retention window.
 type ProviderEventExpiry struct {
 	WriterHold
-	Deleted    int64
-	Tombstoned int64
+	Deleted int64
+	Keyed   int64
 	// Next is the session's expiry cursor after the window.
 	Next int64
 	// Done reports that the window reached the end of the session's archive.
@@ -225,10 +239,10 @@ func (s *Store) ExpiredSessionsWithProviderEvents(ctx context.Context, before ti
 // ExpireSessionProviderEvents expires one window of up to limit archived events
 // of a session past retention, above the session's expiry cursor after.
 //
-// Rows without a native identity are deleted. Rows with one, turn.completed
-// included, are reduced to '{}' tombstones for the same reason compaction keeps
-// them: a terminated session can be restored, and its native-history import or
-// a persistent-host replay re-sends those identities. Without the row, a
+// Every row is deleted. A row with a replayable identity, turn.completed
+// included, keeps it as a key for the same reason compaction does: a
+// terminated session can be restored, and its native-history import or a
+// persistent-host replay re-sends those identities. Without the key, a
 // replayed delta would append its text to the settled message a second time.
 func (s *Store) ExpireSessionProviderEvents(
 	ctx context.Context,
@@ -265,23 +279,15 @@ func (s *Store) expireSessionProviderEventsLocked(
 		if len(rows) == 0 {
 			return nil
 		}
-		var deletes, tombstones []int64
+		retired := make([]retiredEvent, 0, len(rows))
 		for _, row := range rows {
-			if row.ProviderEventID == "" {
-				deletes = append(deletes, row.ID)
-			} else {
-				tombstones = append(tombstones, row.ID)
-			}
+			// Only terminated sessions expire.
+			retired = append(retired, retiredEvent{
+				ID: row.ID, ConversationID: row.ConversationID, ProviderEventID: row.ProviderEventID, SessionTerminated: true,
+			})
 		}
-		if len(deletes) > 0 {
-			if result.Deleted, err = q.DeleteProviderEventsByID(ctx, deletes); err != nil {
-				return err
-			}
-		}
-		if len(tombstones) > 0 {
-			if result.Tombstoned, err = q.TombstoneProviderEventsByID(ctx, tombstones); err != nil {
-				return err
-			}
+		if result.Deleted, result.Keyed, err = retireProviderEvents(ctx, q, retired, nil); err != nil {
+			return err
 		}
 		result.Next = rows[len(rows)-1].ID
 		return q.UpsertSessionProviderEventRetention(ctx, gen.UpsertSessionProviderEventRetentionParams{

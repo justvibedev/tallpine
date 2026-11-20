@@ -24,7 +24,7 @@ func TestApplyParallelismDefaults(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			env := map[string]string{}
-			ApplyParallelismDefaults(env, tc.project, fakeGetenv(tc.daemon), 16, tc.insensitive)
+			ApplyParallelismDefaults(env, tc.project, fakeGetenv(tc.daemon), 16, tc.insensitive, "")
 			if tc.insensitive {
 				// keys are copied under their canonical names or kept as the project spelled them
 				if env["GOMAXPROCS"] != tc.wantGM && env["gomaxprocs"] != tc.wantGM {
@@ -41,7 +41,7 @@ func TestApplyParallelismDefaults(t *testing.T) {
 
 func TestApplyParallelismDefaultsWindowsDoesNotDuplicateKeys(t *testing.T) {
 	env := map[string]string{"gomaxprocs": "3"}
-	ApplyParallelismDefaults(env, nil, fakeGetenv(nil), 16, true)
+	ApplyParallelismDefaults(env, nil, fakeGetenv(nil), 16, true, "")
 	if _, dup := env["GOMAXPROCS"]; dup || env["gomaxprocs"] != "3" {
 		t.Fatalf("env = %v", env)
 	}

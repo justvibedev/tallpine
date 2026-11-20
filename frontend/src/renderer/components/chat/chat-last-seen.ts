@@ -1,4 +1,4 @@
-import { groupHasHumanPrompt, type TimelineGroup } from "./timeline-groups";
+import { drawnReplies, groupHasHumanPrompt, type TimelineGroup } from "./timeline-groups";
 
 /** localStorage lives under ~/.tallpine/electron, where main.ts pins userData. */
 export const lastSeenStorageKey = "tallpine.chat.lastSeenReply";
@@ -38,16 +38,16 @@ export const chatLastSeen = {
 
 export type OwnerReply = { sequence: number; index: number };
 
-/** Assistant replies in the owner's own turns, with the index of the group drawing each. */
-export function ownerReplies(groups: readonly TimelineGroup[]): OwnerReply[] {
+/**
+ * Assistant replies drawn in the open in the owner's own turns, with the index of
+ * the group drawing each. Replies folded under a settled turn's "Worked for" row are
+ * left out: the "N new replies" pill must only count what the reader can see.
+ */
+export function ownerReplies(groups: readonly TimelineGroup[], workerUpdates?: boolean): OwnerReply[] {
 	const replies: OwnerReply[] = [];
 	groups.forEach((group, index) => {
 		if (!groupHasHumanPrompt(group)) return;
-		for (const item of group.items) {
-			if (item.kind === "message" && item.role === "assistant" && item.text.trim() !== "") {
-				replies.push({ sequence: item.sequence, index });
-			}
-		}
+		for (const item of drawnReplies(group, workerUpdates)) replies.push({ sequence: item.sequence, index });
 	});
 	return replies;
 }

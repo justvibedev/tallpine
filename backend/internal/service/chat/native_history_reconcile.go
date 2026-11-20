@@ -43,8 +43,31 @@ func nativeHistoryActivityFingerprint(
 	detail []byte,
 ) string {
 	// The detail digest, not the bytes: a history prune shortens old details and
-	// records the digest of the original, which a replay must still match.
-	return string(kind) + "\x00" + string(status) + "\x00" + summary + "\x00" + domain.ActivityDetailDigest(detail)
+	// records the digest of the original, and the store drops repeats a replay
+	// still carries (B842); a replay must still match either.
+	return nativeHistoryActivityDigestFingerprint(kind, status, summary, domain.ActivityDetailDigest(detail))
+}
+
+func nativeHistoryActivityDigestFingerprint(kind domain.ActivityKind, status domain.ActivityStatus, summary, digest string) string {
+	return string(kind) + "\x00" + string(status) + "\x00" + summary + "\x00" + digest
+}
+
+// nativeHistoryReplayActivityFingerprint is a replayed activity's fingerprint:
+// the first of its domain.ReplayActivityDetailDigests that stored holds, else
+// the canonical one. The fallback keeps a row pruned before digests were
+// canonical matching its byte-identical replay.
+func nativeHistoryReplayActivityFingerprint(event ports.ChatEvent, stored map[string]int) string {
+	var first string
+	for _, digest := range domain.ReplayActivityDetailDigests(event.Detail) {
+		fingerprint := nativeHistoryActivityDigestFingerprint(event.ActivityKind, event.ActivityStatus, event.Summary, digest)
+		if stored[fingerprint] > 0 {
+			return fingerprint
+		}
+		if first == "" {
+			first = fingerprint
+		}
+	}
+	return first
 }
 
 // mapNativeHistoryTurns identifies which durable Tallpine turn owns each raw replay
@@ -334,9 +357,7 @@ func reconcileNativeHistory(
 			matched = true
 		}
 		if event.Kind == ports.ChatEventActivityCompleted {
-			fingerprint := nativeHistoryActivityFingerprint(
-				event.ActivityKind, event.ActivityStatus, event.Summary, event.Detail,
-			)
+			fingerprint := nativeHistoryReplayActivityFingerprint(event, candidate.activities)
 			if candidate.activities[fingerprint] > 0 {
 				candidate.activities[fingerprint]--
 				matched = true

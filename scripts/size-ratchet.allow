@@ -67,7 +67,7 @@
 728 backend/internal/config/config_test.go
 625 backend/internal/daemon/lifecycle_wiring.go
 1149 backend/internal/daemon/wiring_test.go
-514 backend/internal/domain/projectconfig.go
+510 backend/internal/domain/projectconfig.go
 626 backend/internal/domain/session.go
 651 backend/internal/httpd/agent_scope.go
 557 backend/internal/httpd/api.go
@@ -227,12 +227,11 @@
 535 backend/internal/storage/sqlite/store/kanban_review_facts_test.go
 656 backend/internal/storage/sqlite/store/notification_store_test.go
 564 backend/internal/storage/sqlite/store/pr_cdc_test.go
-602 backend/internal/storage/sqlite/store/provider_event_retention_store_test.go
+564 backend/internal/storage/sqlite/store/provider_event_retention_store_test.go
 639 backend/internal/storage/sqlite/store/review_store.go
 1015 backend/internal/storage/sqlite/store/review_store_test.go
 2545 backend/internal/storage/sqlite/store/store_test.go
 2167 backend/internal/storage/sqlite/store/usage_store_test.go
-551 backend/internal/storagejanitor/janitor.go
 1072 backend/internal/terminal/manager_test.go
 806 backend/pkg/contract/kanban_test.go
 575 frontend/e2e/sidebar-missing-worker-diagnostic.spec.ts

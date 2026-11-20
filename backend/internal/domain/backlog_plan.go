@@ -38,10 +38,12 @@ func (s PlanStatus) WaitsOnOwner() bool {
 
 // planTransitions is the state machine. A same-status write is not a transition.
 var planTransitions = map[PlanStatus][]PlanStatus{
-	PlanDrafting:         {PlanAwaitingAnswers, PlanWriting, PlanFailed, PlanSuperseded},
-	PlanAwaitingAnswers:  {PlanWriting, PlanFailed, PlanSuperseded},
-	PlanWriting:          {PlanAwaitingApproval, PlanFailed, PlanSuperseded},
-	PlanAwaitingApproval: {PlanApproved, PlanSuperseded, PlanFailed},
+	PlanDrafting:        {PlanAwaitingAnswers, PlanWriting, PlanFailed, PlanSuperseded},
+	PlanAwaitingAnswers: {PlanWriting, PlanFailed, PlanSuperseded},
+	PlanWriting:         {PlanAwaitingApproval, PlanFailed, PlanSuperseded},
+	// Back to awaiting answers only when the planner answers an owner comment
+	// with follow-up questions (B831); the service checks for the comment.
+	PlanAwaitingApproval: {PlanApproved, PlanAwaitingAnswers, PlanSuperseded, PlanFailed},
 	PlanApproved:         {PlanSuperseded},
 	PlanFailed:           {PlanSuperseded},
 }
@@ -144,11 +146,13 @@ type BacklogPlan struct {
 	DecisionsMD     string
 	PRSplit         []PlanPR
 	ReviewFocus     []string
-	ApprovedBy      string
-	ApprovedAt      time.Time
-	OwnerMessageID  string
-	BuildAnyway     bool
-	ItemUpdatedAt   time.Time
+	// Comments are the owner's comments on the whole plan, oldest first (B831).
+	Comments       []PlanComment
+	ApprovedBy     string
+	ApprovedAt     time.Time
+	OwnerMessageID string
+	BuildAnyway    bool
+	ItemUpdatedAt  time.Time
 	// ItemChangedAt is when the item's title, note or done-when was edited
 	// while the plan was open or approved; zero when untouched.
 	ItemChangedAt time.Time

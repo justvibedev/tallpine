@@ -2,8 +2,8 @@
 INSERT INTO owner_asks (
     id, project_id, seq, lane, lane_ref, session_id, text, reason, options_json, recommended, about,
     state, answer_json, reask_of, reask_reason, withdraw_reason, anchor_turn_id, anchor_activity_id,
-    created_at, updated_at, answered_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    created_at, updated_at, answered_at, origin
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: NextOwnerAskSeq :one
 SELECT CAST(COALESCE(MAX(seq), 0) + 1 AS INTEGER) AS seq FROM owner_asks WHERE project_id = ?;

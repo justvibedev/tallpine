@@ -201,6 +201,9 @@ func (l *agentLauncher) launchReviewerTerminalWithMode(ctx context.Context, spec
 		if err := l.runtime.SendMessage(ctx, handle, cmd.InitialMessage); err != nil {
 			return LaunchResult{}, fmt.Errorf("reviewer initial message: %w", err)
 		}
+		if err := l.resendIfSwallowed(ctx, handle, cmd.InitialMessage); err != nil {
+			return LaunchResult{}, fmt.Errorf("reviewer initial message resend: %w", err)
+		}
 	}
 	agentSessionID := strings.TrimSpace(cmd.AgentSessionID)
 	if agentSessionID == "" {
@@ -315,7 +318,7 @@ func (l *agentLauncher) runtimeEnv(ctx context.Context, spec LaunchSpec, argv []
 	agentlaunch.AugmentRuntimePATHForLaunchBinary(ctx, env, argv, exec.LookPath, pinnedDir)
 	l.applyGitHubAccountEnv(ctx, spec, env)
 	l.applyEnvFilter(ctx, spec, env)
-	agentlaunch.ApplyParallelismDefaults(env, spec.ProjectEnv, os.Getenv, runtime.NumCPU(), runtime.GOOS == "windows")
+	agentlaunch.ApplyParallelismDefaults(env, spec.ProjectEnv, os.Getenv, runtime.NumCPU(), runtime.GOOS == "windows", l.dataDir)
 	l.applyGitGuard(ctx, spec, env)
 	return env
 }

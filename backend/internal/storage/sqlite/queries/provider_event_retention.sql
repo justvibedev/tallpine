@@ -20,7 +20,8 @@ ORDER BY c.id;
 -- One window of a conversation's archive above the watermark. Streamed deltas
 -- carry the provider turn they belong to and that turn's projected state; any
 -- other row reports empty strings, which the janitor keeps. A delta already
--- reduced to '{}' reports compacted = 1. Only delta payloads are read, so a
+-- reduced to '{}' reports compacted = 1. session_terminated reports that the
+-- session that wrote the row is terminated, so its persistent host is gone. Only delta payloads are read, so a
 -- window never pulls a large activity payload off its overflow pages.
 -- name: SelectProviderEventsForCompaction :many
 SELECT e.id,
@@ -47,7 +48,8 @@ SELECT e.id,
                LIMIT 1
            ), '')
            ELSE ''
-       END AS TEXT) AS turn_state
+       END AS TEXT) AS turn_state,
+       CAST(COALESCE((SELECT s.is_terminated FROM sessions s WHERE s.id = e.session_id), 0) AS INTEGER) AS session_terminated
 FROM conversation_provider_events e
 WHERE e.conversation_id = sqlc.arg(conversation_id)
   AND e.id > sqlc.arg(after_id)
@@ -69,12 +71,14 @@ WHERE b.conversation_id = sqlc.arg(conversation_id);
 -- name: DeleteProviderEventsByID :execrows
 DELETE FROM conversation_provider_events WHERE id IN (sqlc.slice(ids));
 
--- A delta with a native identity keeps its row as a tombstone: the dedupe
--- index must still reject a replay of that identity, or a replayed delta would
--- append its text to the settled message a second time.
--- name: TombstoneProviderEventsByID :execrows
-UPDATE conversation_provider_events SET payload_json = '{}'
-WHERE id IN (sqlc.slice(ids)) AND payload_json <> '{}';
+-- A removed row with a replayable identity leaves the identity behind before
+-- it is deleted: InsertConversationProviderEvent must still refuse a replay of
+-- it, or a replayed delta would append its text to the settled message a
+-- second time.
+-- name: KeepProviderEventKeysByID :execrows
+INSERT OR IGNORE INTO conversation_provider_event_keys (conversation_id, provider_event_id)
+SELECT conversation_id, provider_event_id FROM conversation_provider_events
+WHERE id IN (sqlc.slice(ids)) AND provider_event_id <> '';
 
 -- name: UpsertProviderEventCompactionWatermark :exec
 INSERT INTO conversation_provider_event_compaction (conversation_id, compacted_through_id, updated_at)
@@ -102,7 +106,7 @@ LIMIT sqlc.arg(page_limit);
 
 -- One window of a session's archive above its expiry cursor. Reads no payload.
 -- name: SelectSessionProviderEventsForRetention :many
-SELECT e.id, e.provider_event_id
+SELECT e.id, e.conversation_id, e.provider_event_id
 FROM conversation_provider_events e
 WHERE e.session_id = sqlc.arg(session_id)
   AND e.id > sqlc.arg(after_id)

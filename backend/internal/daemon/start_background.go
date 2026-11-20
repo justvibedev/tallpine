@@ -69,6 +69,7 @@ func (b *boot) serve() error {
 			b.resumeTracker.NotifyRestart(b.ctx, b.reportSvc)
 		}()
 		startIdleCompaction(b.ctx, b.store, b.chatSvc, b.bgTasks, b.sessionSvc.AutoHandoffOrchestrator, b.lcStack.LCM.Nudge, b.notificationWriter, b.sessMgr, b.log)
+		startContextHealth(b.ctx, b.cfg, b.store, b.askSvc, b.sessMgr, b.agentAccountSvc, b.log)
 		go func() {
 			// The session operation gate skips reconciliation in progress, so
 			// a slow provider reconnect must not stall hibernation of others.

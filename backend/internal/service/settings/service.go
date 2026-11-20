@@ -82,7 +82,7 @@ func PeerCheckOrDefault(value string) string {
 // Bounds and default of the provider-event retention window, mirroring the
 // app_settings CHECK constraint.
 const (
-	DefaultProviderEventRetentionDays = 14
+	DefaultProviderEventRetentionDays = 7
 	MinProviderEventRetentionDays     = 1
 	MaxProviderEventRetentionDays     = 3650
 )

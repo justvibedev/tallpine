@@ -109,3 +109,18 @@ func TestSystemPromptInheritsAppSkillSwitchesAndCustomSkills(t *testing.T) {
 		t.Fatalf("launch hides %v, want the app-switched-off design", got)
 	}
 }
+
+// TallpinePrompt is the measurement entry point of context health: it renders
+// the same prompt a spawn would, for the role asked, and stores nothing.
+func TestTallpinePromptRendersPerRoleWithoutSpawning(t *testing.T) {
+	ctx := context.Background()
+	m := appInstructionsManager(t, domain.ProjectConfig{AgentRules: "Project worker rule.", OrchestratorRules: "Project orchestrator rule."}, domain.AppInstructions{}, "")
+	worker, err := m.TallpinePrompt(ctx, "mer", domain.KindWorker, domain.HarnessClaudeCode)
+	if err != nil || !strings.Contains(worker, "Project worker rule.") || strings.Contains(worker, "Project orchestrator rule.") {
+		t.Fatalf("worker prompt err=%v:\n%s", err, worker)
+	}
+	orch, err := m.TallpinePrompt(ctx, "mer", domain.KindOrchestrator, domain.HarnessClaudeCode)
+	if err != nil || !strings.Contains(orch, "Project orchestrator rule.") {
+		t.Fatalf("orchestrator prompt err=%v", err)
+	}
+}

@@ -30,6 +30,13 @@ type fakeStore struct {
 	// foreground write wait for the lock.
 	contendOn map[int]bool
 	history   *fakeHistory
+	repack    *fakeRepack
+	details   *fakeDetails
+	// held keeps a conversation a candidate once its windows ran out, each
+	// further window holding a delta; marks are their hold marks.
+	held      map[string]bool
+	marks     map[string]sqlitestore.ProviderEventHoldMark
+	markReads int
 }
 
 func (f *fakeStore) batchCall(limit int64) sqlitestore.WriterHold {
@@ -44,7 +51,7 @@ func (f *fakeStore) batchCall(limit int64) sqlitestore.WriterHold {
 func (f *fakeStore) ProviderEventCompactionCandidates(context.Context) ([]sqlitestore.ConversationCompactionCandidate, error) {
 	var out []sqlitestore.ConversationCompactionCandidate
 	for _, id := range []string{"a", "b"} {
-		if len(f.windows[id]) > 0 {
+		if len(f.windows[id]) > 0 || f.held[id] {
 			out = append(out, sqlitestore.ConversationCompactionCandidate{ConversationID: id, CompactedThroughID: 10})
 		}
 	}
@@ -56,6 +63,9 @@ func (f *fakeStore) CompactProviderEvents(_ context.Context, id string, watermar
 	f.compactCalls = append(f.compactCalls, id)
 	f.afterIDs = append(f.afterIDs, after)
 	f.watermarks = append(f.watermarks, watermark)
+	if len(f.windows[id]) == 0 {
+		return sqlitestore.ProviderEventCompaction{WriterHold: hold, Watermark: watermark, Next: after + 1, Done: true, Holding: true}, nil
+	}
 	next := f.windows[id][0]
 	f.windows[id] = f.windows[id][1:]
 	next.WriterHold = hold
@@ -68,7 +78,7 @@ func (f *fakeStore) ExpiredSessionsWithProviderEvents(_ context.Context, before 
 }
 
 // ExpireSessionProviderEvents expires rows one id at a time: odd ids carry no
-// identity and are deleted, even ones are tombstoned.
+// identity and are deleted, even ones keep their identity as a key.
 func (f *fakeStore) ExpireSessionProviderEvents(_ context.Context, id domain.SessionID, after, limit int64, _ time.Time) (sqlitestore.ProviderEventExpiry, error) {
 	hold := f.batchCall(limit)
 	f.expireAfter = append(f.expireAfter, after)
@@ -79,7 +89,7 @@ func (f *fakeStore) ExpireSessionProviderEvents(_ context.Context, id domain.Ses
 		if row%2 == 1 {
 			result.Deleted++
 		} else {
-			result.Tombstoned++
+			result.Keyed++
 		}
 	}
 	return result, nil
@@ -113,7 +123,7 @@ func TestPassCompactsFollowsWatermarksExpiresAndVacuums(t *testing.T) {
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	store := &fakeStore{
 		windows: map[string][]sqlitestore.ProviderEventCompaction{
-			"a": {{Deleted: 3, Watermark: 15, Next: 20}, {Tombstoned: 2, Watermark: 15, Next: 25, Done: true}},
+			"a": {{Deleted: 3, Watermark: 15, Next: 20}, {Keyed: 2, Watermark: 15, Next: 25, Done: true}},
 			"b": {{Deleted: 1, Watermark: 11, Next: 11, Done: true}},
 		},
 		expired:     []sqlitestore.ExpiredSession{{SessionID: "old-1"}, {SessionID: "old-2", ExpiredThroughID: 100}},
@@ -133,15 +143,15 @@ func TestPassCompactsFollowsWatermarksExpiresAndVacuums(t *testing.T) {
 	if got := store.watermarks; got[1] != 15 {
 		t.Fatalf("second window got watermark %d, want the held 15 carried over", got[1])
 	}
-	if stats.Deleted != 4 || stats.Tombstoned != 2 {
+	if stats.Deleted != 4 || stats.Keyed != 2 {
 		t.Fatalf("stats = %+v", stats)
 	}
 	if !store.retentionAt.Equal(now.Add(-14 * 24 * time.Hour)) {
 		t.Fatalf("retention cutoff = %v", store.retentionAt)
 	}
-	if stats.ExpiredDeleted+stats.ExpiredTombstoned != 29 || stats.ExpiredTombstoned == 0 ||
+	if stats.ExpiredDeleted+stats.ExpiredKeyed != 29 || stats.ExpiredKeyed == 0 ||
 		store.sessionRows["old-1"] != 0 || store.sessionRows["old-2"] != 0 {
-		t.Fatalf("expired %d deleted + %d tombstoned, left %v", stats.ExpiredDeleted, stats.ExpiredTombstoned, store.sessionRows)
+		t.Fatalf("expired %d deleted + %d keyed, left %v", stats.ExpiredDeleted, stats.ExpiredKeyed, store.sessionRows)
 	}
 	// Each session resumes at its own cursor, and later windows follow Next.
 	if got := store.expireAfter; len(got) != 4 || got[0] != 0 || got[1] != 10 || got[2] != 20 || got[3] != 100 {

@@ -138,7 +138,8 @@ func (a *activityCoalescer) observe(event ports.ChatEvent) {
 // The read path already prefers the streamed column over detail.output
 // (activityDetailPayload), so dropping it from running snapshots hides nothing,
 // and the snapshot becomes an unchanged repeat that is neither rewritten nor
-// archived in full. The completing snapshot keeps its output.
+// archived in full. The completing snapshot keeps its output in the archive;
+// the store drops that copy from the row (store.compactActivityDetail).
 //
 // streamingInUnit reports that an output delta for the item precedes the
 // snapshot in the same unit. projectRunWithSnapshots applies the snapshot before

@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
 	replanItem: vi.fn(),
 	cancelPlan: vi.fn(),
 	startPlan: vi.fn(),
+	commentOnPlan: vi.fn(),
 }));
 vi.mock("../../lib/plan-api", async (importActual) => ({ ...(await importActual<typeof import("../../lib/plan-api")>()), ...api }));
 
@@ -21,6 +22,8 @@ beforeEach(() => {
 	localStorage.clear();
 	for (const fn of Object.values(api)) fn.mockReset().mockResolvedValue(planFixture());
 });
+
+const openAssumptions = () => userEvent.click(screen.getByRole("button", { name: /^Assumptions/ }));
 
 const card = (plan = planFixture()) => renderWithClient(<PlanCard projectId="p1" itemRef="B7" itemTitle="Seat sharing" plan={plan} />);
 
@@ -55,13 +58,16 @@ describe("PlanCard", () => {
 	it("shows how many assumptions are accepted as written and updates on a change", async () => {
 		card();
 		expect(screen.getByText("2 assumptions will be accepted as written")).toBeInTheDocument();
+		await openAssumptions();
 		await userEvent.click(screen.getAllByRole("button", { name: "Change" })[0] as HTMLElement);
 		await userEvent.type(screen.getByRole("textbox", { name: /Correction for: No new dependency/ }), "x");
 		expect(screen.getByText("1 assumption will be accepted as written")).toBeInTheDocument();
 	});
 
-	it("highlights only assumptions the planner flagged as scopeCut", () => {
+	it("highlights only assumptions the planner flagged as scopeCut", async () => {
 		card(planFixture({ assumptions: [{ id: "a1", text: "Windows support comes later", scopeCut: true }, { id: "a2", text: "English only" }] }));
+		expect(screen.getByText("Includes a scope cut")).toBeInTheDocument();
+		await openAssumptions();
 		expect(screen.getAllByText("Drops or postpones scope")).toHaveLength(1);
 		expect(screen.getByText("Windows support comes later").closest("li")).toHaveAttribute("data-scope-cut", "true");
 		expect(screen.getByText("English only").closest("li")).not.toHaveAttribute("data-scope-cut");
@@ -78,6 +84,7 @@ describe("PlanCard", () => {
 		card();
 		await userEvent.click(screen.getAllByRole("radio", { name: "Other" })[0] as HTMLElement);
 		await userEvent.type(await screen.findByRole("textbox", { name: "Your answer" }), "Use DuckDB");
+		await openAssumptions();
 		await userEvent.click(screen.getAllByRole("button", { name: "Change" })[0] as HTMLElement);
 		await userEvent.type(screen.getByRole("textbox", { name: /Correction for: No new dependency/ }), "DuckDB is fine");
 		await userEvent.click(screen.getByRole("button", { name: "Send answers" }));
@@ -114,7 +121,54 @@ describe("PlanCard", () => {
 		card(planFixture({ status: "awaiting_approval", decisionsMarkdown: "| Q | A |\n|---|---|\n| Store | Postgres |", prSplit: [{ title: "Add store" }], planMarkdown: "# Plan" }));
 		expect(screen.getByText("Add store")).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("button", { name: "Approve plan" }));
-		await waitFor(() => expect(api.approvePlan).toHaveBeenCalledWith("p1", "B7"));
+		await waitFor(() => expect(api.approvePlan).toHaveBeenCalledWith("p1", "B7", ""));
+	});
+
+	it("keeps the assumptions collapsed until the owner opens them", async () => {
+		card();
+		const toggle = screen.getByRole("button", { name: /^Assumptions/ });
+		expect(toggle).toHaveAttribute("aria-expanded", "false");
+		expect(toggle).toHaveTextContent("2");
+		expect(screen.queryByText("No new dependency")).not.toBeInTheDocument();
+		await userEvent.click(toggle);
+		expect(toggle).toHaveAttribute("aria-expanded", "true");
+		expect(screen.getByText("No new dependency")).toBeInTheDocument();
+	});
+
+	it("sends a comment on its own and clears the box", async () => {
+		card(planFixture({ status: "awaiting_approval" }));
+		const comment = screen.getByRole("button", { name: "Comment" });
+		expect(comment).toBeDisabled();
+		const box = screen.getByRole("textbox", { name: "Comment on the whole plan" });
+		await userEvent.type(box, "Why two PRs?");
+		await userEvent.click(comment);
+		await waitFor(() => expect(api.commentOnPlan).toHaveBeenCalledWith("p1", "B7", "Why two PRs?"));
+		await waitFor(() => expect(box).toHaveValue(""));
+		expect(api.approvePlan).not.toHaveBeenCalled();
+	});
+
+	it("sends the comment with Approve and with Re-plan", async () => {
+		card(planFixture({ status: "awaiting_approval" }));
+		const box = screen.getByRole("textbox", { name: "Comment on the whole plan" });
+		await userEvent.type(box, "Keep the old flag");
+		await userEvent.click(screen.getByRole("button", { name: "Approve with comment" }));
+		await waitFor(() => expect(api.approvePlan).toHaveBeenCalledWith("p1", "B7", "Keep the old flag"));
+		await userEvent.type(box, "One PR please");
+		await userEvent.click(screen.getByRole("button", { name: "Re-plan with comment" }));
+		await waitFor(() => expect(api.replanItem).toHaveBeenCalledWith("p1", "B7", "One PR please"));
+	});
+
+	it("waits for the planner on a pending comment and lists every comment with its outcome", () => {
+		const at = "2026-11-19T10:00:00Z";
+		card(planFixture({ status: "awaiting_approval", comments: [
+			{ id: "c1", text: "Rename it", by: "user", outcome: "accepted", at },
+			{ id: "c2", text: "Keep the old flag", by: "user", outcome: "pending", approve: true, at },
+		] }));
+		expect(screen.getByText("Planner is answering your comment")).toBeInTheDocument();
+		expect(screen.getByRole("status")).toHaveTextContent("Approved with your comment");
+		expect(screen.getByRole("button", { name: "Approve plan" })).toBeDisabled();
+		expect(screen.getByText("Rename it").closest("li")).toHaveAttribute("data-comment-outcome", "accepted");
+		expect(screen.getByText("Keep the old flag").closest("li")).toHaveTextContent("Waiting for the planner");
 	});
 
 	it("offers Plan again when the planner stopped", async () => {

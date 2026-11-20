@@ -4,6 +4,25 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.23]
+
+### Added
+- Orchestrators are warned when instruction files grow bloated (#1284).
+- Context health keeps persisted findings as owner cards, replacing the orchestrator nudge, and adds doc-routing findings, a weekly Haiku analyst that drafts trim and memory-archive patches, and a weekly pointer-gap card with a drafted patch (#1286, #1288, #1290, #1293).
+- Approving or replanning a plan now has an owner comment box, and the assumptions section is collapsed by default (#1289).
+- Provider-event archive entries are tracked by identity keys instead of tombstones, and the archive default is now 7 days (#1295).
+
+### Fixed
+- An owner message batched with a steer keeps its reply in full (#1285).
+- Worker Node test runners respect the parallelism budget (#1287) and no longer start watchman (#1296).
+- Doc-routing cards appear only for reads that follow a search, and repeated-search cards only for repo searches that led to a doc (#1291, #1292).
+- The provider-event archive is repacked so incremental vacuum reclaims freed space (#1294).
+- A vanished pty-host socket on Windows is treated as the host being gone (#1298).
+- Review start survives Claude's auto-update screen and strips ANSI codes from start errors (#1297).
+- Conversation activities store command output and the command only once (#1299).
+- The "N new replies" pill counts only replies that are drawn (#1300).
+- The browser saves allowed downloads from the original request (#1301).
+
 ## [0.13.22]
 
 ### Fixed

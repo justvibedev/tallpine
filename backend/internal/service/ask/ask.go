@@ -64,8 +64,12 @@ type Deps struct {
 	Anchor   Anchorer
 	Router   Router
 	Notifier Notifier
-	Log      *slog.Logger
-	Now      func() time.Time
+	// AnswerHandlers handle the answer to an ask the daemon filed, keyed by its
+	// origin (domain.AskOriginContextHealth). Such an answer never goes to the
+	// Router.
+	AnswerHandlers map[string]func(ctx context.Context, ask domain.OwnerAsk) error
+	Log            *slog.Logger
+	Now            func() time.Time
 }
 
 // Service is the ask service.
@@ -156,6 +160,65 @@ func (s *Service) Create(ctx context.Context, project domain.ProjectID, actor Ac
 		s.d.Notifier.Opened(ctx, a)
 	}
 	return a, nil
+}
+
+// CreateSystem files an ask on behalf of the daemon in the project's main chat:
+// no session asks, so it has no inline card. A match with an open ask is
+// refused; an answered one never blocks, since the daemon decides when a
+// declined finding may ask again.
+func (s *Service) CreateSystem(ctx context.Context, project domain.ProjectID, origin string, in CreateInput) (domain.OwnerAsk, error) {
+	if origin == "" || origin == domain.AskOriginOrchestrator {
+		return domain.OwnerAsk{}, apierr.Invalid("ASK_ORIGIN_INVALID", "A daemon ask needs its own origin", nil)
+	}
+	in.Text, in.Reason, in.About = strings.TrimSpace(in.Text), strings.TrimSpace(in.Reason), strings.TrimSpace(in.About)
+	if err := domain.ValidateAsk(in.Text, in.Reason, in.About, in.Options, in.Recommended, ""); err != nil {
+		return domain.OwnerAsk{}, apierr.Invalid("ASK_INVALID", err.Error(), nil)
+	}
+	now := s.d.Now()
+	a := domain.OwnerAsk{
+		ID: uuid.NewString(), ProjectID: project, Origin: origin, Text: in.Text, Reason: in.Reason,
+		Options: in.Options, Recommended: in.Recommended, About: in.About,
+		State: domain.AskOpen, CreatedAt: now, UpdatedAt: now,
+	}
+	a, err := s.d.Store.CreateOwnerAsk(ctx, a, func(existing []domain.OwnerAsk, a *domain.OwnerAsk) error {
+		open := 0
+		for _, e := range existing {
+			if e.State != domain.AskOpen {
+				continue
+			}
+			if e.Matches(a.About, a.Text) {
+				return apierr.Conflict("ASK_ALREADY_OPEN", fmt.Sprintf("%s already asks this and is still open", e.Ref), askDetails(e))
+			}
+			if e.Lane == "" {
+				open++
+			}
+		}
+		if open >= domain.MaxOpenAsks {
+			return apierr.Conflict("ASK_LIMIT", fmt.Sprintf("There are already %d open asks in the main chat", domain.MaxOpenAsks), nil)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.OwnerAsk{}, err
+	}
+	if s.d.Notifier != nil {
+		s.d.Notifier.Opened(ctx, a)
+	}
+	return a, nil
+}
+
+// Get returns one ask of the project by ref.
+func (s *Service) Get(ctx context.Context, project domain.ProjectID, ref string) (domain.OwnerAsk, error) {
+	return s.load(ctx, project, ref)
+}
+
+// WithdrawSystem withdraws an open ask the daemon filed.
+func (s *Service) WithdrawSystem(ctx context.Context, project domain.ProjectID, ref, reason string) (domain.OwnerAsk, error) {
+	a, err := s.load(ctx, project, ref)
+	if err != nil {
+		return a, err
+	}
+	return s.withdraw(ctx, a, strings.TrimSpace(reason))
 }
 
 // checkCreate applies the dedupe and cap rules to the project's asks.
@@ -278,6 +341,15 @@ func (s *Service) Answer(ctx context.Context, project domain.ProjectID, actor Ac
 	// orchestrator); a failed post is reported so the card can tell the owner to
 	// say it in chat.
 	failed := false
+	if closed.FiledByDaemon() {
+		if h := s.d.AnswerHandlers[closed.Origin]; h != nil {
+			if err := h(ctx, closed); err != nil {
+				s.d.Log.Warn("daemon ask answer not handled", "ask", closed.ID, "origin", closed.Origin, "error", err)
+				failed = true
+			}
+		}
+		return closed, failed, nil
+	}
 	if !relayed && s.d.Router != nil {
 		if err := s.d.Router.SendOwnerReply(ctx, project, closed.Lane, "Re "+closed.Ref+": "+ans.Text); err != nil {
 			s.d.Log.Warn("ask answer not delivered to an orchestrator", "ask", closed.ID, "error", err)
@@ -299,8 +371,12 @@ func (s *Service) Withdraw(ctx context.Context, project domain.ProjectID, actor 
 		return a, err
 	}
 	// An ask belongs to its project and lane: an orchestrator withdraws only
-	// its own chat's asks; the owner may withdraw any.
+	// its own chat's asks; the owner may withdraw any. The daemon owns the asks
+	// it filed, so no orchestrator withdraws those.
 	if actor.Kind == domain.BacklogOriginOrchestrator {
+		if a.FiledByDaemon() {
+			return a, apierr.Forbidden("ASK_DAEMON_OWNED", a.Ref+" was asked by Tallpine itself: only the owner withdraws it")
+		}
 		lane, err := s.d.Store.SessionLane(ctx, domain.SessionID(actor.SessionID))
 		if err != nil {
 			return a, err

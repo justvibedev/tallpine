@@ -9,6 +9,7 @@ type ColumnRef struct{ Table, Column string }
 var PathColumns = []ColumnRef{
 	{"sessions", "workspace_path"},
 	{"sessions", "artifact_dir"},
+	{"context_health_findings", "artifact_dir"},
 	{"sessions", "workspace_repo_path"},
 	{"sessions", "native_transcript_path"},
 	{"report_outputs", "reference"},

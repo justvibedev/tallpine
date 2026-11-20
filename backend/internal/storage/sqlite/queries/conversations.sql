@@ -1611,11 +1611,21 @@ WHERE conversation_activities.conversation_id = sqlc.arg(conversation_id)
 -- Once truncation is recorded, later deltas are deliberate no-ops. Keeping the
 -- revision stable prevents the activity CDC trigger from invalidating every live
 -- conversation client for text the row can no longer retain.
+-- The first delta also drops the output a snapshot stored in detail_json before
+-- any streamed (B842): from now on the read path shows this column instead, so
+-- the copy is never shown again. Later snapshots are stored without it (see
+-- store.compactActivityDetail). SET expressions read the row before the update,
+-- so command_output = '' means this is the first delta.
 -- NOTE: keep these comments ASCII. sqlc locates its star-expansion edits by byte
 -- offset, so a multi-byte character here silently corrupts later queries.
 -- name: AppendConversationActivityOutput :execrows
 UPDATE conversation_activities
 SET command_output = substr(command_output || sqlc.arg(delta), 1, sqlc.arg(max_output_chars)),
+    detail_json = CASE
+        WHEN command_output = '' AND instr(detail_json, '"output') > 0 AND json_valid(detail_json)
+        THEN json_remove(detail_json, '$.output', '$.outputTruncated', '$.outputSource', '$.outputMayBePartial')
+        ELSE detail_json
+    END,
     command_output_truncated = CASE
         WHEN length(command_output) + length(sqlc.arg(delta)) > sqlc.arg(max_output_chars) THEN 1
         ELSE command_output_truncated
@@ -1789,8 +1799,9 @@ SET revision = revision + 1, display_name = ?, updated_at = ?
 WHERE id = ?
   AND (display_name = '' OR display_name = ?);
 
--- The raw provider event archive. Append-only, and the only way to answer "what
--- did the provider actually say" once a projection turns out to be wrong.
+-- The raw provider event archive, and the only way to answer "what did the
+-- provider actually say" once a projection turns out to be wrong. The archive
+-- janitor removes rows nothing reads again (see provider_event_retention.sql).
 --
 -- branch_id is the conversation's active branch, written by the INSERT itself:
 -- conversation_provider_events_branch_insert only acts on a row that arrives with
@@ -1798,14 +1809,23 @@ WHERE id = ?
 -- The COALESCE keeps a conversation that does not exist failing on its foreign key,
 -- as before; a NULL here would be a NOT NULL violation, which INSERT OR IGNORE skips
 -- without an error.
+--
+-- An identity is a replay when it is archived (the unique dedupe index ignores
+-- the row) or when compaction or retention already removed its row and kept the
+-- identity in conversation_provider_event_keys (the NOT EXISTS selects no row).
 -- name: InsertConversationProviderEvent :execrows
 INSERT OR IGNORE INTO conversation_provider_events (
     conversation_id, session_id, provider_event_id, method, payload_json, received_at, branch_id
-) VALUES (
-    sqlc.arg(conversation_id), sqlc.arg(session_id), sqlc.arg(provider_event_id), sqlc.arg(method),
-    sqlc.arg(payload_json), sqlc.arg(received_at),
-    COALESCE((SELECT active_branch_id FROM conversations WHERE id = sqlc.arg(conversation_id)), '')
-);
+)
+SELECT sqlc.arg(conversation_id), sqlc.arg(session_id), sqlc.arg(provider_event_id), sqlc.arg(method),
+       sqlc.arg(payload_json), sqlc.arg(received_at),
+       COALESCE((SELECT active_branch_id FROM conversations WHERE id = sqlc.arg(conversation_id)), '')
+WHERE sqlc.arg(provider_event_id) = ''
+   OR NOT EXISTS (
+       SELECT 1 FROM conversation_provider_event_keys k
+       WHERE k.conversation_id = sqlc.arg(conversation_id)
+         AND k.provider_event_id = sqlc.arg(provider_event_id)
+   );
 
 -- name: SelectConversationProviderEvents :many
 WITH RECURSIVE active_path(branch_id, max_sequence) AS (

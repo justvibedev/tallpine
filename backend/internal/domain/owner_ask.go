@@ -66,8 +66,13 @@ type OwnerAsk struct {
 	Lane string
 	// LaneRef is the backlog ref of that lane (B7), the label clients know the lane by.
 	LaneRef string
-	// SessionID is the orchestrator that asked (informational).
-	SessionID   SessionID
+	// SessionID is the orchestrator that asked (informational); empty for an
+	// ask the daemon filed.
+	SessionID SessionID
+	// Origin is who filed the ask: AskOriginOrchestrator (also the empty value)
+	// or AskOriginContextHealth. The answer to a daemon ask goes to the daemon's
+	// own handler, never to an orchestrator.
+	Origin      string
 	Text        string
 	Reason      string
 	Options     []PlanOption
@@ -89,6 +94,11 @@ type OwnerAsk struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	AnsweredAt       time.Time
+}
+
+// FiledByDaemon reports whether the daemon, not an orchestrator, asked.
+func (a OwnerAsk) FiledByDaemon() bool {
+	return a.Origin != "" && a.Origin != AskOriginOrchestrator
 }
 
 // Anchored reports whether the ask has an inline card to jump to.

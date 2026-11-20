@@ -320,7 +320,7 @@ func (e *Engine) readReviewerScreen(ctx stdctx.Context, handleID string) (string
 // tailScreen keeps the last limit bytes of a terminal capture, without blank lines.
 func tailScreen(out string, limit int) string {
 	var lines []string
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(stripANSI(out), "\n") {
 		if t := strings.TrimRight(line, " \t\r"); strings.TrimSpace(t) != "" {
 			lines = append(lines, t)
 		}

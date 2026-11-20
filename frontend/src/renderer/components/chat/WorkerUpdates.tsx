@@ -58,6 +58,11 @@ export function isWorkerLead(item: ConversationItem | undefined): boolean {
 	return item !== undefined && (workerUpdatesOf(item).length > 0 || isTaskTitleUpdate(item));
 }
 
+/** True when the owner typed one of these items (a batch can open with a steer and still carry their message). */
+export function hasHumanMessage(items: readonly ConversationItem[]): boolean {
+	return items.some((item) => item.kind === "message" && item.role === "user" && item.origin === "human");
+}
+
 /** True when a reply asks the user something. A `?` in code or a link, or one running into more text (`a?.b`), is not a question. */
 // The orchestrator's "Needs you:" marker (prompt rule in session_manager/prompt.go) is the structured signal; punctuation is only the fallback.
 const NEEDS_YOU_MARKER = /^\s*(?:\*\*|__)?\s*needs you:/i;
@@ -114,6 +119,8 @@ export function replyNeedsOwner(items: readonly ConversationItem[]): boolean {
 export function quietWorkerReply(items: readonly ConversationItem[]): ConversationMessage | undefined {
 	const lead = items[0];
 	if (!isWorkerLead(lead)) return undefined;
+	// A batch that mixes the owner's own message with a steer is the owner's turn: its reply is theirs, never a footnote (B823).
+	if (hasHumanMessage(items)) return undefined;
 	// Another project's orchestrator is a peer: the receiver's answer is its own message, not a footnote.
 	if (lead && workerUpdatesOf(lead).some((update) => update.fromOrchestrator)) return undefined;
 	const reply = finalReply(items);

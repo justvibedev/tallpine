@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
@@ -19,12 +18,12 @@ import (
 // compaction has settled, what came before it is history the model no longer
 // sees, so the janitor bounds it:
 //
-//   - Provider events below the boundary lose their payload. A row whose
-//     identity no replay can send again is deleted: no identity at all, or a
+//   - Provider events below the boundary are deleted. A row whose identity no
+//     replay can send again leaves nothing: no identity at all, or a
 //     persistent-host journal identity (acp-host:...), which the host discards
 //     once Tallpine acknowledges the prompt. Any other identity (native-history
-//     imports, codex notifications) is kept as a '{}' tombstone so the dedupe
-//     index still rejects a replay. turn.completed and thread.compacted rows are
+//     imports, codex notifications) is kept as a key so a replay is still
+//     refused (see retireProviderEvents). turn.completed and thread.compacted rows are
 //     kept whole: authentication verification reads the former, the boundary
 //     search the latter.
 //   - Settled command, reasoning, file-change and MCP-tool activities created
@@ -63,8 +62,8 @@ type HistoryRetentionCandidate struct {
 // HistoryEventPrune reports one provider-event window.
 type HistoryEventPrune struct {
 	WriterHold
-	Deleted    int64
-	Tombstoned int64
+	Deleted int64
+	Keyed   int64
 	// Next is the cursor after the window: the boundary once Done.
 	Next int64
 	Done bool
@@ -162,25 +161,14 @@ func (s *Store) pruneHistoryEventsLocked(
 		if err != nil {
 			return err
 		}
-		var deletes, tombstones []int64
+		var retired []retiredEvent
 		for _, row := range rows {
-			switch {
-			case row.Method == "turn.completed" || row.Method == "thread.compacted":
-			case row.ProviderEventID == "" || strings.HasPrefix(row.ProviderEventID, persistentHostEventPrefix):
-				deletes = append(deletes, row.ID)
-			default:
-				tombstones = append(tombstones, row.ID)
+			if row.Method != "turn.completed" && row.Method != "thread.compacted" {
+				retired = append(retired, retiredEvent{ID: row.ID, ConversationID: conversationID, ProviderEventID: row.ProviderEventID})
 			}
 		}
-		if len(deletes) > 0 {
-			if result.Deleted, err = q.DeleteProviderEventsByID(ctx, deletes); err != nil {
-				return err
-			}
-		}
-		if len(tombstones) > 0 {
-			if result.Tombstoned, err = q.TombstoneProviderEventsByID(ctx, tombstones); err != nil {
-				return err
-			}
+		if result.Deleted, result.Keyed, err = retireProviderEvents(ctx, q, retired, nil); err != nil {
+			return err
 		}
 		result.Done = int64(len(rows)) < limit
 		if result.Done {

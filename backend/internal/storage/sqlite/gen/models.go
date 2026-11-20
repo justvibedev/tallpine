@@ -45,6 +45,13 @@ type AccountFailoverRetry struct {
 	CreatedAt time.Time
 }
 
+type ActivityDetailCompaction struct {
+	ID                    int64
+	CompactedThroughRowid int64
+	ThroughRowid          int64
+	UpdatedAt             time.Time
+}
+
 type AgentAccount struct {
 	ID                string
 	Provider          string
@@ -323,6 +330,7 @@ type BacklogPlan struct {
 	Failure            string
 	ItemChangedAt      sql.NullTime
 	NotifySessionID    string
+	CommentsJson       string
 }
 
 type BacklogReopenAck struct {
@@ -400,6 +408,32 @@ type CodexAccountSwitch struct {
 	UpdatedAt              time.Time
 	CompletedAt            sql.NullTime
 	SourceKind             string
+}
+
+type ContextHealthFinding struct {
+	ID             string
+	ProjectID      string
+	Kind           string
+	Fingerprint    string
+	State          string
+	Evidence       string
+	MeasuredTokens int64
+	BudgetTokens   int64
+	ArtifactDir    string
+	AskID          string
+	AskRef         string
+	BacklogItemID  string
+	DeclineReason  string
+	DeclinedAt     sql.NullTime
+	DeclinedTokens int64
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type ContextHealthRun struct {
+	ProjectID string
+	RanAt     time.Time
+	Snapshot  string
 }
 
 type Conversation struct {
@@ -563,6 +597,11 @@ type ConversationProviderEventCompaction struct {
 	UpdatedAt          time.Time
 }
 
+type ConversationProviderEventKey struct {
+	ConversationID  string
+	ProviderEventID string
+}
+
 type ConversationQueuedEditDelivery struct {
 	ConversationID  string
 	ClientMessageID string
@@ -717,6 +756,7 @@ type OwnerAsk struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	AnsweredAt       sql.NullTime
+	Origin           string
 }
 
 type PR struct {
@@ -843,6 +883,13 @@ type ProjectCreator struct {
 	ProjectID        string
 	CreatorProjectID string
 	CreatedAt        time.Time
+}
+
+type ProviderEventTombstoneSweep struct {
+	ID             int64
+	SweptThroughID int64
+	ThroughID      int64
+	UpdatedAt      time.Time
 }
 
 type Report struct {

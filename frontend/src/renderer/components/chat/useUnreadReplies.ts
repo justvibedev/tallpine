@@ -14,9 +14,11 @@ type Virtualizer = { scrollToIndex: (index: number, options?: { align?: "start" 
  * Call before `useChatScrollMemory`: landing on an unread reply drops the remembered
  * position first, so the two do not fight over the scroll top.
  */
-export function useUnreadReplies({ memoryKey, groups, pinned, setPinnedNow, markWritten, scroller, scrollContent, virtualized, virtualizer, layoutKey }: {
+export function useUnreadReplies({ memoryKey, groups, workerUpdates, pinned, setPinnedNow, markWritten, scroller, scrollContent, virtualized, virtualizer, layoutKey }: {
 	memoryKey: string;
 	groups: readonly TimelineGroup[];
+	/** Orchestrator chat, whose settled turns keep substantial early answers open. */
+	workerUpdates?: boolean;
 	pinned: boolean;
 	setPinnedNow: (next: boolean) => void;
 	markWritten: (top: number) => void;
@@ -26,7 +28,7 @@ export function useUnreadReplies({ memoryKey, groups, pinned, setPinnedNow, mark
 	virtualizer: Virtualizer;
 	layoutKey: unknown;
 }) {
-	const replies = useMemo(() => ownerReplies(groups), [groups]);
+	const replies = useMemo(() => ownerReplies(groups, workerUpdates), [groups, workerUpdates]);
 	const latest = replies.at(-1)?.sequence;
 	const [seen, setSeen] = useState<{ key: string; sequence: number | undefined }>({ key: memoryKey, sequence: undefined });
 	const landedKey = useRef<string | undefined>(undefined);

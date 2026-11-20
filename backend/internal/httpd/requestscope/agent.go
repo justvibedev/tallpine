@@ -31,6 +31,9 @@ type Agent struct {
 	// ReviewID is the reviewer's own review session; SessionID is then the
 	// worker under review.
 	ReviewID string
+	// ContextAnalyst marks the session of the daemon's context analyst (B827).
+	// It may not report or message anyone; its output is files only.
+	ContextAnalyst bool
 	// CrossProject is set for an orchestrator whose project has the
 	// crossProjectOrchestration agent policy on, decided live for this request.
 	// It is never set for a worker or reviewer.

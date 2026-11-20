@@ -89,7 +89,7 @@ func (s *agentScopes) serve(w http.ResponseWriter, r *http.Request, token string
 		next.ServeHTTP(w, r.WithContext(requestscope.WithAgent(r.Context(), agent)))
 		return
 	}
-	reason, cross := s.authorizeCross(r, agent)
+	reason, cross := s.authorizeAgent(r, agent)
 	if reason != "" {
 		s.audit(r, agent, "", "forbidden", reason)
 		envelope.WriteAPIError(w, r, http.StatusForbidden, "forbidden", "AGENT_SCOPE_FORBIDDEN",
@@ -124,7 +124,7 @@ func (s *agentScopes) authenticate(ctx context.Context, token string) (requestsc
 		if rec.Kind == domain.KindOrchestrator {
 			role = requestscope.RoleOrchestrator
 		}
-		return requestscope.Agent{Role: role, SessionID: rec.ID, ProjectID: rec.ProjectID}, ""
+		return requestscope.Agent{Role: role, SessionID: rec.ID, ProjectID: rec.ProjectID, ContextAnalyst: rec.Role == domain.SessionRoleContextAnalyst}, ""
 	case sessiontoken.KindReviewer:
 		review, found, err := s.store.GetReviewByID(ctx, id)
 		if err != nil || !found {
@@ -438,10 +438,12 @@ var baseAgentRules = []agentRule{
 	{"GET", "/api/v1/projects/{projectId}/backlog/{ref}/usage", orchestrator, targetOwnProject},
 	// Plans (B205): a worker reads; only the planner session recorded on the
 	// plan submits (the service checks the session), the orchestrator starts,
-	// answers, approves (with the owner's message) and re-plans.
+	// answers, approves (with the owner's message), relays comments and
+	// re-plans; the planner accepts a comment (B831).
 	{"GET", "/api/v1/projects/{projectId}/backlog/{ref}/plan", workerUp, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/questions", workerUp, targetOwnProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/submit", workerUp, targetOwnProject},
+	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/accept-comment", workerUp, targetOwnProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/replan", orchestrator, targetOwnProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/cancel", orchestrator, targetOwnProject},
@@ -449,6 +451,7 @@ var baseAgentRules = []agentRule{
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/defaults", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/approve", orchestrator, targetOwnOrEvalProject},
 	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/build-anyway", orchestrator, targetOwnProject},
+	{"POST", "/api/v1/projects/{projectId}/backlog/{ref}/plan/comment", orchestrator, targetOwnOrEvalProject},
 	// Owner asks (B698): only an orchestrator files, lists, relays an answer to
 	// or withdraws an ask, own project; the owner's UI answers directly.
 	{"GET,POST", "/api/v1/projects/{projectId}/asks", orchestrator, targetOwnProject},

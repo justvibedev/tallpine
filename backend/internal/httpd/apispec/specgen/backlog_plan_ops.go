@@ -23,6 +23,9 @@ func init() {
 		"ControllersPlanDefaultsRequest":  "PlanDefaultsRequest",
 		"ControllersPlanSubmitRequest":    "PlanSubmitRequest",
 		"ControllersPlanApproveRequest":   "PlanApproveRequest",
+		"ControllersPlanCommentRequest":   "PlanCommentRequest",
+		"ControllersPlanReplanRequest":    "PlanReplanRequest",
+		"ApitypesPlanCommentDTO":          "PlanComment",
 	} {
 		schemaNames[k] = v
 	}
@@ -53,7 +56,7 @@ func backlogPlanOperations() []operation {
 			summary: "Start planning an item (Plan now); an open plan is returned as is", pathParams: item,
 			resps: with(respUnit{http.StatusCreated, controllers.PlanEnvelope{}})},
 		{method: http.MethodPost, path: base + "/replan", id: "replanBacklogItem", tag: "backlog",
-			summary: "Supersede the plan and plan again", pathParams: item,
+			summary: "Supersede the plan and plan again; an optional comment becomes the new planner's instructions", pathParams: item, reqBody: controllers.PlanReplanRequest{},
 			resps: with(respUnit{http.StatusCreated, controllers.PlanEnvelope{}})},
 		{method: http.MethodPost, path: base + "/cancel", id: "cancelBacklogItemPlan", tag: "backlog",
 			summary: "Drop the plan that waits on the owner and stop its planner; the item stays open", pathParams: item, resps: ok},
@@ -69,5 +72,9 @@ func backlogPlanOperations() []operation {
 			summary: "Approve the submitted plan (an orchestrator needs the owner's message)", pathParams: item, reqBody: controllers.PlanApproveRequest{}, resps: ok},
 		{method: http.MethodPost, path: base + "/build-anyway", id: "buildBacklogPlanAnyway", tag: "backlog",
 			summary: "Build from the approved plan although it may be stale", pathParams: item, reqBody: controllers.PlanApproveRequest{}, resps: ok},
+		{method: http.MethodPost, path: base + "/comment", id: "commentBacklogPlan", tag: "backlog",
+			summary: "Comment on the whole submitted plan; its planner accepts it, revises the plan or asks follow-up questions", pathParams: item, reqBody: controllers.PlanCommentRequest{}, resps: ok},
+		{method: http.MethodPost, path: base + "/accept-comment", id: "acceptBacklogPlanComment", tag: "backlog",
+			summary: "Planner: accept the owner's pending comments as they are (lands an approval held on them)", pathParams: item, resps: ok},
 	}
 }

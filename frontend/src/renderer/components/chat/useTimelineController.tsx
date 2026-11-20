@@ -302,7 +302,7 @@ export function useTimelineController(props: TimelineProps) {
 		renderedVirtualHeight,
 	});
 	const layoutKey = `${groups.length}:${virtualHeight}`;
-	const { unreadCount } = useUnreadReplies({ memoryKey: chatDraftScopeKey(draftScope), groups, pinned, setPinnedNow, markWritten, scroller, scrollContent, virtualized, virtualizer, layoutKey });
+	const { unreadCount } = useUnreadReplies({ memoryKey: chatDraftScopeKey(draftScope), groups, workerUpdates, pinned, setPinnedNow, markWritten, scroller, scrollContent, virtualized, virtualizer, layoutKey });
 	const pinnedPrompt = usePinnedPrompt({ groups, scroller, virtualizer, virtualScrollMargin, layoutKey });
 	useChatScrollMemory({ memoryKey: chatDraftScopeKey(draftScope), scroller, setPinnedNow, markWritten, layoutKey });
 	useAnnotationScroll({

@@ -304,6 +304,7 @@ export async function createWindowInternal(): Promise<void> {
 		browserHistoryStore,
 		browserDownloadManager: createBrowserDownloadManager({
 			downloadsDirectory: app.getPath("downloads"),
+			stagingDirectory: path.join(desktopDataDir, "browser-downloads-pending"),
 			historyPath: path.join(desktopDataDir, "browser-downloads.json"),
 			shell,
 			notify: (state) => { awakeDownloads.update(state); shellWebContents.send("browser:downloadsChanged", state); },

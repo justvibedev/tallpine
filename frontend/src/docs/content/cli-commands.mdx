@@ -1879,22 +1879,37 @@ Flags:
 ## `tallpine plan`
 
 ```text
-A planner session explores the repo, submits at most 5 questions (each with a recommended answer) and a list of one-line assumptions, then writes the plan after the owner answers. The plan is stored on the backlog item; the implementer builds from it. Needs TALLPINE_PLANNER on the daemon. Planner: `questions`, `submit`. Orchestrator and owner: the rest.
+A planner session explores the repo, submits at most 5 questions (each with a recommended answer) and a list of one-line assumptions, then writes the plan after the owner answers. The plan is stored on the backlog item; the implementer builds from it. Needs TALLPINE_PLANNER on the daemon. Planner: `questions`, `submit`, `accept-comment`. Orchestrator and owner: the rest.
 
 Usage:
   tallpine plan [command]
 
 Available Commands:
-  answer       Answer the questions and correct assumptions
-  approve      Approve the submitted plan
-  build-anyway Build from the approved plan although the base moved
-  cancel       Drop the plan that waits on the owner and stop its planner; the item stays open
-  defaults     Go with the recommended answers and every assumption
-  questions    Planner: submit at most 5 questions and 20 assumptions, once
-  replan       Supersede the plan and plan again
-  show         Print an item's plan: status, questions, answers, decisions and the plan
-  start        Start a planner for an item (Plan now)
-  submit       Planner: submit the plan, decisions table, PR split and review focus
+  accept-comment Planner: accept the owner's pending comment as is (an approval held on it lands)
+  answer         Answer the questions and correct assumptions
+  approve        Approve the submitted plan
+  build-anyway   Build from the approved plan although the base moved
+  cancel         Drop the plan that waits on the owner and stop its planner; the item stays open
+  comment        Comment on the whole submitted plan; its planner accepts it, revises the plan or asks follow-up questions
+  defaults       Go with the recommended answers and every assumption
+  questions      Planner: submit at most 5 questions and 20 assumptions, once
+  replan         Supersede the plan and plan again
+  show           Print an item's plan: status, questions, answers, decisions and the plan
+  start          Start a planner for an item (Plan now)
+  submit         Planner: submit the plan, decisions table, PR split and review focus
+```
+
+### `tallpine plan accept-comment`
+
+```text
+Planner: accept the owner's pending comment as is (an approval held on it lands)
+
+Usage:
+  tallpine plan accept-comment <ref> [flags]
+
+Flags:
+      --json             Print JSON
+      --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
 ```
 
 ### `tallpine plan answer`
@@ -1921,6 +1936,7 @@ Usage:
   tallpine plan approve <ref> [--owner-message <id>|last] [flags]
 
 Flags:
+      --comment string         Approve on the condition of the owner's comment: the approval lands once the planner accepts it
       --json                   Print JSON
       --owner-message string   The owner's chat message that approves (id, or last), or an owner-answered ask as <ref>:<option id> (Q2:build-anyway); required for an agent
       --project string         Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
@@ -1951,6 +1967,21 @@ Usage:
 Flags:
       --json             Print JSON
       --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+```
+
+### `tallpine plan comment`
+
+```text
+Comment on the whole submitted plan. The owner comments on the plan card; an orchestrator relays only what the owner typed in chat. The planner answers the comment: it accepts it as is, revises and resubmits the plan, or asks follow-up questions on the card. The plan cannot be approved while a comment waits for the planner.
+
+Usage:
+  tallpine plan comment <ref> (--text <comment>|--file comment.md) [flags]
+
+Flags:
+      --file string      The comment, read from this file
+      --json             Print JSON
+      --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+      --text string      The comment
 ```
 
 ### `tallpine plan defaults`
@@ -1984,14 +2015,16 @@ Flags:
 ### `tallpine plan replan`
 
 ```text
-Supersede the plan and plan again
+Supersede the plan and plan again. A comment is passed to the new planner as its instructions and stored on the new plan.
 
 Usage:
-  tallpine plan replan <ref> [flags]
+  tallpine plan replan <ref> [--comment <instructions>|--comment-file instructions.md] [flags]
 
 Flags:
-      --json             Print JSON
-      --project string   Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
+      --comment string        The owner's instructions for the new planner run
+      --comment-file string   Read the instructions from this file
+      --json                  Print JSON
+      --project string        Project id (default: TALLPINE_PROJECT_ID, current session, or current registered repo)
 ```
 
 ### `tallpine plan show`

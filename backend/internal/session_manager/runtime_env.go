@@ -115,7 +115,7 @@ func (m *Manager) runtimeEnvBase(id domain.SessionID, project domain.ProjectID, 
 		m.applyEnvFilter(id, project, harness, env, caseInsensitive)
 		m.applyFenceGitConfigFor(id, harness, env)
 	}
-	agentlaunch.ApplyParallelismDefaults(env, projectEnv, os.Getenv, runtime.NumCPU(), caseInsensitive)
+	agentlaunch.ApplyParallelismDefaults(env, projectEnv, os.Getenv, runtime.NumCPU(), caseInsensitive, m.dataDir)
 	path, err := hookPATHForOS(m.executable, os.Getenv, projectEnv, m.dataDir, caseInsensitive)
 	if err != nil {
 		m.logger.Warn("session PATH not pinned to the daemon binary; `tallpine hooks` callbacks may resolve to a different tallpine and activity tracking will stall",

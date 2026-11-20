@@ -1,7 +1,8 @@
-import type { DownloadItem, Session, WebContents } from "electron";
+import type { DownloadItem, Session } from "electron";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { collisionSafePath, isInsideDirectory, moveFile, safeFilename } from "./browser-download-files";
 import type {
 	BrowserDownload,
 	BrowserDownloadActionInput,
@@ -22,20 +23,32 @@ type DownloadItemLike = Pick<
 	| "removeListener"
 	| "pause"
 	| "canResume"
+	| "getETag"
+	| "getLastModifiedTime"
 	| "resume"
 	| "setSavePath"
 >;
 
-type DownloadSessionLike = Pick<Session, "on" | "removeListener" | "downloadURL">;
-type DownloadWebContentsLike = Pick<WebContents, "downloadURL" | "isDestroyed">;
+type DownloadSessionLike = Pick<Session, "on" | "removeListener">;
 type DownloadEventLike = { preventDefault: () => void };
+type DoneState = "completed" | "cancelled" | "interrupted";
 
-// A blocked download keeps only what is needed to request it again after the
-// user allows it. Nothing has been written to disk for it.
+// Staging is swept once per app run, by the first manager that uses it.
+const sweptStagingDirectories = new Set<string>();
+
+// A blocked download holds Chromium's original request, paused, writing into
+// Tallpine's private staging folder. Requesting the URL again cannot work for
+// a revoked blob: link, a POST export, or a one-time link (B846), so allowing
+// it resumes this same item and moves the file into Downloads when it is done.
 type BlockedRequest = {
 	url: string;
 	session: DownloadSessionLike;
-	webContents?: DownloadWebContentsLike;
+	// Only an identity: a repeat from the same tab is the same request.
+	webContents?: unknown;
+	item: DownloadItemLike;
+	stagedPath: string;
+	staged: "pending" | "completed";
+	done: (event: unknown, state: "completed" | "cancelled" | "interrupted") => void;
 };
 
 type DownloadShell = {
@@ -48,6 +61,8 @@ type StoredDownload = BrowserDownload & { savePath: string };
 
 type BrowserDownloadManagerOptions = {
 	downloadsDirectory: string;
+	// Private folder under the app data dir. Unapproved bytes live only here.
+	stagingDirectory: string;
 	historyPath: string;
 	shell: DownloadShell;
 	notify: (state: BrowserDownloadsState) => void;
@@ -62,8 +77,7 @@ const MAX_BLOCKED_DOWNLOADS = 20;
 const DOWNLOAD_DESTINATION_ERROR = "Could not prepare the Downloads folder.";
 const DOWNLOAD_DELETE_ERROR = "Could not delete the downloaded file.";
 const DOWNLOAD_UNAVAILABLE_ERROR = "This download is no longer available. Open the link again.";
-// How long an explicit approval waits for Chromium to request the file again.
-const DOWNLOAD_APPROVAL_TTL_MS = 60_000;
+const DOWNLOAD_MOVE_ERROR = "Could not move the downloaded file into the Downloads folder.";
 
 function requestedURL(item: DownloadItemLike): string {
 	return item.getURLChain()[0] || item.getURL();
@@ -84,33 +98,12 @@ function publicDownload(download: StoredDownload): BrowserDownload {
 	return safe;
 }
 
-function safeFilename(value: string): string {
-	const fileName = path.basename(value.trim()).replace(/[. ]+$/u, "");
-	return fileName && fileName !== "." && fileName !== ".." ? fileName : "download";
-}
-
-function collisionSafePath(directory: string, fileName: string, unavailable: Set<string>): string {
-	const parsed = path.parse(fileName);
-	let candidate = path.join(directory, fileName);
-	let suffix = 1;
-	while (existsSync(candidate) || unavailable.has(candidate.toLowerCase())) {
-		candidate = path.join(directory, `${parsed.name} (${suffix})${parsed.ext}`);
-		suffix += 1;
-	}
-	return candidate;
-}
-
 // Expects newest first, and keeps the newest of each kind.
 function withinLimits(downloads: StoredDownload[]): StoredDownload[] {
 	let blocked = 0;
 	let history = 0;
 	return downloads.filter((download) =>
 		download.status === "blocked" ? ++blocked <= MAX_BLOCKED_DOWNLOADS : ++history <= MAX_DOWNLOAD_HISTORY);
-}
-
-function isInsideDirectory(directory: string, candidate: string): boolean {
-	const relative = path.relative(path.resolve(directory), path.resolve(candidate));
-	return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 function isStoredDownload(value: unknown): value is StoredDownload {
@@ -128,27 +121,21 @@ function isStoredDownload(value: unknown): value is StoredDownload {
 	);
 }
 
+
 export type BrowserDownloadManager = ReturnType<typeof createBrowserDownloadManager>;
 
 export function createBrowserDownloadManager(options: BrowserDownloadManagerOptions) {
 	const attachedSessions = new Map<
 		DownloadSessionLike,
-		(event: DownloadEventLike, item: DownloadItem, webContents?: DownloadWebContentsLike | null) => void
+		(event: DownloadEventLike, item: DownloadItem, webContents?: unknown) => void
 	>();
 	const blockedRequests = new Map<string, BlockedRequest>();
-	// An approval belongs to the browser context that will request the file
-	// again: the session, and the tab when the request is replayed through one.
-	const approvals = new Map<string, {
-		url: string;
-		session: DownloadSessionLike;
-		webContents?: DownloadWebContentsLike;
-		expiresAt: number;
-	}>();
 	const activeItems = new Map<string, DownloadItemLike>();
 	const activeItemListeners = new Map<string, {
 		item: DownloadItemLike;
 		updated: (event: unknown, state: "progressing" | "interrupted") => void;
-		done: (event: unknown, state: "completed" | "cancelled" | "interrupted") => void;
+		done: (event: unknown, state: DoneState) => void;
+		settle: (state: DoneState) => DoneState;
 	}>();
 	const reservedPaths = new Set<string>();
 	let disposed = false;
@@ -172,6 +159,20 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 	} catch {
 		// A missing or malformed optional history file starts with an empty list.
 	}
+	const removeStaged = (target: string): void => {
+		try {
+			rmSync(target, { recursive: true, force: true });
+		} catch {
+			// A leftover private staging file never blocks a download.
+		}
+	};
+	// Blocked requests do not survive a restart, so anything staged at app start
+	// is an orphan. A manager created later in the same run (window reopened)
+	// must not sweep: downloads allowed under the previous one still write there.
+	if (!sweptStagingDirectories.has(options.stagingDirectory)) {
+		sweptStagingDirectories.add(options.stagingDirectory);
+		removeStaged(options.stagingDirectory);
+	}
 
 	const state = (): BrowserDownloadsState => ({
 		downloads: downloads.map(publicDownload),
@@ -180,7 +181,7 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 	const persist = (): void => {
 		mkdirSync(path.dirname(options.historyPath), { recursive: true });
 		const temporaryPath = `${options.historyPath}.tmp`;
-		// Blocked requests cannot be replayed after a restart, so they are not history.
+		// Blocked requests do not survive a restart, so they are not history.
 		const history = downloads.filter((download) => download.status !== "blocked");
 		writeFileSync(temporaryPath, JSON.stringify(history), { encoding: "utf8", mode: 0o600 });
 		renameSync(temporaryPath, options.historyPath);
@@ -220,57 +221,84 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 		);
 	};
 
-	const takeApproval = (
-		item: DownloadItemLike,
-		session: DownloadSessionLike,
-		webContents?: DownloadWebContentsLike,
-	): string | undefined => {
-		const now = (options.now ?? Date.now)();
-		// Only the URL the request started from counts. A request that merely
-		// redirects through an approved URL must not use up that approval.
-		const url = requestedURL(item);
-		let approvedId: string | undefined;
-		for (const [id, approval] of approvals) {
-			if (approval.expiresAt < now) approvals.delete(id);
-			else if (
-				!approvedId &&
-				approval.url === url &&
-				approval.session === session &&
-				// Strict: an approval replayed through the session has no tab, and
-				// must not be used by a live tab asking for the same URL.
-				approval.webContents === webContents
-			) approvedId = id;
+	// Drops a blocked request: stops its transfer and deletes what was staged.
+	const discardBlocked = (id: string): void => {
+		const request = blockedRequests.get(id);
+		if (!request) return;
+		blockedRequests.delete(id);
+		request.item.removeListener("done", request.done);
+		if (request.staged === "pending") {
+			try {
+				request.item.cancel();
+			} catch {
+				// The item may already be finished or destroyed.
+			}
 		}
-		if (approvedId) approvals.delete(approvedId);
-		return approvedId;
+		removeStaged(path.dirname(request.stagedPath));
 	};
 
 	// Pages, redirects, and agent-driven navigation can all start a download
-	// without the user asking for one. Nothing is saved until the user allows it.
+	// without the user asking for one. Nothing reaches Downloads until the user
+	// allows it; until then the bytes stay in the private staging folder.
 	const block = (
 		event: DownloadEventLike,
 		item: DownloadItemLike,
 		session: DownloadSessionLike,
-		webContents?: DownloadWebContentsLike,
+		webContents?: unknown,
 	): void => {
-		event.preventDefault();
 		const url = requestedURL(item);
 		const now = (options.now ?? Date.now)();
 		// Only a repeat from the same tab is the same request. Another profile or
 		// tab asking for this URL gets its own row, so the file a row shows is
-		// always the one that row's Download fetches.
+		// always the one that row's Download saves.
 		const existing = [...blockedRequests].find(([, request]) =>
 			request.url === url && request.session === session && request.webContents === webContents)?.[0];
 		if (existing) {
+			event.preventDefault();
 			downloads = downloads.map((download) => download.id === existing ? { ...download, updatedAt: now } : download);
 			publish();
 			return;
 		}
 		const id = (options.createId ?? randomUUID)();
-		blockedRequests.set(id, { url, session, webContents });
+		const fileName = safeFilename(item.getFilename());
+		const stagedPath = path.join(options.stagingDirectory, id, fileName);
+		try {
+			mkdirSync(path.dirname(stagedPath), { recursive: true });
+			item.setSavePath(stagedPath);
+		} catch {
+			event.preventDefault();
+			error = DOWNLOAD_DESTINATION_ERROR;
+			publish();
+			return;
+		}
+		// Pausing saves bandwidth while the user decides, but a paused transfer
+		// can be closed by the server. Only one Chromium can resume (it has a
+		// validator for a Range request) is paused; a POST export or a blob
+		// finishes into staging instead. MAX_BLOCKED_DOWNLOADS bounds that.
+		if (item.getETag() || item.getLastModifiedTime()) {
+			try {
+				item.pause();
+			} catch {
+				// The staging folder still keeps the bytes out of Downloads.
+			}
+		}
+		const done = (_event: unknown, doneState: "completed" | "cancelled" | "interrupted") => {
+			const request = blockedRequests.get(id);
+			if (!request) return;
+			if (doneState === "completed") {
+				request.staged = "completed";
+				return;
+			}
+			// The request failed before anyone allowed it; nothing is left to save.
+			discardBlocked(id);
+			downloads = downloads.filter((download) => download.id !== id);
+			publish();
+		};
+		blockedRequests.set(id, { url, session, webContents, item, stagedPath, staged: "pending", done });
+		item.once("done", done);
 		const download: StoredDownload = {
 			id,
-			fileName: safeFilename(item.getFilename()),
+			fileName,
 			savePath: "",
 			source: downloadSource(url),
 			receivedBytes: 0,
@@ -282,83 +310,90 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 			updatedAt: now,
 		};
 		downloads = withinLimits([download, ...downloads]);
-		for (const blockedId of blockedRequests.keys()) {
-			if (!downloads.some((candidate) => candidate.id === blockedId)) {
-				blockedRequests.delete(blockedId);
-				approvals.delete(blockedId);
-			}
+		for (const blockedId of [...blockedRequests.keys()]) {
+			if (!downloads.some((candidate) => candidate.id === blockedId)) discardBlocked(blockedId);
 		}
 		publish();
 	};
 
-	const begin = (item: DownloadItemLike, id: string): void => {
-		// The replayed request can report a different name than the one the user
-		// approved (a blob link loses its download attribute), so the approved
-		// row's name is the one that is saved.
-		const approved = downloads.find((download) => download.id === id);
-		const source = approved?.source;
-		const fileName = approved?.fileName ?? safeFilename(item.getFilename());
-		blockedRequests.delete(id);
-		downloads = downloads.filter((download) => download.id !== id);
+	// Saves the staged file under the approved row's name in Downloads.
+	const finish = (stagedPath: string, savePath: string): "completed" | "interrupted" => {
+		try {
+			moveFile(stagedPath, savePath);
+			return "completed";
+		} catch {
+			error = DOWNLOAD_MOVE_ERROR;
+			return "interrupted";
+		} finally {
+			removeStaged(path.dirname(stagedPath));
+		}
+	};
+
+	const allow = (id: string, request: BlockedRequest, approved: StoredDownload): void => {
 		let savePath: string;
 		try {
 			mkdirSync(options.downloadsDirectory, { recursive: true });
-			savePath = collisionSafePath(options.downloadsDirectory, fileName, reservedPaths);
-			item.setSavePath(savePath);
+			savePath = collisionSafePath(options.downloadsDirectory, approved.fileName, reservedPaths);
 		} catch {
-			try {
-				item.cancel();
-			} catch {
-				// The destination failure remains the useful error for the user.
-			}
+			discardBlocked(id);
+			downloads = downloads.filter((download) => download.id !== id);
 			error = DOWNLOAD_DESTINATION_ERROR;
 			publish();
 			return;
 		}
+		const { item, stagedPath } = request;
+		item.removeListener("done", request.done);
+		blockedRequests.delete(id);
 		error = "";
 		const now = (options.now ?? Date.now)();
-		reservedPaths.add(savePath.toLowerCase());
-		activeItems.set(id, item);
-		const download: StoredDownload = {
-			id,
+		const row: StoredDownload = {
+			...approved,
 			fileName: path.basename(savePath),
 			savePath,
-			...(source ? { source } : {}),
-			receivedBytes: Math.max(0, item.getReceivedBytes()),
-			totalBytes: Math.max(0, item.getTotalBytes()),
 			status: "progressing",
-			active: true,
-			resumable: false,
 			startedAt: now,
 			updatedAt: now,
 		};
-		downloads = withinLimits([download, ...downloads]);
-		publish(true);
+		downloads = withinLimits([row, ...downloads.filter((download) => download.id !== id)]);
+		if (request.staged === "completed") {
+			updateItem(id, item, finish(stagedPath, savePath));
+			publish(true);
+			return;
+		}
+		reservedPaths.add(savePath.toLowerCase());
+		activeItems.set(id, item);
 		const updated = (_event: unknown, updateState: "progressing" | "interrupted") => {
 			updateItem(id, item, updateState === "interrupted" ? "interrupted" : undefined);
 			publish();
 		};
-		const done = (_event: unknown, doneState: "completed" | "cancelled" | "interrupted") => {
+		// Puts the finished file in place; also runs for an item a disposed
+		// manager still owns, so a window closed mid-download loses nothing.
+		const settle = (doneState: DoneState): DoneState => {
+			if (doneState === "completed") return finish(stagedPath, savePath);
+			removeStaged(path.dirname(stagedPath));
+			return doneState;
+		};
+		const done = (_event: unknown, doneState: DoneState) => {
 			activeItems.delete(id);
 			activeItemListeners.delete(id);
 			reservedPaths.delete(savePath.toLowerCase());
-			updateItem(id, item, doneState);
+			updateItem(id, item, settle(doneState));
 			publish(true);
 		};
-		activeItemListeners.set(id, { item, updated, done });
+		activeItemListeners.set(id, { item, updated, done, settle });
 		item.on("updated", updated);
 		item.once("done", done);
+		item.resume();
+		updateItem(id, item);
+		publish(true);
 	};
 
 	return {
 		attach(session: DownloadSessionLike | undefined): void {
 			if (!session || disposed || attachedSessions.has(session)) return;
-			const listener = (event: DownloadEventLike, item: DownloadItem, webContents?: DownloadWebContentsLike | null) => {
+			const listener = (event: DownloadEventLike, item: DownloadItem, webContents?: unknown) => {
 				// Electron reports a session-level request with a null WebContents.
-				const tab = webContents ?? undefined;
-				const approvedId = takeApproval(item, session, tab);
-				if (approvedId) begin(item, approvedId);
-				else block(event, item, session, tab);
+				block(event, item, session, webContents ?? undefined);
 			};
 			attachedSessions.set(session, listener);
 			session.on("will-download", listener);
@@ -370,15 +405,15 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 				session.removeListener("will-download", listener);
 			}
 			attachedSessions.clear();
-			for (const { item, updated, done } of activeItemListeners.values()) {
+			for (const { item, updated, done, settle } of activeItemListeners.values()) {
 				item.removeListener("updated", updated);
 				item.removeListener("done", done);
+				item.once("done", (_event: unknown, doneState: DoneState) => settle(doneState));
 			}
 			activeItemListeners.clear();
 			activeItems.clear();
 			reservedPaths.clear();
-			blockedRequests.clear();
-			approvals.clear();
+			for (const id of [...blockedRequests.keys()]) discardBlocked(id);
 			try {
 				// Observers (wake policy) must learn that nothing is tracked any more;
 				// otherwise they keep treating the last progressing download as live.
@@ -397,21 +432,7 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 				case "allow": {
 					const request = blockedRequests.get(input.id);
 					if (download.status !== "blocked" || !request) throw new Error(DOWNLOAD_UNAVAILABLE_ERROR);
-					// The tab that asked may be gone; the session then requests the file.
-					const tab = request.webContents && !request.webContents.isDestroyed() ? request.webContents : undefined;
-					approvals.set(input.id, {
-						url: request.url,
-						session: request.session,
-						webContents: tab,
-						expiresAt: (options.now ?? Date.now)() + DOWNLOAD_APPROVAL_TTL_MS,
-					});
-					try {
-						if (tab) tab.downloadURL(request.url);
-						else request.session.downloadURL(request.url);
-					} catch {
-						approvals.delete(input.id);
-						throw new Error(DOWNLOAD_UNAVAILABLE_ERROR);
-					}
+					allow(input.id, request, download);
 					return state();
 				}
 				case "pause":
@@ -452,8 +473,7 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 					} catch {
 						throw new Error(DOWNLOAD_DELETE_ERROR);
 					}
-					blockedRequests.delete(input.id);
-					approvals.delete(input.id);
+					discardBlocked(input.id);
 					downloads = downloads.filter((candidate) => candidate.id !== input.id);
 					return publish(true);
 				}
@@ -463,8 +483,7 @@ export function createBrowserDownloadManager(options: BrowserDownloadManagerOpti
 		},
 		clear(): BrowserDownloadsState {
 			downloads = downloads.filter((download) => activeItems.has(download.id));
-			blockedRequests.clear();
-			approvals.clear();
+			for (const id of [...blockedRequests.keys()]) discardBlocked(id);
 			return publish(true);
 		},
 	};

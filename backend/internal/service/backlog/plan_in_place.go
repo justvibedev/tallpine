@@ -185,9 +185,9 @@ func (p *PlanService) refOf(ctx context.Context, itemID string) string {
 
 // replanInPlace supersedes the plan and asks the same author to plan again; the
 // implementer is never killed. An ended author is started again in place.
-func (p *PlanService) replanInPlace(ctx context.Context, cur domain.BacklogPlan, item domain.BacklogItem, actor Actor) (domain.BacklogPlan, error) {
+func (p *PlanService) replanInPlace(ctx context.Context, cur domain.BacklogPlan, item domain.BacklogItem, actor Actor, instructions string) (domain.BacklogPlan, error) {
 	if cur.Status.Open() {
-		if _, err := p.transition(ctx, cur.ID, domain.PlanSuperseded, nil); err != nil {
+		if _, err := p.transition(ctx, cur.ID, domain.PlanSuperseded, supersedeComments(p.now().UTC())); err != nil {
 			return domain.BacklogPlan{}, err
 		}
 	}
@@ -195,7 +195,7 @@ func (p *PlanService) replanInPlace(ctx context.Context, cur domain.BacklogPlan,
 	if err != nil {
 		return domain.BacklogPlan{}, err
 	}
-	brief := strings.TrimSpace(p.bl.planChildrenBrief(ctx, item) + "\n\n" + p.priorBrief(ctx, item, cur))
+	brief := strings.TrimSpace(p.bl.planChildrenBrief(ctx, item) + "\n\n" + p.priorBrief(ctx, item, cur) + "\n\n" + instructions)
 	msg := fmt.Sprintf("The plan is being redone. Stay read-only, plan again and submit with `tallpine plan questions %s` / `tallpine plan submit %s`.", item.Ref(), item.Ref())
 	if strings.TrimSpace(brief) != "" {
 		msg += "\n\n" + brief

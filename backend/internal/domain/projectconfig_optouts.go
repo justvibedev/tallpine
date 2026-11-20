@@ -27,3 +27,11 @@ type ContainerReapConfig struct {
 // OrchestratorIdleNudgeAfter is how long an orchestrator must be idle before
 // the idle nudge (ProjectConfig.OrchestratorIdleNudge) fires.
 const OrchestratorIdleNudgeAfter = 15 * time.Minute
+
+// DefaultContextBudgetTokens is the instruction-file budget used when
+// ProjectConfig.ContextBudgetTokens is unset.
+const DefaultContextBudgetTokens = 15000
+
+// DefaultContextMemoryBudgetTokens is the memory-index budget used when
+// ProjectConfig.ContextMemoryBudgetTokens is unset.
+const DefaultContextMemoryBudgetTokens = 8000

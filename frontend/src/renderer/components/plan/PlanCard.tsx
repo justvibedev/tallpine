@@ -4,19 +4,21 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBacklogInvalidate } from "../../hooks/useBacklogInvalidate";
 import {
-	acceptPlanDefaults, answerPlan, approvePlan, cancelPlan, replanItem, startPlan,
+	acceptPlanDefaults, answerPlan, approvePlan, cancelPlan, commentOnPlan, replanItem, startPlan,
 	type PlanView,
 } from "../../lib/plan-api";
 import { formatUsageReset } from "@tallpine/shared/format/usage-reset";
 import { cn } from "../../lib/utils";
+import { planCommentState } from "@tallpine/shared/plan/plan-comments";
 import { ACCENT_ACTION_PILL, QUIET_ACTION_PILL } from "../chat/action-pill";
 import { QuestionOptions } from "../chat/QuestionOptions";
 import {
-	OTHER_OPTION, acceptedAssumptionCount, chooseOption, correct, initialDraft, isComplete, isDefaults, optionLabel, planPhase,
+	OTHER_OPTION, acceptedAssumptionCount, chooseOption, initialDraft, isComplete, isDefaults, optionLabel, planPhase,
 	toAnswersRequest, writeOther, type PlanDraft,
 } from "./planDockModel";
 import { clearPlanDraft, loadPlanDraft, savePlanDraft } from "./planDraftStore";
-import { PlanReader } from "./PlanReader";
+import { PlanAssumptions } from "./PlanAssumptions";
+import { Footer, PlanReviewBody } from "./PlanReviewBody";
 import { Spinner } from "../ui/spinner";
 
 /**
@@ -75,7 +77,7 @@ export function PlanCard({ projectId, itemRef, itemTitle, plan, collapsed: contr
 				<span id={headerId} className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
 					{t("planCard.title", { ref: itemRef, title: itemTitle })}
 				</span>
-				<span className="shrink-0 text-caption text-muted-foreground">{resetAt ? t("planCard.status.waitingForReset") : t(`planCard.status.${phase}`)}</span>
+				<span className="shrink-0 text-caption text-muted-foreground">{resetAt ? t("planCard.status.waitingForReset") : t(phase === "review" && planCommentState(plan) !== "none" ? "planCard.status.considering" : `planCard.status.${phase}`)}</span>
 			</button>
 			{collapsed ? null : (
 				<div className="flex min-h-0 flex-1 flex-col pb-2">
@@ -98,18 +100,14 @@ export function PlanCard({ projectId, itemRef, itemTitle, plan, collapsed: contr
 						<div data-testid="plan-card-scroll" className="min-h-0 overflow-y-auto"><AnswerSummary plan={plan} /></div>
 					) : null}
 					{phase === "review" ? (
-						<>
-							<div data-testid="plan-card-scroll" className="min-h-0 overflow-y-auto"><PlanReader plan={plan} /></div>
-							<Footer>
-								{cancel}
-								<button type="button" disabled={busy} onClick={() => act.mutate(() => replanItem(projectId, itemRef))} className={QUIET_ACTION_PILL}>
-									{t("planCard.replan")}
-								</button>
-								<button type="button" disabled={busy} onClick={() => act.mutate(() => approvePlan(projectId, itemRef))} className={ACCENT_ACTION_PILL}>
-									{t("planCard.approve")}
-								</button>
-							</Footer>
-						</>
+						<PlanReviewBody
+							plan={plan}
+							busy={busy}
+							cancel={cancel}
+							onComment={(text, sent) => act.mutate(() => commentOnPlan(projectId, itemRef, text), { onSuccess: sent })}
+							onReplan={(comment, sent) => act.mutate(() => replanItem(projectId, itemRef, comment), { onSuccess: sent })}
+							onApprove={(comment, sent) => act.mutate(() => approvePlan(projectId, itemRef, comment), { onSuccess: sent })}
+						/>
 					) : null}
 					{phase === "failed" ? (
 						<>
@@ -131,15 +129,10 @@ export function PlanCard({ projectId, itemRef, itemTitle, plan, collapsed: contr
 	);
 }
 
-function Footer({ children }: { children: React.ReactNode }) {
-	return <div className="flex items-center justify-end gap-2 px-3 pt-1">{children}</div>;
-}
-
 function AnsweringBody({ plan, busy, cancel, onSend, onDefaults }: { plan: PlanView; busy: boolean; cancel: React.ReactNode; onSend: (draft: PlanDraft) => void; onDefaults: () => void }) {
 	const { t } = useTranslation();
 	const [draft, setDraft] = useState<PlanDraft>(() => loadPlanDraft(plan) ?? initialDraft(plan));
 	const update = (change: (d: PlanDraft) => PlanDraft) => setDraft((d) => { const next = change(d); savePlanDraft(plan.id, next); return next; });
-	const [correcting, setCorrecting] = useState<string | null>(null);
 	const complete = isComplete(plan, draft);
 	const defaults = isDefaults(plan, draft);
 	const accepted = acceptedAssumptionCount(plan, draft);
@@ -183,47 +176,7 @@ function AnsweringBody({ plan, busy, cancel, onSend, onDefaults }: { plan: PlanV
 						</fieldset>
 					);
 				})}
-				{plan.assumptions.length > 0 ? (
-					<section aria-label={t("planCard.assumptions")} className="px-3">
-						<h4 className="pb-1 text-xs font-medium text-muted-foreground">{t("planCard.assumptions")}</h4>
-						<ul className="space-y-1">
-							{plan.assumptions.map((a) => {
-								const corrected = draft.corrections[a.id];
-								const open = correcting === a.id;
-								const scopeCut = corrected === undefined && a.scopeCut === true;
-								return (
-									<li key={a.id} className={cn("text-xs leading-relaxed", scopeCut && "border-l-2 border-warning pl-2")} data-scope-cut={scopeCut || undefined}>
-										{scopeCut ? <div className="text-caption font-medium text-warning">{t("planCard.scopeCut")}</div> : null}
-										<div className="flex items-start gap-2">
-											<span className={cn("min-w-0 flex-1", corrected !== undefined && "text-muted-foreground line-through")}>{a.text}</span>
-											<button
-												type="button"
-												disabled={busy}
-												aria-expanded={open}
-												onClick={() => setCorrecting(open ? null : a.id)}
-												className="shrink-0 text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-											>
-												{t("planCard.correct")}
-											</button>
-										</div>
-										{open || corrected !== undefined ? (
-											<input
-												type="text"
-												aria-label={t("planCard.correctionLabel", { text: a.text })}
-												value={corrected ?? ""}
-												autoFocus={open}
-												disabled={busy}
-												placeholder={t("planCard.correctionPlaceholder")}
-												onChange={(event) => update((d) => correct(d, a.id, event.target.value))}
-												className="mt-1 h-8 w-full rounded-lg border border-border bg-background/40 px-2.5 text-xs text-foreground outline-none focus-visible:border-border-strong"
-											/>
-										) : null}
-									</li>
-								);
-							})}
-						</ul>
-					</section>
-				) : null}
+				<PlanAssumptions plan={plan} draft={draft} busy={busy} update={update} />
 			</div>
 			<Footer>
 				{cancel}

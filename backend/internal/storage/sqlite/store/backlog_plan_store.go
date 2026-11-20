@@ -189,7 +189,7 @@ func planFromRow(r gen.BacklogPlan) (domain.BacklogPlan, error) {
 	for _, d := range []struct {
 		raw string
 		dst any
-	}{{r.QuestionsJson, &p.Questions}, {r.AssumptionsJson, &p.Assumptions}, {r.PRSplitJson, &p.PRSplit}, {r.ReviewFocusJson, &p.ReviewFocus}} {
+	}{{r.QuestionsJson, &p.Questions}, {r.AssumptionsJson, &p.Assumptions}, {r.PRSplitJson, &p.PRSplit}, {r.ReviewFocusJson, &p.ReviewFocus}, {r.CommentsJson, &p.Comments}} {
 		if strings.TrimSpace(d.raw) == "" {
 			continue
 		}
@@ -213,8 +213,8 @@ func writePlan(ctx context.Context, q *gen.Queries, p domain.BacklogPlan) error 
 		return string(b), err
 	}
 	var (
-		questions, assumptions, split, focus, answers string
-		err                                           error
+		questions, assumptions, split, focus, answers, comments string
+		err                                                     error
 	)
 	if questions, err = enc(orEmpty(p.Questions)); err != nil {
 		return err
@@ -226,6 +226,9 @@ func writePlan(ctx context.Context, q *gen.Queries, p domain.BacklogPlan) error 
 		return err
 	}
 	if focus, err = enc(orEmpty(p.ReviewFocus)); err != nil {
+		return err
+	}
+	if comments, err = enc(orEmpty(p.Comments)); err != nil {
 		return err
 	}
 	if p.Answers != nil {
@@ -243,7 +246,7 @@ func writePlan(ctx context.Context, q *gen.Queries, p domain.BacklogPlan) error 
 		ID: p.ID, Status: string(p.Status), PlannerSessionID: string(p.PlannerSessionID),
 		BaseCommit: p.BaseCommit, BaseBranch: p.BaseBranch, QuestionsJson: questions, AssumptionsJson: assumptions,
 		AnswersJson: answers, PlanMarkdown: p.PlanMarkdown, DecisionsMarkdown: p.DecisionsMD, PRSplitJson: split,
-		ReviewFocusJson: focus, ApprovedBy: p.ApprovedBy, ApprovedAt: approved, OwnerMessageID: p.OwnerMessageID,
+		ReviewFocusJson: focus, CommentsJson: comments, ApprovedBy: p.ApprovedBy, ApprovedAt: approved, OwnerMessageID: p.OwnerMessageID,
 		BuildAnyway: build, ItemChangedAt: changed, UpdatedAt: p.UpdatedAt, Failure: p.Failure,
 	})
 }

@@ -1,6 +1,6 @@
 import { sameContent } from "../../lib/stable-list";
 import { previewText } from "@tallpine/shared/chat/timeline-text";
-import { quietWorkerReply } from "./WorkerUpdates";
+import { isSubstantialAnswer, quietWorkerReply } from "./WorkerUpdates";
 import { spawnedSessionIds } from "./SpawnedAgents";
 import { isOrdinaryActivity } from "./activity-action";
 import { planUpdateSince, type PlanUpdate } from "../../lib/session-plan";
@@ -11,6 +11,7 @@ import {
 	type ConversationSnapshot,
 	type ConversationActivity,
 	type ConversationItem,
+	type ConversationMessage,
 	type ConversationTurn,
 	type ConversationTurnAutoRetry,
 	type ConversationUsageLimit,
@@ -203,6 +204,25 @@ export function groupHasHumanPrompt(group: TimelineGroup): boolean {
 	return group.items.some(
 		(item) => item.kind === "message" && item.role === "user" && item.origin === "human",
 	);
+}
+
+/** Orchestrator chat: an answer written before more tool calls stays readable once its turn settles. */
+export function keepsEarlyAnswer(item: ConversationItem | undefined, workerUpdates: boolean | undefined): boolean {
+	return workerUpdates === true && isSubstantialAnswer(item);
+}
+
+/**
+ * The assistant replies `TurnGroup` draws in the open: all of them while the turn
+ * runs; once it settles, its final reply and any early answer `keepsEarlyAnswer`
+ * keeps. The others fold under the collapsed "Worked for" row, so a reader who has
+ * not opened it cannot see them and they must not count as new replies (B845).
+ */
+export function drawnReplies(group: TimelineGroup, workerUpdates: boolean | undefined): ConversationMessage[] {
+	const replies = group.items.filter((item): item is ConversationMessage =>
+		item.kind === "message" && item.role === "assistant" && item.text.trim() !== "");
+	if (!group.outcome) return replies;
+	const final = replies.at(-1);
+	return replies.filter((reply) => reply === final || keepsEarlyAnswer(reply, workerUpdates));
 }
 
 function settledTurnDuration(turn: ConversationTurn): number | undefined {

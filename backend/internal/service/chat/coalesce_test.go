@@ -119,7 +119,8 @@ func TestHeartbeatSnapshotsAreStoredWholeWithCompactionOff(t *testing.T) {
 // ACP sends every output chunk as a delta plus a snapshot carrying all output
 // so far. Once output streams into command_output, running snapshots drop their
 // copy of it, so they stop rewriting the row and archive as markers; the client
-// still reads the full output, and the completing snapshot keeps its own.
+// still reads the full output from that column. The completing snapshot keeps
+// its copy in the archive, but the row stores the output once (B842).
 func TestStreamedCommandOutputIsNotRewrittenPerChunk(t *testing.T) {
 	t.Parallel()
 
@@ -156,8 +157,8 @@ func TestStreamedCommandOutputIsNotRewrittenPerChunk(t *testing.T) {
 		t.Fatalf("activity = status %s output %q, want completed with every chunk", activity.Status, activity.CommandOutput)
 	}
 	var detail map[string]any
-	if err := json.Unmarshal(activity.Detail, &detail); err != nil || detail["output"] != output.String() {
-		t.Fatalf("completed detail = %s err=%v, want the provider's full output", activity.Detail, err)
+	if err := json.Unmarshal(activity.Detail, &detail); err != nil || detail["output"] != nil || detail["command"] != "go test ./..." {
+		t.Fatalf("completed detail = %s err=%v, want the command without a second copy of the output", activity.Detail, err)
 	}
 	// Created once, then one revision per command_output write and one for the
 	// completion: far fewer than the 2 per chunk the old path wrote.

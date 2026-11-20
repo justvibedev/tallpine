@@ -103,7 +103,7 @@ export function useSettings(hostId?: string, enabled = true) {
 				dynamicOrchestratorContext: data?.dynamicOrchestratorContext ?? false,
 				// A daemon that predates the setting compacts nothing.
 				storageCompaction: data?.storageCompaction ?? false,
-				providerEventRetentionDays: data?.providerEventRetentionDays ?? 14,
+				providerEventRetentionDays: data?.providerEventRetentionDays ?? 7,
 				// A daemon that predates the thresholds has no durable setting to show.
 				chatHibernation: data?.chatHibernationWorkerIdleSeconds
 					? {

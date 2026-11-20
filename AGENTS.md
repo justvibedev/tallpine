@@ -108,6 +108,7 @@ TALLPINE_DATA_DIR=/tmp/tallpine-lab-data ./node_modules/.bin/electron-forge star
 - `docs/documentation-map.md`: Which artifacts are the machine-readable contract layer (`openapi.yaml`, `AGENTS.md`, `skills/`, sqlc `gen/`), what each is source of truth for, and how CI keeps them from drifting.
 - `docs/architecture.md`: Backend mental model, package layout, lifecycle/session/service boundaries, and load-bearing rules.
 - `docs/cli/README.md`: Intended CLI shape, a thin Cobra client over daemon HTTP with no direct storage/runtime access.
+- `docs-site`: Not a real directory; it is a demo project in `frontend/src/renderer/lib/mock-data.ts` (served by `dev:web`, with `tallpine-demo`). There is no docs site to find; docs live in `docs/`.
 - `CLAUDE.md`: Compatibility pointer for Claude Code. It directs agents back to `AGENTS.md`.
 
 For code entry points:
