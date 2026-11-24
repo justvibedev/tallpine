@@ -73,22 +73,24 @@ func (m *Manager) resolveChatAgentConfig(ctx context.Context, decision agentpoli
 // model instead of the spawn failing. A model the spawn request or the owner
 // set elsewhere keeps the strict behavior.
 func (m *Manager) resolveAgentConfigFor(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig, chat bool) (ports.AgentConfig, error) {
-	resolved, err := m.resolveAgentConfigStrict(ctx, decision, cfg, project, chat)
+	app := m.appRoleDefaults(ctx)
+	resolved, err := m.resolveAgentConfigStrict(ctx, decision, cfg, project, app, chat)
 	if err == nil || ctx.Err() != nil || cfg.Harness != domain.HarnessClaudeCode || cfg.AgentConfig.Model != "" ||
 		(!errors.Is(err, ports.ErrModelCapabilitiesUnavailable) && !errors.Is(err, ErrUnsupportedModel)) {
 		return resolved, err
 	}
 	stripped, changed := project.WithoutBuiltinRoleModels()
-	if !changed {
+	strippedApp, appChanged := app.WithoutBuiltinRoleModels()
+	if !changed && !appChanged {
 		return resolved, err
 	}
 	m.logger.Warn("spawn: built-in default model could not be confirmed; using the agent's own default model",
 		"harness", cfg.Harness, "error", err)
-	return m.resolveAgentConfigStrict(ctx, decision, cfg, stripped, chat)
+	return m.resolveAgentConfigStrict(ctx, decision, cfg, stripped, strippedApp, chat)
 }
 
-func (m *Manager) resolveAgentConfigStrict(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig, chat bool) (ports.AgentConfig, error) {
-	base := effectiveAgentConfigFor(cfg.Harness, cfg.Kind, cfg.Role, project)
+func (m *Manager) resolveAgentConfigStrict(ctx context.Context, decision agentpolicy.Decision, cfg ports.SpawnConfig, project domain.ProjectConfig, app domain.WorkflowDefaults, chat bool) (ports.AgentConfig, error) {
+	base := withAppRoleDefault(app, cfg.Harness, cfg.Kind, cfg.Role, effectiveAgentConfigFor(cfg.Harness, cfg.Kind, cfg.Role, project))
 	requested := cfg.AgentConfig
 	resolved := applySpawnAgentConfigUnder(decision, cfg.Harness, base, requested)
 	modelChangedWithoutExplicitEffort := requested.Model != "" && requested.Model != base.Model &&

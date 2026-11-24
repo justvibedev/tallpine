@@ -1,11 +1,13 @@
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron";
 import type { BrowserAnnotationActionInput, BrowserAnnotationCompleteInput, BrowserAnnotationDiscardInput, BrowserAnnotationModeInput, BrowserAnnotationPageCancelPayload, BrowserAnnotationPageSubmitPayload, BrowserAnnotationSession } from "../../shared/browser-annotations";
 import type { BrowserDownloadActionInput } from "../../shared/browser-downloads";
+import { BROWSER_WEBAUTHN_STATE_CHANNEL } from "../../shared/browser-passkey-watch";
 import { browserError } from "./args";
 import { listTabs, pushNavState, viewerRuns } from "./nav-events";
 import { isAllowedBrowserURL, normalizeBrowserURL } from "./url";
 import { activeEntry, emptyDevToolsState, emptyNavState, emptyTabsState, isBlankBrowserEntry } from "./entry-state";
-import type { BrowserBoundsInput, BrowserDevToolsInput, BrowserFindInput, BrowserFindStopInput, BrowserHistoryFaviconInput, BrowserHistorySuggestInput, BrowserNavigateInput, BrowserOpenTabInput, BrowserTabInput } from "./types";
+import type { BrowserFindInput, BrowserFindStopInput } from "./types";
+import type { BrowserBoundsInput, BrowserDevToolsInput, BrowserHistoryFaviconInput, BrowserHistorySuggestInput, BrowserNavigateInput, BrowserOpenTabInput, BrowserTabInput } from "./input-types";
 import { fetchFaviconFromSession, originOf } from "./favicon";
 import type { HostContext } from "./context";
 
@@ -401,6 +403,14 @@ export function createIpcHandlers(ctx: HostContext) {
       updateAnnotationState(event, annotationSession),
   );
   on("browser:annotation:discard", (event) => discardAnnotationFromPage(event));
+  // The tab preload reports a passkey request the page is waiting on, so the
+  // panel can offer the default browser (shared/browser-passkey-watch.ts).
+  on(BROWSER_WEBAUTHN_STATE_CHANNEL, (event, pending: unknown) => {
+    const entry = ctx.tabsByWebContentsId.get(event.sender.id);
+    if (!entry || typeof pending !== "boolean" || entry.passkeyPending === pending) return;
+    entry.passkeyPending = pending;
+    if (entries.get(entry.state.viewId)?.activeTabId === entry.tabId) pushNavState(options, entry);
+  });
 
   return {
   };

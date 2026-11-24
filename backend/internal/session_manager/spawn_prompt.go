@@ -265,7 +265,8 @@ func (m *Manager) tallpineSkillPointer(chat bool) string {
 		"For frontend work, read `" + previewFile + "` before previewing or starting an app. Static file targets passed to `tallpine preview` are relative to the session workspace root, regardless of the shell's current directory: use `tallpine preview README.md`, not `../README.md`. Tallpine serves workspace files through its existing confined loopback preview; do not use `file://` or start a server just to display static files. Never create or modify `package.json` or install dependencies solely to display static files. Do not create `.tallpine/launch.json` unless the user asks. Automatically open the primary requested browser-displayable artifact immediately after creating or materially updating it, but do not replace an active application preview with a supporting asset. " +
 		"For page inspection or interaction, read `" + browserFile + "` and use `tallpine browser` from this Tallpine session. Browser network capture is optional and off by default; follow that guide and never enable it for routine browser actions. " +
 		"Do not use Codex/host in-app browser connectors, `agent.browsers.get(\"iab\")`, or a browser MCP for the Tallpine Browser panel: those are separate browser runtimes and cannot see or control Tallpine's session-owned page. " +
-		"`tallpine browser` operates the same live page the user sees in that panel."
+		"`tallpine browser` operates the same live page the user sees in that panel. " +
+		"For \"my real browser\", Chrome or passkeys use `tallpine browser`, never Claude in Chrome; `tallpine browser status` prints backend=chrome|electron (details in the guide)."
 	if !chat {
 		return pointer
 	}

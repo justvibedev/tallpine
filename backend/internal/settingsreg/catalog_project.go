@@ -59,6 +59,10 @@ func projectSettings() []Setting {
 	mode.Enum = []string{"", "chat", "tui"}
 	planning := p("planningMode", KindEnum, "", "When the project plans before it builds: auto (the orchestrator decides), always or off. Empty follows the app default (Settings > Reviews); an explicit auto stays auto. A managed policy.planner.mode wins.")
 	planning.Enum = []string{"", "auto", "always", "off"}
+	// Chrome mode hands agents the person's real Chrome logins, so only a
+	// person may switch it (B849 a1).
+	browserBackend := humanOnly(p("browserBackend", KindEnum, "", "Browser the project's agent sessions drive: electron (empty, the in-app browser) or chrome (the installed Google Chrome, with its passkeys and logins). Only a person may set it."))
+	browserBackend.Enum = []string{"", domain.BrowserBackendElectron, domain.BrowserBackendChrome}
 	return append([]Setting{
 		p("canonicalRepoURL", KindString, "", "Canonical repository URL of the project."),
 		p("githubUser", KindString, "", "GitHub account the project's sessions act as."),
@@ -106,6 +110,7 @@ func projectSettings() []Setting {
 		p("intentWake", KindBool, false, "Wake the orchestrator once at the time an intent was added with `tallpine orchestrator intent add --wake-at`, if the intent is still open. Off by default; a daemon that was down at that time delivers the wake once on start."),
 		creatorOnly(p("eval", KindBool, false, "Marks a throwaway evaluation project. The orchestrator that registered it may drive its backlog, plans and sessions from its own project and answer and approve plans as the owner's proxy (B335). The user or the creating orchestrator may set it, never a project's own orchestrator or a worker.")),
 		humanOnly(p("planAutoApprove", KindBool, false, "Approve submitted plans automatically, without the owner. For unattended throwaway test or benchmark projects only; only a person can set it. Unset follows the app default (Settings > Reviews); an explicit false stays off. A managed policy.planner.autoApprove of off locks it off.")),
+		browserBackend,
 		byCreator(p("noCI", KindBool, false, "The project has no CI; workers do not wait for it.")),
 		lockable(p("models", KindObject, nil, "Models allowed in the project.")),
 		p("promptCacheTTL", KindObject, nil, "Prompt cache TTL per session role."),

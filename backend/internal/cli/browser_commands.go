@@ -25,7 +25,7 @@ func addBrowserCoreCommands(cmd *cobra.Command, ctx *commandContext, jsonOutput 
 			if status.Connected {
 				state = "connected"
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Browser runtime: %s (%s)\n", state, status.Transport)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Browser runtime: %s (%s)\nbackend=%s\n", state, status.Transport, status.Backend)
 			return err
 		},
 	})

@@ -289,3 +289,75 @@ func TestProjectSkillsAPI_CommitFetchesAndPushesAsProjectAccount(t *testing.T) {
 		t.Fatalf("credentials asked for %v, want p", creds.projects)
 	}
 }
+
+// The owner's case: the checkout is on main, sessions start from origin/ui-rework,
+// and that branch already has one of the checkout's untracked skills. The list
+// offers only the missing skill, and a commit naming both (a stale list) skips
+// the one the branch has instead of failing.
+func TestProjectSkillsAPI_PendingAndCommitFollowTheSessionBaseNotHEAD(t *testing.T) {
+	r, checkout, origin := skillsCommitRouter(t, "ui-rework")
+	writeSkill := func(name string) {
+		dir := filepath.Join(checkout, ".claude", "skills", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+name+"\ndescription: d\n---\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitT(t, checkout, "checkout", "-q", "-b", "ui-rework")
+	writeSkill("3d-lighting")
+	gitT(t, checkout, "add", ".claude")
+	gitT(t, checkout, "commit", "-q", "-m", "skill on the session base")
+	gitT(t, checkout, "push", "-q", "-u", "origin", "ui-rework")
+	gitT(t, checkout, "checkout", "-q", "main")
+	writeSkill("3d-lighting") // untracked on main, like the owner's checkout
+	writeSkill("new-one")
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/projects/p/skills", nil))
+	var got controllers.ProjectSkillsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.CommitTarget == nil || got.CommitTarget.Branch != "ui-rework" {
+		t.Fatalf("commitTarget = %+v", got.CommitTarget)
+	}
+	if strings.Join(got.PendingCommit, ",") != ".claude/skills/new-one" {
+		t.Fatalf("pendingCommit = %v, want only the skill ui-rework lacks", got.PendingCommit)
+	}
+
+	before := gitT(t, origin, "rev-parse", "ui-rework")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/projects/p/skills/commit", strings.NewReader(`{"paths":[".claude/skills/3d-lighting",".claude/skills/new-one"]}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("commit: %d %s", rec.Code, rec.Body)
+	}
+	var res controllers.CommitProjectSkillsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if !res.Pushed || res.Branch != "ui-rework" || strings.Join(res.Skipped, ",") != ".claude/skills/3d-lighting" {
+		t.Fatalf("commit response = %+v", res)
+	}
+	if got := gitT(t, origin, "rev-parse", "ui-rework^"); got != before {
+		t.Fatalf("commit parent = %s, want %s", got, before)
+	}
+	if got := gitT(t, origin, "diff-tree", "--no-commit-id", "--name-only", "-r", res.SHA); got != ".claude/skills/new-one/SKILL.md" {
+		t.Fatalf("commit touched %q", got)
+	}
+
+	// Everything already there: nothing is committed and the response says so.
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/projects/p/skills/commit", strings.NewReader(`{"paths":[".claude/skills/3d-lighting"]}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("all-skipped commit: %d %s", rec.Code, rec.Body)
+	}
+	res = controllers.CommitProjectSkillsResponse{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.SHA != "" || res.Pushed || strings.Join(res.Skipped, ",") != ".claude/skills/3d-lighting" {
+		t.Fatalf("all-skipped response = %+v", res)
+	}
+}

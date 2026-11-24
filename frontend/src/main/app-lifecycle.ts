@@ -51,6 +51,7 @@ DEFAULT_UI_SETTINGS,
 readUiSettings
 } from "./ui-settings";
 import { disposeAllBrowserViewHosts } from "./window/browser-view-hosts";
+import { closeAppChrome } from "./chrome-browser/app-wiring";
 import { createWindow } from "./window/main-window";
 import { focusMainWindow } from "./window/window-focus";
 import { applyRuntimeAppIcon, registerRendererProtocol } from "./window/renderer-assets";
@@ -406,6 +407,7 @@ export function registerAppLifecycle(): void {
 					// daemon parks them so no claude or node process outlives it.
 					retireSides().then(stopAgentsForQuit),
 					disposeAllBrowserViewHosts(),
+					closeAppChrome(),
 					remoteRegistry.closeAll(),
 				]);
 				const finishQuit = () => {

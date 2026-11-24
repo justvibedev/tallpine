@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { installFakeBridge } from "./support/fake-bridge";
+import { installFakeBridge } from "./support/fake-daemon-bridge";
 import { openInspector } from "./support/open-inspector";
 
 const sessionId = "demo-working";

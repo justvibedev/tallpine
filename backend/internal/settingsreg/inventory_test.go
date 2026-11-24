@@ -102,7 +102,7 @@ var snapshotKeys = map[string][]Key{
 	"ChatHibernation":            {"app.chatHibernation.enabled", "app.chatHibernation.workerIdleSeconds", "app.chatHibernation.orchestratorIdleSeconds"},
 	"VersionRefresh":             {"app.versionRefresh"},
 	"DynamicOrchestratorContext": {"app.dynamicOrchestratorContext"},
-	"WorkflowDefaults": {"app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort", "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort",
+	"WorkflowDefaults": {"app.workflowDefaults.autoReview", "app.workflowDefaults.planningMode", "app.workflowDefaults.planAutoApprove", "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.reviewerEffort", "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort", "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort",
 		// The app-wide rules and skill switches live in the same stored object (B740).
 		"app.workerRules", "app.orchestratorRules", "app.reviewerRules", "app.skillRoles"},
 	"StorageCompaction":          {"app.storageCompaction"},

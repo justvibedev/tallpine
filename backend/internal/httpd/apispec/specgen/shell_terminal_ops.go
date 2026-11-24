@@ -5,6 +5,7 @@ import (
 
 	"tallpine.eu/tallpine/backend/internal/httpd/controllers"
 	"tallpine.eu/tallpine/backend/internal/httpd/envelope"
+	projectsvc "tallpine.eu/tallpine/backend/internal/service/project"
 )
 
 // shellTerminalOperations describes the standalone shell terminal surface:
@@ -93,6 +94,31 @@ func shellTerminalOperationsPart1() []operation {
 			resps: []respUnit{
 				{http.StatusOK, controllers.SettingsResponse{}},
 				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodGet, path: "/api/v1/settings/role-defaults/{role}/drift", id: "getRoleDefaultDrift", tag: "settings",
+			summary:    "List the projects whose role does not run with the app-wide default agent, model and effort",
+			pathParams: []any{controllers.RoleDefaultRoleParam{}},
+			resps: []respUnit{
+				{http.StatusOK, projectsvc.RoleDefaultDriftReport{}},
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusForbidden, envelope.APIError{}},
+				{http.StatusInternalServerError, envelope.APIError{}},
+				{http.StatusNotImplemented, envelope.APIError{}},
+			},
+		},
+		{
+			method: http.MethodPost, path: "/api/v1/settings/role-defaults/{role}/apply", id: "applyRoleDefault", tag: "settings",
+			summary:    "Set or clear the role overrides of drifting projects so they run with the app-wide default",
+			pathParams: []any{controllers.RoleDefaultRoleParam{}},
+			reqBody:    projectsvc.ApplyRoleDefaultInput{},
+			resps: []respUnit{
+				{http.StatusOK, projectsvc.ApplyRoleDefaultResult{}},
+				{http.StatusBadRequest, envelope.APIError{}},
+				{http.StatusForbidden, envelope.APIError{}},
 				{http.StatusInternalServerError, envelope.APIError{}},
 				{http.StatusNotImplemented, envelope.APIError{}},
 			},

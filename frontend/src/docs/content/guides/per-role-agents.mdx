@@ -46,9 +46,9 @@ This example uses `bypass-permissions`, which lets provider tools act without th
 
 The `--config-json` flag takes a JSON string, not a file, and `--config-json` replaces the whole project configuration (focused flags such as `--worker-agent` merge instead). Preserve existing setup, rules, reviewers, and intake settings. See [Projects: update from the CLI](/configuration/projects#update-from-the-cli) for CLI limitations and safer alternatives.
 
-## Defaults for new projects
+## App-wide role defaults
 
-Set the agent, model, and reasoning effort every **new** project starts with in **Settings → Reviews**, next to the default reviewer, or from the CLI:
+Set the agent, model, and reasoning effort of the orchestrator, worker, and reviewer in **Settings → Reviews**, or from the CLI:
 
 ```bash
 tallpine settings set app.workflowDefaults.workerAgent claude-code
@@ -59,7 +59,17 @@ tallpine settings set app.workflowDefaults.orchestratorModel claude-opus-5-5
 tallpine settings set app.workflowDefaults.orchestratorEffort medium
 ```
 
-The values are copied into the project's configuration once, when it is created (Add project, `tallpine project add`, a clone, or an orchestrator registering a project), and only for fields the creator left empty: `--worker-agent codex` keeps codex and does not inherit the default model or effort of another agent. Projects that already exist are never changed; edit them in Project Settings. Out of the box, with nothing set, a new project's worker is Claude Code with `claude-sonnet-5-5` at `medium` effort, and its orchestrator is Claude Code with `claude-opus-5-5` at `medium` effort; Settings → Reviews shows these as the current values, with Claude Code marked as the default. These built-ins apply only when Claude Code is installed and signed in on the machine; otherwise a new project gets no default and uses the harness's own. Anything you set, including clearing the agent back to **Harness default**, wins over the built-ins. A model and effort belong to their agent, so clearing the agent clears them, and changing the agent drops the old ones.
+The values are copied into the project's configuration once, when it is created (Add project, `tallpine project add`, a clone, or an orchestrator registering a project), and only for fields the creator left empty: `--worker-agent codex` keeps codex and does not inherit the default model or effort of another agent. Out of the box, with nothing set, a new project's worker is Claude Code with `claude-sonnet-5-5` at `medium` effort, and its orchestrator is Claude Code with `claude-opus-5-5` at `medium` effort; Settings → Reviews shows these as the current values, with Claude Code marked as the default. These built-ins apply only when Claude Code is installed and signed in on the machine; otherwise a new project gets no default and uses the harness's own. Anything you set, including clearing the agent back to **Harness default**, wins over the built-ins. A model and effort belong to their agent, so clearing the agent clears them, and changing the agent drops the old ones.
+
+Existing projects follow the default model and effort too: when a project sets no model of its own for the orchestrator or worker, each new session of that role on the default's agent starts with the default model and effort (a project's own effort, if set, is kept). A model set in the project, for the role or project-wide, still wins, and a role on another agent keeps that agent's own model. The reviewer works the same way with `app.workflowDefaults.reviewerHarness`, `reviewerModel`, and `reviewerEffort`: a project with no reviewer of its own uses the default reviewer, and a project reviewer on the same agent with no model inherits the default model and effort. Running sessions keep the model they started with.
+
+To bring projects that set their own values in line, use **Apply to all projects** under each role in **Settings → Reviews**. It lists every project whose role would run with something else and, when you confirm, clears that project's own model and effort so it inherits the default (switching the role to the default's agent when it uses another one), or writes the default into the role where a project-wide model would otherwise still win. The same from the CLI:
+
+```bash
+tallpine settings apply-role-default orchestrator          # list the projects that differ
+tallpine settings apply-role-default orchestrator --yes    # apply the default to them
+tallpine settings apply-role-default worker --yes --project web
+```
 
 ## Choose which models a harness offers
 

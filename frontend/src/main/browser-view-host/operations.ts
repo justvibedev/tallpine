@@ -1,6 +1,7 @@
 import { abortableBrowserResult, externalText, throwIfAborted } from "./args";
 import { sanitizeBrowserURL } from "./url";
-import type { BrowserElectronSession, BrowserSessionEntry, BrowserSignalEntry } from "./types";
+import type { BrowserElectronSession, BrowserSessionEntry } from "./types";
+import type { BrowserSignalEntry } from "./network-types";
 import { MAX_BROWSER_SIGNALS, MAX_BROWSER_SIGNAL_BYTES } from "./constants";
 import type { HostContext } from "./context";
 

@@ -20,20 +20,23 @@ func (f fakeSessions) Get(_ context.Context, _ domain.SessionID) (domain.Session
 }
 
 type fakeRuntime struct {
-	action string
+	action  string
+	backend string
 }
 
 func (f *fakeRuntime) Status() browserruntime.Status {
 	return browserruntime.Status{Connected: true}
 }
 
-func (f *fakeRuntime) Execute(
+func (f *fakeRuntime) ExecuteOn(
 	_ context.Context,
 	_ domain.SessionID,
+	backend string,
 	action string,
 	_ map[string]interface{},
 ) (browserruntime.Result, error) {
 	f.action = action
+	f.backend = backend
 	return browserruntime.Result{RequestID: "r1"}, nil
 }
 
@@ -47,13 +50,13 @@ func TestServiceRequiresOwningCapabilityAndLiveSession(t *testing.T) {
 	service := New(fakeSessions{session: domain.Session{SessionRecord: domain.SessionRecord{
 		ID:       "s1",
 		Metadata: domain.SessionMetadata{BrowserCapabilityVerifier: verifier},
-	}}}, runtime, authority)
+	}}}, runtime, authority, nil)
 
-	if _, err := service.Status(context.Background(), "s1", "wrong"); apiErrorCode(err) != "BROWSER_CAPABILITY_INVALID" {
+	if _, _, err := service.Status(context.Background(), "s1", "wrong"); apiErrorCode(err) != "BROWSER_CAPABILITY_INVALID" {
 		t.Fatalf("wrong capability error = %v", err)
 	}
-	if _, err := service.Status(context.Background(), "s1", token); err != nil {
-		t.Fatalf("valid capability: %v", err)
+	if _, b, err := service.Status(context.Background(), "s1", token); err != nil || b != domain.BrowserBackendElectron {
+		t.Fatalf("valid capability: backend=%q err=%v", b, err)
 	}
 	if _, action, err := service.Execute(context.Background(), "s1", token, "viewport", nil); err != nil || action != "viewport" {
 		t.Fatalf("viewport action=%q err=%v", action, err)
@@ -78,7 +81,7 @@ func TestServiceRequiresOwningCapabilityAndLiveSession(t *testing.T) {
 	if _, _, err := service.Execute(context.Background(), "s1", token, "agent-browser-run", nil); apiErrorCode(err) != "BROWSER_ACTION_UNSUPPORTED" {
 		t.Fatalf("removed nested action error = %v", err)
 	}
-	if _, _, err := service.Execute(context.Background(), "s1", token, "eval", nil); apiErrorCode(err) != "BROWSER_ACTION_UNSUPPORTED" {
+	if _, _, err := service.Execute(context.Background(), "s1", token, "pdf", nil); apiErrorCode(err) != "BROWSER_ACTION_UNSUPPORTED" {
 		t.Fatalf("unsupported action error = %v", err)
 	}
 
@@ -86,8 +89,9 @@ func TestServiceRequiresOwningCapabilityAndLiveSession(t *testing.T) {
 		fakeSessions{session: domain.Session{SessionRecord: domain.SessionRecord{ID: "s1", IsTerminated: true}}},
 		runtime,
 		authority,
+		nil,
 	)
-	if _, err := terminated.Status(context.Background(), "s1", token); apiErrorCode(err) != "SESSION_TERMINATED" {
+	if _, _, err := terminated.Status(context.Background(), "s1", token); apiErrorCode(err) != "SESSION_TERMINATED" {
 		t.Fatalf("terminated error = %v", err)
 	}
 }
@@ -125,7 +129,7 @@ func TestServiceRotationRejectsOldBearerAndDispatchesNewBearer(t *testing.T) {
 	service := New(fakeSessions{session: domain.Session{SessionRecord: domain.SessionRecord{
 		ID:       "s1",
 		Metadata: domain.SessionMetadata{BrowserCapabilityVerifier: newVerifier},
-	}}}, runtime, authority)
+	}}}, runtime, authority, nil)
 	if _, _, err := service.Execute(context.Background(), "s1", oldToken, "snapshot", nil); apiErrorCode(err) != "BROWSER_CAPABILITY_INVALID" {
 		t.Fatalf("old bearer error = %v, want BROWSER_CAPABILITY_INVALID", err)
 	}

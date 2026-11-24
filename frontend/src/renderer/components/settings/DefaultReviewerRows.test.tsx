@@ -6,7 +6,7 @@ import { agentReadiness } from "../../test/agent-readiness-fixtures";
 import { DefaultReviewerRows } from "./DefaultReviewerRows";
 
 const { combobox, update, state } = vi.hoisted(() => ({ combobox: vi.fn(() => null), update: vi.fn(), state: { error: undefined as string | undefined, agents: undefined as unknown } }));
-vi.mock("../../hooks/useSettings", () => ({ useSettings: () => ({ settings: { workflowDefaults: { reviewerHarness: "codex", reviewerModel: "" } }, isLoading: false }) }));
+vi.mock("../../hooks/useSettings", () => ({ useSettings: () => ({ settings: { workflowDefaults: { reviewerHarness: "codex", reviewerModel: "", reviewerEffort: "high" } }, isLoading: false }) }));
 vi.mock("../../hooks/useUpdateWorkflowDefaults", () => ({ useUpdateWorkflowDefaults: () => ({ update, saving: false, error: state.error }) }));
 vi.mock("../../hooks/useAgentReadinessQuery", () => ({ useAgentReadinessQuery: () => ({ data: state.agents ? { agents: state.agents } : undefined }) }));
 vi.mock("./AgentModelCombobox", async (importOriginal) => ({ ...(await importOriginal<object>()), AgentModelCombobox: combobox }));
@@ -16,10 +16,13 @@ const renderRows = () => render(<QueryClientProvider client={new QueryClient()}>
 beforeEach(() => { state.error = undefined; state.agents = undefined; combobox.mockClear(); update.mockClear(); });
 
 describe("DefaultReviewerRows", () => {
-	it("offers no reasoning effort, since the app default stores none", () => {
+	it("offers reasoning effort and saves it as the default reviewer effort (B847)", () => {
 		renderRows();
-		expect(combobox).toHaveBeenCalled();
-		for (const [props] of combobox.mock.calls as unknown as [{ tuning?: unknown }][]) expect(props.tuning).toBeUndefined();
+		const calls = combobox.mock.calls as unknown as [{ tuning?: { effort: string; onEffortChange: (v: string) => void } }][];
+		const tuning = calls.map(([props]) => props.tuning).find(Boolean);
+		expect(tuning?.effort).toBe("high");
+		tuning?.onEffortChange("low");
+		expect(update).toHaveBeenCalledWith({ reviewerEffort: "low" });
 	});
 
 	it("shows a failed save instead of silently reverting the picker", () => {

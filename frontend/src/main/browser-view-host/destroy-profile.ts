@@ -24,6 +24,8 @@ export function createDestroyProfile(ctx: HostContext) {
     const partitionToClear =
       session.profileId === null ? session.profilePartition : undefined;
     const agentPartitionToClear = session.agentPartition;
+    // A temporary partition's site permission answers end with it.
+    if (partitionToClear) void options.browserSitePermissionStore?.clear(partitionToClear);
     session.signals.entries.length = 0;
     unregisterBrowserSignalWatcher(session);
     if (options.mainWindow.isDestroyed?.()) session.devtools = undefined;
@@ -137,6 +139,7 @@ export function createDestroyProfile(ctx: HostContext) {
     await Promise.all([
       options.clearBrowserProfileData(partition),
       options.browserHistoryStore?.clear(profileId) ?? Promise.resolve(),
+      options.browserSitePermissionStore?.clear(profileId) ?? Promise.resolve(),
     ]);
   };
 

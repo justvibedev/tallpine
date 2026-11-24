@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { type BrowserNavState } from "./browser-view-host";
 import type { BrowserProfile } from "../shared/browser-profiles";
-import { setupTabHost, fakeBrowserProfileStore } from "./browser-view-host-test-helpers";
+import { fakeBrowserProfileStore } from "./browser-view-host-fake-profile-store";
+import { setupTabHost } from "./browser-view-host-test-helpers";
 
 vi.mock("./render-check-proxy", () => ({ startRenderCheckProxy: vi.fn(async () => 4321) }));
 

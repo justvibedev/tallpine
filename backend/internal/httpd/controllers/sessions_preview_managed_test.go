@@ -492,7 +492,7 @@ func TestSessionsAPI_ShellPreviewCapabilityCannotAutomateBrowser(t *testing.T) {
 	srv := httptest.NewServer(httpd.NewRouterWithControl(config.Config{}, log, nil, httpd.APIDeps{
 		Sessions: svc, PreviewServer: managed, SessionCapabilities: authority,
 		ShellPreviewCapabilities: shell,
-		Browser:                  browsersvc.New(svc, nil, authority),
+		Browser:                  browsersvc.New(svc, nil, authority, nil),
 	}, httpd.ControlDeps{}))
 	t.Cleanup(srv.Close)
 	request := func(method, path, body, header, token string) (int, string) {

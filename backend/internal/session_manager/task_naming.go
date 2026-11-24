@@ -61,7 +61,7 @@ func (m *Manager) startTaskNaming(cfg ports.SpawnConfig, rec domain.SessionRecor
 		config := cfg.AgentConfig
 		if !cfg.AgentConfigResolved {
 			// Only model and effort are read below; the permission cap does not apply.
-			config = applySpawnAgentConfig(effectiveAgentConfig(cfg.Harness, cfg.Kind, projectConfig), config)
+			config = applySpawnAgentConfig(m.launchAgentConfig(namingCtx, cfg.Harness, cfg.Kind, cfg.Role, projectConfig), config)
 		}
 		// Chat has already resolved model/effort; TUI callers carry their resolved
 		// config below. This temporary call never owns the worker's conversation.

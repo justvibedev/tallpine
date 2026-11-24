@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -41,6 +42,8 @@ func newBrowserCommand(ctx *commandContext) *cobra.Command {
 	addBrowserInputCommands(cmd, ctx, &jsonOutput)
 	addBrowserWaitCommands(cmd, ctx, &jsonOutput)
 	addBrowserCaptureCommands(cmd, ctx, &jsonOutput)
+	addBrowserPageCommands(cmd, ctx, &jsonOutput)
+	addBrowserHandoffCommand(cmd, ctx, &jsonOutput)
 	return cmd
 }
 
@@ -92,24 +95,35 @@ func (c *commandContext) browserStatus(ctx context.Context) (apitypes.BrowserSta
 }
 
 func (c *commandContext) browserAction(ctx context.Context, action string, args map[string]any) (apitypes.BrowserCommandResponse, error) {
+	return c.browserActionWithin(ctx, action, args, commandTimeout)
+}
+
+// browserActionWithin is browserAction with its own HTTP timeout, for a
+// command that waits on the person longer than commandTimeout (handoff).
+func (c *commandContext) browserActionWithin(ctx context.Context, action string, args map[string]any, timeout time.Duration) (apitypes.BrowserCommandResponse, error) {
 	sessionID, capability, err := currentBrowserIdentity()
 	if err != nil {
 		return apitypes.BrowserCommandResponse{}, err
 	}
 	var out apitypes.BrowserCommandResponse
-	err = c.doJSONPathWithHeaders(
+	err = c.doJSONPathWithHeadersAndTimeout(
 		ctx,
 		http.MethodPost,
 		"/api/v1/browser/commands",
 		apitypes.BrowserCommandRequest{SessionID: domain.SessionID(sessionID), Action: action, Args: args},
 		&out,
 		map[string]string{browserCapabilityHeader: capability},
+		timeout,
 	)
 	return out, err
 }
 
 func (c *commandContext) runBrowserAction(cmd *cobra.Command, action string, args map[string]any, jsonOutput bool) error {
-	resp, err := c.browserAction(cmd.Context(), action, args)
+	return c.runBrowserActionWithin(cmd, action, args, jsonOutput, commandTimeout)
+}
+
+func (c *commandContext) runBrowserActionWithin(cmd *cobra.Command, action string, args map[string]any, jsonOutput bool, timeout time.Duration) error {
+	resp, err := c.browserActionWithin(cmd.Context(), action, args, timeout)
 	if err != nil {
 		return err
 	}

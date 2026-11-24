@@ -109,7 +109,7 @@ func (m *Manager) spawnResolveModelAndMode(ctx context.Context, st *spawnState) 
 	// model the harness cannot honor should not leave a seed row behind.
 	st.policy = m.decide(ctx, cfg.ProjectID, cfg.Kind, cfg.Harness, "")
 	st.requestedPermissions = applySpawnAgentConfig(effectiveAgentConfigFor(cfg.Harness, cfg.Kind, cfg.Role, project.Config), cfg.AgentConfig).Permissions
-	agentConfig := applySpawnAgentConfigUnder(st.policy, cfg.Harness, effectiveAgentConfigFor(cfg.Harness, cfg.Kind, cfg.Role, project.Config), cfg.AgentConfig)
+	agentConfig := applySpawnAgentConfigUnder(st.policy, cfg.Harness, m.launchAgentConfig(ctx, cfg.Harness, cfg.Kind, cfg.Role, project.Config), cfg.AgentConfig)
 	policyModel, err := project.Config.ResolveModel(cfg.Harness, agentConfig.Model)
 	if err != nil {
 		return spawnFail(fmt.Errorf("spawn: %w: %s", ErrUnsupportedModel, err.Error()))

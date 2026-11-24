@@ -4,7 +4,12 @@ import { useBrowserPanelChrome } from "./browser/useBrowserPanelChrome";
 import { BrowserToolbar } from "./browser/BrowserToolbar";
 import { BrowserFindBar } from "./browser/BrowserFindBar";
 import { BrowserBody } from "./browser/BrowserBody";
+import { BrowserPasskeyNotice } from "./browser/BrowserPasskeyNotice";
+import { BrowserSitePermissionBar } from "./browser/BrowserSitePermissionBar";
+import { BrowserHandoffNotice } from "./browser/BrowserHandoffNotice";
 import type { AnnotationStatus, BrowserPanelProps, BrowserPanelViewProps, BrowserAnnotationQueueModel } from "./browser/browser-types";
+import { ChromeModeCard } from "./browser/ChromeModeCard";
+import { useProjectBrowsesInChrome } from "../hooks/useProjectBrowsesInChrome";
 import { useCallback, useEffect, useRef, useState, type FocusEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { apiErrorMessage } from "../lib/api-client";
@@ -211,7 +216,26 @@ export function useBrowserAnnotationQueue({
 	};
 }
 
-export function BrowserPanel({
+/** The session's Browser panel: the in-app browser, or the Chrome mode card when its project browses in Google Chrome. */
+export function BrowserPanel(props: BrowserPanelProps) {
+	const chromeMode = useProjectBrowsesInChrome(props.session);
+	if (!chromeMode) return <InAppBrowserPanel {...props} />;
+	return <ChromeModePanel sessionId={props.session.id} />;
+}
+
+/** Real Chrome mode (B849): the handoff banner and the Chrome card with Sign in to sites (B854). */
+function ChromeModePanel({ sessionId }: { sessionId: string }) {
+	return (
+		<div className="flex h-full min-h-0 flex-col" role="tabpanel">
+			<BrowserHandoffNotice sessionId={sessionId} chrome />
+			<div className="min-h-0 flex-1">
+				<ChromeModeCard sessionId={sessionId} />
+			</div>
+		</div>
+	);
+}
+
+function InAppBrowserPanel({
 	session,
 	active,
 	poppedOut,
@@ -242,7 +266,18 @@ export function BrowserPanel({
 	);
 }
 
+/**
+ * The Browser panel the session view mounts (inspector tab and maximized
+ * overlay). A project in Real Chrome mode gets the Chrome card instead of the
+ * in-app page; without a slot the session's native view stays hidden.
+ */
 export function BrowserPanelView(props: BrowserPanelViewProps) {
+	const chromeMode = useProjectBrowsesInChrome(props.session);
+	if (chromeMode) return <ChromeModePanel sessionId={props.session.id} />;
+	return <InAppBrowserPanelView {...props} />;
+}
+
+function InAppBrowserPanelView(props: BrowserPanelViewProps) {
 	const {
 		poppedOut,
 		topbarHost,
@@ -325,6 +360,9 @@ export function BrowserPanelView(props: BrowserPanelViewProps) {
 				) : null}
 			</AnimatePresence>
 			<BrowserFindBar v={v} />
+			<BrowserHandoffNotice sessionId={props.session.id} />
+			<BrowserPasskeyNotice v={v} />
+			<BrowserSitePermissionBar v={v} />
 			<BrowserBody v={v} />
 		</div>
 	);

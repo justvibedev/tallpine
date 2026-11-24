@@ -32,7 +32,7 @@ beforeEach(() => {
 			const path = init.params.path.offerId === "claude-md" ? "CLAUDE.md" : ".claude/skills/qa";
 			return { data: { created: [{ path, mode: path === "CLAUDE.md" ? "file" : "symlink" }] } };
 		},
-		"/api/v1/projects/{id}/skills/commit": () => ({ data: { sha: SHA, remote: "origin", branch: "main", needsPush: true, pushed: true, localUpdated: true } }),
+		"/api/v1/projects/{id}/skills/commit": () => ({ data: { sha: SHA, skipped: [], remote: "origin", branch: "main", needsPush: true, pushed: true, localUpdated: true } }),
 	};
 	postMock.mockReset().mockImplementation(async (path: string, init: { body?: unknown; params: { path: Record<string, string> } }) => routes[path](init));
 	useSkillsOfferStore.setState({ shown: new Set(), active: new Set(), reviewing: null });
@@ -61,7 +61,7 @@ it("creates, commits only the created paths, pushes to the session base, then of
 });
 
 it("keeps the commit when the push is refused and offers to push it as a branch for a PR", async () => {
-	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: SHA, remote: "origin", branch: "main", needsPush: true, pushed: false, pushError: "git push: protected branch hook declined", localUpdated: false, sideBranch: "vo/agent-files-abcdef12" } });
+	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: SHA, skipped: [], remote: "origin", branch: "main", needsPush: true, pushed: false, pushError: "git push: protected branch hook declined", localUpdated: false, sideBranch: "vo/agent-files-abcdef12" } });
 	routes["/api/v1/projects/{id}/skills/push-branch"] = () => ({ data: { remote: "origin", branch: "vo/agent-files-abcdef12" } });
 	settings();
 	await userEvent.click(await screen.findByRole("button", { name: "Create, commit and push to origin/main" }));
@@ -74,7 +74,7 @@ it("keeps the commit when the push is refused and offers to push it as a branch 
 });
 
 it("names the side branch that keeps the commit when the local default branch could not take it", async () => {
-	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: SHA, remote: "origin", branch: "main", needsPush: true, pushed: false, pushError: "rejected", localUpdated: false, sideBranch: "vo/agent-files-abcdef12" } });
+	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: SHA, skipped: [], remote: "origin", branch: "main", needsPush: true, pushed: false, pushError: "rejected", localUpdated: false, sideBranch: "vo/agent-files-abcdef12" } });
 	settings();
 	await userEvent.click(await screen.findByRole("button", { name: "Create, commit and push to origin/main" }));
 	expect(await screen.findByText("The commit abcdef12 is kept locally on vo/agent-files-abcdef12.")).toBeInTheDocument();
@@ -90,7 +90,7 @@ it("never commits when creating a file fails", async () => {
 
 it("commits without pushing when sessions start from the local branch", async () => {
 	skills = body({ commitTarget: { remote: "origin", branch: "master", needsPush: false } });
-	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: SHA, remote: "origin", branch: "master", needsPush: false, pushed: false, localUpdated: true } });
+	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: SHA, skipped: [], remote: "origin", branch: "master", needsPush: false, pushed: false, localUpdated: true } });
 	settings();
 	await userEvent.click(await screen.findByRole("button", { name: "Create and commit to master" }));
 	expect(await screen.findByText("Committed abcdef12 to master.")).toBeInTheDocument();
@@ -113,6 +113,26 @@ it("the review dialog commits exactly the listed uncommitted files when nothing 
 	// The result stays after the refetch empties the pending list.
 	await waitFor(() => expect(getMock.mock.calls.length).toBeGreaterThan(1));
 	expect(await within(dialog).findByText("Committed abcdef12 and pushed to origin/main.")).toBeInTheDocument();
+});
+
+it("lists the paths the branch already had and left as is beside the commit", async () => {
+	skills = body({ offers: [], pendingCommit: ["CLAUDE.md", ".claude/skills/3d-lighting"] });
+	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: SHA, skipped: [".claude/skills/3d-lighting"], remote: "origin", branch: "main", needsPush: true, pushed: true, localUpdated: true } });
+	settings();
+	await userEvent.click(await screen.findByRole("button", { name: "Commit and push to origin/main" }));
+	expect(await screen.findByText("Committed abcdef12 and pushed to origin/main.")).toBeInTheDocument();
+	expect(screen.getByText("Already on main, left as is: .claude/skills/3d-lighting")).toBeInTheDocument();
+});
+
+it("says nothing was committed when the branch already had every path", async () => {
+	skills = body({ offers: [], pendingCommit: [".claude/skills/3d-lighting"] });
+	routes["/api/v1/projects/{id}/skills/commit"] = () => ({ data: { sha: "", skipped: [".claude/skills/3d-lighting"], remote: "origin", branch: "main", needsPush: true, pushed: false, localUpdated: false } });
+	settings();
+	await userEvent.click(await screen.findByRole("button", { name: "Commit and push to origin/main" }));
+	expect(await screen.findByText("Nothing committed: main already has these files, so sessions get them.")).toBeInTheDocument();
+	expect(screen.getByText("Already on main, left as is: .claude/skills/3d-lighting")).toBeInTheDocument();
+	expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+	expect(screen.queryByRole("button", { name: "Push as a branch for a PR" })).not.toBeInTheDocument();
 });
 
 it("the restart button replaces the orchestrator through the board's restart path", async () => {

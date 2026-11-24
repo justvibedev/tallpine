@@ -7,6 +7,7 @@ import { cn } from "../../lib/utils";
 import { BrowserDownloadsList } from "../BrowserDownloadsList";
 import type { BrowserPanelViewProps, BrowserPanelViewState } from "./browser-types";
 import { BrowserControlTooltip } from "./BrowserTabs";
+import { BrowserSiteSettingsMenu } from "./BrowserSiteSettingsMenu";
 import { DEVICE_PRESETS, CUSTOM_DEVICE_PRESET_ID, MAX_DEVICE_FRAME_WIDTH, MIN_DEVICE_FRAME_WIDTH } from "./browser-constants";
 
 /** Toolbar row: navigation, address field, new tab, annotate and menu. */
@@ -202,6 +203,7 @@ export function BrowserToolbar({ props, v }: { props: BrowserPanelViewProps; v: 
 							</Button>
 					</span>
 				</BrowserControlTooltip>
+				<BrowserSiteSettingsMenu v={v} />
 				{browserDownloads.downloads.length > 0 ? (
 					<DropdownMenu
 						onOpenChange={(open) => {

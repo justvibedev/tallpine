@@ -16,6 +16,10 @@ import { runFilePath } from "../daemon/daemon-lifecycle";
 export async function disposeBrowserViewHost(): Promise<void> {
 	const host = ctx.browserViewHost;
 	ctx.browserViewHost = null;
+	void ctx.chromeBrowser?.dispose();
+	ctx.chromeBrowser = null;
+	ctx.browserHandoffs?.dispose();
+	ctx.browserHandoffs = null;
 	const profileIpc = ctx.browserProfileIpc;
 	ctx.browserProfileIpc = null;
 	profileIpc?.dispose();

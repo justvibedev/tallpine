@@ -209,6 +209,9 @@ func (b *boot) wireChatNotifiers() {
 		OrchestratorLive: func(ctx context.Context, project domain.ProjectID, worker domain.SessionID) bool {
 			return b.reportSvc != nil && b.reportSvc.HasRecipient(ctx, project, worker)
 		},
+		OrchestratorAwaits: func(ctx context.Context, worker domain.SessionRecord) bool {
+			return b.reportSvc != nil && b.reportSvc.OrchestratorAwaits(ctx, worker)
+		},
 	})
 	b.lcStack.ActivitySink.Bind(b.turnNotifier)
 	b.bgTasks = bgtasks.New(

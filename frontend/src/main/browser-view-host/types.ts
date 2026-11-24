@@ -4,14 +4,21 @@ import type { BrowserCloseFailure } from "../browser-close-diagnostics";
 import type { BrowserAnnotationModeInput, BrowserAnnotationSession } from "../../shared/browser-annotations";
 import type { BrowserProfileId, BrowserProfileViewState, BrowserProfileUsage } from "../../shared/browser-profiles";
 import type { KeybindingOverrides } from "../../shared/shortcuts";
+import type { AppLocale } from "../../shared/ui-locale";
 import type { AgentBrowserRuntime } from "../agent-browser-runtime/runtime";
 import type { BrowserProfileStore } from "../browser-profile-store";
 import type { BrowserHistoryStore } from "../browser-history-store";
+import type { BrowserSitePermissionStore } from "../browser-site-permission-store";
+import type { BrowserSitePermissionEntry, BrowserSitePermissionPrompt } from "../../shared/browser-site-permissions";
 import type { TabLifecycleLimits } from "../browser-tab-lifecycle";
 import type { BrowserDownloadManager } from "../browser-download-manager";
+import type { WebAuthnAccountChooser } from "../browser-webauthn-chooser";
 import type { RemoteTabReport } from "../../shared/remote-tab";
+import type { BrowserHandoffPage } from "../browser-handoff";
 import { BrowserScreencast } from "../browser-screencast";
 import type { BrowserLiveSink, BrowserLiveState, BrowserRemoteInput, BrowserRemoteNavigation, BrowserRemoteTabAction } from "../browser-live-types";
+import type { BrowserSignalEntry, BrowserNetworkCapture } from "./network-types";
+import type { BrowserDevToolsPlacement, BrowserDevToolsState } from "./input-types";
 
 export type BrowserRect = Pick<Rectangle, "x" | "y" | "width" | "height">;
 
@@ -23,6 +30,24 @@ export type BrowserNavState = {
   canGoForward: boolean;
   isLoading: boolean;
   error?: string;
+  // The page awaits a passkey (navigator.credentials) that Electron gives no UI
+  // for (shared/browser-passkey-watch.ts).
+  passkeyPending?: boolean;
+  // Where the system browser can open this page while passkeyPending is set
+  // (shared/browser-passkey-url.ts).
+  passkeyExternalUrl?: string;
+  // The oldest site permission prompt the page is waiting on (site-permissions.ts).
+  sitePermissionPrompt?: BrowserSitePermissionPrompt;
+  // What the person decided for this page's origin, for the Site settings menu.
+  sitePermissions?: BrowserSitePermissionEntry[];
+};
+
+// A permission request waiting on the person's Allow / Block answer.
+export type PendingSitePrompt = {
+  prompt: BrowserSitePermissionPrompt;
+  // Where the answer is remembered: the profile ID, or a temporary partition.
+  scope: string;
+  resolve: (allow: boolean) => void;
 };
 
 export type BrowserTabState = {
@@ -88,57 +113,6 @@ export type BrowserRuntimeState = {
 	rejectionCode?: string;
 };
 
-export type BrowserDevToolsState = {
-  viewId: string;
-  open: boolean;
-  activeTabId: string;
-  placement?: BrowserDevToolsPlacement;
-};
-
-export type BrowserDevToolsPlacement = "right" | "bottom" | "left" | "undocked";
-
-export type BrowserDevToolsInput = {
-  viewId: string;
-  operation: "open" | "close" | "setPlacement";
-  placement?: BrowserDevToolsPlacement;
-};
-
-export type InternalBrowserDevToolsOperation =
-  | BrowserDevToolsInput["operation"]
-  | "toggle";
-
-export type BrowserBoundsInput = {
-  viewId: string;
-  revision: number;
-  rect: BrowserRect;
-  visible: boolean;
-};
-
-export type BrowserNavigateInput = {
-  viewId: string;
-  url: string;
-};
-
-export type BrowserHistorySuggestInput = {
-  viewId: string;
-  query: string;
-};
-
-export type BrowserHistoryFaviconInput = {
-  viewId: string;
-  url: string;
-};
-
-export type BrowserTabInput = {
-  viewId: string;
-  tabId: string;
-};
-
-export type BrowserOpenTabInput = {
-  viewId: string;
-  url?: string;
-};
-
 export type BrowserWebContents = Pick<
   WebContents,
   | "id"
@@ -165,6 +139,8 @@ export type BrowserWebContents = Pick<
   | "send"
   | "sendInputEvent"
   | "setWebRTCIPHandlingPolicy"
+  | "getUserAgent"
+  | "setUserAgent"
   | "setWindowOpenHandler"
   | "stop"
   | "stopFindInPage"
@@ -181,7 +157,18 @@ export type BrowserWebContents = Pick<
   getOSProcessId?: () => number;
   setBackgroundThrottling?: (allowed: boolean) => void;
   forcefullyCrashRenderer?: () => void;
-  session?: Pick<
+  // The page's right-click menu (context-menu.ts).
+  copyImageAt?: (x: number, y: number) => void;
+  downloadURL?: (url: string) => void;
+  replaceMisspelling?: (text: string) => void;
+  inspectElement?: (x: number, y: number) => void;
+  undo?: () => void;
+  redo?: () => void;
+  cut?: () => void;
+  copy?: () => void;
+  paste?: () => void;
+  selectAll?: () => void;
+  session?: Partial<Pick<Session, "addWordToSpellCheckerDictionary">> & Pick<
     Session,
     | "on"
     | "removeListener"
@@ -190,6 +177,8 @@ export type BrowserWebContents = Pick<
     | "setPermissionRequestHandler"
     | "setProxy"
     | "setCertificateVerifyProc"
+    | "getUserAgent"
+    | "setUserAgent"
     | "webRequest"
   >;
 };
@@ -254,13 +243,25 @@ export type BrowserViewHostOptions = {
   isCloseShellTerminalShortcutEnabled?: () => boolean;
   browserProfileStore?: BrowserProfileStore;
   browserHistoryStore?: BrowserHistoryStore;
+  // Remembered site permission answers; without it every request is denied.
+  browserSitePermissionStore?: BrowserSitePermissionStore;
   browserDownloadManager?: BrowserDownloadManager;
   // Asks the person whether the agent may use a named profile's logins.
   confirmAgentLogins?: AgentLoginsConfirm;
+  // Picks among several passkeys that matched a page's WebAuthn request.
+  chooseWebAuthnAccount?: WebAuthnAccountChooser;
   clearBrowserProfileData?: (partition: string) => Promise<void>;
   // Electron 44 removed clipboard.writeImage; main.ts adapts the async
   // ClipboardItem API to this narrow image-only writer.
-  clipboard?: { writeImage(image: Electron.NativeImage): void | Promise<void> };
+  clipboard?: {
+    writeImage(image: Electron.NativeImage): void | Promise<void>;
+    writeText?(text: string): void | Promise<void>;
+  };
+  // Builds the native right-click menu of a person's tab (context-menu.ts);
+  // omitted (tests), tabs get no menu.
+  buildPageMenu?: (items: Electron.MenuItemConstructorOptions[]) => { popup(): void };
+  // The UI locale for that menu's labels.
+  getLocale?: () => AppLocale;
   // Called after a page view is appended to the window so the composition can
   // keep a raised shell (open dialog/notice) above the new view.
   onNativeViewAdded?: () => void;
@@ -283,6 +284,8 @@ export type BrowserViewHost = {
     args?: Record<string, unknown>,
     signal?: AbortSignal,
   ) => Promise<unknown>;
+  // The session's front tab for a browser handoff (B858).
+  handoffPage: (sessionId: string, signal?: AbortSignal) => Promise<BrowserHandoffPage>;
   // webContents of the most recently focused browser panel (or null); the titlebar menu targets it for Edit/Reload/Zoom/DevTools.
   getLastFocusedPanelContents: () => WebContents | null;
   // The app menu's Reload for an agent tab's viewer: reloads the agent's page,
@@ -351,6 +354,14 @@ export type BrowserEntry = {
   driver: () => TabDriver;
   ready: Promise<void>;
   state: BrowserNavState;
+  // Set by the tab preload while a passkey request is in flight.
+  passkeyPending?: boolean;
+  // Site permission prompts in the order the page asked (site-permissions.ts).
+  sitePrompts?: PendingSitePrompt[];
+  // Remembered decisions for the page's origin; set by buildEntry.
+  siteSettings?: () => BrowserSitePermissionEntry[];
+  // The last top-level URL that was not an identity-provider page.
+  lastNonIdpUrl?: string;
   // Set on a tab that shows the agent's own browser: the agent browser tab it
   // shows, for life ("" until its viewer first reports).
   agentTab?: string;
@@ -419,6 +430,9 @@ export type BrowserSessionEntry = {
   nativeCommandOrigin?: "agent";
   // The named profile whose logins the person let the agent use in this session.
   agentLoginsGrantedProfileId?: string;
+  // The person's tab the agent was last moved off (ensureAgentTab), to return
+  // to once logins are granted.
+  agentDisplacedTabId?: string;
   tabs: Map<string, BrowserEntry>;
   activeTabId: string;
   activationRevision: number;
@@ -481,59 +495,4 @@ export type BrowserSessionEntry = {
     retargetQueue: Promise<void>;
     revealRequested: boolean;
   };
-};
-
-export type BrowserLogEntry = {
-  level: string;
-  message: string;
-  source?: string;
-  line?: number;
-  timestamp: string;
-};
-
-// Text only — never a request/response body, matching the existing on-demand
-// network capture's privacy stance (see MAX_NETWORK_REQUESTS below).
-export type BrowserSignalEntry = {
-  kind: "console-error" | "network-failure";
-  message: string;
-  timestamp: string;
-};
-
-export type BrowserNetworkRequest = {
-  id: string;
-  method: string;
-  url: string;
-  resourceType?: string;
-  startedAt: string;
-  status?: number;
-  statusText?: string;
-  mimeType?: string;
-  durationMs?: number;
-  failed?: boolean;
-  canceled?: boolean;
-  errorText?: string;
-  fromCache?: boolean;
-  fromServiceWorker?: boolean;
-  redirectedTo?: string;
-  requestHeaders?: Record<string, string>;
-  responseHeaders?: Record<string, string>;
-};
-
-export type InternalBrowserNetworkRequest = BrowserNetworkRequest & {
-  protocolRequestId: string;
-  startedMonotonic?: number;
-};
-
-export type BrowserNetworkCapture = {
-  active: boolean;
-  tabId: string;
-  startedAt: string;
-  expiresAt: string;
-  stoppedAt?: string;
-  stopReason?: string;
-  maxEntries: number;
-  nextSequence: number;
-  requests: InternalBrowserNetworkRequest[];
-  byRequestId: Map<string, InternalBrowserNetworkRequest>;
-  timer?: ReturnType<typeof setTimeout>;
 };

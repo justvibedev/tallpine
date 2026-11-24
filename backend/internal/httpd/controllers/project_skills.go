@@ -186,8 +186,9 @@ type ProjectSkillsResponse struct {
 	// the notice on project add and session start stays away; the list stays.
 	OffersEnabled bool `json:"offersEnabled"`
 	// PendingCommit lists instruction files and skill directories present in
-	// the checkout but not committed; sessions run in worktrees of a commit and
-	// do not see them until they are committed and merged.
+	// the checkout but missing from the ref new sessions start from (CommitTarget,
+	// or the checkout's HEAD when that is unresolved); sessions run in worktrees
+	// of that ref and do not see them until they are committed there.
 	PendingCommit []string                `json:"pendingCommit"`
 	Skills        []ProjectSkill          `json:"skills"`
 	Collisions    []ProjectSkillCollision `json:"collisions"`
@@ -302,7 +303,8 @@ func (c *ProjectSkillsController) get(w http.ResponseWriter, r *http.Request) {
 	path, env, project, enabled := p.path, p.env, p.harnesses, p.offersEnabled
 	id := chi.URLParam(r, "id")
 	opts := skillbridge.OptionsFor(c.DataDir, path, env).WithProject(id)
-	opts.Committed = skillbridge.GitCommitted(path)
+	target, targetOK := c.resolveTarget(r.Context(), path, p.baseBranch, false, nil)
+	opts.Committed = committedCheck(path, target, targetOK)
 	inv := skillbridge.Discover(opts)
 	harnesses := make([]string, 0, len(domain.AllHarnesses))
 	for _, h := range domain.AllHarnesses {
@@ -351,6 +353,6 @@ func (c *ProjectSkillsController) get(w http.ResponseWriter, r *http.Request) {
 	for _, col := range inv.Collisions {
 		resp.Collisions = append(resp.Collisions, ProjectSkillCollision{Name: col.Name, Winner: col.Winner, Loser: col.Loser, Reason: col.Reason})
 	}
-	resp.CommitTarget = c.commitTarget(r.Context(), path, p.baseBranch)
+	resp.CommitTarget = commitTargetDTO(target, targetOK)
 	envelope.WriteJSON(w, http.StatusOK, resp)
 }

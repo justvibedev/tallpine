@@ -37,6 +37,9 @@ import {
 DEFAULT_UI_SETTINGS
 } from "./ui-settings";
 import { type WindowComposition } from "./window-composition";
+import type { AppChromeBrowser } from "./chrome-browser/app-wiring";
+import type { AppBrowserHandoffs } from "./browser-handoff";
+import type { ChromeProcessManager } from "./chrome-browser/chrome-process";
 
 /** Mutable main-process state shared by the split modules (formerly module-level lets in main.ts). */
 export const ctx = {
@@ -61,6 +64,11 @@ export const ctx = {
 	daemonAttachmentGeneration: 0,
 	daemonOutput: "",
 	browserViewHost: (null) as BrowserViewHost | null,
+	// Real Chrome mode (B849): the window's Chrome host and the app's one Chrome.
+	chromeBrowser: (null) as AppChromeBrowser | null,
+	chromeProcessManager: (null) as ChromeProcessManager | null,
+	// Browser handoffs (B858): the window's banner state and Continue answers.
+	browserHandoffs: (null) as AppBrowserHandoffs | null,
 	browserProfileIpc: (null) as BrowserProfileIpc | null,
 	browserProfileImporter: (null) as BrowserProfileImportService | null,
 	windowComposition: (null) as WindowComposition | null,

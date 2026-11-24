@@ -46,7 +46,7 @@ type SettingsSaveResult = {
 };
 
 /** "general" and "agents" are the remote host pages; the rest are the local project pages. */
-export type ProjectSettingsSection = "general" | "agents" | "details" | "repository" | "instructions" | "reviews" | "workflow" | "sessions" | "security" | "advanced";
+export type ProjectSettingsSection = "general" | "agents" | "details" | "repository" | "instructions" | "reviews" | "workflow" | "sessions" | "browser" | "security" | "advanced";
 export type ProjectSettingsSaveState = {
 	phase: "idle" | "pending" | "saving" | "saved" | "failed";
 	dirty?: boolean;

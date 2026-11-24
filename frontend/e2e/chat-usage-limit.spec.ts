@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { installFakeBridge } from "./support/fake-bridge";
+import { installFakeBridge } from "./support/fake-daemon-bridge";
 
 for (const { harness, providerLabel } of [
 	{ harness: "claude-code", providerLabel: "Claude Code" },

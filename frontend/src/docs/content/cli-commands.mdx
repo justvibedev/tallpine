@@ -664,6 +664,7 @@ Usage:
 
 Available Commands:
   act            Resolve an element by description and act on it, snapshotting and retrying automatically
+  back           Go back one page in the session's browser tab
   check          Check a checkbox or switch
   click          Click an element reference from the latest snapshot
   console        Print captured browser console
@@ -672,15 +673,19 @@ Available Commands:
   dialog         Inspect or handle a page dialog
   drag           Drag one element onto another
   errors         Print captured browser errors
+  eval           Evaluate a JavaScript expression in the page and print its JSON value
   fill           Replace the value of a form control
   focus          Focus an element reference from the latest snapshot
+  forward        Go forward one page in the session's browser tab
   frame          Switch automation into a frame or back to the main document
   get            Read a page or element property
+  handoff        Pause until the person does a step only they can do (2FA, CAPTCHA, login)
   highlight      Visually highlight an element without changing page state
   hover          Move the pointer over an element
   network        Temporarily capture sanitized network request metadata
   open           Open a URL in this session's browser
   press          Press a key or modifier chord such as Enter or Control+A
+  reload         Reload the page in the session's browser tab
   screenshot     Capture the current page to a PNG file
   scroll         Scroll the page in one direction
   scrollintoview Scroll an element reference into view
@@ -692,6 +697,7 @@ Available Commands:
   type           Type text at the current cursor position in a form control
   uncheck        Uncheck a checkbox or switch
   unhighlight    Remove the current element highlight
+  upload         Choose files for a file input or upload button without opening a dialog
   viewport       emulate a fixed viewport size for the page (or reset it)
   wait           Wait for page load, DOM stability, time, text, selector, or URL state
 
@@ -721,6 +727,23 @@ Flags:
       --nth int                     0-based index to disambiguate when multiple candidates match equally
       --postcondition-timeout int   postcondition timeout in milliseconds (default 10000)
       --value string                text to fill/type; required when --action is fill or type
+
+Global Flags:
+      --json   print the structured response as JSON
+```
+
+### `tallpine browser back`
+
+```text
+Go back one page in the session's browser tab.
+
+Waits up to 10 seconds for the page to commit, then prints its URL;
+run `tallpine browser wait --load` before reading a slow page.
+
+Usage:
+  tallpine browser back [flags]
+
+Flags:
 
 Global Flags:
       --json   print the structured response as JSON
@@ -920,6 +943,26 @@ Global Flags:
       --json   print the structured response as JSON
 ```
 
+### `tallpine browser eval`
+
+```text
+Evaluate a JavaScript expression in the page's main frame and print its value as JSON.
+Pass - to read the expression from stdin. A returned promise is awaited.
+
+The result must be JSON-serializable (DOM nodes print as {}); results over 64 KiB
+are cut. The script is stopped at --timeout. eval runs only in agent tabs, or in
+the person's own tabs once they granted the agent their logins.
+
+Usage:
+  tallpine browser eval <expression|-> [flags]
+
+Flags:
+      --timeout int   stop the script after this many milliseconds (default 5000)
+
+Global Flags:
+      --json   print the structured response as JSON
+```
+
 ### `tallpine browser fill`
 
 ```text
@@ -941,6 +984,23 @@ Focus an element reference from the latest snapshot
 
 Usage:
   tallpine browser focus <ref> [flags]
+
+Flags:
+
+Global Flags:
+      --json   print the structured response as JSON
+```
+
+### `tallpine browser forward`
+
+```text
+Go forward one page in the session's browser tab.
+
+Waits up to 10 seconds for the page to commit, then prints its URL;
+run `tallpine browser wait --load` before reading a slow page.
+
+Usage:
+  tallpine browser forward [flags]
 
 Flags:
 
@@ -971,6 +1031,32 @@ Usage:
   tallpine browser get <property> [ref] [flags]
 
 Flags:
+
+Global Flags:
+      --json   print the structured response as JSON
+```
+
+### `tallpine browser handoff`
+
+```text
+Hand the browser to the person and wait. The Browser panel shows your reason
+with a Continue button and brings the tab to the front, and the person gets a
+needs-you notification, on their phone too.
+
+Returns when the person clicks Continue, when a page whose URL matches --until-url
+loads, or fails with BROWSER_HANDOFF_TIMEOUT after --timeout. --until-url is a glob
+matched against the whole URL: * matches any run of characters, ? one character,
+for example 'https://app.example.com/dashboard*'.
+
+Use it instead of polling `wait` or asking in chat when a page needs the person.
+
+Usage:
+  tallpine browser handoff --reason <text> [flags]
+
+Flags:
+      --reason string      what the person should do, shown in the panel and the notification (required)
+      --timeout duration   give up after this long (10s to 30m) (default 10m0s)
+      --until-url string   also return once a page whose URL matches this glob loads
 
 Global Flags:
       --json   print the structured response as JSON
@@ -1117,6 +1203,23 @@ Press a key or modifier chord such as Enter or Control+A
 
 Usage:
   tallpine browser press <key> [flags]
+
+Flags:
+
+Global Flags:
+      --json   print the structured response as JSON
+```
+
+### `tallpine browser reload`
+
+```text
+Reload the page in the session's browser tab.
+
+Waits up to 10 seconds for the page to commit, then prints its URL;
+run `tallpine browser wait --load` before reading a slow page.
+
+Usage:
+  tallpine browser reload [flags]
 
 Flags:
 
@@ -1332,6 +1435,25 @@ Remove the current element highlight
 
 Usage:
   tallpine browser unhighlight [flags]
+
+Flags:
+
+Global Flags:
+      --json   print the structured response as JSON
+```
+
+### `tallpine browser upload`
+
+```text
+Click an element reference from the latest snapshot (a file input, or a button that
+opens one) with the file chooser intercepted, and choose the given files. No dialog
+opens on the person's screen.
+
+Files must be inside this session's worktree or its $TMPDIR; symlinks are resolved
+before that check.
+
+Usage:
+  tallpine browser upload <ref> <path>... [flags]
 
 Flags:
 
@@ -2358,6 +2480,7 @@ Usage:
 Flags:
       --agent-rules string                                               Project-specific standing instructions for worker sessions
       --agent-rules-file string                                          Repo-relative file containing worker standing instructions
+      --browser-backend string                                           Browser the project's agent sessions drive: electron (the in-app browser) or chrome (the installed Google Chrome, with its passkeys and logins); empty restores electron. Only a person can set it
       --canonical-repo-url string                                        Explicit upstream HTTPS repository URL for PR claims; may be on another host when the repo moved, then it replaces origin for PR tracking
       --claude-plugin stringArray                                        Per-role Claude plugin switch role=id:on|off|unset (role: worker, orchestrator, reviewer; id: name@marketplace; repeatable); other plugins and config are kept
       --clear                                                            Clear all config
@@ -3102,11 +3225,26 @@ Usage:
   tallpine settings [command]
 
 Available Commands:
-  get         Show one setting's effective value
-  log         Show recent settings changes and who made them
-  ls          List settings with their effective values
-  set         Change one setting
-  unset       Reset one setting to its default
+  apply-role-default Bring every project's role in line with the app default model and effort
+  get                Show one setting's effective value
+  log                Show recent settings changes and who made them
+  ls                 List settings with their effective values
+  set                Change one setting
+  unset              Reset one setting to its default
+```
+
+### `tallpine settings apply-role-default`
+
+```text
+Lists the projects whose orchestrator, worker or reviewer would not run with the app-wide default agent, model and effort (app.workflowDefaults.*), and with --yes rewrites them: a project's own model and effort are cleared so it inherits the default, or set to the default when a project-wide value would still win; a role on another agent is switched to the default's agent. --project limits it to those projects. Without --yes nothing changes.
+
+Usage:
+  tallpine settings apply-role-default <orchestrator|worker|reviewer> [flags]
+
+Flags:
+      --json              Print JSON
+      --project strings   Only these projects (repeatable or comma-separated)
+      --yes               Apply the default to the listed projects (without it, only list them)
 ```
 
 ### `tallpine settings get`

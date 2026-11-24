@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"tallpine.eu/tallpine/backend/internal/brand"
 )
@@ -187,6 +186,11 @@ type ProjectConfig struct {
 	// follows the app default (off); an explicit false stays off. Only a human
 	// may set it, and a managed policy.planner.autoApprove of "off" locks it off.
 	PlanAutoApprove *bool `json:"planAutoApprove,omitempty"`
+
+	// BrowserBackend picks the browser the project's agent sessions drive:
+	// "" or "electron" is the in-app browser, "chrome" the installed Google
+	// Chrome (B849). Only a person may set it.
+	BrowserBackend *string `json:"browserBackend,omitempty"`
 
 	// PlanInPlace lets an item that needs a plan be planned by the implementer
 	// itself (B335): `tallpine spawn --backlog` starts an implementer that
@@ -400,6 +404,9 @@ func (c ProjectConfig) Validate() error {
 		}
 		seenEnv[folded] = true
 	}
+	if err := validateBrowserBackend(c.BrowserBackend); err != nil {
+		return err
+	}
 	if !c.PlanningMode.Valid() {
 		return fmt.Errorf("planningMode: %q is not auto, always or off", c.PlanningMode)
 	}
@@ -456,55 +463,6 @@ func (c ProjectConfig) Validate() error {
 	}
 	if err := c.TrackerIntake.Validate(); err != nil {
 		return err
-	}
-	return nil
-}
-
-// MaxVerifyCommandLen bounds VerifyCommand so it stays a one-line prompt hint.
-const MaxVerifyCommandLen = 500
-
-func validateVerifyCommand(cmd string) error {
-	if len(cmd) > MaxVerifyCommandLen {
-		return fmt.Errorf("verifyCommand: must be at most %d characters", MaxVerifyCommandLen)
-	}
-	for _, r := range cmd {
-		if unicode.IsControl(r) {
-			return fmt.Errorf("verifyCommand: must be a single line without control characters")
-		}
-	}
-	return nil
-}
-
-func validEnvName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, r := range name {
-		if r == '_' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || i > 0 && r >= '0' && r <= '9' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func validateNoWhitespaceField(name, value string) error {
-	if value == "" {
-		return nil
-	}
-	if strings.TrimSpace(value) != value {
-		return fmt.Errorf("%s: must not have leading or trailing whitespace", name)
-	}
-	return nil
-}
-
-func validateNameComponent(name, value string) error {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	if strings.ContainsAny(trimmed, `/\`) || trimmed == "." || trimmed == ".." {
-		return fmt.Errorf("%s: must not contain path separators or traversal components", name)
 	}
 	return nil
 }

@@ -54,7 +54,7 @@ function looksLikeHost(raw: string): boolean {
   return host.includes(".");
 }
 
-function searchURL(query: string): string {
+export function searchURL(query: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 

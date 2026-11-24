@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, View } from "react-native";
+import { AppState, ScrollView, useWindowDimensions } from "react-native";
 import { startPlanPolling } from "./planPolling";
 import { userFacingError } from "../connectionError";
 import type { ServerConfig } from "../config";
@@ -9,6 +9,18 @@ import type { PlanAnswersRequest, PlanView, ProjectPlan } from "./planCardModel"
 import { PlanCard } from "./PlanCard";
 
 const REFRESH_MS = 8000;
+
+/**
+ * The plan dock sits between the chat timeline and the composer, so it must
+ * scroll on its own: a plan with several questions is taller than the phone,
+ * and without a cap the lower questions and Send/Approve fall off screen. It
+ * also shrinks (flexShrink 1) when the keyboard or the ask strip takes room,
+ * so the composer below keeps its height.
+ */
+const PLAN_DOCK_MAX_SHARE = 0.5;
+export function planDockMaxHeight(windowHeight: number): number {
+	return Math.round(windowHeight * PLAN_DOCK_MAX_SHARE);
+}
 
 /** Loads a project's waiting plans and keeps them fresh while mounted. */
 export function useProjectPlans(cfg: ServerConfig | null | undefined, projectId: string | undefined) {
@@ -64,12 +76,21 @@ export function LivePlanCard({ cfg, projectId, itemRef, itemTitle, plan, onChang
 /** The plans that wait on the owner, one card each, for the orchestrator chat. Nothing while there are none. */
 export function PlanCards({ cfg, projectId }: { cfg: ServerConfig | null | undefined; projectId: string | undefined }) {
 	const { plans, refresh } = useProjectPlans(cfg, projectId);
+	const { height } = useWindowDimensions();
 	if (!cfg || !projectId || plans.length === 0) return null;
 	return (
-		<View style={{ gap: space.sm, paddingHorizontal: space.md, paddingBottom: space.sm }}>
+		<ScrollView
+			testID="plan-dock"
+			style={{ flexGrow: 0, flexShrink: 1, maxHeight: planDockMaxHeight(height) }}
+			contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.md, paddingBottom: space.sm }}
+			keyboardShouldPersistTaps="handled"
+			keyboardDismissMode="on-drag"
+			nestedScrollEnabled
+			showsVerticalScrollIndicator
+		>
 			{plans.map((p) => (
 				<LivePlanCard key={p.plan.id} cfg={cfg} projectId={projectId} itemRef={p.itemRef} itemTitle={p.itemTitle} plan={p.plan} onChanged={() => void refresh()} />
 			))}
-		</View>
+		</ScrollView>
 	);
 }

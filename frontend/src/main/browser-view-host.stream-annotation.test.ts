@@ -7,12 +7,11 @@ import {
 import { type BrowserNavState } from "./browser-view-host";
 import type { BrowserAnnotationSession, BrowserAnnotationSubmitPayload } from "../shared/browser-annotations";
 import {
-	annotationSession,
-	submittedAnnotationSession,
 	setupHost,
 	enableAnnotation,
 	setupTabHost,
 } from "./browser-view-host-test-helpers";
+import { annotationSession, submittedAnnotationSession } from "./browser-view-host-annotation-fixtures";
 
 vi.mock("./render-check-proxy", () => ({ startRenderCheckProxy: vi.fn(async () => 4321) }));
 

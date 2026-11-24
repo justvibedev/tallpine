@@ -46,7 +46,8 @@ function preloadCalls(rel: string): Array<{ method: IpcMethod; channel: string }
 }
 
 const shellCalls = preloadCalls("preload.ts");
-const pageCalls = preloadCalls("annotate-preload.ts");
+// The browser-view preload bundle: annotate-preload.ts imports browser-passkey-preload.ts (through browser-page-preload.ts).
+const pageCalls = [...preloadCalls("annotate-preload.ts"), ...preloadCalls("browser-passkey-preload.ts")];
 
 const shell = { id: 1 } as never;
 const page = { id: 2 } as never;
@@ -63,6 +64,7 @@ describe("ipc guard coverage over the preloads", () => {
 			"browser:annotation:discard",
 			"browser:annotation:state",
 			"browser:annotation:submit",
+			"browser:webauthn:state",
 		]);
 	});
 

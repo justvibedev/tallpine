@@ -21,7 +21,7 @@ describe("DefaultRoleRows", () => {
 	it("shows no model picker until an agent is chosen, and never offers an agent that is not ready", async () => {
 		renderRows();
 		expect(field).not.toHaveBeenCalled();
-		await userEvent.setup().click(screen.getByRole("button", { name: "New project worker agent" }));
+		await userEvent.setup().click(screen.getByRole("button", { name: "Default worker agent" }));
 		expect(await screen.findByRole("menuitem", { name: /Claude Code/ })).toBeInTheDocument();
 		expect(screen.queryByRole("menuitem", { name: /Kiro/ })).not.toBeInTheDocument();
 	});
@@ -29,7 +29,7 @@ describe("DefaultRoleRows", () => {
 	it("saves the picked worker agent under its own key", async () => {
 		renderRows();
 		const user = userEvent.setup();
-		await user.click(screen.getByRole("button", { name: "New project worker agent" }));
+		await user.click(screen.getByRole("button", { name: "Default worker agent" }));
 		await user.click(await screen.findByRole("menuitem", { name: /^Codex/ }));
 		expect(update).toHaveBeenCalledWith({ workerAgent: "codex" });
 	});

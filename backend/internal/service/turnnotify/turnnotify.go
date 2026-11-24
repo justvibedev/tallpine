@@ -120,6 +120,10 @@ type Deps struct {
 	// orchestrator (its project's, or a parent's in another project); nil
 	// assumes they do.
 	OrchestratorLive func(context.Context, domain.ProjectID, domain.SessionID) bool
+	// OrchestratorAwaits reports whether the worker's receiving orchestrator
+	// is idle and waiting on it; a chat turn_ended then skips its quiet hold.
+	// nil keeps the hold.
+	OrchestratorAwaits func(context.Context, domain.SessionRecord) bool
 }
 
 type turn struct {
@@ -696,7 +700,7 @@ func (o *Observer) sendWithID(id domain.SessionID, kind, last, reportID string) 
 	// turn end is definite, so its quiet window is short (B255): an unreported stop
 	// surfaces within ChatQuietDelay without waking the orchestrator per turn.
 	in := reportsvc.CreateInput{ID: reportID, SessionID: id, Message: Message(kind, rec, last), Immediate: true, Synthesized: true}
-	in.Quiet, in.QuietFor = quietPolicy(kind, rec)
+	in.Quiet, in.QuietFor = o.quietPolicy(ctx, kind, rec)
 	if kind == KindAuthRequired || kind == KindInputRequired {
 		// Actionable: the worker cannot proceed until someone renews its login.
 		in.State, in.Note, in.Message = domain.ReportNeedsInput, in.Message, ""

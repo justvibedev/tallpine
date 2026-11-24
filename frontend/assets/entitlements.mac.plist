@@ -9,11 +9,14 @@
 	     agent CLIs (daemon -> tmux -> shell -> CLI) and macOS attributes their
 	     TCC requests to this hardened-runtime app. Without audio-input a CLI
 	     with voice dictation is denied the mic (VS Code and iTerm2 keep it for
-	     the same reason). Camera, location, bluetooth, usb, print and photos
-	     are dropped: no frontend/src code and no known terminal CLI needs them.
-	     The shell and Browser panel deny every web permission except clipboard
-	     write (main/shell-permissions.ts, browser-view-host/session.ts). -->
+	     the same reason). The Browser panel also uses it, and the camera, for
+	     a site the person allows in one of their own tabs (Allow / Block bar,
+	     browser-view-host/site-permissions.ts); agent tabs and the shell deny
+	     both (main/shell-permissions.ts). Location, bluetooth, usb, print and
+	     photos are dropped: nothing in frontend/src needs them. -->
 	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
 	<true/>
 </dict>
 </plist>

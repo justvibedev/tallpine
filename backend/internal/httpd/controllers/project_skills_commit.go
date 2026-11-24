@@ -38,15 +38,18 @@ type CommitProjectSkillsRequest struct {
 // CommitProjectSkillsResponse reports the commit. When the push was refused,
 // Pushed is false, PushError holds git's message and the commit is kept
 // locally (on Branch, or on SideBranch when Branch could not take it).
+// Skipped lists requested paths Branch already has, left untouched; SHA is
+// empty when every path was skipped and nothing was committed.
 type CommitProjectSkillsResponse struct {
-	SHA          string `json:"sha"`
-	Remote       string `json:"remote"`
-	Branch       string `json:"branch"`
-	NeedsPush    bool   `json:"needsPush"`
-	Pushed       bool   `json:"pushed"`
-	PushError    string `json:"pushError,omitempty"`
-	LocalUpdated bool   `json:"localUpdated"`
-	SideBranch   string `json:"sideBranch,omitempty"`
+	SHA          string   `json:"sha"`
+	Skipped      []string `json:"skipped"`
+	Remote       string   `json:"remote"`
+	Branch       string   `json:"branch"`
+	NeedsPush    bool     `json:"needsPush"`
+	Pushed       bool     `json:"pushed"`
+	PushError    string   `json:"pushError,omitempty"`
+	LocalUpdated bool     `json:"localUpdated"`
+	SideBranch   string   `json:"sideBranch,omitempty"`
 }
 
 // PushProjectSkillsBranchRequest is a commit made by the commit route, to push
@@ -86,12 +89,21 @@ func (c *ProjectSkillsController) projectGitEnv(ctx context.Context, id domain.P
 	return c.GitCredentials.ProjectGitEnv(ctx, id)
 }
 
-func (c *ProjectSkillsController) commitTarget(ctx context.Context, path, configured string) *ProjectSkillCommitTarget {
-	t, ok := c.resolveTarget(ctx, path, configured, false, nil)
+func commitTargetDTO(t skillbridge.CommitTarget, ok bool) *ProjectSkillCommitTarget {
 	if !ok {
 		return nil
 	}
 	return &ProjectSkillCommitTarget{Remote: t.Remote, Branch: t.Branch, NeedsPush: t.NeedsPush()}
+}
+
+// committedCheck judges whether a path reaches new sessions: it is on the ref
+// their worktrees are cut from, which can differ from the checkout's HEAD.
+// Without a resolved target it falls back to HEAD.
+func committedCheck(path string, t skillbridge.CommitTarget, ok bool) func(string) bool {
+	if ok {
+		return skillbridge.CommittedAt(path, t.BaseRef)
+	}
+	return skillbridge.GitCommitted(path)
 }
 
 // commit commits the named pending paths to the branch sessions start from,
@@ -116,16 +128,16 @@ func (c *ProjectSkillsController) commit(w http.ResponseWriter, r *http.Request)
 		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "DEFAULT_BRANCH_UNRESOLVED", "the branch new sessions start from could not be resolved", nil)
 		return
 	}
+	// Every repo instruction file and skill directory may be named; CommitPaths
+	// skips the ones the target already has (the list the user saw may predate
+	// the fetch above), so treat them all as candidates here.
 	opts := skillbridge.OptionsFor("", p.path, p.env)
-	opts.Committed = skillbridge.GitCommitted(p.path)
-	pending := skillbridge.Discover(opts).PendingCommit
-	res, err := skillbridge.CommitPaths(r.Context(), p.path, target, in.Paths, pending, skillbridge.CommitMessage)
+	opts.Committed = func(string) bool { return false }
+	candidates := skillbridge.Discover(opts).PendingCommit
+	res, err := skillbridge.CommitPaths(r.Context(), p.path, target, in.Paths, candidates, skillbridge.CommitMessage)
 	switch {
 	case errors.Is(err, skillbridge.ErrPathNotAllowed), errors.Is(err, skillbridge.ErrNothingToCommit):
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "validation", "SKILLS_COMMIT_INVALID", err.Error(), nil)
-		return
-	case errors.Is(err, skillbridge.ErrPathExists):
-		envelope.WriteAPIError(w, r, http.StatusConflict, "conflict", "SKILLS_COMMIT_CONFLICT", err.Error(), nil)
 		return
 	case err != nil && res.SHA == "":
 		envelope.WriteAPIError(w, r, http.StatusInternalServerError, "internal", "SKILLS_COMMIT_FAILED", err.Error(), nil)
@@ -136,7 +148,7 @@ func (c *ProjectSkillsController) commit(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	envelope.WriteJSON(w, http.StatusOK, CommitProjectSkillsResponse{
-		SHA: res.SHA, Remote: target.Remote, Branch: target.Branch, NeedsPush: target.NeedsPush(),
+		SHA: res.SHA, Skipped: append([]string{}, res.Skipped...), Remote: target.Remote, Branch: target.Branch, NeedsPush: target.NeedsPush(),
 		Pushed: res.Pushed, PushError: res.PushError, LocalUpdated: res.LocalUpdated, SideBranch: res.SideBranch,
 	})
 }

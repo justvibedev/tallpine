@@ -101,7 +101,7 @@ describe("browser runtime link", () => {
 		const handle = connectBrowserRuntime(address, { execute });
 		handles.push(handle);
 		await vi.waitFor(() => expect(handle.state.connected).toBe(true));
-		await vi.waitFor(() => expect(messages).toContainEqual({ type: "hello", version: 3 }));
+		await vi.waitFor(() => expect(messages).toContainEqual({ type: "hello", version: 4 }));
 
 		broker.socket!.write(
 			`${JSON.stringify({ type: "command", requestId: "r1", sessionId: "s1", action: "snapshot", args: {} })}\n`,

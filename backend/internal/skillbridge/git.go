@@ -12,13 +12,20 @@ import (
 // commit. Outside a git repository (or without git) every path counts as
 // committed, so nothing is flagged that cannot be judged.
 func GitCommitted(workspace string) func(rel string) bool {
+	return CommittedAt(workspace, "HEAD")
+}
+
+// CommittedAt returns an Options.Committed check backed by ref, for example the
+// ref new session worktrees are cut from, which may differ from the checkout's
+// HEAD. When ref does not resolve to a commit, every path counts as committed.
+func CommittedAt(workspace, ref string) func(rel string) bool {
 	run := func(args ...string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return process.CommandContext(ctx, "git", ports.GitInDir(workspace, args...)...).Run() //nolint:gosec // fixed git subcommands on the user's own checkout
 	}
-	if run("rev-parse", "--verify", "-q", "HEAD") != nil {
+	if ref == "" || run("rev-parse", "--verify", "-q", ref+"^{commit}") != nil {
 		return func(string) bool { return true }
 	}
-	return func(rel string) bool { return run("cat-file", "-e", "HEAD:"+rel) == nil }
+	return func(rel string) bool { return run("cat-file", "-e", ref+":"+rel) == nil }
 }

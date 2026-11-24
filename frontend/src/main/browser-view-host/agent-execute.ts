@@ -13,12 +13,13 @@ import { inputAction } from "./agent-action-input";
 import { pageAction } from "./agent-action-page";
 import { openAction, snapshotAction } from "./agent-action-snapshot";
 import { tabAction } from "./agent-action-tabs";
+import { createHandoffPage } from "./agent-handoff-page";
 
 const AGENT_TAB_MANAGEMENT_ACTIONS = new Set(["tabs", "tab-new", "tab-select", "tab-close"]);
 
 export function createAgentExecute(ctx: HostContext) {
   const { options, viewIdsBySessionId } = ctx;
-  const { destroy, ensureSessionReady, openTab, queueNativeOperation, ensureAgentTab, resolveAgentLogins, setAgentBrowserActivity } = ctx.fns;
+  const { destroy, ensureSessionReady, openTab, queueNativeOperation, ensureAgentTab, settleAgentLogins, setAgentBrowserActivity } = ctx.fns;
 
   const execute: BrowserViewHost["execute"] = async (sessionId, action, args = {}, signal) => {
       throwIfAborted(signal);
@@ -59,9 +60,18 @@ export function createAgentExecute(ctx: HostContext) {
         }
         // The person's own tab may hold their logins: agent commands move to an
         // agent tab (throwaway profile unless granted) instead of driving it.
-        if (!AGENT_TAB_MANAGEMENT_ACTIONS.has(action)) resolveAgentLogins(session);
+        // When the person's own page is in front, wait for their logins answer
+        // first: a grant lets this command read that page (no blank agent tab).
         // runNative re-checks inside the native queue, where the target is chosen.
-        if (!AGENT_TAB_MANAGEMENT_ACTIONS.has(action)) await ensureAgentTab(session);
+        if (!AGENT_TAB_MANAGEMENT_ACTIONS.has(action)) {
+          const loginsAnswer = settleAgentLogins(session, signal);
+          if (loginsAnswer) await loginsAnswer;
+          const abandoned = await ensureAgentTab(session, true);
+          // A blank agent tab left for the person's page after a grant: close it
+          // here, outside the native queue its close runs in.
+          if (abandoned && session.tabs.has(abandoned.tabId))
+            await abandoned.driver().close(signal).catch(() => undefined);
+        }
         activeEntry(session);
         const runNative = createRunNative(ctx, sessionId, session, signal);
         const env: AgentActionEnv = { ctx, sessionId, session, signal, action, args, runNative };
@@ -107,6 +117,11 @@ export function createAgentExecute(ctx: HostContext) {
           case "devtools-close":
             return pageAction(env);
           case "viewport":
+          case "back":
+          case "forward":
+          case "reload":
+          case "eval":
+          case "upload":
             return await pageAction(env);
           case "screenshot":
           case "network-start":
@@ -129,5 +144,5 @@ export function createAgentExecute(ctx: HostContext) {
       }
   };
 
-  return { execute };
+  return { execute, handoffPage: createHandoffPage(ctx) };
 }

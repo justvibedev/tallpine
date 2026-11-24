@@ -228,9 +228,10 @@ export function useBrowserPanelActions(props: BrowserPanelViewProps, state: Retu
 	const daemonTcpOpen = useDaemonTcpOpen();
 	const externalBlocked = !daemonTcpOpen && !session.hostId && isLocalDaemonUrl(navState.url);
 
-	const openCurrentPageExternally = async () => {
-		if (!isWebLink(navState.url) || agentPageOnHost || externalBlocked) return;
-		await openLinkInSystemBrowser(await externalURL(navState.url));
+	// `url` overrides the shown address (the passkey notice opens a standalone one).
+	const openCurrentPageExternally = async (url: string = navState.url) => {
+		if (!isWebLink(url) || agentPageOnHost || externalBlocked) return;
+		await openLinkInSystemBrowser(await externalURL(url));
 	};
 
 	const copyCurrentURL = async () => {

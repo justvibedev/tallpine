@@ -262,6 +262,7 @@ type Manager struct {
 	// that names no mode. Nil falls back to the compatibility default, so a build
 	// without it behaves exactly as before.
 	defaults            SessionModeDefaults
+	noBuiltinRoleModels bool
 	chat                ChatLauncher
 	modelCatalog        contextwindow.CatalogReader
 	lcm                 lifecycleRecorder

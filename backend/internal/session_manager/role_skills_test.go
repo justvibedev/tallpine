@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/skillbridge"
 )
 
@@ -58,6 +59,42 @@ func TestFreshLaunchOptionsCarriesRoleSkillSwitches(t *testing.T) {
 	got = m.freshLaunchOptions(ctx, domain.HarnessKiro, domain.KindOrchestrator, "p", project, "", domain.AgentLaunchOptions{})
 	if !slices.Equal(got.SkillLaunch().Resources, []string{"skill://.claude/skills/design/SKILL.md"}) {
 		t.Fatalf("orchestrator kiro launch = %+v", got.SkillLaunch())
+	}
+}
+
+// A Kiro launch lists the repo skills its worktree will have: those on the
+// ref sessions start from, not the checkout's HEAD. Here the checkout is on
+// main (which has neither skill) while sessions start from base, which has
+// "shared"; "local-only" exists only untracked in the checkout.
+func TestKiroLaunchJudgesPendingSkillsAgainstSessionBase(t *testing.T) {
+	m, st, _, fw := newManager()
+	ctx := context.Background()
+	repo := newManagerGitRepo(t)
+	writeSkill := func(name string) {
+		dir := filepath.Join(repo, ".claude", "skills", name)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: "+name+"\n---\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runManagerGit(t, repo, "checkout", "-q", "-b", "base")
+	writeSkill("shared")
+	runManagerGit(t, repo, "add", ".claude")
+	runManagerGit(t, repo, "commit", "-q", "-m", "shared skill")
+	runManagerGit(t, repo, "checkout", "-q", "main")
+	writeSkill("shared")
+	writeSkill("local-only")
+	fw.resolved = map[string]ports.WorkspaceDefaultBranch{repo: {Branch: "base", BaseRef: "refs/heads/base"}}
+	project := domain.ProjectConfig{DefaultBranch: "base", Env: map[string]string{"HOME": t.TempDir()}}
+	st.projects["p"] = domain.ProjectRecord{ID: "p", Path: repo, Config: project}
+	got := m.freshLaunchOptions(ctx, domain.HarnessKiro, domain.KindWorker, "p", project, "", domain.AgentLaunchOptions{})
+	if want := []string{"skill://.claude/skills/shared/SKILL.md"}; !slices.Equal(got.SkillLaunch().Resources, want) {
+		t.Fatalf("kiro launch resources = %v, want %v", got.SkillLaunch().Resources, want)
+	}
+	if len(fw.resolves) == 0 || fw.resolves[len(fw.resolves)-1].configuredBranch != "base" {
+		t.Fatalf("resolves = %+v, want the project's base branch", fw.resolves)
 	}
 }
 

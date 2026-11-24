@@ -10,9 +10,11 @@ import { emptyNavState, isBlankBrowserEntry } from "./entry-state";
 import type { BrowserEntry, BrowserFindState, BrowserNavState, BrowserPopupOptions, BrowserRect, BrowserSessionEntry, BrowserViewLike } from "./types";
 import { wireFaviconEvents } from "./favicon";
 import { BROWSER_VIEW_BORDER_RADIUS, OFFSCREEN_BOUNDS } from "./constants";
-import { canWriteBrowserClipboard, shouldHandleAppShortcutInBrowserContext } from "./shortcuts";
+import { shouldHandleAppShortcutInBrowserContext } from "./shortcuts";
 import type { HostContext } from "./context";
 import { proxyAgentSession } from "./agent-proxy";
+import { attachWebAuthnAccountChooser } from "../browser-webauthn-chooser";
+import { applyChromeUserAgent, applyChromeUserAgentToContents } from "../browser-user-agent";
 
 export type TabDeps = {
   applyBrowserViewBounds: (view: BrowserViewLike, bounds: BrowserRect, visible: boolean) => void;
@@ -80,6 +82,9 @@ export function prepareView(w: PrepareArgs): { view: BrowserViewLike; webPrefere
     plugins: true,
     preload: options.annotatePreloadPath,
     sandbox: true,
+    // HTML fullscreen (a video player's button) fills this tab's view, which
+    // is the panel slot, instead of taking the whole window fullscreen.
+    disableHtmlFullscreenWindowResize: true,
   };
   const view = new options.WebContentsView({
     webPreferences,
@@ -97,33 +102,25 @@ export function prepareView(w: PrepareArgs): { view: BrowserViewLike; webPrefere
   // SOCKS carries no UDP: without this WebRTC would probe the LAN directly.
   // The policy is per WebContents, so adopted popups need it too.
   if (proxiedAgentTab) view.webContents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
-  // Main-frame sites use this permission for actions such as "Copy link".
-  // Keep embedded frames, clipboard reads, and every other permission denied.
+  // Same-origin clipboard write stays allowed for every tab ("Copy link").
+  // A person's own tab may ask for camera, mic, notifications or clipboard
+  // read through the panel's Allow / Block bar; agent and proxied tabs are
+  // denied everything else (site-permissions.ts). Handlers are per Session,
+  // and each one looks up the requesting tab, so re-setting them is harmless.
   view.webContents.session?.setPermissionCheckHandler?.(
-    (contents, permission, _origin, details) =>
-      canWriteBrowserClipboard(
-        contents,
-        permission,
-        details.requestingUrl,
-        details.isMainFrame,
-      ),
+    (contents, permission, origin, details) => w.ctx.fns.sitePermissionCheck(contents, permission, origin, details),
   );
   view.webContents.session?.setPermissionRequestHandler?.(
-    (contents, permission, callback, details) =>
-      callback(
-        canWriteBrowserClipboard(
-          contents,
-          permission,
-          details.requestingUrl,
-          details.isMainFrame,
-        ),
-      ),
+    (contents, permission, callback, details) => w.ctx.fns.sitePermissionRequest(contents, permission, callback, details),
   );
   // Remote app previews are HTTPS on loopback with Tallpine's own certificate,
   // so Chromium speaks HTTP/2 to them (preview-certificate.ts).
   const viewSession = view.webContents.session;
   if (viewSession?.setCertificateVerifyProc) trustPreviewCertificate(viewSession);
+  applyChromeUserAgent(view.webContents.session);
+  applyChromeUserAgentToContents(view.webContents);
   options.browserDownloadManager?.attach(view.webContents.session);
+  attachWebAuthnAccountChooser(view.webContents.session, options.chooseWebAuthnAccount);
   return { view, webPreferences, agentProxyReady };
 }
 
@@ -176,6 +173,7 @@ export function buildEntry(w: EntryArgs): BrowserEntry {
     documentGeneration: 0,
     navigationGeneration: 0,
     blockedNavigationGeneration: 0,
+    siteSettings: () => fns.rememberedSitePermissions(entry),
   };
   session.tabs.set(tabId, entry);
   tabsByWebContentsId.set(view.webContents.id, entry);
@@ -303,6 +301,7 @@ export function wirePopups(w: TabWiring): void {
       });
       return popup.view.webContents as WebContents;
     },
+    (url) => fns.confirmExternalUrl(entry, url),
   );
 }
 

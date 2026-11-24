@@ -12,7 +12,7 @@ import { apiClient, apiErrorMessage } from "../lib/api-client";
 import { clientForHost } from "../lib/host-clients";
 import type { SessionMode } from "../types/workspace";
 
-/** The agent, model and effort a new project starts with for its worker and orchestrator (empty: no app default). */
+/** The agent, model and effort a new project starts with for its worker and orchestrator, and that a project naming no model for the role inherits at spawn (empty: no app default). */
 export type RoleDefaults = {
 	workerAgent?: string;
 	workerModel?: string;
@@ -44,7 +44,7 @@ export interface Settings {
 	/** Idle open sessions move to a harness release installed while they ran. */
 	versionRefresh?: boolean;
 	/** App-wide workflow defaults projects inherit when they set none of their own. */
-	workflowDefaults?: { autoReview: boolean; planningMode: "auto" | "always" | "off"; planAutoApprove: boolean; reviewerHarness?: string; reviewerModel?: string } & RoleDefaults;
+	workflowDefaults?: { autoReview: boolean; planningMode: "auto" | "always" | "off"; planAutoApprove: boolean; reviewerHarness?: string; reviewerModel?: string; reviewerEffort?: string } & RoleDefaults;
 	/** Orchestrators may raise their compaction window while they research. */
 	dynamicOrchestratorContext?: boolean;
 	/** Coalesce repeated activity writes and compact the provider-event archive. */

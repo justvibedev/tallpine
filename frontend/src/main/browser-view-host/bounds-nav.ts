@@ -7,7 +7,8 @@ import { browserError, throwIfAborted } from "./args";
 import { pushNavState, readNavState } from "./nav-events";
 import { isAllowedBrowserURL, normalizeBrowserURL } from "./url";
 import { activeEntry, emptyNavState, isTemporaryBrowserPartition } from "./entry-state";
-import type { BrowserBoundsInput, BrowserEntry, BrowserNavState, BrowserNavigateInput, BrowserSessionEntry } from "./types";
+import type { BrowserEntry, BrowserNavState, BrowserSessionEntry } from "./types";
+import type { BrowserBoundsInput, BrowserNavigateInput } from "./input-types";
 import { ANNOTATION_SNAPSHOT_MAX_DIMENSION, ANNOTATION_SNAPSHOT_TIMEOUT_MS, OFFSCREEN_BOUNDS, REMOTE_PREVIEW_URL, SCREENSHOT_FALLBACK_TIMEOUT_MS } from "./constants";
 import type { HostContext } from "./context";
 

@@ -1074,7 +1074,7 @@ func TestSystemPrompt_AppendsConfidentialityGuard(t *testing.T) {
 			if !strings.Contains(sp, filepath.ToSlash(filepath.Join("skills", "using-tallpine", "SKILL.md"))) {
 				t.Fatalf("%s: system prompt missing using-tallpine skill pointer:\n%s", tc.name, sp)
 			}
-			if !strings.Contains(sp, "Tallpine desktop Browser panel") || !strings.Contains(sp, "agent.browsers.get(\"iab\")") {
+			if !strings.Contains(sp, "backend=chrome|electron") || !strings.Contains(sp, "never Claude in Chrome") || !strings.Contains(sp, "Tallpine desktop Browser panel") || !strings.Contains(sp, "agent.browsers.get(\"iab\")") {
 				t.Fatalf("%s: system prompt missing Tallpine browser routing guidance:\n%s", tc.name, sp)
 			}
 			if !strings.Contains(sp, "Static file targets passed to `tallpine preview`") ||

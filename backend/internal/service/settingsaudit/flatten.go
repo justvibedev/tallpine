@@ -69,6 +69,7 @@ func AppSettings(s settingssvc.Snapshot) Values {
 		"app.workflowDefaults.planAutoApprove":        raw(s.WorkflowDefaults.PlanAutoApprove),
 		"app.workflowDefaults.reviewerHarness":        raw(s.WorkflowDefaults.ReviewerHarness),
 		"app.workflowDefaults.reviewerModel":          raw(s.WorkflowDefaults.ReviewerModel),
+		"app.workflowDefaults.reviewerEffort":         raw(s.WorkflowDefaults.ReviewerEffort),
 		"app.workflowDefaults.workerAgent":            raw(s.WorkflowDefaults.WorkerAgent),
 		"app.workflowDefaults.workerModel":            raw(s.WorkflowDefaults.WorkerModel),
 		"app.workflowDefaults.workerEffort":           raw(s.WorkflowDefaults.WorkerEffort),

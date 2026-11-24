@@ -5430,6 +5430,40 @@ export interface paths {
         patch: operations["updateHarnessDefault"];
         trace?: never;
     };
+    "/api/v1/settings/role-defaults/{role}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set or clear the role overrides of drifting projects so they run with the app-wide default */
+        post: operations["applyRoleDefault"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/role-defaults/{role}/drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the projects whose role does not run with the app-wide default agent, model and effort */
+        get: operations["getRoleDefaultDrift"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/schema": {
         parameters: {
             query?: never;
@@ -6955,6 +6989,8 @@ export interface components {
             sessionId: string;
         };
         BrowserStatusResponse: {
+            /** @enum {string} */
+            backend?: "electron" | "chrome";
             connected: boolean;
             /** Format: date-time */
             connectedAt?: string;
@@ -7384,6 +7420,7 @@ export interface components {
             remote: string;
             sha: string;
             sideBranch?: string;
+            skipped: string[];
         };
         CompactConversationResponse: {
             /** Format: int64 */
@@ -7640,21 +7677,23 @@ export interface components {
             orchestratorAgent?: null | string;
             /** @description Orchestrator reasoning effort a new project starts with, paired with orchestratorAgent. */
             orchestratorEffort?: null | string;
-            /** @description Orchestrator model a new project starts with, paired with orchestratorAgent. */
+            /** @description Orchestrator model a new project starts with, paired with orchestratorAgent. A project that names no orchestrator model inherits it at spawn on that agent. */
             orchestratorModel?: null | string;
             /** @description Plan auto-approval for projects that set none of their own. */
             planAutoApprove?: null | boolean;
             /** @description Planning mode (auto, always or off) for projects that set none of their own. */
             planningMode?: null | string;
+            /** @description Default reviewer reasoning effort paired with reviewerModel. */
+            reviewerEffort?: null | string;
             /** @description Default reviewer harness for projects that set no reviewer of their own; empty clears it and the default model. */
             reviewerHarness?: null | string;
-            /** @description Default reviewer model paired with the default reviewer harness. */
+            /** @description Default reviewer model paired with the default reviewer harness; a project reviewer on that harness with no model of its own inherits it. */
             reviewerModel?: null | string;
             /** @description Worker agent a new project starts with; empty clears it and its model and effort. */
             workerAgent?: null | string;
             /** @description Worker reasoning effort a new project starts with, paired with workerAgent. */
             workerEffort?: null | string;
-            /** @description Worker model a new project starts with, paired with workerAgent. */
+            /** @description Worker model a new project starts with, paired with workerAgent. A project that names no worker model inherits it at spawn on that agent. */
             workerModel?: null | string;
         };
         ControllersWorkflowDefaultsResponse: {
@@ -7664,6 +7703,7 @@ export interface components {
             orchestratorModel?: string;
             planAutoApprove: boolean;
             planningMode: string;
+            reviewerEffort?: string;
             reviewerHarness?: string;
             reviewerModel?: string;
             workerAgent?: string;
@@ -9061,6 +9101,14 @@ export interface components {
             repo: string;
             workspaceRepos?: components["schemas"]["WorkspaceRepo"][];
         };
+        ProjectApplyRoleDefaultInput: {
+            projectIds?: string[];
+        };
+        ProjectApplyRoleDefaultResult: {
+            applied: string[];
+            failed: components["schemas"]["ProjectRoleDefaultApplyFailure"][];
+            role: string;
+        };
         ProjectBranchSuggestion: {
             ahead: number;
             branch: string;
@@ -9080,6 +9128,7 @@ export interface components {
             autoReview?: null | boolean;
             autoReviewMaxRounds?: number;
             autoReviewOnReport?: null | boolean;
+            browserBackend?: null | string;
             canonicalRepoURL?: string;
             chatHibernation?: components["schemas"]["ChatHibernationConfig"];
             claudeAutoMemory?: {
@@ -9183,10 +9232,30 @@ export interface components {
         ProjectResponse: {
             project: components["schemas"]["Project"];
         };
+        ProjectRoleDefaultApplyFailure: {
+            error: string;
+            projectId: string;
+        };
+        ProjectRoleDefaultDrift: {
+            change: string;
+            current: components["schemas"]["ProjectRoleValue"];
+            name: string;
+            projectId: string;
+        };
+        ProjectRoleDefaultDriftReport: {
+            default: components["schemas"]["ProjectRoleValue"];
+            projects: components["schemas"]["ProjectRoleDefaultDrift"][];
+            role: string;
+        };
         ProjectRoleSettingsPatch: {
             agent?: null | string;
             effort?: null | string;
             model?: null | string;
+        };
+        ProjectRoleValue: {
+            agent: string;
+            effort: string;
+            model: string;
         };
         ProjectSetRoleSettingsInput: {
             orchestrator?: components["schemas"]["ProjectRoleSettingsPatch"];
@@ -32594,6 +32663,128 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    applyRoleDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Role whose app-wide default model and effort is compared or applied. */
+                role: "orchestrator" | "worker" | "reviewer";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectApplyRoleDefaultInput"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectApplyRoleDefaultResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+        };
+    };
+    getRoleDefaultDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Role whose app-wide default model and effort is compared or applied. */
+                role: "orchestrator" | "worker" | "reviewer";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRoleDefaultDriftReport"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

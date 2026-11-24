@@ -30,6 +30,7 @@ type WorkflowDefaultsUpdate struct {
 	// empty harness clears it (and its model).
 	ReviewerHarness *domain.ReviewerHarness
 	ReviewerModel   *string
+	ReviewerEffort  *string
 	// Worker* and Orchestrator* set the agent, model and effort a new project
 	// starts with for that role; an empty agent clears its model and effort.
 	WorkerAgent        *domain.AgentHarness
@@ -77,20 +78,14 @@ func (s *Service) SetWorkflowDefaults(ctx context.Context, update WorkflowDefaul
 	if update.PlanAutoApprove != nil {
 		next.PlanAutoApprove = *update.PlanAutoApprove
 	}
+	reviewerAgent := domain.AgentHarness(next.ReviewerHarness)
+	var updateReviewerAgent *domain.AgentHarness
 	if update.ReviewerHarness != nil {
-		// A model belongs to its harness: a changed harness drops the old model
-		// unless the same update names a new one.
-		if *update.ReviewerHarness != next.ReviewerHarness && update.ReviewerModel == nil {
-			next.ReviewerModel = ""
-		}
-		next.ReviewerHarness = *update.ReviewerHarness
+		h := domain.AgentHarness(*update.ReviewerHarness)
+		updateReviewerAgent = &h
 	}
-	if update.ReviewerModel != nil {
-		next.ReviewerModel = *update.ReviewerModel
-	}
-	if next.ReviewerHarness == "" {
-		next.ReviewerModel = ""
-	}
+	applyRoleDefault(&reviewerAgent, &next.ReviewerModel, &next.ReviewerEffort, updateReviewerAgent, update.ReviewerModel, update.ReviewerEffort)
+	next.ReviewerHarness = domain.ReviewerHarness(reviewerAgent)
 	applyRoleDefault(&next.WorkerAgent, &next.WorkerModel, &next.WorkerEffort, update.WorkerAgent, update.WorkerModel, update.WorkerEffort)
 	applyRoleDefault(&next.OrchestratorAgent, &next.OrchestratorModel, &next.OrchestratorEffort, update.OrchestratorAgent, update.OrchestratorModel, update.OrchestratorEffort)
 	applyInstructions(&next.AppInstructions, update)

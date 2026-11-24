@@ -4,11 +4,13 @@ import { useSettings } from "../../hooks/useSettings";
 import { useUpdateWorkflowDefaults } from "../../hooks/useUpdateWorkflowDefaults";
 import { ReviewerSelect } from "../ReviewerSelect";
 import { AgentModelField } from "./ProjectAgentRoleControls";
+import { RoleDefaultApplyRow } from "./RoleDefaultApplyRow";
 import { SettingsRow } from "./SettingsRow";
 
 /**
- * Settings, Reviews: the reviewer agent and model a project inherits when it
- * sets no reviewer of its own. Empty keeps each project's worker-derived reviewer.
+ * Settings, Reviews: the reviewer agent, model and effort a project inherits
+ * when it sets no reviewer of its own (or a reviewer on this agent with no
+ * model). Empty keeps each project's worker-derived reviewer.
  */
 export function DefaultReviewerRows() {
 	const { t } = useTranslation();
@@ -17,6 +19,7 @@ export function DefaultReviewerRows() {
 	const agentsQuery = useAgentReadinessQuery();
 	const harness = settings?.workflowDefaults?.reviewerHarness ?? "";
 	const model = settings?.workflowDefaults?.reviewerModel ?? "";
+	const effort = settings?.workflowDefaults?.reviewerEffort ?? "";
 	const disabled = isLoading || saving || !settings;
 	return (
 		<>
@@ -45,14 +48,16 @@ export function DefaultReviewerRows() {
 							projectId=""
 							model={model}
 							mode=""
-							effort=""
+							effort={effort}
 							onModelChange={(reviewerModel) => update({ reviewerModel })}
 							onModeChange={() => undefined}
+							onEffortChange={(reviewerEffort) => update({ reviewerEffort })}
 							onValidityChange={() => undefined}
 						/>
 					</div>
 				</SettingsRow>
 			)}
+			{harness !== "" && <RoleDefaultApplyRow role="reviewer" disabled={disabled} />}
 			{error ? (
 				<p role="alert" className="px-3 pb-2 text-caption leading-4 text-error">
 					{error}

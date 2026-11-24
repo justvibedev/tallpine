@@ -111,7 +111,9 @@ func (b *boot) wireMobileBridge() {
 	b.bs.ManagedOff = b.mobileManagedOff
 	// HostID is assigned below, once the identity file has been read.
 	b.mc = &controllers.MobileController{Bridge: b.bs}
-	b.browserService = browsersvc.New(b.sessionSvc, b.browserBroker, b.browserAuthority)
+	b.browserService = browsersvc.New(b.sessionSvc, b.browserBroker, b.browserAuthority, b.store).
+		WithDataDir(b.cfg.DataDir).
+		WithNotifier(b.notificationWriter, b.log)
 	b.browserLive = httpd.NewBrowserLiveHub(b.browserStreamBroker, b.sessionSvc, func() bool {
 		state, err := mobilebridge.Load(b.bs.ConfigPath)
 		return err == nil && state.FeatureEnabled && state.Enabled && state.BrowserRemoteAccess && !b.bs.ManagedOffNow()

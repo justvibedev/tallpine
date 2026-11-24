@@ -15,7 +15,7 @@ import type { IpcMain, IpcMainEvent, IpcMainInvokeEvent, WebContents } from "ele
  */
 export const NON_SHELL_CHANNELS: Readonly<Record<IpcMethod, ReadonlySet<string>>> = {
 	handle: new Set(["browser:annotation:submit", "browser:annotation:capture"]),
-	on: new Set(["browser:annotation:cancel", "browser:annotation:state", "browser:annotation:discard"]),
+	on: new Set(["browser:annotation:cancel", "browser:annotation:state", "browser:annotation:discard", "browser:webauthn:state"]),
 };
 
 export type IpcMethod = "handle" | "on";

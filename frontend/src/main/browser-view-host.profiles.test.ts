@@ -9,8 +9,8 @@ import { browserProfilePartition, type BrowserProfile } from "../shared/browser-
 import type { BrowserHistoryStore } from "./browser-history-store";
 import {
 	setupTabHost,
-	fakeBrowserProfileStore,
 } from "./browser-view-host-test-helpers";
+import { fakeBrowserProfileStore } from "./browser-view-host-fake-profile-store";
 
 vi.mock("./render-check-proxy", () => ({ startRenderCheckProxy: vi.fn(async () => 4321) }));
 

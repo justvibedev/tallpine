@@ -245,9 +245,9 @@ describe("macOS signing", () => {
 		expect(macSignOptionsForFile(acpNodeWith(fatMachO([CPU_TYPE_ARM64])))).toEqual({ entitlements: MAC_APP_ENTITLEMENTS });
 	});
 
-	it("the minimal plist grants only JIT and the microphone for terminal CLIs", () => {
+	it("the minimal plist grants only JIT, the microphone and the camera", () => {
 		const keys = [...readFileSync(MAC_APP_ENTITLEMENTS, "utf8").matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]);
-		expect(keys).toEqual(["com.apple.security.cs.allow-jit", "com.apple.security.device.audio-input"]);
+		expect(keys).toEqual(["com.apple.security.cs.allow-jit", "com.apple.security.device.audio-input", "com.apple.security.device.camera"]);
 	});
 
 	it("fails the signing pass when the file cannot be parsed", () => {

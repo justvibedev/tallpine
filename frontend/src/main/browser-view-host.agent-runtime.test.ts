@@ -12,8 +12,8 @@ import {
 	setupHost,
 	AGENT_VIEWER,
 	setupTabHost,
-	fakeBrowserProfileStore,
 } from "./browser-view-host-test-helpers";
+import { fakeBrowserProfileStore } from "./browser-view-host-fake-profile-store";
 
 vi.mock("./render-check-proxy", () => ({ startRenderCheckProxy: vi.fn(async () => 4321) }));
 

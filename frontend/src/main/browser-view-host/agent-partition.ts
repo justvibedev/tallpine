@@ -27,25 +27,32 @@ export function chooseAgentPartition(input: AgentPartitionInput): {
   return { partition: temporaryBrowserPartition(), created: true };
 }
 
-// The confirm never blocks an agent command: it is shown once per worker session
-// and profile per app run (at most one pending dialog), the agent meanwhile works
-// in the throwaway partition, and a later "yes" moves the agent onto a profile tab
-// (needsProfileTab). Denial (or no confirm hook) is the default, so a restart never
-// silently widens agent access.
+// The confirm is shown once per worker session and profile per app run (at most
+// one pending dialog), the agent meanwhile works in the throwaway partition, and
+// a later "yes" moves the agent onto a profile tab (needsProfileTab). Denial (or no
+// confirm hook) is the default, so a restart never silently widens agent access.
+// request returns the pending answer (settled after onGrant ran) so a command
+// aimed at the person's own page can wait for it (see personPageInFront).
 export class AgentLoginGrants {
   private readonly asked = new Set<string>();
+  private readonly pending = new Map<string, Promise<void>>();
 
   constructor(private readonly confirm?: AgentLoginsConfirm) {}
 
-  request(sessionId: string, profileId: string, profileName: string, onGrant: () => void): void {
+  request(sessionId: string, profileId: string, profileName: string, onGrant: () => void): Promise<void> | undefined {
     const key = `${sessionId}\u0000${profileId}`;
-    if (this.asked.has(key) || !this.confirm) return;
+    const pending = this.pending.get(key);
+    if (pending) return pending;
+    if (this.asked.has(key) || !this.confirm) return undefined;
     this.asked.add(key);
-    void this.confirm(sessionId, profileName)
+    const answer = this.confirm(sessionId, profileName)
       .then((granted) => {
         if (granted) onGrant();
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => this.pending.delete(key));
+    this.pending.set(key, answer);
+    return answer;
   }
 }
 
@@ -78,5 +85,19 @@ export function needsProfileTab(
     session.profileId !== null &&
     session.agentLoginsGrantedProfileId === session.profileId &&
     entry.partition !== session.profilePartition
+  );
+}
+
+// The person opened a page of their own in a named profile and the agent may not
+// drive it yet: the agent was most likely asked to read that very page, so its
+// command waits for the logins answer instead of starting on a blank agent tab.
+export function personPageInFront(
+  entry: BrowserEntry | undefined,
+  session: BrowserSessionEntry,
+): boolean {
+  return (
+    session.profileId !== null &&
+    needsAgentTab(entry, session) &&
+    /^https?:/i.test(entry!.view.webContents.getURL())
   );
 }

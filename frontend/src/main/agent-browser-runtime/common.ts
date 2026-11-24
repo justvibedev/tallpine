@@ -210,6 +210,15 @@ export function sessionNamespace(sessionId: string): string {
 	return `tp-${createHash("sha256").update(sessionId).digest("hex").slice(0, 4)}`;
 }
 
+/**
+ * The runtime session id of a Chrome-mode session (B849): distinct from the
+ * Tallpine session id, so its native daemon and CDP bridge never share state
+ * with the same session's Electron one.
+ */
+export function chromeRuntimeSessionId(sessionId: string): string {
+	return `chrome:${sessionId}`;
+}
+
 export function agentBrowserSocketPath(socketDir: string, namespace: string): string {
 	return path.join(socketDir, "namespaces", namespace, "run", `${namespace}.sock`);
 }

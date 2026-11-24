@@ -310,7 +310,7 @@ func (m *Manager) prepareChatControllerEnv(
 	if err != nil {
 		return rec, nil, err
 	}
-	pinClaudeRoleSettings(env, harness, rec.Kind, project, m.workflowDefaults(ctx).SkillRoles, m.skillInventory(m.projectPath(ctx, rec.ProjectID), project.Env))
+	pinClaudeRoleSettings(env, harness, rec.Kind, project, m.workflowDefaults(ctx).SkillRoles, m.skillInventory(m.projectRecord(ctx, rec.ProjectID).Path, project.Env))
 	rec, err = m.persistBrowserCapabilityVerifier(ctx, rec, expected, verifier)
 	if err != nil {
 		return rec, nil, fmt.Errorf("persist browser capability verifier: %w", err)

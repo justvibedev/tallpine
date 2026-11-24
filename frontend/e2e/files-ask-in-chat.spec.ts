@@ -1,7 +1,8 @@
 import path from "node:path";
 import { _electron as electron, expect, test as base, type Locator, type Page } from "@playwright/test";
 import { agentReadiness } from "../src/renderer/test/agent-readiness-fixtures";
-import { installFakeAgent, installFakeBridge } from "./support/fake-bridge";
+import { installFakeAgent } from "./support/fake-bridge";
+import { installFakeBridge } from "./support/fake-daemon-bridge";
 import { openInspector } from "./support/open-inspector";
 
 // TALLPINE_E2E_ELECTRON=1 runs these specs inside Tallpine's own Electron (its Chromium can

@@ -1,4 +1,5 @@
-import type { BrowserEntry, BrowserLogEntry, BrowserSessionEntry } from "./types";
+import type { BrowserEntry, BrowserSessionEntry } from "./types";
+import type { BrowserLogEntry } from "./network-types";
 import { DEFAULT_NETWORK_CAPTURE_SECONDS, MAX_EXTERNAL_TEXT_BYTES, MAX_NETWORK_CAPTURE_SECONDS, UNTRUSTED_BEGIN, UNTRUSTED_END } from "./constants";
 import { sanitizeURLsInText } from "./url";
 import { ensureDebugger } from "./network-capture";

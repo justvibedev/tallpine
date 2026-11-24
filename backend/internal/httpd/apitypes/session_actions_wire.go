@@ -31,6 +31,8 @@ type BrowserStatusResponse struct {
 	Connected   bool             `json:"connected"`
 	ConnectedAt time.Time        `json:"connectedAt,omitempty"`
 	Transport   string           `json:"transport"`
+	// Backend is the project browser backend this session drives.
+	Backend string `json:"backend,omitempty" enum:"electron,chrome"`
 }
 
 // PreviewServerStatusResponse reports the deterministic server Tallpine owns for one

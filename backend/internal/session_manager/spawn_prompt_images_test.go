@@ -60,9 +60,10 @@ func TestTallpineSkillPointer_ChatRenderRoutingAndBudget(t *testing.T) {
 			t.Fatalf("chat pointer missing %q:\n%s", want, chatPointer)
 		}
 	}
+	// B853 added the Real Chrome pointer (~25 words).
 	// B559 added the deferred-tool load and the image-request rule (~45 words);
 	// agents that lacked them told the owner they could not show images.
-	if words := len(strings.Fields(chatPointer)); words > 330 {
+	if words := len(strings.Fields(chatPointer)); words > 360 {
 		t.Fatalf("always-on Tallpine skill pointer grew to %d words; keep details in routed command guides:\n%s", words, chatPointer)
 	}
 }

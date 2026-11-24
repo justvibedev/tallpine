@@ -13,6 +13,7 @@ import type { createAnnotation } from "./annotation";
 import type { createIpcHandlers } from "./ipc-handlers";
 import type { createLiveStream } from "./live-stream";
 import type { createAgentExecute } from "./agent-execute";
+import type { createSitePermissions } from "./site-permissions";
 
 // Wiring rule: slices are created in order (see browser-view-host.ts) and share
 // one `ctx.fns` object that each slice fills in as it is created. A slice may
@@ -34,7 +35,8 @@ export type HostFns =
   ReturnType<typeof createAnnotation> &
   ReturnType<typeof createIpcHandlers> &
   ReturnType<typeof createLiveStream> &
-  ReturnType<typeof createAgentExecute>;
+  ReturnType<typeof createAgentExecute> &
+  ReturnType<typeof createSitePermissions>;
 
 export type HostContext = { options: BrowserViewHostOptions } & ReturnType<typeof createHostPrelude> & {
   fns: HostFns;

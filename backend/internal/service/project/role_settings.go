@@ -148,6 +148,10 @@ func applyRolePatch(ro *domain.RoleOverride, p *RoleSettingsPatch) {
 		return
 	}
 	if p.Agent != nil {
+		// A mode is a selection of the old agent; it would leak onto the new one.
+		if h := domain.AgentHarness(*p.Agent); h != ro.Harness {
+			ro.AgentConfig.Mode = ""
+		}
 		ro.Harness = domain.AgentHarness(*p.Agent)
 	}
 	if p.Model != nil {

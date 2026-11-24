@@ -140,9 +140,21 @@ export async function setCookies(
 
 export function mergeWarnings(warnings: BrowserImportWarning[]): BrowserImportWarning[] {
 	const counts = new Map<BrowserImportWarning["code"], number | undefined>();
+	const sites = new Map<BrowserImportWarning["code"], Set<string>>();
 	for (const warning of warnings) {
+		if (warning.sites) {
+			const merged = sites.get(warning.code) ?? new Set<string>();
+			for (const site of warning.sites) merged.add(site);
+			sites.set(warning.code, merged);
+			continue;
+		}
 		const current = counts.get(warning.code);
 		counts.set(warning.code, warning.count === undefined ? current : (current ?? 0) + warning.count);
 	}
-	return [...counts].map(([code, count]) => ({ code, ...(count === undefined ? {} : { count }) }));
+	return [
+		...[...counts].map(([code, count]) => ({ code, ...(count === undefined ? {} : { count }) })),
+		// A site-list warning counts distinct sites, so merging two profiles
+		// that both bind google.com reports it once.
+		...[...sites].map(([code, set]) => ({ code, count: set.size, sites: [...set].sort() })),
+	];
 }

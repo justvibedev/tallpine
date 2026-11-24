@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
-import { installFakeBridge } from "./support/fake-bridge";
+import { installFakeBridge } from "./support/fake-daemon-bridge";
 import type { performanceHarness } from "./performance/harness";
 
 declare global {

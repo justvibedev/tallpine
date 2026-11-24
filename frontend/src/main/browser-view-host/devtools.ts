@@ -1,6 +1,7 @@
 import { browserError } from "./args";
 import { activeEntry, isBlankBrowserEntry } from "./entry-state";
-import type { BrowserDevToolsPlacement, BrowserDevToolsState, BrowserSessionEntry, InternalBrowserDevToolsOperation } from "./types";
+import type { BrowserSessionEntry } from "./types";
+import type { BrowserDevToolsPlacement, BrowserDevToolsState, InternalBrowserDevToolsOperation } from "./input-types";
 import type { HostContext } from "./context";
 
 export function createDevTools(ctx: HostContext) {

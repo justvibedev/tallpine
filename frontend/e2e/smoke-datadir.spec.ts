@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { installFakeAgent, installFakeBridge } from "./support/fake-bridge";
+import { installFakeAgent } from "./support/fake-bridge";
+import { installFakeBridge } from "./support/fake-daemon-bridge";
 
 // Data-directory invariant (issue #2483, RENDERER SLICE). dev:web + fake
 // bridge — this asserts only the renderer's readiness reflection, NOT the on-disk

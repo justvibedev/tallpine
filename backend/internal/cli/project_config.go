@@ -88,6 +88,8 @@ type projectConfig struct {
 	// AutoReview: nil inherits the app default, an explicit false stays off.
 	// Only a person can set it; the daemon refuses it from any agent session.
 	PlanAutoApprove *bool `json:"planAutoApprove,omitempty"`
+	// BrowserBackend round-trips for the same reason (B849); human-only.
+	BrowserBackend string `json:"browserBackend,omitempty"`
 	// PlanInPlace round-trips for the same reason (B335).
 	PlanInPlace bool `json:"planInPlace,omitempty"`
 	// IntentWake round-trips for the same reason (B714).
@@ -147,6 +149,7 @@ type projectSetConfigOptions struct {
 	json                   bool
 
 	defaultSessionMode string
+	browserBackend     string
 }
 
 func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
@@ -260,6 +263,7 @@ func newProjectSetConfigCommand(ctx *commandContext) *cobra.Command {
 	f.BoolVar(&opts.planInPlace, "plan-in-place", false, "Let `tallpine spawn --backlog` start an implementer that plans in place when an item needs a plan, instead of a separate planner. A managed policy can lock it off; --plan-in-place=false restores the default")
 	f.BoolVar(&opts.intentWake, "intent-wake", false, "Let `tallpine orchestrator intent add --wake-at` wake the orchestrator once at that time while the intent is open; --intent-wake=false restores the default (off)")
 	f.BoolVar(&opts.planAutoApprove, "plan-auto-approve", false, "Approve submitted plans automatically, without the owner, in this project. For unattended throwaway test or benchmark projects only. Only a person can set it (the daemon refuses it from agent sessions), and a managed policy can lock it off; --plan-auto-approve=false keeps it off in this project even when the app default is on (see --plan-auto-approve-inherit)")
+	f.StringVar(&opts.browserBackend, "browser-backend", "", "Browser the project's agent sessions drive: electron (the in-app browser) or chrome (the installed Google Chrome, with its passkeys and logins); empty restores electron. Only a person can set it")
 	f.BoolVar(&opts.planAutoApproveInherit, "plan-auto-approve-inherit", false, "Clear this project's own plan auto-approve value so it follows the app default (Settings > Reviews)")
 	f.StringVar(&opts.configJSON, "config-json", "", "Full config as a JSON object; replaces the entire config (overrides field flags)")
 	f.BoolVar(&opts.clear, "clear", false, "Clear all config")
@@ -437,6 +441,14 @@ func (c *commandContext) mergeProjectConfigFlags(ctx context.Context, id string,
 	}
 	if changed("plan-auto-approve-inherit") && opts.planAutoApproveInherit {
 		delete(cfg, "planAutoApprove")
+	}
+	if changed("browser-backend") {
+		switch opts.browserBackend {
+		case "", domain.BrowserBackendElectron, domain.BrowserBackendChrome:
+		default:
+			return nil, usageError{fmt.Errorf("--browser-backend %q: want electron or chrome", opts.browserBackend)}
+		}
+		setConfigString(cfg, "browserBackend", opts.browserBackend)
 	}
 	if changed("plan-in-place") {
 		if opts.planInPlace {

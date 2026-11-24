@@ -5,6 +5,7 @@ import { ChromiumCookieDecryptor } from "./chromium-decrypt";
 import { BrowserProfileImportOptions, DiscoveryContext, ImportSession, ImportedCookie, InternalDiscoveryOptions, InternalSource, InternalSourceProfile, ReadProfileData, SOURCE_ID_PATTERN, SourceBudget, cookieCapability, existingRealDirectory, isAccessDenied, isRecord, opaqueSourceId, redactImportPaths, removeEmptyDirectory, removeStaleStagingDirectories, throwIfImportAborted, validateRequest } from "./common";
 import { dedupeCookies, mergeWarnings, setCookies } from "./cookie-rows";
 import { DESCRIPTORS } from "./descriptors";
+import { chromiumDeviceBoundSessionWarnings } from "./device-bound-sessions";
 import { discoverFirefoxProfiles, readFirefoxCookies, readFirefoxHistory } from "./firefox";
 import { discoverSafariProfiles, readSafariCookies, readSafariHistory } from "./safari";
 import { findDatabase, snapshotFile, snapshotSQLite } from "./snapshot";
@@ -342,6 +343,9 @@ export async function readProfileData(
 				cookies = outcome.cookies;
 				skippedCookies += outcome.skipped;
 				warnings.push(...outcome.warnings);
+				if (source.descriptor.family === "chromium") {
+					warnings.push(...await chromiumDeviceBoundSessionWarnings(profile.root, staging, budget, source.public.name, cookies));
+				}
 			}
 		}
 	}

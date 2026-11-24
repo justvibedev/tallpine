@@ -4,7 +4,7 @@
 		"outDir": "./node_modules/.cache/tsc/preload",
 		"tsBuildInfoFile": "./node_modules/.cache/tsc/preload.tsbuildinfo"
 	},
-	"include": ["src/preload.ts", "src/annotate-preload.ts"],
+	"include": ["src/preload.ts", "src/preload-browser.ts", "src/annotate-preload.ts", "src/annotate-preload-adjustments.ts", "src/browser-passkey-preload.ts", "src/browser-chrome-object-preload.ts", "src/browser-page-preload.ts"],
 	"exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/renderer/test/**"],
 	"references": [{ "path": "./tsconfig.shared.json" }, { "path": "./tsconfig.main.json" }]
 }

@@ -61,19 +61,9 @@ func launchDefaultHarness() domain.AgentHarness {
 }
 
 // effectiveAgentConfig merges the role override's agent config over the
-// project's base agent config; set override fields win.
-//
-// Model/Mode are inherited only when the launch harness matches the role's
-// configured harness — otherwise they were tuned for a different agent and
-// would leak a provider-specific alias onto the wrong harness. An empty role
-// harness means "not pinned" and always matches. Permissions is
-// harness-neutral and is always inherited.
-//
-// When the role's configured harness is one this build no longer ships, the
-// project-level Model/Effort/Mode were chosen for that harness too, so they are
-// dropped as well instead of being handed to its fallback. The same holds when
-// the launch harness differs from the role's pinned one (e.g. `spawn --agent
-// codex` under a Claude-tuned project base): the base is dropped, Permissions kept.
+// project's base agent config (domain.ProjectConfig.RoleAgentConfig); set
+// override fields win. It does not apply the app-wide role defaults: launch
+// paths use Manager.launchAgentConfig for that.
 func effectiveAgentConfig(harness domain.AgentHarness, kind domain.SessionKind, cfg domain.ProjectConfig) ports.AgentConfig {
 	return effectiveAgentConfigFor(harness, kind, "", cfg)
 }
@@ -87,32 +77,34 @@ func effectiveAgentConfigFor(harness domain.AgentHarness, kind domain.SessionKin
 // effectiveAgentConfigDefault is effectiveAgentConfigFor with the default agent
 // passed in, which owns the project base under an unpinned role.
 func effectiveAgentConfigDefault(harness domain.AgentHarness, kind domain.SessionKind, sessionRole domain.SessionRole, cfg domain.ProjectConfig, defaultAgent domain.AgentHarness) ports.AgentConfig {
-	merged := cfg.AgentConfig
-	role := roleOverrideFor(kind, sessionRole, cfg)
-	// The project base was tuned for the harness the role resolves to without an
-	// explicit --agent: its pinned harness, else the daemon's default agent.
-	baseHarness := role.Harness
-	if baseHarness == "" {
-		baseHarness = defaultAgent
+	return cfg.RoleAgentConfig(harness, roleOverrideFor(kind, sessionRole, cfg), defaultAgent)
+}
+
+// launchAgentConfig is effectiveAgentConfigFor plus the app-wide default model
+// and effort of the session's role (B847): a project that names no model for
+// the role inherits them when the session runs on the default's agent.
+func (m *Manager) launchAgentConfig(ctx context.Context, harness domain.AgentHarness, kind domain.SessionKind, sessionRole domain.SessionRole, cfg domain.ProjectConfig) ports.AgentConfig {
+	return withAppRoleDefault(m.appRoleDefaults(ctx), harness, kind, sessionRole, effectiveAgentConfigFor(harness, kind, sessionRole, cfg))
+}
+
+// appRoleDefaults is the app defaults a launch inherits its role model and
+// effort from. A manager without a defaults provider inherits none, and
+// noBuiltinRoleModels drops the built-in models (hermetic test daemons).
+func (m *Manager) appRoleDefaults(ctx context.Context) domain.WorkflowDefaults {
+	p, ok := m.defaults.(WorkflowDefaultsProvider)
+	if !ok {
+		return domain.WorkflowDefaults{}
 	}
-	if role.Harness.IsUnsupported() || (harness != "" && baseHarness != harness) {
-		merged.Model, merged.Effort, merged.Mode = "", "", ""
+	d := p.WorkflowDefaults(ctx)
+	if m.noBuiltinRoleModels {
+		d, _ = d.WithoutBuiltinRoleModels()
 	}
-	override := role.AgentConfig
-	harnessMatches := role.Harness == "" || role.Harness == harness
-	if harnessMatches && override.Model != "" {
-		merged.Model = override.Model
-	}
-	if harnessMatches && override.Effort != "" {
-		merged.Effort = override.Effort
-	}
-	if harnessMatches && override.Mode != "" {
-		merged.Mode = override.Mode
-	}
-	if override.Permissions != "" {
-		merged.Permissions = override.Permissions
-	}
-	return merged
+	return d
+}
+
+// withAppRoleDefault fills merged from the app default of the session's role.
+func withAppRoleDefault(app domain.WorkflowDefaults, harness domain.AgentHarness, kind domain.SessionKind, sessionRole domain.SessionRole, merged ports.AgentConfig) ports.AgentConfig {
+	return app.RoleModelDefault(domain.DefaultRoleOf(kind, sessionRole)).Fill(harness, merged)
 }
 
 // EffectivePermissions is the permission mode a fresh session of kind would
@@ -181,7 +173,7 @@ func (m *Manager) freshLaunchOptions(ctx context.Context, harness domain.AgentHa
 		options.AutoCompactWindow = domain.DefaultAutoCompactChoice(kind, project, harnessDefault, envWindow)
 	}
 	_, options.AutoMemoryOff = project.ClaudeLaunchFor(domain.SessionRoleFor(kind))
-	options.Skills, options.EnabledPlugins = roleSkillLaunch(m.launchSkillInventory(m.projectPath(ctx, projectID), project.Env, harness), project, m.workflowDefaults(ctx).SkillRoles, kind, harness)
+	options.Skills, options.EnabledPlugins = roleSkillLaunch(m.launchSkillInventory(ctx, m.projectRecord(ctx, projectID), project.Env, harness), project, m.workflowDefaults(ctx).SkillRoles, kind, harness)
 	options.ShellOutputChars = domain.ShellOutputLimit(project.Env)
 	options = m.withModelWindow(ctx, harness, projectID, model, options)
 	// The baseline and the model window are read for any agent that takes a

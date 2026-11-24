@@ -1,12 +1,23 @@
-import type { BrowserEntry, BrowserNetworkCapture, BrowserNetworkRequest, BrowserSessionEntry, InternalBrowserNetworkRequest } from "./types";
+import type { BrowserEntry, BrowserSessionEntry } from "./types";
+import type { BrowserNetworkCapture, BrowserNetworkRequest, InternalBrowserNetworkRequest } from "./network-types";
+import type { AgentBrowserDebugger } from "../agent-browser-cdp-bridge";
 import { MAX_NETWORK_REQUESTS } from "./constants";
 import { activeEntry } from "./entry-state";
 import { sanitizeBrowserURL } from "./url";
 import { browserError, finiteNumber, objectValue } from "./args";
 
-export async function ensureDebugger(entry: BrowserEntry): Promise<void> {
-  await entry.ready;
-  const debug = entry.view.webContents.debugger;
+/**
+ * One tab whose requests can be recorded: an in-app browser entry or a Chrome
+ * mode tab. Capture state lives on the tab; the CDP traffic comes from the
+ * AgentBrowserDebugger of either backend.
+ */
+export type NetworkCaptureTab = {
+  tabId: string;
+  networkCapture?: BrowserNetworkCapture;
+};
+
+/** Attaches the debugger (shared by capture, agent-browser and DevTools) and enables the page domains. */
+export async function ensureAgentDebugger(debug: AgentBrowserDebugger | undefined): Promise<AgentBrowserDebugger> {
   if (!debug)
     throw browserError(
       "BROWSER_TARGET_UNAVAILABLE",
@@ -26,6 +37,12 @@ export async function ensureDebugger(entry: BrowserEntry): Promise<void> {
   }
   await debug.sendCommand("Runtime.enable");
   await debug.sendCommand("DOM.enable");
+  return debug;
+}
+
+export async function ensureDebugger(entry: BrowserEntry): Promise<void> {
+  await entry.ready;
+  await ensureAgentDebugger(entry.view.webContents.debugger);
 }
 
 export function networkEntryFor(session: BrowserSessionEntry): BrowserEntry {
@@ -42,18 +59,37 @@ export async function startNetworkCapture(
   entry: BrowserEntry,
   durationSeconds: number,
 ): Promise<unknown> {
-  const existing = networkEntryFor(session);
+  return startTabNetworkCapture(networkEntryFor(session), entry, durationSeconds, async () => {
+    await entry.ready;
+    return entry.view.webContents.debugger;
+  }, () => {
+    session.networkTabId = entry.tabId;
+  });
+}
+
+/**
+ * Starts recording on tab, unless the session's capture (existing) is still
+ * active. debuggerFor resolves the tab's debugger once the old capture is
+ * stopped; onStarted records which tab the session now captures.
+ */
+export async function startTabNetworkCapture(
+  existing: NetworkCaptureTab,
+  tab: NetworkCaptureTab,
+  durationSeconds: number,
+  debuggerFor: () => Promise<AgentBrowserDebugger | undefined>,
+  onStarted: () => void,
+): Promise<Record<string, unknown>> {
   if (existing.networkCapture?.active) {
     return { ...networkCaptureStatus(existing), alreadyActive: true };
   }
-  if (existing !== entry) disposeNetworkCapture(existing, "restarted");
-  disposeNetworkCapture(entry, "restarted");
-  await ensureDebugger(entry);
-  await entry.view.webContents.debugger.sendCommand("Network.enable");
+  if (existing !== tab) disposeNetworkCapture(existing, "restarted");
+  disposeNetworkCapture(tab, "restarted");
+  const debug = await ensureAgentDebugger(await debuggerFor());
+  await debug.sendCommand("Network.enable");
   const started = Date.now();
   const capture: BrowserNetworkCapture = {
     active: true,
-    tabId: entry.tabId,
+    tabId: tab.tabId,
     startedAt: new Date(started).toISOString(),
     expiresAt: new Date(started + durationSeconds * 1_000).toISOString(),
     maxEntries: MAX_NETWORK_REQUESTS,
@@ -62,14 +98,14 @@ export async function startNetworkCapture(
     byRequestId: new Map(),
   };
   capture.timer = setTimeout(() => {
-    void stopNetworkCapture(entry, "expired");
+    void stopNetworkCapture(tab, "expired");
   }, durationSeconds * 1_000);
-  entry.networkCapture = capture;
-  session.networkTabId = entry.tabId;
-  return networkCaptureStatus(entry);
+  tab.networkCapture = capture;
+  onStarted();
+  return networkCaptureStatus(tab);
 }
 
-export function networkCaptureStatus(entry: BrowserEntry): Record<string, unknown> {
+export function networkCaptureStatus(entry: NetworkCaptureTab): Record<string, unknown> {
   const capture = entry.networkCapture;
   if (!capture) {
     return {
@@ -95,7 +131,7 @@ export function networkCaptureStatus(entry: BrowserEntry): Record<string, unknow
   };
 }
 
-export function networkCaptureResult(entry: BrowserEntry): Record<string, unknown> {
+export function networkCaptureResult(entry: NetworkCaptureTab): Record<string, unknown> {
   return {
     ...networkCaptureStatus(entry),
     requests: (entry.networkCapture?.requests ?? []).map(publicNetworkRequest),
@@ -104,7 +140,7 @@ export function networkCaptureResult(entry: BrowserEntry): Record<string, unknow
 }
 
 export async function stopNetworkCapture(
-  entry: BrowserEntry,
+  entry: NetworkCaptureTab,
   reason: string,
 ): Promise<Record<string, unknown>> {
   const capture = entry.networkCapture;
@@ -122,7 +158,7 @@ export async function stopNetworkCapture(
   return networkCaptureResult(entry);
 }
 
-export function clearNetworkCapture(entry: BrowserEntry): Record<string, unknown> {
+export function clearNetworkCapture(entry: NetworkCaptureTab): Record<string, unknown> {
   const capture = entry.networkCapture;
   if (capture) {
     capture.requests = [];
@@ -131,7 +167,7 @@ export function clearNetworkCapture(entry: BrowserEntry): Record<string, unknown
   return networkCaptureStatus(entry);
 }
 
-export function disposeNetworkCapture(entry: BrowserEntry, reason: string): void {
+export function disposeNetworkCapture(entry: NetworkCaptureTab, reason: string): void {
   const capture = entry.networkCapture;
   if (!capture) return;
   if (capture.timer) clearTimeout(capture.timer);
@@ -142,7 +178,7 @@ export function disposeNetworkCapture(entry: BrowserEntry, reason: string): void
 }
 
 export function handleNetworkDebuggerEvent(
-  entry: BrowserEntry,
+  entry: NetworkCaptureTab,
   method: string,
   params: Record<string, unknown>,
 ): void {

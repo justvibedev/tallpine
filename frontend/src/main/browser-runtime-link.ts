@@ -9,7 +9,8 @@ import { connectOwned } from "./unix-socket-owner";
 // open socket IS the liveness signal — the browser runtime embeds a
 // third-party automation stack whose host process wedges often enough that an
 // open socket says nothing about responsiveness, so the daemon probes us.
-const PROTOCOL_VERSION = 3;
+// v4 adds BrowserRuntimeCommand.backend (Real Chrome mode, B849).
+const PROTOCOL_VERSION = 4;
 const BACKOFF_INIT_MS = 200;
 const BACKOFF_MAX_MS = 2_000;
 const MAX_COMMAND_BYTES = 1 << 20;
@@ -21,6 +22,8 @@ export type BrowserRuntimeCommand = {
 	sessionId: string;
 	action: string;
 	args?: Record<string, unknown>;
+	/** "chrome" runs the command in Real Chrome mode; absent or "electron" in the in-app browser. */
+	backend?: string;
 };
 
 type BrowserRuntimeCancel = {

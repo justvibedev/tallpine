@@ -13,6 +13,7 @@ import { useSessionViewTerminals } from "./useSessionViewTerminals";
 import { useSessionViewWorkspace } from "./useSessionViewWorkspace";
 import { SessionViewProps } from "./session-view-types";
 import { browserIsVisible, previewRevealKey, BROWSER_REVEAL_ACTIONS } from "./session-view-helpers";
+import { useBrowserHandoffReveal } from "./useBrowserHandoffReveal";
 
 /** Artifact, file open and pop-out actions for SessionView. */
 export function useSessionViewActions(props: SessionViewProps, data: ReturnType<typeof useSessionViewData>, terms: ReturnType<typeof useSessionViewTerminals>, workspace: ReturnType<typeof useSessionViewWorkspace>) {
@@ -282,6 +283,8 @@ export function useSessionViewActions(props: SessionViewProps, data: ReturnType<
 		terminated,
 		revealBrowserPanel,
 	]);
+
+	useBrowserHandoffReveal(session?.id ?? "", hasInspector && !terminated, revealBrowserPanel);
 
 	// Explicit open commands reveal once per command. A fast command's start
 	// and finish can share a React render, so either event can consume its ID.

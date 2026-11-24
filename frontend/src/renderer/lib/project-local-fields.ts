@@ -26,6 +26,8 @@ export type ProjectLocalFieldsDraft = {
 	planningMode?: string;
 	/** "" defers to the daemon-wide default. */
 	defaultSessionMode?: string;
+	/** "" (the in-app browser) or "chrome" (Real Chrome mode); a person's alone to set. */
+	browserBackend?: string;
 	/** Digits only; "" or 0 never stops. */
 	autoReviewMaxRounds?: string;
 	approveIdenticalPatch?: boolean;
@@ -65,6 +67,7 @@ export function projectLocalFieldsDraft(config: ProjectConfig): ProjectLocalFiel
 		skillRoles: config.skillRoles ?? {},
 		planningMode: config.planningMode ?? "",
 		defaultSessionMode: config.defaultSessionMode ?? "",
+		browserBackend: config.browserBackend ?? "",
 		autoReviewMaxRounds: config.autoReviewMaxRounds ? String(config.autoReviewMaxRounds) : "",
 		approveIdenticalPatch: config.approveIdenticalPatch ?? false,
 		reviewerRules: config.reviewerRules ?? "",
@@ -73,7 +76,7 @@ export function projectLocalFieldsDraft(config: ProjectConfig): ProjectLocalFiel
 }
 
 /** The config fields a draft saves; an empty value clears the key so the default applies. */
-export function projectLocalFieldsConfig(draft: ProjectLocalFieldsDraft): Pick<ProjectConfig, "symlinks" | "cloneWorktreeInclude" | "verifyCommand" | "agentRules" | "agentRulesFile" | "orchestratorRules" | "orchestratorRulesFile" | "claudePlugins" | "claudeAutoMemory" | "skillRoles" | "planningMode" | "defaultSessionMode" | "autoReviewMaxRounds" | "approveIdenticalPatch" | "reviewerRules" | "reviewerRulesFile"> {
+export function projectLocalFieldsConfig(draft: ProjectLocalFieldsDraft): Pick<ProjectConfig, "symlinks" | "cloneWorktreeInclude" | "verifyCommand" | "agentRules" | "agentRulesFile" | "orchestratorRules" | "orchestratorRulesFile" | "claudePlugins" | "claudeAutoMemory" | "skillRoles" | "planningMode" | "defaultSessionMode" | "browserBackend" | "autoReviewMaxRounds" | "approveIdenticalPatch" | "reviewerRules" | "reviewerRulesFile"> {
 	const symlinks = lines(draft.symlinks);
 	const rounds = Number.parseInt(draft.autoReviewMaxRounds ?? "", 10);
 	return {
@@ -89,6 +92,7 @@ export function projectLocalFieldsConfig(draft: ProjectLocalFieldsDraft): Pick<P
 		claudeAutoMemory: draft.claudeAutoMemory && Object.keys(draft.claudeAutoMemory).length ? draft.claudeAutoMemory : undefined,
 		planningMode: (draft.planningMode || undefined) as ProjectConfig["planningMode"],
 		defaultSessionMode: (draft.defaultSessionMode || undefined) as ProjectConfig["defaultSessionMode"],
+		browserBackend: draft.browserBackend || undefined,
 		autoReviewMaxRounds: rounds > 0 ? rounds : undefined,
 		approveIdenticalPatch: draft.approveIdenticalPatch || undefined,
 		reviewerRules: draft.reviewerRules?.trim() ? draft.reviewerRules : undefined,

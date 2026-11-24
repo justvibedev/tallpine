@@ -1,4 +1,4 @@
-import { readNavState } from "./nav-events";
+import { dropSitePrompts, readNavState } from "./nav-events";
 import { isAllowedBrowserURL } from "./url";
 import type { BrowserEntry, BrowserSessionEntry } from "./types";
 import { OFFSCREEN_BOUNDS } from "./constants";
@@ -13,6 +13,7 @@ export function createSessionTabs(ctx: HostContext) {
   const { activateTab, applyBrowserViewBounds, createTab } = ctx.fns;
 
   const destroyTabView = (entry: BrowserEntry): void => {
+    dropSitePrompts(entry);
     applyBrowserViewBounds(entry.view, OFFSCREEN_BOUNDS, false);
     options.mainWindow.contentView.removeChildView?.(entry.view);
     if (entry.view.webContents.debugger?.isAttached()) {

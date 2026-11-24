@@ -24,8 +24,8 @@ type fakeBrowserRuntime struct {
 	err    error
 }
 
-func (f *fakeBrowserRuntime) Status(_ context.Context, _ domain.SessionID, _ string) (browserruntime.Status, error) {
-	return f.status, nil
+func (f *fakeBrowserRuntime) Status(_ context.Context, _ domain.SessionID, _ string) (browserruntime.Status, string, error) {
+	return f.status, "chrome", nil
 }
 
 func (f *fakeBrowserRuntime) Execute(
@@ -66,7 +66,7 @@ func TestBrowserStatusAndSnapshot(t *testing.T) {
 	srv := browserServer(t, runtime)
 
 	body, status, _ := doRequest(t, srv, http.MethodGet, "/api/v1/browser/status?sessionId=tp-1", "")
-	if status != http.StatusOK || !containsAll(body, `"connected":true`, `"transport":"electron-webcontents-debugger"`) {
+	if status != http.StatusOK || !containsAll(body, `"connected":true`, `"transport":"electron-webcontents-debugger"`, `"backend":"chrome"`) {
 		t.Fatalf("status = %d body=%s", status, body)
 	}
 	body, status, _ = doRequest(t, srv, http.MethodPost, "/api/v1/browser/commands", `{"sessionId":"tp-1","action":"snapshot","args":{"interactive":true}}`)
@@ -135,6 +135,13 @@ func TestBrowserCommandValidationAndErrors(t *testing.T) {
 	body, status, _ = doRequest(t, srv, http.MethodPost, "/api/v1/browser/commands", `{"sessionId":"tp-1","action":"screenshot"}`)
 	if status != http.StatusGatewayTimeout || !containsAll(body, `"code":"AGENT_BROWSER_TIMEOUT"`) {
 		t.Fatalf("native timeout = %d body=%s", status, body)
+	}
+	for code, want := range map[string]int{"BROWSER_HANDOFF_TIMEOUT": http.StatusGatewayTimeout, "BROWSER_HANDOFF_ACTIVE": http.StatusConflict} {
+		runtime.err = browserruntime.CommandError{Code: code, Message: "handoff"}
+		body, status, _ = doRequest(t, srv, http.MethodPost, "/api/v1/browser/commands", `{"sessionId":"tp-1","action":"handoff"}`)
+		if status != want || !containsAll(body, `"code":"`+code+`"`) {
+			t.Fatalf("%s = %d body=%s", code, status, body)
+		}
 	}
 	runtime.err = context.DeadlineExceeded
 	body, status, _ = doRequest(t, srv, http.MethodPost, "/api/v1/browser/commands", `{"sessionId":"tp-1","action":"screenshot"}`)

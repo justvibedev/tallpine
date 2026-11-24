@@ -5,6 +5,7 @@ import { useUpdateWorkflowDefaults } from "../../hooks/useUpdateWorkflowDefaults
 import { AGENT_OPTIONS, agentLabel } from "../../lib/agent-options";
 import { DEFAULT_AGENT_PRIORITY_RANK, buildRankedAgentOptions, isLaunchableAgent, unknownAgentReadiness } from "../../lib/agent-select-options";
 import { AgentModelField } from "./ProjectAgentRoleControls";
+import { RoleDefaultApplyRow } from "./RoleDefaultApplyRow";
 import { SettingsOptionMenu } from "./SettingsOptionMenu";
 import { SettingsRow } from "./SettingsRow";
 
@@ -16,14 +17,16 @@ const BUILTIN_ROLE_AGENT = "claude-code";
 
 /**
  * Settings, Reviews: the agent, model and effort a NEW project starts with for
- * its worker and orchestrator, copied into its config at creation. Empty keeps
- * the harness default; existing projects are never changed.
+ * its worker and orchestrator, copied into its config at creation. An existing
+ * project that names no model for the role inherits the model and effort at
+ * spawn on that agent (B847); "Apply to all projects" clears or replaces the
+ * overrides of the ones that differ. Empty keeps the harness default.
  */
 export function DefaultRoleRows() {
 	return (
 		<>
-			<DefaultRoleRow role="worker" />
 			<DefaultRoleRow role="orchestrator" />
+			<DefaultRoleRow role="worker" />
 		</>
 	);
 }
@@ -77,6 +80,7 @@ function DefaultRoleRow({ role }: { role: Role }) {
 					</div>
 				</SettingsRow>
 			)}
+			{agent !== "" && <RoleDefaultApplyRow role={role} disabled={disabled} />}
 		</>
 	);
 }

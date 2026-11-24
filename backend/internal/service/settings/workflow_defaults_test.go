@@ -71,3 +71,34 @@ func TestWorkflowDefaultsHarnessChangeClearsModel(t *testing.T) {
 		t.Fatalf("stored %+v, want the supplied model kept", st.d)
 	}
 }
+
+// B847: the reviewer default carries an effort; like its model it belongs to
+// the harness, so a changed harness drops it and an empty harness clears it.
+func TestWorkflowDefaultsReviewerEffort(t *testing.T) {
+	ctx := context.Background()
+	st := &wdStore{d: domain.WorkflowDefaults{}}
+	svc := settingssvc.New(st, nil, settingssvc.Offering{}, nil)
+	claude, codex, none := domain.ReviewerClaudeCode, domain.ReviewerCodex, domain.ReviewerHarness("")
+	model, effort := "opus", "high"
+	if _, err := svc.SetWorkflowDefaults(ctx, settingssvc.WorkflowDefaultsUpdate{ReviewerHarness: &claude, ReviewerModel: &model, ReviewerEffort: &effort}); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.WorkflowDefaults(ctx); got.ReviewerModel != "opus" || got.ReviewerEffort != "high" {
+		t.Fatalf("set: %+v", got)
+	}
+	if _, err := svc.SetWorkflowDefaults(ctx, settingssvc.WorkflowDefaultsUpdate{ReviewerHarness: &codex}); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.WorkflowDefaults(ctx); got.ReviewerHarness != codex || got.ReviewerModel != "" || got.ReviewerEffort != "" {
+		t.Fatalf("harness change kept model/effort: %+v", got)
+	}
+	if _, err := svc.SetWorkflowDefaults(ctx, settingssvc.WorkflowDefaultsUpdate{ReviewerEffort: &effort}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetWorkflowDefaults(ctx, settingssvc.WorkflowDefaultsUpdate{ReviewerHarness: &none}); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.WorkflowDefaults(ctx); got.ReviewerEffort != "" {
+		t.Fatalf("empty harness kept effort: %+v", got)
+	}
+}

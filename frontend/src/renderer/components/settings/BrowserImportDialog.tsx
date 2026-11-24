@@ -6,10 +6,10 @@ import type {
 	BrowserImportProgress,
 	BrowserImportResult,
 	BrowserImportSource,
-	BrowserImportWarning,
 } from "../../../shared/browser-profile-import";
 import { tallpineBridge } from "../../lib/bridge";
 import { appI18n, type MessageKey } from "../../i18n";
+import { browserImportWarningText } from "./browserImportWarnings";
 import { Button } from "../ui/button";
 import {
 	Dialog,
@@ -594,7 +594,7 @@ function ResultStep({ empty, includeCookies, includeHistory, result }: { empty: 
 					{entry.skippedCookies > 0 || entry.warnings.length > 0 ? (
 						<details className="border-t border-border py-3 text-xs text-muted-foreground">
 							<summary className="cursor-pointer">{t("settings.browserImport.importDetails")}{entry.skippedCookies > 0 ? ` · ${t("settings.browserImport.skippedCookies", { count: entry.skippedCookies })}` : ""}</summary>
-							{entry.warnings.map((warning) => <p className="mt-2" key={warning.code}>{warningText(warning)}</p>)}
+							{entry.warnings.map((warning) => <p className="mt-2" key={warning.code}>{browserImportWarningText(warning)}</p>)}
 							{includeCookies && entry.skippedCookies > 0 ? <p className="mt-2">{t("settings.browserImport.signInAgain")}</p> : null}
 						</details>
 					) : null}
@@ -603,10 +603,6 @@ function ResultStep({ empty, includeCookies, includeHistory, result }: { empty: 
 			{!empty ? <p className="text-xs text-muted-foreground">{t("settings.browserImport.useProfile")}</p> : null}
 		</div>
 	);
-}
-
-function warningText(warning: BrowserImportWarning): string {
-	return appI18n.t(warningKey(warning.code), { count: warning.count ?? 0 });
 }
 
 function suggestedName(browser: string, profile: string): string {
@@ -635,19 +631,4 @@ function capabilityKey(reason: BrowserImportSource["cookieSupportReason"]): Mess
 	if (reason === "chromium-encryption-partial") return "settings.browserImport.capability.chromium-encryption-partial";
 	if (reason === "chromium-encryption-unsupported") return "settings.browserImport.capability.chromium-encryption-unsupported";
 	return "settings.browserImport.cookiesDescription";
-}
-
-function warningKey(code: BrowserImportWarning["code"]): MessageKey {
-	switch (code) {
-		case "cookie-database-missing": return "settings.browserImport.warning.cookie-database-missing";
-		case "history-database-missing": return "settings.browserImport.warning.history-database-missing";
-		case "isolated-cookies-skipped": return "settings.browserImport.warning.isolated-cookies-skipped";
-		case "cookie-limit-truncated": return "settings.browserImport.warning.cookie-limit-truncated";
-		case "history-limit-truncated": return "settings.browserImport.warning.history-limit-truncated";
-		case "encrypted-cookies-skipped": return "settings.browserImport.warning.encrypted-cookies-skipped";
-		case "expired-cookies-skipped": return "settings.browserImport.warning.expired-cookies-skipped";
-		case "invalid-cookies-skipped": return "settings.browserImport.warning.invalid-cookies-skipped";
-		case "cookie-attributes-defaulted": return "settings.browserImport.warning.cookie-attributes-defaulted";
-		case "cookie-write-failed": return "settings.browserImport.warning.cookie-write-failed";
-	}
 }

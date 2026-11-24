@@ -1,6 +1,7 @@
 import type { HostContext } from "./context";
 import { type BrowserProfileViewState } from "../../shared/browser-profiles";
-import type { BrowserAgentActivityState, BrowserDevToolsState, BrowserEntry, BrowserFindState, BrowserRect, BrowserSessionEntry, BrowserViewLike } from "./types";
+import type { BrowserAgentActivityState, BrowserEntry, BrowserFindState, BrowserRect, BrowserSessionEntry, BrowserViewLike } from "./types";
+import type { BrowserDevToolsState } from "./input-types";
 import { BROWSER_VIEW_BORDER_RADIUS } from "./constants";
 import { chooseAgentPartition } from "./agent-partition";
 

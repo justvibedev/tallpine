@@ -187,6 +187,22 @@ var lanRouteTable = []lanRouteRule{
 	// a narrow route that decodes strictly. PUT .../config stays loopback-only
 	// (env and post-create would give a phone token code execution on the Mac).
 	mobile("PATCH", "/api/v1/projects/*/role-settings"),
+	// Owner asks (B698): the phone's "Waiting on you" strip lists them and answers
+	// one. Creating and withdrawing an ask are an orchestrator's moves and stay
+	// loopback-only.
+	mobile("GET", "/api/v1/projects/*/asks"),
+	mobile("POST", "/api/v1/projects/*/asks/*/answer"),
+	// Plan cards (B681): the phone reads waiting plans and gives the owner's
+	// answers, defaults, approval, replan and comments. Starting a plan, the
+	// planner's questions/submit/accept-comment, cancel and build-anyway stay
+	// loopback-only.
+	mobile("GET", "/api/v1/projects/*/plans"),
+	mobile("GET", "/api/v1/projects/*/backlog/*/plan"),
+	mobile("POST", "/api/v1/projects/*/backlog/*/plan/answers"),
+	mobile("POST", "/api/v1/projects/*/backlog/*/plan/defaults"),
+	mobile("POST", "/api/v1/projects/*/backlog/*/plan/approve"),
+	mobile("POST", "/api/v1/projects/*/backlog/*/plan/replan"),
+	mobile("POST", "/api/v1/projects/*/backlog/*/plan/comment"),
 	mobile(readOnly, "/api/v1/settings"),
 	loopback(anyMethod, "/api/v1/settings/**"),
 	loopback(anyMethod, "/api/v1/projects/**"),

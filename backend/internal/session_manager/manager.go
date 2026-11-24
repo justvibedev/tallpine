@@ -283,7 +283,10 @@ type Deps struct {
 	// SessionGradleHome points each session's GRADLE_USER_HOME at a per-project
 	// home under DataDir (TALLPINE_SESSION_GRADLE_HOME=off disables it).
 	SessionGradleHome bool
-	Clock             func() time.Time
+	// NoBuiltinRoleModels keeps sessions from inheriting the built-in app role
+	// models (hermetic test daemons, TALLPINE_NO_BUILTIN_ROLE_DEFAULTS).
+	NoBuiltinRoleModels bool
+	Clock               func() time.Time
 	// LookPath overrides exec.LookPath for the pre-launch agent-binary check.
 	// Production wiring leaves this nil and the manager defaults to
 	// exec.LookPath; tests inject a stub so they need not seed real binaries.
@@ -337,6 +340,7 @@ func New(d Deps) *Manager {
 		workspace:                      d.Workspace,
 		store:                          d.Store,
 		defaults:                       d.Defaults,
+		noBuiltinRoleModels:            d.NoBuiltinRoleModels,
 		chat:                           d.Chat,
 		lcm:                            d.Lifecycle,
 		preview:                        d.Preview,

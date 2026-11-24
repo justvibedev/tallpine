@@ -36,11 +36,15 @@ type CommitTarget struct {
 // local commit alone does not reach them.
 func (t CommitTarget) NeedsPush() bool { return strings.HasPrefix(t.BaseRef, "refs/remotes/") }
 
-// CommitResult describes what CommitPaths did. The commit always exists when
-// err is nil; it is reachable from the target branch, the remote, or
-// SideBranch.
+// CommitResult describes what CommitPaths did. When err is nil and SHA is set,
+// the commit is reachable from the target branch, the remote, or SideBranch.
+// SHA is empty when every requested path was skipped.
 type CommitResult struct {
 	SHA string
+	// Skipped lists requested paths left out because the target branch already
+	// has them (or has a file where their parent directory would go); they are
+	// never overwritten.
+	Skipped []string
 	// LocalUpdated is true when refs/heads/<branch> was fast-forwarded to SHA.
 	LocalUpdated bool
 	// Pushed is true when SHA was pushed to <remote>/<branch>.
@@ -56,14 +60,18 @@ type CommitResult struct {
 var (
 	ErrNothingToCommit = errors.New("nothing to commit")
 	ErrPathNotAllowed  = errors.New("path is not an uncommitted instruction file or skill")
-	ErrPathExists      = errors.New("path already exists on the target branch")
 )
 
 const gitTimeout = 30 * time.Second
 
 // CommitPaths commits exactly paths, as they are in the workspace checkout, on
 // top of target.BaseRef, and publishes the commit to the branch new sessions
-// start from. Only paths listed in allowed may be committed.
+// start from. Only paths listed in allowed may be committed. A path the target
+// already has is skipped, never overwritten: a skill directory present there
+// even in part is left as it is (adding files would change a skill someone
+// already published), and so is a path whose parent is a file or link there.
+// Skipped paths are reported in the result; when all are skipped nothing is
+// committed and SHA is empty.
 //
 // It never touches the checkout's index, working tree or staged changes: the
 // commit is built in a temporary index seeded from the target ref, so it works
@@ -86,16 +94,23 @@ func CommitPaths(ctx context.Context, workspace string, target CommitTarget, pat
 	if err != nil {
 		return CommitResult{}, fmt.Errorf("default branch %s not found: %w", target.BaseRef, err)
 	}
+	var todo, skipped []string
 	for _, p := range clean {
-		if _, err := gitOut(ctx, workspace, nil, "cat-file", "-e", parent+":"+p); err == nil {
-			return CommitResult{}, fmt.Errorf("%w: %s", ErrPathExists, p)
+		if onTarget(ctx, workspace, parent, p) {
+			skipped = append(skipped, p)
+		} else {
+			todo = append(todo, p)
 		}
 	}
-	sha, err := commitTree(ctx, workspace, parent, clean, message)
-	if err != nil {
-		return CommitResult{}, err
+	if len(todo) == 0 {
+		return CommitResult{Skipped: skipped}, nil
 	}
-	res := CommitResult{SHA: sha}
+	sha, err := commitTree(ctx, workspace, parent, todo, message)
+	if err != nil {
+		return CommitResult{Skipped: skipped}, err
+	}
+	clean = todo
+	res := CommitResult{SHA: sha, Skipped: skipped}
 	// When sessions start from the remote, the push decides: the local branch is
 	// fast-forwarded only after the remote took the commit, so a refused push
 	// never leaves local history ahead of (or diverged from) the remote.
@@ -146,6 +161,22 @@ func PushAsBranch(ctx context.Context, workspace, remote, sha string, gitEnv []s
 		return "", err
 	}
 	return branch, nil
+}
+
+// onTarget reports whether committing rel on top of parent would replace
+// something: rel itself exists there (a file, link or directory, however
+// complete), or one of its ancestors exists there as something other than a
+// directory.
+func onTarget(ctx context.Context, workspace, parent, rel string) bool {
+	if gitOK(ctx, workspace, "cat-file", "-e", parent+":"+rel) {
+		return true
+	}
+	for dir := path.Dir(rel); dir != "." && dir != "/"; dir = path.Dir(dir) {
+		if typ, err := gitOut(ctx, workspace, nil, "cat-file", "-t", parent+":"+dir); err == nil {
+			return typ != "tree"
+		}
+	}
+	return false
 }
 
 // checkPaths keeps only clean, checkout-relative paths that exist, are in

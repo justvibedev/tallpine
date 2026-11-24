@@ -1,45 +1,20 @@
-import { browserError, stringArg } from "./args";
-import { sanitizeBrowserTitle, sanitizeBrowserURL } from "./url";
+import { getAction } from "./agent-action-neutral";
 import { activeEntry } from "./entry-state";
-import type { BrowserDevToolsInput } from "./types";
+import type { BrowserDevToolsInput } from "./input-types";
 import { agentActionTarget } from "./agent-results";
-import { ensureDebugger } from "./network-capture";
+import { applyViewport } from "./agent-action-cdp";
 import type { AgentActionEnv } from "./agent-action-env";
+import { pageCdpAction } from "./agent-action-page-cdp";
+import { needsAgentTab } from "./agent-partition";
+import { browserError } from "./args";
 
 export async function pageAction(env: AgentActionEnv) {
   const { ctx, session, action, args, runNative } = env;
   const { agentViewportOverrides, liveViewportOverrides, devtoolsAction } = ctx.fns;
   const entry = activeEntry(session);
   switch (action) {
-    case "get": {
-      const property = stringArg(
-        args,
-        "property",
-        "INVALID_ARGUMENT",
-        "property is required",
-      );
-      const result = await runNative(action, {
-        property,
-        ref:
-          typeof args.ref === "string" && args.ref.trim()
-            ? args.ref
-            : undefined,
-      });
-      const value = result.value ?? result[property];
-      const safeValue =
-        property === "url"
-          ? sanitizeBrowserURL(String(value ?? ""))
-          : property === "title"
-            ? sanitizeBrowserTitle(String(value ?? ""))
-            : value;
-      return {
-        ...result,
-        ...(property === "url" || property === "title"
-          ? { [property]: safeValue }
-          : {}),
-        value: safeValue,
-      };
-    }
+    case "get":
+      return getAction(args, runNative);
     case "wait":
       return runNative(action, args);
     case "frame":
@@ -53,43 +28,42 @@ export async function pageAction(env: AgentActionEnv) {
       return devtoolsAction(session, operation);
     }
     case "viewport": {
-      // Device-metrics emulation on the agent's page, so screenshots and
-      // layout use a fixed width regardless of the panel's own size. It
-      // is per tab and lasts until reset (or the debugger detaches).
-      await ensureDebugger(entry);
-      const debug = entry.view.webContents.debugger;
-      if (args.reset === true) {
+      const result = await applyViewport(async () => {
+        await entry.ready;
+        return entry.view.webContents.debugger;
+      }, args);
+      if ("reset" in result) {
         agentViewportOverrides.delete(entry);
         liveViewportOverrides.delete(entry);
-        await debug.sendCommand("Emulation.clearDeviceMetricsOverride");
         // Hand the slot back to the live-stream pin if a parked stream needs it.
         ctx.fns.syncLiveViewport(session, entry);
         return { reset: true, target: agentActionTarget(entry) };
       }
-      const dimension = (name: string): number => {
-        const value = args[name];
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
-          throw browserError("INVALID_ARGUMENT", `${name} must be a number >= 1`);
-        }
-        return Math.min(10000, Math.round(value));
-      };
-      const width = dimension("width");
-      const height = dimension("height");
-      const dpr = args.deviceScaleFactor;
-      if (dpr !== undefined && (typeof dpr !== "number" || !Number.isFinite(dpr) || dpr < 0)) {
-        throw browserError("INVALID_ARGUMENT", "deviceScaleFactor must be a non-negative number");
-      }
-      const deviceScaleFactor = typeof dpr === "number" ? Math.min(8, dpr) : 0;
-      const mobile = args.mobile === true;
-      await debug.sendCommand("Emulation.setDeviceMetricsOverride", {
-        width,
-        height,
-        deviceScaleFactor,
-        mobile,
-      });
       agentViewportOverrides.add(entry);
-      return { width, height, deviceScaleFactor, mobile, target: agentActionTarget(entry) };
+      return { ...result, target: agentActionTarget(entry) };
     }
+    case "back":
+    case "forward":
+    case "reload":
+    case "eval":
+    case "upload":
+      return pageCdpAction(action, args, {
+        tab: async () => {
+          await entry.ready;
+          // eval reads whatever the page holds: never in the person's own tab
+          // (their logins) unless they granted the agent those logins, nor in
+          // a viewer of a remote agent browser.
+          if (action === "eval" && (entry.agentTab !== undefined || needsAgentTab(entry, session))) {
+            throw browserError(
+              "BROWSER_EVAL_NOT_GRANTED",
+              "eval runs only in agent tabs, or in your own tabs after you grant the agent your logins",
+            );
+          }
+          return { tabId: entry.tabId, debug: entry.view.webContents.debugger };
+        },
+        runNative,
+        target: () => agentActionTarget(entry),
+      });
   }
   throw new Error(`Unhandled page action: ${action}`);
 }

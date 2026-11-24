@@ -174,6 +174,10 @@ const config: ForgeConfig = {
 			VOBuildDate: buildInfo.date,
 			VOBuildDirty: buildInfo.dirty,
 			TallpineBuildKind: buildInfo.kind,
+			// macOS shows these when a site the person allowed in the Browser
+			// panel (or a terminal CLI, for the mic) first uses the device.
+			NSCameraUsageDescription: "Tallpine uses the camera when a site you allow in the Browser panel asks for it.",
+			NSMicrophoneUsageDescription: "Tallpine uses the microphone when a site you allow in the Browser panel, or a CLI in a terminal, asks for it.",
 		},
 		// App icon. electron-packager appends the per-platform extension
 		// (.icns on macOS, .ico on Windows); Linux menu icons come from the

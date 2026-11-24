@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"tallpine.eu/tallpine/backend/internal/domain"
+	"tallpine.eu/tallpine/backend/internal/ports"
 	"tallpine.eu/tallpine/backend/internal/skillbridge"
 	"tallpine.eu/tallpine/backend/internal/skillsprompt"
 )
@@ -18,27 +19,41 @@ func (m *Manager) skillInventory(projectPath string, env map[string]string) skil
 }
 
 // launchSkillInventory is skillInventory for a launch of harness. Kiro lists
-// repo skills by path in the session worktree, so for Kiro an uncommitted
-// skill is marked pending (not in the worktree yet) and left out.
-func (m *Manager) launchSkillInventory(projectPath string, env map[string]string, harness domain.AgentHarness) skillbridge.Inventory {
-	opts := skillbridge.OptionsFor(m.dataDir, projectPath, env)
-	if harness == domain.HarnessKiro && projectPath != "" {
-		opts.Committed = skillbridge.GitCommitted(projectPath)
+// repo skills by path in the session worktree, so for Kiro a skill missing
+// from the ref that worktree is cut from is marked pending and left out.
+func (m *Manager) launchSkillInventory(ctx context.Context, project domain.ProjectRecord, env map[string]string, harness domain.AgentHarness) skillbridge.Inventory {
+	opts := skillbridge.OptionsFor(m.dataDir, project.Path, env)
+	if harness == domain.HarnessKiro && project.Path != "" {
+		opts.Committed = m.committedAtSessionBase(ctx, project)
 	}
 	return skillbridge.Discover(opts)
 }
 
-// projectPath is the project's checkout, or "" when it cannot be read; the
-// launch then switches only the account's skills.
-func (m *Manager) projectPath(ctx context.Context, id domain.ProjectID) string {
+// committedAtSessionBase judges whether a checkout path reaches a new session:
+// it is on the ref session worktrees are cut from, which can differ from the
+// checkout's HEAD (another branch checked out, or the remote ahead). Resolution
+// is local only; spawn has already refreshed the ref. Without a resolved ref
+// it falls back to HEAD.
+func (m *Manager) committedAtSessionBase(ctx context.Context, project domain.ProjectRecord) func(string) bool {
+	if resolver, ok := m.workspace.(ports.WorkspaceDefaultBranchRefresher); ok && project.Kind.WithDefault() != domain.ProjectKindScratch {
+		if t, err := resolver.ResolveDefaultBranch(ctx, project.Path, project.Config.WorktreeBaseBranch()); err == nil && t.BaseRef != "" {
+			return skillbridge.CommittedAt(project.Path, t.BaseRef)
+		}
+	}
+	return skillbridge.GitCommitted(project.Path)
+}
+
+// projectRecord is the project, or the zero record (no checkout path) when it
+// cannot be read; the launch then switches only the account's skills.
+func (m *Manager) projectRecord(ctx context.Context, id domain.ProjectID) domain.ProjectRecord {
 	if m.store == nil || id == "" {
-		return ""
+		return domain.ProjectRecord{}
 	}
 	record, err := m.loadProject(ctx, id)
 	if err != nil {
-		return ""
+		return domain.ProjectRecord{}
 	}
-	return record.Path
+	return record
 }
 
 // roleSkillLaunch is what the project's skill switches give a launch of a

@@ -81,12 +81,13 @@ type UpdateWorkflowDefaultsRequest struct {
 	PlanningMode       *string `json:"planningMode,omitempty" description:"Planning mode (auto, always or off) for projects that set none of their own."`
 	PlanAutoApprove    *bool   `json:"planAutoApprove,omitempty" description:"Plan auto-approval for projects that set none of their own."`
 	ReviewerHarness    *string `json:"reviewerHarness,omitempty" description:"Default reviewer harness for projects that set no reviewer of their own; empty clears it and the default model."`
-	ReviewerModel      *string `json:"reviewerModel,omitempty" description:"Default reviewer model paired with the default reviewer harness."`
+	ReviewerModel      *string `json:"reviewerModel,omitempty" description:"Default reviewer model paired with the default reviewer harness; a project reviewer on that harness with no model of its own inherits it."`
+	ReviewerEffort     *string `json:"reviewerEffort,omitempty" description:"Default reviewer reasoning effort paired with reviewerModel."`
 	WorkerAgent        *string `json:"workerAgent,omitempty" description:"Worker agent a new project starts with; empty clears it and its model and effort."`
-	WorkerModel        *string `json:"workerModel,omitempty" description:"Worker model a new project starts with, paired with workerAgent."`
+	WorkerModel        *string `json:"workerModel,omitempty" description:"Worker model a new project starts with, paired with workerAgent. A project that names no worker model inherits it at spawn on that agent."`
 	WorkerEffort       *string `json:"workerEffort,omitempty" description:"Worker reasoning effort a new project starts with, paired with workerAgent."`
 	OrchestratorAgent  *string `json:"orchestratorAgent,omitempty" description:"Orchestrator agent a new project starts with; empty clears it and its model and effort."`
-	OrchestratorModel  *string `json:"orchestratorModel,omitempty" description:"Orchestrator model a new project starts with, paired with orchestratorAgent."`
+	OrchestratorModel  *string `json:"orchestratorModel,omitempty" description:"Orchestrator model a new project starts with, paired with orchestratorAgent. A project that names no orchestrator model inherits it at spawn on that agent."`
 	OrchestratorEffort *string `json:"orchestratorEffort,omitempty" description:"Orchestrator reasoning effort a new project starts with, paired with orchestratorAgent."`
 }
 
@@ -97,7 +98,9 @@ type WorkflowDefaultsResponse struct {
 	PlanAutoApprove bool   `json:"planAutoApprove"`
 	ReviewerHarness string `json:"reviewerHarness,omitempty"`
 	ReviewerModel   string `json:"reviewerModel,omitempty"`
-	// Worker* and Orchestrator* are the role defaults a new project starts with.
+	ReviewerEffort  string `json:"reviewerEffort,omitempty"`
+	// Worker* and Orchestrator* are the role defaults a new project starts
+	// with and a project naming no model for the role inherits at spawn.
 	WorkerAgent        string `json:"workerAgent,omitempty"`
 	WorkerModel        string `json:"workerModel,omitempty"`
 	WorkerEffort       string `json:"workerEffort,omitempty"`

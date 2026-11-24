@@ -4,6 +4,27 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.24]
+
+### Added
+- Settings has an app-wide default model and effort per role, with an option to apply them to all projects (#1303).
+- Real Chrome mode for the Browser: a per-project setting that drives your own Chrome, with network, console, viewport, dialog, frame and devtools commands, upload, back/forward/reload and eval, and a "Sign in to sites" launch (#1312, #1313, #1315, #1318).
+- Agents are told when Real Chrome mode is on, and `tallpine browser status` shows the backend in use (#1314).
+- Browser tabs send a Chrome user agent and expose `window.chrome`, so Google sign-in proceeds (#1317, #1322).
+- Browser site permission prompts, Site settings, panel fullscreen and a mailto/tel confirmation (#1319).
+- A right-click menu in your Browser tabs (#1321).
+- `tallpine browser handoff` pauses the agent while you take over a page (#1320).
+
+### Fixed
+- A chat turn that ends is delivered at once to an idle orchestrator that is waiting on the worker (#1304).
+- Owner asks and plan cards reach the phone over LAN and tunnel (#1305).
+- Skills offer and commit only what the session base branch lacks (#1306).
+- Passkey sign-ins that get stuck are explained, you can pick among passkeys, and the notice opens a standalone URL and offers sign-in import (#1307, #1308).
+- The Browser reads the page you have open instead of a blank agent tab (#1309).
+- Imported Chrome sign-ins that are device-bound now show a warning (#1311).
+- Real Chrome mode no longer offers sign-in after Chrome quits, shows a Google sign-in hint after any command (#1316), keeps Google sign-ins and points you to plain Chrome (#1325), shows "Sign in to sites", and reopens a window you closed (#1324).
+- The chat plan dock scrolls on mobile so long plans reach Send and Approve (#1323).
+
 ## [0.13.23]
 
 ### Added

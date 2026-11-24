@@ -23,10 +23,13 @@ type WorkflowDefaults struct {
 	// project falls back to its worker-derived reviewer.
 	ReviewerHarness ReviewerHarness `json:"reviewerHarness,omitempty"`
 	ReviewerModel   string          `json:"reviewerModel,omitempty"`
+	ReviewerEffort  string          `json:"reviewerEffort,omitempty"`
 	// Worker* and Orchestrator* are the agent, model and effort a NEW project
-	// starts with for that role (copied into its config when it is created;
-	// existing projects are never touched). Empty means no app default. A model
-	// and effort belong to their harness, so both are empty while it is.
+	// starts with for that role (copied into its config when it is created).
+	// An existing project that sets no model for the role inherits the model
+	// and effort at spawn when the session runs on this agent (B847). Empty
+	// means no app default. A model and effort belong to their harness, so
+	// both are empty while it is.
 	WorkerAgent        AgentHarness `json:"workerAgent,omitempty"`
 	WorkerModel        string       `json:"workerModel,omitempty"`
 	WorkerEffort       string       `json:"workerEffort,omitempty"`
@@ -68,14 +71,17 @@ func (d WorkflowDefaults) ReviewerOverride() (ReviewerHarness, AgentConfig, bool
 	if d.ReviewerHarness == "" {
 		return "", AgentConfig{}, false
 	}
-	return d.ReviewerHarness, AgentConfig{Model: d.ReviewerModel}, true
+	return d.ReviewerHarness, AgentConfig{Model: d.ReviewerModel, Effort: d.ReviewerEffort}, true
 }
 
-// EffectiveReviewer is the reviewer a worker gets: the project's own reviewer,
-// else the app-wide default reviewer, else the project's worker-derived one.
+// EffectiveReviewer is the reviewer a worker gets: the project's own reviewer
+// (with the app default's model and effort when it names none and runs on the
+// default's agent), else the app-wide default reviewer, else the project's
+// worker-derived one.
 func (c ProjectConfig) EffectiveReviewer(d WorkflowDefaults, worker AgentHarness) (ReviewerHarness, AgentConfig) {
 	if len(c.Reviewers) > 0 {
-		return c.Reviewers[0].Harness, c.Reviewers[0].AgentConfig
+		r := c.Reviewers[0]
+		return r.Harness, d.RoleModelDefault(DefaultRoleReviewer).Fill(AgentHarness(r.Harness), r.AgentConfig)
 	}
 	if h, cfg := c.InheritedReviewer(d); h != "" {
 		return h, cfg

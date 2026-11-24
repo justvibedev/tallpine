@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -19,13 +20,17 @@ const browserCapabilityHeader = "X-AO-Browser-Capability"
 
 // BrowserService authorizes and executes session-scoped browser operations.
 type BrowserService interface {
-	Status(ctx context.Context, sessionID domain.SessionID, capability string) (browserruntime.Status, error)
+	Status(ctx context.Context, sessionID domain.SessionID, capability string) (browserruntime.Status, string, error)
 	Execute(ctx context.Context, sessionID domain.SessionID, capability, action string, args map[string]interface{}) (browserruntime.Result, string, error)
 }
 
 // BrowserController exposes the loopback-only browser command API.
 type BrowserController struct {
 	Svc BrowserService
+	// CommandTimeout bounds every action but handoff, whose wait on the
+	// person outlasts a REST request; the API gives this route a longer
+	// budget (B858). Zero leaves the request's own deadline alone.
+	CommandTimeout time.Duration
 }
 
 // Register adds browser status and command routes to the API router.
@@ -44,7 +49,7 @@ func (c *BrowserController) status(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "SESSION_ID_REQUIRED", "sessionId is required", nil)
 		return
 	}
-	status, err := c.Svc.Status(r.Context(), sessionID, r.Header.Get(browserCapabilityHeader))
+	status, backend, err := c.Svc.Status(r.Context(), sessionID, r.Header.Get(browserCapabilityHeader))
 	if err != nil {
 		envelope.WriteError(w, r, err)
 		return
@@ -54,6 +59,7 @@ func (c *BrowserController) status(w http.ResponseWriter, r *http.Request) {
 		Connected:   status.Connected,
 		ConnectedAt: status.ConnectedAt,
 		Transport:   "electron-webcontents-debugger",
+		Backend:     backend,
 	})
 }
 
@@ -71,8 +77,14 @@ func (c *BrowserController) execute(w http.ResponseWriter, r *http.Request) {
 		envelope.WriteAPIError(w, r, http.StatusBadRequest, "bad_request", "SESSION_ID_REQUIRED", "sessionId is required", nil)
 		return
 	}
+	ctx := r.Context()
+	if c.CommandTimeout > 0 && !strings.EqualFold(strings.TrimSpace(in.Action), "handoff") {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.CommandTimeout)
+		defer cancel()
+	}
 	result, action, err := c.Svc.Execute(
-		r.Context(),
+		ctx,
 		in.SessionID,
 		r.Header.Get(browserCapabilityHeader),
 		in.Action,
@@ -114,10 +126,10 @@ func writeBrowserError(w http.ResponseWriter, r *http.Request, err error) {
 			"AGENT_BROWSER_COMMAND_BLOCKED":
 			status = http.StatusBadRequest
 			typeName = "bad_request"
-		case "STALE_REFERENCE", "TAB_NOT_FOUND", "BROWSER_TARGET_MISMATCH":
+		case "STALE_REFERENCE", "TAB_NOT_FOUND", "BROWSER_TARGET_MISMATCH", "BROWSER_HANDOFF_ACTIVE":
 			status = http.StatusConflict
 			typeName = "conflict"
-		case "AGENT_BROWSER_TIMEOUT":
+		case "AGENT_BROWSER_TIMEOUT", "BROWSER_HANDOFF_TIMEOUT":
 			status = http.StatusGatewayTimeout
 			typeName = "timeout"
 		case "BROWSER_TARGET_UNAVAILABLE", "BROWSER_AUTOMATION_UNAVAILABLE", "AGENT_BROWSER_NOT_INSTALLED",

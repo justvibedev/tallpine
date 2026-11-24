@@ -61,11 +61,14 @@ export type BrowserImportWarningCode =
 	| "expired-cookies-skipped"
 	| "invalid-cookies-skipped"
 	| "cookie-attributes-defaulted"
-	| "cookie-write-failed";
+	| "cookie-write-failed"
+	| "device-bound-sessions";
 
 export type BrowserImportWarning = {
 	code: BrowserImportWarningCode;
 	count?: number;
+	/** Hostnames the warning concerns; set for device-bound-sessions. */
+	sites?: string[];
 };
 
 export type BrowserImportResultEntry = {

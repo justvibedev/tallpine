@@ -1,6 +1,7 @@
 import { browserError } from "./args";
 import type { BrowserEntry, BrowserPopupOptions, BrowserSessionEntry } from "./types";
 import type { HostContext } from "./context";
+import { wireContextMenu } from "./context-menu";
 import { buildEntry, prepareView, wireConsoleReports, wireEntryReady, wireInputEvents, wireNavigation, wirePopups, wireRemoteTabReports, wireScrollbarStyle, wireTabLifecycle, type TabDeps, type TabWiring } from "./create-tab-steps";
 
 export function createTabFactory(ctx: HostContext, deps: TabDeps) {
@@ -37,6 +38,7 @@ export function createTabFactory(ctx: HostContext, deps: TabDeps) {
     wireNavigation(wiring);
     wireRemoteTabReports(wiring);
     wireInputEvents(wiring);
+    wireContextMenu(wiring);
     wireEntryReady(wiring);
     if (activate) {
       ctx.fns.activateTab(session, tabId, false);

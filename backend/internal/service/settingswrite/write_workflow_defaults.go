@@ -33,23 +33,13 @@ func (w *Writer) setWorkflowDefault(ctx context.Context, key settingsreg.Key, ra
 		var on bool
 		_ = json.Unmarshal(raw, &on)
 		update.PlanAutoApprove = &on
-	case "app.workflowDefaults.reviewerHarness":
-		var h domain.ReviewerHarness
-		_ = json.Unmarshal(raw, &h)
-		update.ReviewerHarness = &h
-		// A batch that also sets the model applies both together, so the
-		// outcome does not depend on which key comes first.
-		for _, p := range plan {
-			if p.def.Key == "app.workflowDefaults.reviewerModel" {
-				var m string
-				_ = json.Unmarshal(p.value, &m)
-				update.ReviewerModel = &m
-			}
+	case "app.workflowDefaults.reviewerHarness", "app.workflowDefaults.reviewerModel", "app.workflowDefaults.reviewerEffort":
+		var agent *domain.AgentHarness
+		fillRoleUpdate(&agent, &update.ReviewerModel, &update.ReviewerEffort, "reviewer", key, raw, plan)
+		if agent != nil {
+			h := domain.ReviewerHarness(*agent)
+			update.ReviewerHarness = &h
 		}
-	case "app.workflowDefaults.reviewerModel":
-		var m string
-		_ = json.Unmarshal(raw, &m)
-		update.ReviewerModel = &m
 	case "app.workflowDefaults.workerAgent", "app.workflowDefaults.workerModel", "app.workflowDefaults.workerEffort":
 		fillRoleUpdate(&update.WorkerAgent, &update.WorkerModel, &update.WorkerEffort, "worker", key, raw, plan)
 	case "app.workflowDefaults.orchestratorAgent", "app.workflowDefaults.orchestratorModel", "app.workflowDefaults.orchestratorEffort":
@@ -86,13 +76,17 @@ func (w *Writer) setDynamicContext(ctx context.Context, raw json.RawMessage) err
 // which key comes first (a changed agent would otherwise drop them).
 func fillRoleUpdate(agent **domain.AgentHarness, model, effort **string, role string, key settingsreg.Key, raw json.RawMessage, plan []planned) {
 	prefix := "app.workflowDefaults." + role
+	agentKey := prefix + "Agent"
+	if role == "reviewer" {
+		agentKey = prefix + "Harness"
+	}
 	setString := func(dst **string, v json.RawMessage) {
 		var s string
 		_ = json.Unmarshal(v, &s)
 		*dst = &s
 	}
 	switch string(key) {
-	case prefix + "Agent":
+	case agentKey:
 		var h domain.AgentHarness
 		_ = json.Unmarshal(raw, &h)
 		*agent = &h

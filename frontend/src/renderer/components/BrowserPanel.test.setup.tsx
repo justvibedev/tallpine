@@ -1,15 +1,27 @@
 import { render as rtlRender } from "@testing-library/react";
-import type { ComponentProps, ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { vi } from "vitest";
 import { BrowserPanel, BrowserPanelView, useBrowserAnnotationQueue } from "./BrowserPanel";
 import { useBrowserView, type BrowserNavState } from "../hooks/useBrowserView";
 import type { WorkspaceSession } from "../types/workspace";
 import { TooltipProvider } from "./ui/tooltip";
+import { projectQueryKey } from "../lib/project-settings-api";
 import type { BrowserAnnotationSubmitPayload } from "../../shared/browser-annotations";
 import type { BrowserRuntimeState } from "../../main/browser-view-host";
 
+// BrowserPanel reads the session's project (Chrome mode); the app always provides a query client.
+// Its project is seeded (in-app browser) so the panel never spends a test's mocked fetch on it.
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+queryClient.setQueryData(projectQueryKey("ws-1"), { config: {} });
+
+// A render wrapper, so it stays mounted across rerender() calls.
+function QueryProvider({ children }: { children: ReactNode }) {
+	return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
 export function render(ui: ReactElement) {
-	return rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
+	return rtlRender(<TooltipProvider>{ui}</TooltipProvider>, { wrapper: QueryProvider });
 }
 
 type PanelProps = Partial<ComponentProps<typeof BrowserPanel>>;

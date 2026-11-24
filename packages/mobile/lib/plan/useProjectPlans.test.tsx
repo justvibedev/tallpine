@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, IS_REACT_NATIVE_TEST_ENVIRONMENT: true });
 
-vi.mock("react-native", () => ({ AppState: {}, View: "View" }));
+vi.mock("react-native", () => ({ AppState: {}, View: "View", ScrollView: "ScrollView", useWindowDimensions: () => ({ width: 440, height: 956 }) }));
 vi.mock("./planPolling", () => ({ startPlanPolling: (fn: () => void) => { fn(); return () => {}; } }));
 vi.mock("../connectionError", () => ({ userFacingError: String }));
 vi.mock("../tokens", () => ({ space: {} }));
@@ -14,7 +14,7 @@ vi.mock("./planApi", () => ({
 	acceptPlanDefaults: vi.fn(), answerPlan: vi.fn(), approvePlan: vi.fn(),
 }));
 
-import { useProjectPlans } from "./PlanCards";
+import { PlanCards, planDockMaxHeight, useProjectPlans } from "./PlanCards";
 
 const cfg = {} as never;
 const plan = (id: string) => [{ itemRef: "B12", plan: { id } }] as never;
@@ -55,5 +55,25 @@ describe("useProjectPlans", () => {
 		expect(out.ids).toEqual(["planB"]);
 		await act(async () => { res.A(plan("planA-late")); });
 		expect(out.ids).toEqual(["planB"]);
+	});
+});
+
+describe("PlanCards dock", () => {
+	// Owner bug: a plan with several questions docked above the composer ran past
+	// the bottom of the phone, so the lower questions and Send/Approve were unreachable.
+	it("scrolls its cards inside a height-capped container", async () => {
+		listProjectPlans.mockReset();
+		listProjectPlans.mockResolvedValue([
+			{ itemRef: "B46", itemTitle: "Long plan", plan: { id: "p1" } },
+			{ itemRef: "B47", itemTitle: "Another", plan: { id: "p2" } },
+		]);
+		let r!: ReturnType<typeof create>;
+		await act(async () => { r = create(<PlanCards cfg={cfg} projectId="A" />); });
+		const dock = r.root.findByProps({ testID: "plan-dock" });
+		expect(dock.type).toBe("ScrollView");
+		expect(dock.props.style).toMatchObject({ flexGrow: 0, flexShrink: 1, maxHeight: planDockMaxHeight(956) });
+		expect(planDockMaxHeight(956)).toBeLessThan(956);
+		expect(dock.props.keyboardShouldPersistTaps).toBe("handled");
+		expect(dock.findAllByType("PlanCard" as never)).toHaveLength(2);
 	});
 });

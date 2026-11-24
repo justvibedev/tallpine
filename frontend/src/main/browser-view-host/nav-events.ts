@@ -6,6 +6,7 @@ import { annotationSessionFor, cancelAnnotation, isSameAnnotationPage, pushAnnot
 import { tabResult } from "./agent-results";
 import { clearStaleFavicon } from "./favicon";
 import { handleNetworkDebuggerEvent } from "./network-capture";
+import { passkeyExternalUrl, trackLastNonIdpUrl } from "../../shared/browser-passkey-url";
 
 export function listTabs(
   session: BrowserSessionEntry,
@@ -42,9 +43,13 @@ export function hardenWebContents(
     windowOptions: BrowserPopupOptions,
     details: Electron.HandlerDetails,
   ) => WebContents,
+  // Takes a mailto:/tel: link the page follows (it asks the person before
+  // opening it); true means the link was taken and must not load here.
+  takeExternalUrl: (url: string) => boolean = () => false,
 ): void {
   contents.setWindowOpenHandler((details) => {
     const { url } = details;
+    if (isCurrent() && takeExternalUrl(url)) return { action: "deny" };
     if (
       !isCurrent() ||
       (url !== "about:blank" && !isAllowedBrowserURL(url, options.rendererOrigin))
@@ -58,6 +63,10 @@ export function hardenWebContents(
     };
   });
   const blockUnsafeNavigation = (event: Electron.Event, url: string) => {
+    if (isCurrent() && takeExternalUrl(url)) {
+      event.preventDefault();
+      return;
+    }
     if (!isAllowedBrowserURL(url, options.rendererOrigin)) {
       event.preventDefault();
       if (!isCurrent()) return;
@@ -91,6 +100,11 @@ export function wireNavEvents(
     resetFind();
     entry.documentGeneration += 1;
     entry.navigationGeneration += 1;
+    // A new document drops the old one's pending WebAuthn request.
+    entry.passkeyPending = false;
+    // ...and every site permission prompt it was waiting on.
+    dropSitePrompts(entry);
+    entry.lastNonIdpUrl = trackLastNonIdpUrl(entry.lastNonIdpUrl, url);
     clearStaleFavicon(entry, url);
     if (isActive()) syncActiveBounds();
     recordHistory(url, contents.getTitle(), true);
@@ -100,6 +114,7 @@ export function wireNavEvents(
     // Subframe hash/history changes are not application-level navigation for
     // either action postconditions or top-level browser history.
     if (isMainFrame === false) return;
+    entry.lastNonIdpUrl = trackLastNonIdpUrl(entry.lastNonIdpUrl, url);
     entry.navigationGeneration += 1;
     recordHistory(url, contents.getTitle(), true);
     update();
@@ -173,6 +188,23 @@ export function viewerRuns(entry: BrowserEntry): Promise<boolean> {
     .then((runs) => runs === true, () => false);
 }
 
+function passkeyNavFields(entry: BrowserEntry, url: string): Pick<BrowserNavState, "passkeyPending" | "passkeyExternalUrl"> {
+  const external = passkeyExternalUrl(url, entry.lastNonIdpUrl);
+  return { passkeyPending: true, ...(external ? { passkeyExternalUrl: external } : {}) };
+}
+
+/** Answers every prompt a tab still shows with "no": its page went away. */
+export function dropSitePrompts(entry: BrowserEntry): void {
+  const pending = entry.sitePrompts?.splice(0) ?? [];
+  for (const prompt of pending) prompt.resolve(false);
+}
+
+function siteNavFields(entry: BrowserEntry): Pick<BrowserNavState, "sitePermissionPrompt" | "sitePermissions"> {
+  const prompt = entry.sitePrompts?.[0]?.prompt;
+  const remembered = entry.siteSettings?.() ?? [];
+  return { ...(prompt ? { sitePermissionPrompt: prompt } : {}), ...(remembered.length ? { sitePermissions: remembered } : {}) };
+}
+
 export function readNavState(entry: BrowserEntry): BrowserNavState {
   const page = entry.driver().page();
   return {
@@ -182,6 +214,8 @@ export function readNavState(entry: BrowserEntry): BrowserNavState {
     // the panel renders its "enter a URL" empty state and the address bar is
     // blank rather than showing "about:blank".
     url: page.url === "about:blank" ? "" : page.url,
+    ...(entry.passkeyPending ? passkeyNavFields(entry, page.url) : {}),
+    ...siteNavFields(entry),
   };
 }
 

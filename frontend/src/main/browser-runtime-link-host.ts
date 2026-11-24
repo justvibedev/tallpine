@@ -31,6 +31,7 @@ type BrowserStreamControl
 import {
 type BrowserRuntimeState
 } from "./browser-view-host";
+import { routeBrowserRuntimeCommand } from "./browser-runtime-command-router";
 import { browserRuntimeToken } from "./bundled-runtime-staging";
 import { runFilePath, setDaemonStatus, startDaemon, supervisorPipeFromRunFile } from "./daemon/daemon-lifecycle";
 import { checkRender, measureRender } from "./render-check";
@@ -107,13 +108,12 @@ export function establishBrowserRuntimeLink(): void {
 			if (command.action === "__render-measure") {
 				return measureRender({ BrowserWindow }, command.args ?? {}, signal);
 			}
-			const host = ctx.browserViewHost;
-			if (!host) {
-				throw Object.assign(new Error("Browser target owner is unavailable"), {
-					code: "BROWSER_TARGET_UNAVAILABLE",
-				});
-			}
-			return host.execute(command.sessionId, command.action, command.args, signal);
+			return routeBrowserRuntimeCommand(command, signal, {
+				viewHost: ctx.browserViewHost,
+				chromeHost: ctx.chromeBrowser?.host ?? null,
+				handoffs: ctx.browserHandoffs?.handoffs ?? null,
+				log: (message) => console.warn(`Tallpine: ${message}`),
+			});
 		},
 		log: (message) => console.log(`Tallpine: ${message}`),
 		onStateChange: publishBrowserRuntimeState,

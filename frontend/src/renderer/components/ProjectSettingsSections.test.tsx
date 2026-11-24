@@ -245,6 +245,22 @@ describe("local project settings sections", () => {
 		expect((await savedConfig()).defaultSessionMode).toBeUndefined();
 	});
 
+	it("browser: Chrome mode loads and saves, and the in-app browser clears it", async () => {
+		renderSection("browser", { browserBackend: "chrome" });
+		expect(await screen.findByRole("button", { name: "Agent browser" })).toHaveTextContent("Google Chrome (passkeys, Touch ID)");
+		await choose("Agent browser", "In-app browser (default)");
+		submit();
+		expect((await savedConfig()).browserBackend).toBeUndefined();
+	});
+
+	it("browser: choosing Google Chrome saves chrome", async () => {
+		renderSection("browser", {});
+		expect(await screen.findByRole("button", { name: "Agent browser" })).toHaveTextContent("In-app browser (default)");
+		await choose("Agent browser", "Google Chrome (passkeys, Touch ID)");
+		submit();
+		expect((await savedConfig()).browserBackend).toBe("chrome");
+	});
+
 	it("advanced no longer carries the rules, which moved to Instructions and skills", async () => {
 		renderSection("advanced", { agentRules: "be kind" });
 		await waitFor(() => expect(document.getElementById("project-settings-form")).not.toBeNull());

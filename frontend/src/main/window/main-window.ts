@@ -17,6 +17,7 @@ import { HOME_DIR_NAME } from "../../shared/brand";
 import type { BrowserProfileMenuInput } from "../../shared/browser-profiles";
 import { AgentBrowserRuntime } from "../agent-browser-runtime/runtime";
 import { createAgentLoginsConfirm } from "../agent-logins-confirm";
+import { createWebAuthnAccountChooser } from "../browser-webauthn-chooser";
 import { APP_DISPLAY_NAME, desktopDataDir, isDev, RENDERER_SCHEME } from "../app-bootstrap";
 import { ctx } from "../app-context";
 import { toggleAppDevTools } from "../app-devtools";
@@ -25,17 +26,17 @@ import { attachAppShortcuts } from "../app-shortcuts";
 import { createBrowserCloseDiagnostics } from "../browser-close-diagnostics";
 import { createBrowserDownloadManager } from "../browser-download-manager";
 import { BrowserHistoryStore } from "../browser-history-store";
+import { BrowserSitePermissionStore } from "../browser-site-permission-store";
 import { BrowserProfileImportService } from "../browser-profile-import/service";
-import {
-registerBrowserProfileIpc,
-type BrowserProfileMenuItem
-} from "../browser-profile-ipc";
+import { registerBrowserProfileIpc } from "../browser-profile-ipc";
 import { createBrowserProfileStore } from "../browser-profile-store";
 import { disposeBrowserRuntimeLink, establishBrowserRuntimeLink, establishBrowserStreamLink } from "../browser-runtime-link-host";
 import {
 createBrowserViewHost,
 shouldHandleAppShortcutInBrowserContext
 } from "../browser-view-host";
+import { createAppChromeBrowser } from "../chrome-browser/app-wiring";
+import { createAppBrowserHandoffs } from "../browser-handoff";
 import { attachProcessRecovery } from "./process-recovery";
 import { createProcessRecoveryLog } from "./process-recovery-log";
 import { helperSignatureOptions } from "../bundled-runtime-staging";
@@ -54,8 +55,9 @@ import { agentPageRequestAllowed } from "../render-frame-network";
 import { syncMacWindowButtons } from "../window-chrome";
 import { createWindowComposition } from "../window-composition";
 import { buildLinuxAppMenu, buildWindowsAppMenu } from "./app-menu";
+import { buildProfileMenu, pageMenuOptions } from "./browser-menus";
 import { browserProfileStateDir, clearElectronBrowserProfileData, disposeAllBrowserViewHosts, disposeBrowserViewHost } from "./browser-view-hosts";
-import { annotatePreloadPath, preloadPath, rendererUrl, writeClipboardImage } from "./renderer-assets";
+import { annotatePreloadPath, preloadPath, rendererUrl } from "./renderer-assets";
 import { showWhenRendererLoaded } from "./window-focus";
 import { mainWindowOptions } from "./window-options";
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -109,6 +111,7 @@ export async function createWindowInternal(): Promise<void> {
 	}
 	const browserProfileStore = await createBrowserProfileStore({ stateDir: browserProfileStateDir() });
 	const browserHistoryStore = new BrowserHistoryStore({ stateDir: browserProfileStateDir() });
+	const browserSitePermissionStore = await BrowserSitePermissionStore.open(browserProfileStateDir());
 	const profileImporter = new BrowserProfileImportService({
 		stateDir: browserProfileStateDir(),
 		profileStore: browserProfileStore,
@@ -301,7 +304,9 @@ export async function createWindowInternal(): Promise<void> {
 		isCloseShellTerminalShortcutEnabled: () => ctx.closeShellTerminalShortcutEnabled,
 		browserProfileStore,
 		confirmAgentLogins: createAgentLoginsConfirm((options) => dialog.showMessageBox(options)),
+		chooseWebAuthnAccount: createWebAuthnAccountChooser((options) => dialog.showMessageBox(options)),
 		browserHistoryStore,
+		browserSitePermissionStore,
 		browserDownloadManager: createBrowserDownloadManager({
 			downloadsDirectory: app.getPath("downloads"),
 			stagingDirectory: path.join(desktopDataDir, "browser-downloads-pending"),
@@ -310,9 +315,12 @@ export async function createWindowInternal(): Promise<void> {
 			notify: (state) => { awakeDownloads.update(state); shellWebContents.send("browser:downloadsChanged", state); },
 		}),
 		clearBrowserProfileData: clearElectronBrowserProfileData,
-		clipboard: { writeImage: writeClipboardImage },
+		...pageMenuOptions(() => ctx.mainWindow),
+		getLocale: () => ctx.uiLocale,
 		onNativeViewAdded: () => ctx.windowComposition?.restackShell(),
 	});
+	ctx.chromeBrowser = createAppChromeBrowser({ ipcMain, shellWebContents, runtime: agentBrowserRuntime });
+	ctx.browserHandoffs = createAppBrowserHandoffs({ ipcMain, shellWebContents });
 	ctx.browserProfileImporter = profileImporter;
 	ctx.browserProfileIpc = registerBrowserProfileIpc({
 		ipcMain,
@@ -321,10 +329,7 @@ export async function createWindowInternal(): Promise<void> {
 		store: browserProfileStore,
 		importer: profileImporter,
 		host: ctx.browserViewHost,
-		buildMenu: (items: BrowserProfileMenuItem[]) => {
-			const menu = Menu.buildFromTemplate(items as Electron.MenuItemConstructorOptions[]);
-			return { popup: (options) => menu.popup(options as Electron.PopupOptions) };
-		},
+		buildMenu: buildProfileMenu,
 		confirmSwitch: async (labels: BrowserProfileMenuInput["labels"]) => {
 			const result = await dialog.showMessageBox({
 				type: "warning",

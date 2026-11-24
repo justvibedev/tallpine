@@ -162,6 +162,8 @@ export function setupBridge() {
 			clear: vi.fn(async () => ({ downloads: [] })),
 			onChanged: vi.fn(() => () => { /* no-op test subscription */ }),
 		},
+		respondSitePermission: vi.fn(async () => undefined),
+		resetSitePermission: vi.fn(async () => undefined),
 		destroy: vi.fn(),
 		setAnnotationMode: vi.fn(async () => undefined),
 		completeAnnotation: vi.fn(async () => undefined),
@@ -186,6 +188,14 @@ export function setupBridge() {
 			return () => activityListeners.delete(listener);
 		}),
 		onRuntimeState: vi.fn(() => () => undefined),
+		chromeState: vi.fn(async () => ({ running: false, activeTab: null })),
+		chromeShow: vi.fn(async () => ({ shown: false })),
+		chromeSignIn: vi.fn(async () => ({ running: false, activeTab: null })),
+		chromeSignInDone: vi.fn(async () => ({ running: false, activeTab: null })),
+		onChromeStateChanged: vi.fn(() => () => undefined),
+		handoffState: vi.fn(async () => null),
+		handoffContinue: vi.fn(async () => false),
+		onHandoffChanged: vi.fn(() => () => undefined),
 		onProfileState: vi.fn((listener: ProfileListener) => {
 			profileListeners.add(listener);
 			return () => profileListeners.delete(listener);

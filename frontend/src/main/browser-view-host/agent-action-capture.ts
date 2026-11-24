@@ -1,4 +1,5 @@
-import { browserError, browserSignalMessages, networkDurationArg, normalizeNativeMessages } from "./args";
+import { browserError, browserSignalMessages, networkDurationArg } from "./args";
+import { messagesAction } from "./agent-action-cdp";
 import { activeEntry } from "./entry-state";
 import { agentActionTarget, isAgentBrowserTimeout } from "./agent-results";
 import { MAX_SCREENSHOT_BYTES } from "./constants";
@@ -70,17 +71,8 @@ export async function captureAction(env: AgentActionEnv) {
     case "network-clear":
       return clearNetworkCapture(networkEntryFor(session));
     case "console":
-      return normalizeNativeMessages(await runNative(action), action);
-    case "errors": {
-      const native = normalizeNativeMessages(
-        await runNative(action),
-        action,
-      );
-      return {
-        ...native,
-        messages: [...native.messages, ...browserSignalMessages(session)],
-      };
-    }
+    case "errors":
+      return messagesAction(action, runNative, () => browserSignalMessages(session));
   }
   throw new Error(`Unhandled capture action: ${action}`);
 }

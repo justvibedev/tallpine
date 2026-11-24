@@ -1,4 +1,5 @@
-import type { BrowserDevToolsPlacement, BrowserRect } from "./types";
+import type { BrowserRect } from "./types";
+import type { BrowserDevToolsPlacement } from "./input-types";
 
 // Hidden targets still need a real viewport for screenshots, responsive
 // layout, scrolling, and pointer automation before the panel is first shown.
@@ -94,3 +95,8 @@ export const ACT_VERBS = new Set([
   "check",
   "uncheck",
 ]);
+
+// How long an agent command aimed at the person's own page waits for their
+// answer to the agent-logins dialog before it falls back to a throwaway agent
+// tab. Below the CLI's longest browser wait (maxBrowserWaitMillis, 55s).
+export const AGENT_LOGINS_DIALOG_WAIT_MS = 30_000;

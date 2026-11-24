@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -342,6 +343,7 @@ func startSession(ctx context.Context, cfg config.Config, runtime runtimeselect.
 		Messenger:           messenger,
 		Chat:                chat,
 		Defaults:            defaults,
+		NoBuiltinRoleModels: os.Getenv(noBuiltinRoleDefaultsEnv) == "1",
 		Lifecycle:           lcm,
 		Preview:             previewLifecycle,
 		Browser:             browserLifecycle,

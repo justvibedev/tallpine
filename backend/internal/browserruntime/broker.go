@@ -5,7 +5,6 @@ package browserruntime
 import (
 	"bufio"
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -28,7 +27,13 @@ const (
 	// ProtocolVersion identifies the daemon-to-Electron browser bridge contract.
 	// v3 adds broker-issued ping frames answered by pong; v2 peers (desktop
 	// builds older than the heartbeat) are still accepted and simply not probed.
-	ProtocolVersion = 3
+	// v4 adds Command.Backend (Real Chrome mode, B849); a v3 peer gets no
+	// chrome command.
+	ProtocolVersion = 4
+	// livenessProtocolVersion is the oldest hello that answers pings.
+	livenessProtocolVersion = 3
+	// chromeProtocolVersion is the oldest hello that routes Command.Backend.
+	chromeProtocolVersion = 4
 	// minSupportedProtocolVersion is the oldest hello the broker accepts, so a
 	// freshly built daemon keeps working against a not-yet-upgraded desktop app.
 	minSupportedProtocolVersion = 2
@@ -98,6 +103,9 @@ type Command struct {
 	SessionID domain.SessionID       `json:"sessionId"`
 	Action    string                 `json:"action"`
 	Args      map[string]interface{} `json:"args,omitempty"`
+	// Backend is the browser the command runs in: "" or "electron" is the
+	// in-app browser, "chrome" the installed Google Chrome (protocol v4).
+	Backend string `json:"backend,omitempty"`
 }
 
 // CommandError is a stable browser failure returned by the Electron runtime.
@@ -127,6 +135,7 @@ type wireMessage struct {
 	SessionID domain.SessionID       `json:"sessionId,omitempty"`
 	Action    string                 `json:"action,omitempty"`
 	Args      map[string]interface{} `json:"args,omitempty"`
+	Backend   string                 `json:"backend,omitempty"`
 	OK        bool                   `json:"ok,omitempty"`
 	Result    json.RawMessage        `json:"result,omitempty"`
 	Error     *CommandError          `json:"error,omitempty"`
@@ -151,6 +160,7 @@ type Broker struct {
 	connectionChanged chan struct{}
 	token             string
 	pongAt            time.Time
+	peerVersion       int // hello version of conn
 
 	liveness livenessConfig
 }
@@ -186,8 +196,17 @@ func (b *Broker) Status() Status {
 	return Status{Connected: b.conn != nil, ConnectedAt: b.connectedAt}
 }
 
-// Execute sends one browser command to the connected Electron runtime.
+// Execute sends one browser command to the connected Electron runtime's
+// in-app browser.
 func (b *Broker) Execute(ctx context.Context, sessionID domain.SessionID, action string, args map[string]interface{}) (Result, error) {
+	return b.ExecuteOn(ctx, sessionID, "", action, args)
+}
+
+// ExecuteOn sends one browser command to run in backend ("" or "electron" for
+// the in-app browser, "chrome" for Real Chrome mode). A runtime older than
+// protocol v4 would ignore the backend and drive the in-app browser, so a
+// chrome command to it fails with BROWSER_CHROME_MODE_UNSUPPORTED instead.
+func (b *Broker) ExecuteOn(ctx context.Context, sessionID domain.SessionID, backend, action string, args map[string]interface{}) (Result, error) {
 	requestID := uuid.NewString()
 	resultCh := make(chan pendingResult, 1)
 
@@ -200,6 +219,11 @@ func (b *Broker) Execute(ctx context.Context, sessionID domain.SessionID, action
 		}
 		b.mu.Lock()
 		if b.conn == conn {
+			if backend == domain.BrowserBackendChrome && b.peerVersion < chromeProtocolVersion {
+				b.mu.Unlock()
+				return Result{}, CommandError{Code: "BROWSER_CHROME_MODE_UNSUPPORTED",
+					Message: "this project uses Google Chrome for agent browsing, which needs a newer Tallpine desktop app; update Tallpine"}
+			}
 			b.pending[requestID] = resultCh
 			b.mu.Unlock()
 			break
@@ -213,6 +237,7 @@ func (b *Broker) Execute(ctx context.Context, sessionID domain.SessionID, action
 		SessionID: sessionID,
 		Action:    action,
 		Args:      args,
+		Backend:   backend,
 	}
 	if err := b.write(ctx, conn, msg); err != nil {
 		b.removePending(requestID)
@@ -292,8 +317,9 @@ func (b *Broker) serveConn(ctx context.Context, conn net.Conn) {
 	b.connectedAt = time.Now().UTC()
 	b.signalConnectionChangedLocked()
 	pending := b.takePendingLocked()
-	// A v3 runtime is probed; v2 peers keep their connection but are never pinged.
-	if hello.Version >= ProtocolVersion {
+	b.peerVersion = hello.Version
+	// A v3+ runtime is probed; v2 peers keep their connection but are never pinged.
+	if hello.Version >= livenessProtocolVersion {
 		b.pongAt = time.Now()
 	}
 	b.mu.Unlock()
@@ -303,7 +329,7 @@ func (b *Broker) serveConn(ctx context.Context, conn net.Conn) {
 	failPending(pending, ErrUnavailable)
 	b.log.Info("browser runtime connected")
 
-	if hello.Version >= ProtocolVersion {
+	if hello.Version >= livenessProtocolVersion {
 		go b.runLiveness(ctx, conn)
 	}
 
@@ -427,47 +453,6 @@ func (b *Broker) write(ctx context.Context, conn net.Conn, msg wireMessage) erro
 		return context.DeadlineExceeded
 	}
 	return err
-}
-
-// helloRejection reports why a runtime's first frame is not an acceptable hello,
-// or nil if it is.
-func helloRejection(frame []byte, token string) *CommandError {
-	var hello wireMessage
-	switch {
-	case json.Unmarshal(frame, &hello) != nil || hello.Type != "hello":
-		return &CommandError{Code: "BROWSER_RUNTIME_BAD_HELLO", Message: "first frame was not a hello"}
-	case hello.Version < minSupportedProtocolVersion || hello.Version > ProtocolVersion:
-		return &CommandError{
-			Code:    "BROWSER_RUNTIME_PROTOCOL_MISMATCH",
-			Message: fmt.Sprintf("daemon speaks browser runtime protocol %d-%d, runtime sent %d", minSupportedProtocolVersion, ProtocolVersion, hello.Version),
-		}
-	case !validRuntimeToken(token, hello.Token):
-		return &CommandError{
-			Code:    "BROWSER_RUNTIME_TOKEN_REJECTED",
-			Message: "browser runtime token does not match the one this daemon was started with",
-		}
-	}
-	return nil
-}
-
-func writeHelloReply(conn net.Conn, msg wireMessage) error {
-	frame, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	if err := conn.SetWriteDeadline(time.Now().Add(helloReplyTimeout)); err != nil {
-		return err
-	}
-	defer func() { _ = conn.SetWriteDeadline(time.Time{}) }()
-	_, err = conn.Write(append(frame, '\n'))
-	return err
-}
-
-func validRuntimeToken(expected, actual string) bool {
-	if expected == "" {
-		return actual == ""
-	}
-	return hmac.Equal([]byte(expected), []byte(actual))
 }
 
 func (b *Broker) resolve(msg wireMessage) {

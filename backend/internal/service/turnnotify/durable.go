@@ -120,7 +120,7 @@ func (o *Observer) deliverPending(ctx context.Context) time.Duration {
 			continue
 		}
 		in := reportsvc.CreateInput{ID: f.ID, TurnFallbackID: f.ID, SessionID: f.SessionID, Message: message, Synthesized: true, Immediate: true}
-		in.Quiet, in.QuietFor = quietPolicy(kind, rec)
+		in.Quiet, in.QuietFor = o.quietPolicy(ctx, kind, rec)
 		_, err = reports.Create(ctx, in)
 		if err == nil {
 			o.Log.Info("turn fallback became report", "session", f.SessionID, "fallback", f.ID, "kind", kind, "quiet", in.Quiet, "quiet_for", in.QuietFor)

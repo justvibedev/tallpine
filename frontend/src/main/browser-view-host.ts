@@ -16,8 +16,10 @@ import { createAnnotation } from "./browser-view-host/annotation";
 import { createIpcHandlers } from "./browser-view-host/ipc-handlers";
 import { createLiveStream } from "./browser-view-host/live-stream";
 import { createAgentExecute } from "./browser-view-host/agent-execute";
+import { createSitePermissions } from "./browser-view-host/site-permissions";
 
-export type { BrowserRect, BrowserNavState, BrowserTabState, BrowserTabsState, BrowserFindState, BrowserFindInput, BrowserFindStopInput, BrowserAgentActivityState, BrowserRuntimeState, BrowserDevToolsState, BrowserDevToolsPlacement, BrowserDevToolsInput, BrowserViewHostOptions, BrowserViewHost } from "./browser-view-host/types";
+export type { BrowserDevToolsState, BrowserDevToolsPlacement, BrowserDevToolsInput } from "./browser-view-host/input-types";
+export type { BrowserRect, BrowserNavState, BrowserTabState, BrowserTabsState, BrowserFindState, BrowserFindInput, BrowserFindStopInput, BrowserAgentActivityState, BrowserRuntimeState, BrowserViewHostOptions, BrowserViewHost } from "./browser-view-host/types";
 export type { BrowserShortcutAction } from "./browser-view-host/shortcuts";
 export { browserShortcutAction, shouldHandleAppShortcutInBrowserContext } from "./browser-view-host/shortcuts";
 export { normalizeBrowserURL, isAllowedBrowserURL, sanitizeBrowserURL, sanitizeBrowserTitle } from "./browser-view-host/url";
@@ -42,6 +44,7 @@ export function createBrowserViewHost(
   Object.assign(fns, createIpcHandlers(ctx));
   Object.assign(fns, createLiveStream(ctx));
   Object.assign(fns, createAgentExecute(ctx));
+  Object.assign(fns, createSitePermissions(ctx));
   seal();
 
   const { entries, hostState, ipcDisposers, pendingTemporaryPartitionClears, tabsByWebContentsId } = ctx;
@@ -49,6 +52,7 @@ export function createBrowserViewHost(
 
   return {
     execute,
+    handoffPage: fns.handoffPage,
     dispose: () => {
       if (hostState.disposePromise) return hostState.disposePromise;
       hostState.disposePromise = (async () => {
@@ -60,6 +64,8 @@ export function createBrowserViewHost(
         }
         if (options.browserHistoryStore)
           await options.browserHistoryStore.drain();
+        if (options.browserSitePermissionStore)
+          await options.browserSitePermissionStore.drain();
         while (pendingTemporaryPartitionClears.size > 0) {
           await Promise.all([...pendingTemporaryPartitionClears]);
         }

@@ -11,7 +11,6 @@ import (
 	"tallpine.eu/tallpine/backend/internal/service/settingsaudit"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 
 	"tallpine.eu/tallpine/backend/internal/attachmentstore"
 	"tallpine.eu/tallpine/backend/internal/cdc"
@@ -329,7 +328,7 @@ func newAPIWithLogger(cfg config.Config, deps APIDeps, log *slog.Logger) *API {
 		update:         &controllers.UpdateController{Svc: deps.Update},
 		dev:            &controllers.DevController{Import: deps.DevImport},
 		tallpineImport: &controllers.AOImportController{Svc: deps.AOImport},
-		browser:        &controllers.BrowserController{Svc: deps.Browser},
+		browser:        &controllers.BrowserController{Svc: deps.Browser, CommandTimeout: requestTimeout(cfg)},
 		system:         &controllers.SystemController{Checks: deps.SystemChecks},
 		identity:       &controllers.IdentityController{HostID: deps.HostID},
 		endpoints:      &controllers.EndpointsController{Source: deps.Endpoints},
@@ -370,64 +369,13 @@ func serveWithSetupBudget(next http.Handler, w http.ResponseWriter, req *http.Re
 // Register mounts the bounded /api/v1 REST surface. Long-lived surfaces such
 // as muxed terminal streams stay outside this timeout group.
 func (a *API) Register(root chi.Router) {
-	timeout := a.cfg.RequestTimeout
-	if timeout <= 0 {
-		timeout = config.DefaultRequestTimeout
-	}
+	timeout := requestTimeout(a.cfg)
 	root.Route("/api/v1", func(r chi.Router) {
 		// Serve the OpenAPI document from the same origin as the routes it describes.
 		r.Get("/openapi.yaml", apispec.ServeYAML)
 
 		r.Group(func(r chi.Router) {
-			// Large base64 bodies can spend longer than the ordinary REST budget
-			// uploading over a phone connection. Only attachment-bearing requests
-			// opt in; ordinary calls to the same routes keep the configured timeout.
-			r.Use(func(next http.Handler) http.Handler {
-				ordinary := middleware.Timeout(timeout)(next)
-				upload := middleware.Timeout(max(timeout, 10*time.Minute))(next)
-				clone := middleware.Timeout(max(timeout, 30*time.Minute))(next)
-				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					// A clone downloads the whole repository inside the request,
-					// which takes minutes for a large repository.
-					// A manual cleanup run measures and removes whole worktrees and
-					// artifact trees inside the request.
-					if pattern := chi.RouteContext(req.Context()).RoutePattern(); pattern == "/api/v1/projects/clone" ||
-						pattern == "/api/v1/projects/clone/prepare" ||
-						(pattern == "/api/v1/cleanup/runs" && req.Method == http.MethodPost) ||
-						pattern == "/api/v1/storage/cleanup" || pattern == "/api/v1/storage/delete" {
-						clone.ServeHTTP(w, req)
-						return
-					}
-					// A spawn, an orchestrator start or a restore runs the project's
-					// Setup inside the request, and a Setup step may take far longer
-					// than one REST request: the operation extends this budget by its
-					// Setup steps' limits once it knows its project.
-					if setupRoute(req) {
-						budget := timeout
-						if a.cfg.SpawnTimeout > 0 {
-							budget = a.cfg.SpawnTimeout
-						}
-						if attachmentUploadRoute(req) {
-							budget = max(budget, 10*time.Minute)
-						}
-						serveWithSetupBudget(next, w, req, budget)
-						return
-					}
-					if attachmentUploadRoute(req) {
-						upload.ServeHTTP(w, req)
-						return
-					}
-					// A managed preview carries the dev server's HMR socket and event
-					// streams, and the agent browser its stream socket: both stay open
-					// as long as the page does.
-					if pattern := chi.RouteContext(req.Context()).RoutePattern(); pattern == "/api/v1/sessions/{sessionId}/preview/app/*" ||
-						pattern == "/api/v1/sessions/{sessionId}/agent-browser/*" {
-						next.ServeHTTP(w, req)
-						return
-					}
-					ordinary.ServeHTTP(w, req)
-				})
-			})
+			r.Use(a.requestBudget(timeout))
 			r.Use(presenceMiddleware(a.deps.Presence))
 			a.agents.Register(r)
 			a.codexAccounts.Register(r)

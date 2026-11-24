@@ -80,7 +80,7 @@ func TestWritersDescribeAgentAccess(t *testing.T) {
 			t.Errorf("%s: workers may not write settings", s.Key)
 		}
 		orch := s.Scope == ScopeProject
-		if s.Key == "project.planAutoApprove" {
+		if s.Key == "project.planAutoApprove" || s.Key == "project.browserBackend" {
 			orch = false // approves plans without the owner: a person's alone
 		}
 		if s.Key == "project.reviewerRules" || s.Key == "project.reviewerRulesFile" || s.Key == "project.claudePlugins.reviewer" ||
@@ -140,5 +140,30 @@ func TestRegistry_PlanAutoApproveIsHumanOnly(t *testing.T) {
 	}
 	if s, ok := Default().Lookup("policy.planner.autoApprove"); !ok || !s.MDMLockable {
 		t.Errorf("policy.planner.autoApprove = %+v, %v; want a lockable policy key", s, ok)
+	}
+}
+
+// project.browserBackend hands agents the person's real Chrome logins (B849
+// a1), so only the user writes it, and only electron or chrome.
+func TestRegistry_BrowserBackendIsHumanOnlyEnum(t *testing.T) {
+	s, ok := Default().Lookup("project.browserBackend")
+	if !ok {
+		t.Fatal("project.browserBackend is not declared")
+	}
+	if !s.CanWrite(ActorUser) || s.CanWrite(ActorOrchestrator) || s.CanWrite(ActorCreatorOrchestrator) || s.CanWrite(ActorWorker) {
+		t.Errorf("writers = %v, want the user only", s.Writers)
+	}
+	if s.Kind != KindEnum || string(s.Default) != `""` {
+		t.Errorf("kind %q default %s, want enum \"\"", s.Kind, s.Default)
+	}
+	for _, v := range []string{`""`, `"electron"`, `"chrome"`} {
+		if err := s.ValidateValue([]byte(v)); err != nil {
+			t.Errorf("Validate(%s) = %v, want nil", v, err)
+		}
+	}
+	for _, v := range []string{`"firefox"`, `"Chrome"`, `true`} {
+		if err := s.ValidateValue([]byte(v)); err == nil {
+			t.Errorf("Validate(%s) = nil, want an error", v)
+		}
 	}
 }

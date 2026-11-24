@@ -60,7 +60,7 @@ func (m *Manager) enforceResumeModel(ctx context.Context, rec domain.SessionReco
 	}
 	// Project default first, then the harness default. An empty model is the
 	// harness's own default; Codex names its default, which the policy can deny.
-	fallback := strings.TrimSpace(effectiveAgentConfigFor(rec.Harness, rec.Kind, rec.Role, policy).Model)
+	fallback := strings.TrimSpace(m.launchAgentConfig(ctx, rec.Harness, rec.Kind, rec.Role, policy).Model)
 	if fallback == "" || policy.CheckModel(fallback) != nil {
 		var err error
 		fallback, err = policy.ResolveModel(rec.Harness, "")

@@ -25,8 +25,27 @@ type browserScreenshotFileResult struct {
 }
 
 func writeBrowserResult(cmd *cobra.Command, action string, result map[string]any) error {
+	if err := writeBrowserResultBody(cmd, action, result); err != nil {
+		return err
+	}
+	// Chrome mode: the command left the session on Google's refused sign-in
+	// page; the desktop says how the person signs in (B854).
+	if hint, ok := result["signInHint"].(string); ok && hint != "" {
+		_, err := fmt.Fprintln(cmd.OutOrStdout(), hint)
+		return err
+	}
+	return nil
+}
+
+func writeBrowserResultBody(cmd *cobra.Command, action string, result map[string]any) error {
 	if action == "act" {
 		return writeBrowserActResult(cmd, result)
+	}
+	if action == "handoff" {
+		return writeBrowserHandoffResult(cmd, result)
+	}
+	if handled, err := writeBrowserPageResult(cmd, action, result); handled {
+		return err
 	}
 	if action == "snapshot" {
 		if kind, ok := result["kind"].(string); ok {
@@ -95,6 +114,11 @@ func writeBrowserResult(cmd *cobra.Command, action string, result map[string]any
 	}
 	if currentURL, ok := result["url"].(string); ok && currentURL != "" {
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), browserUntrustedText(currentURL))
+		return err
+	}
+	// Chrome mode cannot drive DevTools; the desktop says which keystroke to use.
+	if hint, ok := result["hint"].(string); ok && hint != "" && strings.HasPrefix(action, "devtools-") {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "Browser %s completed. %s\n", action, hint)
 		return err
 	}
 	_, err := fmt.Fprintln(cmd.OutOrStdout(), "Browser "+action+" completed.")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -218,7 +219,7 @@ func TestCommitPathsLocalBaseDoesNotPush(t *testing.T) {
 	}
 }
 
-func TestCommitPathsRefusesUnlistedAndExistingPaths(t *testing.T) {
+func TestCommitPathsRefusesUnlistedPaths(t *testing.T) {
 	checkout, _ := remoteRepo(t)
 	write(t, filepath.Join(checkout, "CLAUDE.md"), "@AGENTS.md\n")
 	write(t, filepath.Join(checkout, "secret.txt"), "x\n")
@@ -229,11 +230,6 @@ func TestCommitPathsRefusesUnlistedAndExistingPaths(t *testing.T) {
 	}
 	if _, err := CommitPaths(ctx, checkout, originMain, []string{"../x"}, []string{"../x"}, CommitMessage); !errors.Is(err, ErrPathNotAllowed) {
 		t.Fatalf("escaping path: err = %v", err)
-	}
-	// AGENTS.md is on the branch already: committing the checkout's copy would overwrite it.
-	write(t, filepath.Join(checkout, "AGENTS.md"), "changed\n")
-	if _, err := CommitPaths(ctx, checkout, originMain, []string{"AGENTS.md"}, []string{"AGENTS.md"}, CommitMessage); !errors.Is(err, ErrPathExists) {
-		t.Fatalf("existing path: err = %v", err)
 	}
 	if got := strings.TrimSpace(git(t, checkout, "rev-parse", "main")); got != before {
 		t.Fatal("a refused commit moved main")
@@ -268,4 +264,83 @@ func TestPushesPassCredentialEnvToGit(t *testing.T) {
 	if got := strings.TrimSpace(git(t, origin, "rev-parse", "refs/heads/"+branch)); got != res.SHA {
 		t.Fatalf("branch %s = %s", branch, got)
 	}
+}
+
+// The owner's case: the dialog listed skill dirs the session branch already
+// had. Those are skipped (never overwritten) and the rest is still committed.
+func TestCommitPathsSkipsPathsTheTargetAlreadyHas(t *testing.T) {
+	checkout, origin := remoteRepo(t)
+	write(t, filepath.Join(checkout, "AGENTS.md"), "changed\n") // on the branch: must not be overwritten
+	write(t, filepath.Join(checkout, "CLAUDE.md"), "@AGENTS.md\n")
+	paths := []string{"AGENTS.md", "CLAUDE.md"}
+	res, err := CommitPaths(context.Background(), checkout, originMain, paths, paths, CommitMessage)
+	if err != nil || res.SHA == "" || !res.Pushed {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if strings.Join(res.Skipped, ",") != "AGENTS.md" {
+		t.Fatalf("skipped = %v", res.Skipped)
+	}
+	if got := committedFiles(t, origin, res.SHA); strings.Join(got, ",") != "CLAUDE.md" {
+		t.Fatalf("committed %v", got)
+	}
+	if got := git(t, origin, "show", "main:AGENTS.md"); got != "rules\n" {
+		t.Fatalf("AGENTS.md on main = %q", got)
+	}
+}
+
+// A skill directory the target has even in part is left as it is: adding the
+// checkout's extra files would change a skill already published there.
+func TestCommitPathsSkipsSkillDirPartlyOnTarget(t *testing.T) {
+	checkout, origin := remoteRepo(t)
+	skill(t, filepath.Join(checkout, ".claude", "skills"), "3d-lighting", "light")
+	git(t, checkout, "add", ".claude/skills/3d-lighting/SKILL.md")
+	git(t, checkout, "commit", "-q", "-m", "partial skill")
+	git(t, checkout, "push", "-q", "origin", "HEAD:main")
+	git(t, checkout, "fetch", "-q", "origin")
+	write(t, filepath.Join(checkout, ".claude", "skills", "3d-lighting", "extra.md"), "local only\n")
+	before := strings.TrimSpace(git(t, origin, "rev-parse", "main"))
+	p := []string{".claude/skills/3d-lighting"}
+	res, err := CommitPaths(context.Background(), checkout, originMain, p, p, CommitMessage)
+	if err != nil || res.SHA != "" || strings.Join(res.Skipped, ",") != p[0] {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if got := strings.TrimSpace(git(t, origin, "rev-parse", "main")); got != before {
+		t.Fatal("an all-skipped commit moved main")
+	}
+}
+
+// A path whose parent is a file or link on the target would replace it.
+func TestCommitPathsSkipsPathUnderAFileOnTarget(t *testing.T) {
+	checkout, _ := remoteRepo(t)
+	ctx := context.Background()
+	// .claude is a file on the target; the checkout has a .claude directory.
+	tree := strings.TrimSpace(git(t, checkout, "rev-parse", "origin/main^{tree}"))
+	blob := strings.TrimSpace(gitIn(t, checkout, "x\n", "hash-object", "-w", "--stdin"))
+	entries := git(t, checkout, "ls-tree", tree) + "100644 blob " + blob + "\t.claude\n"
+	newTree := strings.TrimSpace(gitIn(t, checkout, entries, "mktree"))
+	parent := strings.TrimSpace(git(t, checkout, "commit-tree", newTree, "-p", "origin/main", "-m", "file"))
+	git(t, checkout, "update-ref", "refs/remotes/origin/main", parent)
+	skill(t, filepath.Join(checkout, ".claude", "skills"), "qa", "qa")
+	write(t, filepath.Join(checkout, "CLAUDE.md"), "@AGENTS.md\n")
+	p := []string{".claude/skills/qa", "CLAUDE.md"}
+	res, err := CommitPaths(ctx, checkout, CommitTarget{Remote: "origin", Branch: "main", BaseRef: "refs/remotes/origin/main"}, p, p, CommitMessage)
+	if err != nil || res.SHA == "" || strings.Join(res.Skipped, ",") != ".claude/skills/qa" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if got := strings.TrimSpace(git(t, checkout, "cat-file", "-t", res.SHA+":.claude")); got != "blob" {
+		t.Fatalf(".claude on the new commit is a %s, want the target's file kept", got)
+	}
+}
+
+// gitIn runs git with stdin.
+func gitIn(t *testing.T, dir, stdin string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return string(out)
 }

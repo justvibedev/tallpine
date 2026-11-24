@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { installFakeBridge } from "./support/fake-bridge";
+import { installFakeBridge } from "./support/fake-daemon-bridge";
 
 // Opt-in full daemon integration. Start TestUsageLimitDaemonBrowserFixture in
 // backend/e2e, then supply its coordinator URL. No conversation routes or SSE

@@ -18,6 +18,7 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * create them first); nothing else in the checkout is staged or committed.
  * After a commit that reaches sessions it offers to restart the orchestrator;
  * after a refused push it keeps the commit and offers a branch for a PR.
+ * Paths the branch already had are skipped by the server and listed here.
  */
 export function SkillsCommitPanel({ projectId, target, preview, create, collect, muted = "text-passive" }: {
 	projectId: string;
@@ -57,10 +58,20 @@ export function SkillsCommitPanel({ projectId, target, preview, create, collect,
 	if (state.s === "done") {
 		const { res } = state;
 		const sha = res.sha.slice(0, 8);
+		const skipped = res.skipped.length > 0
+			? <p className={cn("font-mono text-[11px] leading-4", muted)}>{t("skillsCommit.skipped", { branch: res.branch, paths: res.skipped.join(", ") })}</p>
+			: null;
+		if (!res.sha) {
+			return <div className="flex flex-col gap-1.5" data-testid="skills-commit-result">
+				<p role="status" className="text-xs leading-4 text-foreground">{t("skillsCommit.nothingNew", { branch: res.branch })}</p>
+				{skipped}
+			</div>;
+		}
 		const reached = !res.needsPush || res.pushed;
 		if (reached) {
 			return <div className="flex flex-col gap-1.5" data-testid="skills-commit-result">
 				<p role="status" className="text-xs leading-4 text-foreground">{t(res.pushed ? "skillsCommit.pushed" : "skillsCommit.done", { sha, remote: res.remote, branch: res.branch })}</p>
+				{skipped}
 				<p className={cn("text-xs leading-4", muted)}>{t("skillsCommit.pickup")}</p>
 				<div><RestartOrchestratorButton projectId={projectId} /></div>
 			</div>;
@@ -68,6 +79,7 @@ export function SkillsCommitPanel({ projectId, target, preview, create, collect,
 		return <div className="flex flex-col gap-1.5" data-testid="skills-commit-result">
 			<p role="alert" className="text-xs leading-4 text-error">{t("skillsCommit.pushFailed", { remote: res.remote, branch: res.branch, error: res.pushError ?? "" })}</p>
 			<p className={cn("text-xs leading-4", muted)}>{t("skillsCommit.kept", { sha, branch: res.localUpdated ? res.branch : res.sideBranch ?? res.branch })}</p>
+			{skipped}
 			{pr.s === "done"
 				? <p role="status" className="text-xs leading-4 text-foreground">{t("skillsCommit.pushedBranch", { remote: pr.remote, branch: pr.branch, base: res.branch })}</p>
 				: <div><Button size="sm" variant="ghost" type="button" disabled={pr.s === "working"} onClick={() => void pushBranch(res.sha)}>{t("skillsCommit.pushBranch")}</Button></div>}

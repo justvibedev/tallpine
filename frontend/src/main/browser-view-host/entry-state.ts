@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 import { randomUUID } from "node:crypto";
-import type { BrowserDevToolsState, BrowserEntry, BrowserNavState, BrowserSessionEntry, BrowserTabsState, BrowserViewHostOptions } from "./types";
+import type { BrowserEntry, BrowserNavState, BrowserSessionEntry, BrowserTabsState, BrowserViewHostOptions } from "./types";
+import type { BrowserDevToolsState } from "./input-types";
 import { TEMPORARY_BROWSER_PARTITION_PREFIX } from "./constants";
 import { browserError } from "./args";
 

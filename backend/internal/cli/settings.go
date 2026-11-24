@@ -27,7 +27,7 @@ func newSettingsCommand(ctx *commandContext) *cobra.Command {
 			"where the value comes from, whether managed config or the environment locks it, and the change log.",
 	}
 	cmd.AddCommand(newSettingsLogCommand(ctx), newSettingsListCommand(ctx), newSettingsGetCommand(ctx),
-		newSettingsSetCommand(ctx), newSettingsUnsetCommand(ctx))
+		newSettingsSetCommand(ctx), newSettingsUnsetCommand(ctx), newSettingsApplyRoleDefaultCommand(ctx))
 	return cmd
 }
 

@@ -26,7 +26,7 @@ BacklogStateRequest: reason,omitempty state
 BacklogUsageResponse: costComplete costNanos,omitempty elapsedSeconds,omitempty
 BrowserCommandRequest: action args,omitempty sessionId
 BrowserCommandResponse: action requestId result sessionId
-BrowserStatusResponse: connected connectedAt,omitempty sessionId transport
+BrowserStatusResponse: backend,omitempty connected connectedAt,omitempty sessionId transport
 ClaimPRRequest: allowTakeover,omitempty pr
 ClaimPRResponse: branchChanged ok prs sessionId takenOverFrom
 CleanupArtifactsPolicy: autoDeliverables autoPrune deliverableAction enabled retentionDays

@@ -1,10 +1,11 @@
 import { vi } from "vitest";
-import { type BrowserNavState, createBrowserViewHost } from "./browser-view-host";
-import { browserProfilePartition, type BrowserProfile } from "../shared/browser-profiles";
+import { type BrowserNavState, type BrowserViewHostOptions, createBrowserViewHost } from "./browser-view-host";
 import type { BrowserProfileStore } from "./browser-profile-store";
 import type { BrowserHistoryStore } from "./browser-history-store";
 import type { TabLifecycleLimits } from "./browser-tab-lifecycle";
-import type { BrowserAnnotationDraft, BrowserAnnotationSession } from "../shared/browser-annotations";
+
+export const ELECTRON_TEST_USER_AGENT =
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Tallpine/1.0.0 Chrome/140.0.7339.133 Electron/38.2.0 Safari/537.36";
 
 export type InvokeHandler = (event: unknown, ...args: unknown[]) => unknown;
 
@@ -14,71 +15,10 @@ export type EventHandler = (
 ) => unknown;
 
 
-export function annotationDraft(url = "http://localhost:4173/"): BrowserAnnotationDraft {
-	return {
-		kind: "comment",
-		body: "Keep this text after refresh",
-		target: {
-			context: {
-				url,
-				tag: "button",
-				classes: [],
-				selector: "button#save",
-				size: { width: 80, height: 30 },
-				rect: { x: 10, y: 20, width: 80, height: 30 },
-				computedStyle: {},
-			},
-		},
-		adjustments: [],
-	};
-}
-
-
-export function annotationSession(url = "http://localhost:4173/"): BrowserAnnotationSession {
-	return {
-		version: 1,
-		page: { url, title: "Preview" },
-		annotations: [],
-		draft: annotationDraft(url),
-		screenshots: [],
-	};
-}
-
-
-export function submittedAnnotationSession(
-	url = "http://localhost:5173/",
-	comments: Array<{ body: string; selector: string }> = [{ body: "Make this button blue.", selector: "button" }],
-): BrowserAnnotationSession {
-	const timestamp = "2026-06-15T00:00:00Z";
-	return {
-		version: 1,
-		page: { url, title: "Preview" },
-		annotations: comments.map((comment, index) => ({
-			id: `annotation-${index + 1}`,
-			number: index + 1,
-			kind: "comment",
-			body: comment.body,
-			target: {
-				context: {
-					url,
-					tag: "button",
-					classes: [],
-					selector: comment.selector,
-					size: { width: 80, height: 30 },
-					rect: { x: 10, y: 20 + index * 40, width: 80, height: 30 },
-					computedStyle: {},
-				},
-			},
-			adjustments: [],
-			createdAt: timestamp,
-			updatedAt: timestamp,
-		})),
-		screenshots: [],
-	};
-}
-
-
-export function setupHost(agentBrowserRuntime?: import("./agent-browser-runtime/runtime").AgentBrowserRuntime) {
+export function setupHost(
+	agentBrowserRuntime?: import("./agent-browser-runtime/runtime").AgentBrowserRuntime,
+	extraOptions: Partial<BrowserViewHostOptions> = {},
+) {
 	let currentURL = "";
 	let browserZoomFactor = 1;
 	const webContentsListeners = new Map<string, (...args: never[]) => void>();
@@ -251,6 +191,7 @@ export function setupHost(agentBrowserRuntime?: import("./agent-browser-runtime/
 		rendererOrigin: "http://localhost:5173",
 		agentBrowserRuntime: runtime,
 		clipboard: { writeImage },
+		...extraOptions,
 	});
 	const rendererFrame = { processId: 5, routingId: 7 };
 	const invoke = (channel: string, ...args: unknown[]) =>
@@ -417,8 +358,11 @@ export function setupTabHost(
 				webRequest: {
 					onCompleted: ReturnType<typeof vi.fn>;
 					onErrorOccurred: ReturnType<typeof vi.fn>;
+					onBeforeSendHeaders: ReturnType<typeof vi.fn>;
 				};
+				setUserAgent: ReturnType<typeof vi.fn>;
 			};
+			setUserAgent: ReturnType<typeof vi.fn>;
 		};
 		listeners: Map<string, (...args: never[]) => void>;
 		setBounds: ReturnType<typeof vi.fn>;
@@ -439,7 +383,10 @@ export function setupTabHost(
 		webRequest: {
 			onCompleted: vi.fn(),
 			onErrorOccurred: vi.fn(),
+			onBeforeSendHeaders: vi.fn(),
 		},
+		getUserAgent: () => ELECTRON_TEST_USER_AGENT,
+		setUserAgent: vi.fn(),
 	});
 	const electronSessions = new Map<string, ReturnType<typeof makeElectronSession>>();
 	const makeView = (partition: string): (typeof views)[number] => {
@@ -502,6 +449,8 @@ export function setupTabHost(
 			},
 			stop: () => undefined,
 			setWebRTCIPHandlingPolicy: vi.fn(),
+			getUserAgent: () => ELECTRON_TEST_USER_AGENT,
+			setUserAgent: vi.fn(),
 			close: vi.fn(),
 			focus: vi.fn(),
 			openDevTools: vi.fn(),
@@ -663,26 +612,4 @@ export function setupTabHost(
 		views,
 		clearBrowserProfileData,
 	};
-}
-
-
-export function fakeBrowserProfileStore(
-	profile: BrowserProfile,
-	bindings: Record<string, string | null>,
-	defaultProfileId: string | null = null,
-): BrowserProfileStore {
-	return {
-		profiles: [profile],
-		getProfile: (profileId: string) => (profileId === profile.id ? { ...profile } : undefined),
-		getSessionProfileId: (sessionId: string) => bindings[sessionId],
-		getDefaultProfileId: () => defaultProfileId,
-		// A binding of `null` is an explicit, durable choice of Temporary and
-		// must be kept distinct from an absent key (no binding at all).
-		bindSession: vi.fn(async (sessionId: string, profileId: string | null) => {
-			bindings[sessionId] = profileId;
-		}),
-		isProfileOperationInProgress: () => false,
-		waitForProfileOperation: async () => undefined,
-		partitionForProfile: (profileId: string) => browserProfilePartition(profileId),
-	} as unknown as BrowserProfileStore;
 }

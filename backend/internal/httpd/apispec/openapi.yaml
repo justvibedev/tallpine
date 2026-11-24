@@ -17474,6 +17474,114 @@ paths:
       summary: Choose which models one harness's pickers offer
       tags:
       - settings
+  /api/v1/settings/role-defaults/{role}/apply:
+    post:
+      operationId: applyRoleDefault
+      parameters:
+      - description: Role whose app-wide default model and effort is compared or applied.
+        in: path
+        name: role
+        required: true
+        schema:
+          description: Role whose app-wide default model and effort is compared or
+            applied.
+          enum:
+          - orchestrator
+          - worker
+          - reviewer
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectApplyRoleDefaultInput'
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectApplyRoleDefaultResult'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: Set or clear the role overrides of drifting projects so they run with
+        the app-wide default
+      tags:
+      - settings
+  /api/v1/settings/role-defaults/{role}/drift:
+    get:
+      operationId: getRoleDefaultDrift
+      parameters:
+      - description: Role whose app-wide default model and effort is compared or applied.
+        in: path
+        name: role
+        required: true
+        schema:
+          description: Role whose app-wide default model and effort is compared or
+            applied.
+          enum:
+          - orchestrator
+          - worker
+          - reviewer
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectRoleDefaultDriftReport'
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Bad Request
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Internal Server Error
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+          description: Not Implemented
+      summary: List the projects whose role does not run with the app-wide default
+        agent, model and effort
+      tags:
+      - settings
   /api/v1/settings/schema:
     get:
       operationId: getSettingsSchema
@@ -21376,6 +21484,11 @@ components:
       type: object
     BrowserStatusResponse:
       properties:
+        backend:
+          enum:
+          - electron
+          - chrome
+          type: string
         connected:
           type: boolean
         connectedAt:
@@ -22485,8 +22598,13 @@ components:
           type: string
         sideBranch:
           type: string
+        skipped:
+          items:
+            type: string
+          type: array
       required:
       - sha
+      - skipped
       - remote
       - branch
       - needsPush
@@ -23119,6 +23237,8 @@ components:
           - string
         orchestratorModel:
           description: Orchestrator model a new project starts with, paired with orchestratorAgent.
+            A project that names no orchestrator model inherits it at spawn on that
+            agent.
           type:
           - "null"
           - string
@@ -23133,6 +23253,11 @@ components:
           type:
           - "null"
           - string
+        reviewerEffort:
+          description: Default reviewer reasoning effort paired with reviewerModel.
+          type:
+          - "null"
+          - string
         reviewerHarness:
           description: Default reviewer harness for projects that set no reviewer
             of their own; empty clears it and the default model.
@@ -23140,7 +23265,8 @@ components:
           - "null"
           - string
         reviewerModel:
-          description: Default reviewer model paired with the default reviewer harness.
+          description: Default reviewer model paired with the default reviewer harness;
+            a project reviewer on that harness with no model of its own inherits it.
           type:
           - "null"
           - string
@@ -23158,6 +23284,7 @@ components:
           - string
         workerModel:
           description: Worker model a new project starts with, paired with workerAgent.
+            A project that names no worker model inherits it at spawn on that agent.
           type:
           - "null"
           - string
@@ -23175,6 +23302,8 @@ components:
         planAutoApprove:
           type: boolean
         planningMode:
+          type: string
+        reviewerEffort:
           type: string
         reviewerHarness:
           type: string
@@ -26693,6 +26822,30 @@ components:
       - defaultBranch
       - folderMissing
       type: object
+    ProjectApplyRoleDefaultInput:
+      properties:
+        projectIds:
+          items:
+            type: string
+          type: array
+      type: object
+    ProjectApplyRoleDefaultResult:
+      properties:
+        applied:
+          items:
+            type: string
+          type: array
+        failed:
+          items:
+            $ref: '#/components/schemas/ProjectRoleDefaultApplyFailure'
+          type: array
+        role:
+          type: string
+      required:
+      - role
+      - applied
+      - failed
+      type: object
     ProjectBranchSuggestion:
       properties:
         ahead:
@@ -26743,6 +26896,10 @@ components:
           type:
           - "null"
           - boolean
+        browserBackend:
+          type:
+          - "null"
+          - string
         canonicalRepoURL:
           type: string
         chatHibernation:
@@ -26998,6 +27155,47 @@ components:
       required:
       - project
       type: object
+    ProjectRoleDefaultApplyFailure:
+      properties:
+        error:
+          type: string
+        projectId:
+          type: string
+      required:
+      - projectId
+      - error
+      type: object
+    ProjectRoleDefaultDrift:
+      properties:
+        change:
+          type: string
+        current:
+          $ref: '#/components/schemas/ProjectRoleValue'
+        name:
+          type: string
+        projectId:
+          type: string
+      required:
+      - projectId
+      - name
+      - current
+      - change
+      type: object
+    ProjectRoleDefaultDriftReport:
+      properties:
+        default:
+          $ref: '#/components/schemas/ProjectRoleValue'
+        projects:
+          items:
+            $ref: '#/components/schemas/ProjectRoleDefaultDrift'
+          type: array
+        role:
+          type: string
+      required:
+      - role
+      - default
+      - projects
+      type: object
     ProjectRoleSettingsPatch:
       properties:
         agent:
@@ -27012,6 +27210,19 @@ components:
           type:
           - "null"
           - string
+      type: object
+    ProjectRoleValue:
+      properties:
+        agent:
+          type: string
+        effort:
+          type: string
+        model:
+          type: string
+      required:
+      - agent
+      - model
+      - effort
       type: object
     ProjectSetRoleSettingsInput:
       properties:

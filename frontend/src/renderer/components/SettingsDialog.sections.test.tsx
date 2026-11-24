@@ -164,6 +164,12 @@ describe("SettingsDialog", () => {
 		expect(initialProjectSection("skills", false)).toBe("instructions");
 	});
 
+	it("offers the Browser page (Real Chrome mode) for local projects only", () => {
+		const ids = (remote: boolean) => projectSettingsSections(((k: string) => k) as never, remote).map((s) => s.id);
+		expect(ids(false)).toContain("browser");
+		expect(ids(true)).not.toContain("browser");
+	});
+
 	it("omits Reviews & PRs for scratch projects", () => {
 		const names = (scratch: boolean) => projectSettingsSections(((k: string) => k) as never, false, scratch).map((s) => s.id);
 		expect(names(false)).toContain("reviews");
@@ -173,7 +179,7 @@ describe("SettingsDialog", () => {
 	it("lists the local project sections in order", async () => {
 		useUiStore.getState().openProjectSettings("proj-1");
 		renderSettingsDialog();
-		const names = ["Details", "Repository & worktrees", "Agents", "Instructions", "Reviews & PRs", "Workflow", "Sessions", "Security", "Advanced"];
+		const names = ["Details", "Repository & worktrees", "Agents", "Instructions", "Reviews & PRs", "Workflow", "Sessions", "Browser", "Security", "Advanced"];
 		const buttons = await Promise.all(names.map((name) => screen.findByRole("button", { name })));
 		buttons.slice(1).forEach((button, i) => expect(buttons[i].compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy());
 	});

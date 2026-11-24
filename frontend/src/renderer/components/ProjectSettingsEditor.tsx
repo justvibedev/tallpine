@@ -25,6 +25,7 @@ import { InstructionsAndSkillsClaude } from "./project-settings/InstructionsAndS
 import { InstructionsAndSkillsRules } from "./project-settings/InstructionsAndSkillsRules";
 import { ProjectReviewLimitsRows } from "./project-settings/ProjectReviewLimitsRows";
 import { ProjectSessionModeRow } from "./project-settings/ProjectSessionModeRow";
+import { ProjectBrowserBackendRow } from "./project-settings/ProjectBrowserBackendRow";
 import { ProjectWorkflowSection } from "./project-settings/ProjectWorkflowSection";
 import { ProjectGitHubAccessSection, ProjectRepositorySection, ProjectWorktreeSetupSection } from "./project-settings/ProjectRepositorySections";
 
@@ -320,6 +321,7 @@ export function ProjectSettingsEditor({ githubAccountExtra, githubProjectId, ini
 		reviews: <>{capabilities.reviewer && roleBlocks(["reviewer"])}{prBlock}</>,
 		workflow: <ProjectSettingsSection title={t("settings.project.workflow")} grouped><ProjectWorkflowSection values={draft} planAutoApprove={draft.planAutoApprove} inherit={workflowInherit} showPlanAutoApprove={capabilities.workflow} onChange={patch} onPlanAutoApprove={(planAutoApprove) => patch({ planAutoApprove })} /></ProjectSettingsSection>,
 		sessions: sessionsBlock,
+		browser: <ProjectSettingsSection title={t("settings.project.nav.browser")} grouped><ProjectBrowserBackendRow values={draft} onChange={patch} /></ProjectSettingsSection>,
 		security: <ProjectSettingsSection title={t("settings.security")} grouped>{securityExtra}</ProjectSettingsSection>,
 		instructions: <><InstructionsAndSkillsRules values={draft} onChange={patch} /><InstructionsAndSkillsSkills values={draft} skills={skills?.skills} onChange={patch} /><InstructionsAndSkillsClaude values={draft} plugins={skills?.plugins} onChange={patch} /></>,
 		// Advanced holds only the environment editor, which keeps its own form.
