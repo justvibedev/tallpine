@@ -15,6 +15,12 @@ import {
 /** First check this long after launch, so startup is not competing with it. */
 export const FIRST_CHECK_DELAY_MS = 60_000;
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/**
+ * How often the schedule looks at the wall clock. Timers pause while the Mac
+ * sleeps, so a plain 6-hour interval stretches to days on a laptop that is
+ * mostly closed; this tick checks once CHECK_INTERVAL_MS of real time passed.
+ */
+export const SCHEDULE_TICK_MS = 15 * 60 * 1000;
 /** How often a pending "restart when idle" re-checks the agents. */
 export const IDLE_POLL_MS = 15_000;
 
@@ -45,6 +51,7 @@ export interface AutoUpdaterDeps {
 	/** True while any agent turn or review is running; an unreadable answer must count as busy. */
 	agentsBusy?: () => Promise<boolean>;
 	log?: (message: string, error?: unknown) => void;
+	now?: () => number;
 	setTimeout?: (fn: () => void, ms: number) => unknown;
 	clearTimeout?: (handle: unknown) => void;
 	setInterval?: (fn: () => void, ms: number) => unknown;
@@ -70,6 +77,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdaterController 
 	const every = deps.setInterval ?? ((fn, ms) => setInterval(fn, ms));
 	const stopEvery = deps.clearInterval ?? ((h) => clearInterval(h as NodeJS.Timeout));
 	const log = deps.log ?? ((message, error) => console.warn(`updater: ${message}`, error ?? ""));
+	const now = deps.now ?? (() => Date.now());
 
 	let status: UpdateStatus = { state: "idle" };
 	let plan: UpdatePlan = { active: false, reason: "unpackaged" };
@@ -80,6 +88,10 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdaterController 
 	let env: UpdateEnvironment | null = null;
 	let idleTimer: unknown = null;
 	let idleChecking = false;
+	/** Wall-clock ms of the last check attempt, reached or not. */
+	let lastAttemptAt: number | null = null;
+	/** A check the person asked for: report failures the schedule stays quiet on. */
+	let manualCheck = false;
 
 	const emit = (next: UpdateStatus) => {
 		status = next;
@@ -170,7 +182,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdaterController 
 			return;
 		}
 		if (status.state === "downloaded") return;
-		if (isQuietUpdateError(error)) {
+		if (isQuietUpdateError(error) && !manualCheck) {
 			// No feed yet, offline, rate limited: nothing the user can act on.
 			emit({ state: "idle", ...(status.checkedAt ? { checkedAt: status.checkedAt } : {}) });
 			return;
@@ -182,6 +194,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdaterController 
 
 	const check = async () => {
 		if (!plan.active || !updater || status.state === "downloaded" || status.state === "downloading" || status.state === "installing") return;
+		lastAttemptAt = now();
 		try {
 			await updater.checkForUpdates();
 		} catch (error) {
@@ -227,7 +240,11 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdaterController 
 			firstTimer = null;
 			void check();
 		}, FIRST_CHECK_DELAY_MS);
-		interval = every(() => void check(), CHECK_INTERVAL_MS);
+		interval = every(() => {
+			// A clock stepped backwards (NTP, manual change) would otherwise hold checks off until it caught up.
+			const elapsed = lastAttemptAt === null ? Infinity : now() - lastAttemptAt;
+			if (elapsed < 0 || elapsed >= CHECK_INTERVAL_MS) void check();
+		}, SCHEDULE_TICK_MS);
 	}
 
 	const controller: AutoUpdaterController = {
@@ -247,7 +264,14 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdaterController 
 			await writeUpdateSettings(deps.stateDir, next);
 			await apply();
 		},
-		checkNow: () => check(),
+		async checkNow() {
+			manualCheck = true;
+			try {
+				await check();
+			} finally {
+				manualCheck = false;
+			}
+		},
 		install() {
 			// Repeat clicks while Squirrel prepares the install do nothing.
 			if (status.state !== "downloaded" || !updater || !plan.active) return false;

@@ -8,7 +8,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { CHECK_INTERVAL_MS, createAutoUpdater, FIRST_CHECK_DELAY_MS, IDLE_POLL_MS, type UpdaterLike } from "./auto-updater";
+import { CHECK_INTERVAL_MS, createAutoUpdater, FIRST_CHECK_DELAY_MS, IDLE_POLL_MS, SCHEDULE_TICK_MS, type UpdaterLike } from "./auto-updater";
 import { UPDATE_TEAM_ID } from "./update-feed";
 import type { ManagedUpdatePolicy } from "./update-policy";
 import type { UpdateEnvironment } from "./update-eligibility";
@@ -68,7 +68,20 @@ describe("auto-updater controller", () => {
 		expect(fake.checks).toBe(0);
 		await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
 		expect(fake.checks).toBe(1);
-		await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS);
+		await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS - SCHEDULE_TICK_MS);
+		expect(fake.checks).toBe(1);
+		await vi.advanceTimersByTimeAsync(2 * SCHEDULE_TICK_MS);
+		expect(fake.checks).toBe(2);
+		vi.useRealTimers();
+	});
+
+	it("checks soon after waking from a sleep longer than the interval (timers pause in sleep)", async () => {
+		const { fake } = await setup();
+		await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+		expect(fake.checks).toBe(1);
+		// The Mac slept 7 hours: the wall clock moved, the timers did not.
+		vi.setSystemTime(Date.now() + 7 * 60 * 60 * 1000);
+		await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS);
 		expect(fake.checks).toBe(2);
 		vi.useRealTimers();
 	});
@@ -108,6 +121,30 @@ describe("auto-updater controller", () => {
 		await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
 		expect(statuses.at(-1)).toEqual({ state: "idle" });
 		expect(statuses.some((s) => s.state === "error")).toBe(false);
+		vi.useRealTimers();
+	});
+
+	it("keeps checking after the wall clock steps backwards", async () => {
+		const { fake } = await setup();
+		await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+		expect(fake.checks).toBe(1);
+		// NTP corrects a clock that ran a day fast.
+		vi.setSystemTime(Date.now() - 24 * 60 * 60 * 1000);
+		await vi.advanceTimersByTimeAsync(SCHEDULE_TICK_MS);
+		expect(fake.checks).toBe(2);
+		vi.useRealTimers();
+	});
+
+	it("reports a quiet failure when the person clicked Check now", async () => {
+		const { controller, fake, statuses } = await setup();
+		fake.onCheck = () => fake.emit("error", new Error("net::ERR_INTERNET_DISCONNECTED"));
+		await controller.checkNow();
+		expect(fake.checks).toBe(1);
+		expect(statuses.at(-1)).toMatchObject({ state: "error", message: "net::ERR_INTERNET_DISCONNECTED" });
+		// The schedule's own checks stay quiet again afterwards.
+		await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+		expect(fake.checks).toBe(2);
+		expect(statuses.at(-1)).toEqual({ state: "idle" });
 		vi.useRealTimers();
 	});
 

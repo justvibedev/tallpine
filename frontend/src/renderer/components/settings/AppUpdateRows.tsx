@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UpdateChannel, UpdateStatus } from "../../../main/update-settings";
 import { useAppUpdatePreferences, useAppUpdateStatus } from "../../hooks/useAppUpdates";
 import { tallpineBridge } from "../../lib/bridge";
+import { formatTimeCompact } from "../../lib/format-time";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { AgentPolicyLock } from "./AgentPolicyLock";
@@ -29,7 +31,9 @@ function useStatusText(status: UpdateStatus | null): string | null {
 		case "checking":
 			return t("settings.appUpdate.checking", "Checking for updates…");
 		case "downloading":
-			return t("settings.appUpdate.downloading", "Downloading {{version}}…", { version: status.version ?? "" });
+			return status.percent
+				? t("settings.appUpdate.downloadingPercent", "Downloading {{version}}… {{percent}}%", { version: status.version ?? "", percent: status.percent })
+				: t("settings.appUpdate.downloading", "Downloading {{version}}…", { version: status.version ?? "" });
 		case "downloaded":
 			return t("settings.appUpdate.ready", "Version {{version}} is ready. Restart to update.", { version: status.version ?? "" });
 		case "installing":
@@ -37,7 +41,9 @@ function useStatusText(status: UpdateStatus | null): string | null {
 		case "error":
 			return t("settings.appUpdate.error", "The last update failed: {{message}}", { message: status.message ?? "" });
 		default:
-			return t("settings.appUpdate.idle", "Tallpine checks GitHub Releases at launch and every 6 hours.");
+			return status.checkedAt
+				? t("settings.appUpdate.upToDate", "Up to date. Last checked {{when}}.", { when: formatTimeCompact(new Date(status.checkedAt).toISOString()) })
+				: t("settings.appUpdate.idle", "Tallpine checks GitHub Releases at launch and every 6 hours.");
 	}
 }
 
@@ -45,11 +51,15 @@ function useStatusText(status: UpdateStatus | null): string | null {
  * Settings > Updates: the desktop app's own updater, which takes signed
  * releases from GitHub. Managed config (MDM) makes these rows read-only.
  */
+/** States in which a manual check can run: the updater is on and nothing is in flight or staged. */
+const CHECKABLE_STATES = new Set<UpdateStatus["state"]>(["idle", "error", "checking"]);
+
 export function AppUpdateRows() {
 	const { t } = useTranslation();
 	const status = useAppUpdateStatus();
 	const { preferences, update, saving, error } = useAppUpdatePreferences();
 	const statusText = useStatusText(status);
+	const [checkRequested, setCheckRequested] = useState(false);
 	if (!preferences) return null;
 	const { settings, locked, pinnedVersion } = preferences;
 	const channelOptions = [
@@ -57,6 +67,11 @@ export function AppUpdateRows() {
 		{ value: "beta", label: t("settings.appUpdate.channel.beta", "Beta") },
 	] satisfies SettingsOption<UpdateChannel>[];
 	const failed = status?.state === "error" || Boolean(error);
+	const canCheck = Boolean(status && settings.enabled && CHECKABLE_STATES.has(status.state));
+	const checkNow = () => {
+		setCheckRequested(true);
+		void tallpineBridge.appUpdates.check().catch(() => undefined).finally(() => setCheckRequested(false));
+	};
 	return (
 		<>
 			<div className="flex w-full flex-col">
@@ -71,6 +86,11 @@ export function AppUpdateRows() {
 						</span>
 					}
 				>
+					{canCheck ? (
+						<Button type="button" variant="footer" data-testid="app-update-check" disabled={checkRequested || status?.state === "checking"} onClick={checkNow}>
+							{t("settings.appUpdate.checkNow", "Check now")}
+						</Button>
+					) : null}
 					{status?.state === "downloaded" ? (
 						<Button type="button" variant="footer" data-testid="app-update-restart" onClick={() => void tallpineBridge.appUpdates.install()}>
 							{t("settings.appUpdate.restart", "Restart to update")}

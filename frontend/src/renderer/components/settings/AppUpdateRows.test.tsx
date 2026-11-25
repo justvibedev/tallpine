@@ -59,6 +59,41 @@ describe("AppUpdateRows", () => {
 		givenUpdates({ state: "disabled", reason: "not-a-release" }, { settings: { enabled: true, channel: "stable" }, locked: false });
 		render(<AppUpdateRows />);
 		expect(await screen.findByText("Not available on development or local builds.")).toBeInTheDocument();
+		expect(screen.queryByTestId("app-update-check")).toBeNull();
+	});
+
+	it("on a release install shows when it last checked and checks GitHub on Check now", async () => {
+		givenUpdates({ state: "idle", checkedAt: Date.now() - 5 * 60_000 }, { settings: { enabled: true, channel: "stable" }, locked: false });
+		render(<AppUpdateRows />);
+		expect(await screen.findByText(/^Up to date\. Last checked /)).toBeInTheDocument();
+		await userEvent.click(screen.getByTestId("app-update-check"));
+		expect(bridge.check).toHaveBeenCalledOnce();
+	});
+
+	it("shows download progress, then offers Restart to update instead of Check now", async () => {
+		givenUpdates({ state: "downloading", version: "0.13.24", percent: 40 }, { settings: { enabled: true, channel: "stable" }, locked: false });
+		const { unmount } = render(<AppUpdateRows />);
+		expect(await screen.findByText("Downloading 0.13.24… 40%")).toBeInTheDocument();
+		expect(screen.queryByTestId("app-update-check")).toBeNull();
+		unmount();
+
+		givenUpdates({ state: "downloaded", version: "0.13.24" }, { settings: { enabled: true, channel: "stable" }, locked: false });
+		render(<AppUpdateRows />);
+		await userEvent.click(await screen.findByTestId("app-update-restart"));
+		expect(bridge.install).toHaveBeenCalledOnce();
+		expect(screen.queryByTestId("app-update-check")).toBeNull();
+	});
+
+	it("disables Check now while a check runs and hides it when the user turned updates off", async () => {
+		givenUpdates({ state: "checking" }, { settings: { enabled: true, channel: "stable" }, locked: false });
+		const { unmount } = render(<AppUpdateRows />);
+		expect(await screen.findByTestId("app-update-check")).toBeDisabled();
+		unmount();
+
+		givenUpdates({ state: "disabled", reason: "user" }, { settings: { enabled: false, channel: "stable" }, locked: false });
+		render(<AppUpdateRows />);
+		await screen.findByTestId("app-update-toggle");
+		expect(screen.queryByTestId("app-update-check")).toBeNull();
 	});
 });
 

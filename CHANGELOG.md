@@ -4,6 +4,11 @@ All notable user-visible changes to Tallpine. Format follows [Keep a Changelog](
 
 Tallpine is a hard fork of Agent Orchestrator (Apache-2.0); history before the fork is upstream's and is not listed here.
 
+## [0.13.25]
+
+### Fixed
+- On release installs, Settings now shows the GitHub updater's status with a Check now button and the last-checked time, instead of the "No CI-passed build found" row. The local CI row is hidden when there is no local checkout, and update checks run on the wall clock so sleep no longer delays them (#1327).
+
 ## [0.13.24]
 
 ### Added

@@ -55,6 +55,26 @@ describe("UpdateRow on Windows", () => {
 	});
 });
 
+describe("UpdateRow on a release install", () => {
+	it("renders nothing when the daemon has no release checkout (GitHub Releases rows cover it)", async () => {
+		renderRow({ ...base, latestCommit: "", latestCiPassed: false, candidate: "", updateAvailable: false });
+		await waitFor(() => expect(test.get).toHaveBeenCalledWith("/api/v1/update"));
+		await new Promise((r) => setTimeout(r, 20));
+		expect(screen.queryByTestId("update-restart")).toBeNull();
+		expect(screen.queryByText("No CI-passed build found.")).toBeNull();
+	});
+
+	it("still shows a running local-CI update while the checkout is being read", async () => {
+		renderRow({ ...base, latestCommit: "", candidate: "", updateAvailable: false, running: true });
+		expect(await screen.findByText("Updating. The app restarts when it finishes.")).toBeTruthy();
+	});
+
+	it("shows the local-CI row when a checkout reports no CI-passed build yet", async () => {
+		renderRow({ ...base, latestCiPassed: false, candidate: "", updateAvailable: false });
+		expect(await screen.findByText("No CI-passed build found.")).toBeTruthy();
+	});
+});
+
 describe("UpdateRow", () => {
 	it("offers the CI-passed commit and enables the button", async () => {
 		renderRow(base);

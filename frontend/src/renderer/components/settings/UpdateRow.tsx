@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useStartUpdate, useUpdateStatus } from "../../hooks/useUpdate";
+import { useStartUpdate, useUpdateStatus, type UpdateStatus } from "../../hooks/useUpdate";
 import { Button } from "../ui/button";
 import {
 	Dialog,
@@ -20,9 +20,20 @@ import { WindowsUpdateRow } from "./WindowsUpdateRow";
 const shortSha = (sha: string) => sha.slice(0, 7);
 
 /**
- * Settings > Updates: shows a CI-passed build newer than the running one and
- * offers "Update & restart" behind a confirmation. The update runs as a
- * detached job, so the status survives the app and daemon restarting.
+ * True when the daemon builds updates from a local release checkout
+ * (~/.tallpine/release-builds or TALLPINE_RELEASE_REPO): it then knows
+ * origin/main's head. A public release install has none, and its updates come
+ * from GitHub Releases (AppUpdateRows) instead.
+ */
+export function hasReleaseCheckout(status: UpdateStatus): boolean {
+	return Boolean(status.latestCommit) || status.running;
+}
+
+/**
+ * Settings > Updates for local-CI installs: shows a CI-passed build newer than
+ * the running one and offers "Update & restart" behind a confirmation. The
+ * update runs as a detached job, so the status survives the app and daemon
+ * restarting. Renders nothing on a release install without a checkout.
  */
 export function UpdateRow() {
 	// Windows has no daemon update service (it reports unavailable): link to the
@@ -32,12 +43,11 @@ export function UpdateRow() {
 
 function DaemonUpdateRow() {
 	const { t } = useTranslation();
-	const { data, isError } = useUpdateStatus();
+	const { data } = useUpdateStatus();
 	const { start, starting, error } = useStartUpdate();
 	const [confirming, setConfirming] = useState(false);
-	if (!data) {
-		return isError ? <SettingsRow label={t("settings.update.label", "Updates")} description={t("settings.update.unavailable", "Update status is unavailable.")} /> : null;
-	}
+	// Unknown status says nothing about a checkout; the GitHub rows above cover release installs.
+	if (!data || !hasReleaseCheckout(data)) return null;
 
 	const busy = data.running || starting;
 	const last = data.last;
